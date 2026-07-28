@@ -265,10 +265,12 @@ MetaTrader 5 terminal
    client on connect. It also sends the current tick snapshot for active stream symbols immediately
    after the catalog so reconnecting Go clients do not wait for a fresh broker tick before
    watchlist rows show Last/Chg/Chg%.
-4. Python sidecar streams ticks for every currently visible MT5 symbol when
-   `MT5_STREAM_ALL_VISIBLE=true`; `MT5_SYMBOLS` adds explicit symbols on top of
-   that visible set. It de-dupes each symbol by `time_msc` and broadcasts
-   compact JSON tick messages.
+4. Python sidecar defaults to on-demand polling (`MT5_STREAM_ALL_VISIBLE=false`).
+   `MT5_SYMBOLS` pins a fixed base set; Go sends the union of active browser and
+   backend demand using replaceable `stream.set` messages. Python removes released
+   dynamic symbols, de-dupes each active symbol by `time_msc`, and broadcasts
+   compact JSON tick messages. The single MT5-affine worker prioritizes queued
+   tick work over queued history work.
 5. Go command `cmd/mt5-stream` connects with `github.com/gorilla/websocket`, decodes the symbol
    catalog plus strong typed `Mt5Tick` values, logs them, and reconnects with exponential backoff.
 6. The Go API process also starts a lightweight MT5 stream client. It caches the symbol catalog,

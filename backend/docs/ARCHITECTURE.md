@@ -74,6 +74,12 @@ production the canonical runner maintains a dedicated portable terminal clone un
 `backend/.data`; sharing the market-data terminal would let a credential check switch or disconnect
 the live quote session.
 
+Python is intentionally a thin terminal adapter, not the fan-out layer. Go owns browser
+subscriptions, caches, reconnects, and the replaceable dynamic symbol set. By default the sidecar
+polls only configured base symbols plus the union sent by Go; changing or closing the last browser
+subscription releases that dynamic symbol. MetaTrader5 calls remain on one thread, with queued tick
+work ordered before queued history work.
+
 ## Request Flow
 
 ```text

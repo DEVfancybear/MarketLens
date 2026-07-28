@@ -34,7 +34,7 @@ python -m pip install -r bridge/mt5_stream/requirements.txt
 | Variable | Default | Description |
 | --- | --- | --- |
 | `MT5_SYMBOLS` | empty | Comma-separated extra symbols to stream, for example `EURUSD,GBPUSD,XAUUSD` |
-| `MT5_STREAM_ALL_VISIBLE` | `true` | Stream every MT5 symbol currently marked visible. When enabled, `MT5_SYMBOLS` is added on top of visible symbols |
+| `MT5_STREAM_ALL_VISIBLE` | `false` | Opt in to streaming every visible Market Watch symbol. Leave false for Go-managed on-demand streaming |
 | `MT5_STREAM_HOST` | `localhost` | WebSocket listen host |
 | `MT5_STREAM_PORT` | `8765` | WebSocket listen port |
 | `MT5_POLL_INTERVAL_MS` | `100` | Tick polling interval |
@@ -70,19 +70,22 @@ sends the current tick snapshot for every active stream symbol before waiting fo
 important for stocks and other slower symbols: a symbol can have a valid last quote even when
 `time_msc` does not change for a long period. Tick streaming is separate from catalog loading:
 
-- Set `MT5_STREAM_ALL_VISIBLE=true` to stream every symbol that is visible in Market Watch.
-- Set `MT5_SYMBOLS=EURUSD,GBPUSD` to add specific symbols even if they are not visible.
-- Set `MT5_STREAM_ALL_VISIBLE=false` and leave `MT5_SYMBOLS` empty to publish the catalog only
-  without streaming ticks.
+- Keep `MT5_STREAM_ALL_VISIBLE=false` (the default) so Go manages the dynamic stream set from
+  active browser subscriptions and backend tick consumers.
+- Set `MT5_SYMBOLS=EURUSD,GBPUSD` to pin symbols even when no browser is subscribed.
+- Set `MT5_STREAM_ALL_VISIBLE=true` only when full Market Watch parity is worth continuously
+  polling every visible symbol.
 
 MT5 Python calls are blocking. After startup, the bridge sends every MT5 call
 that can run during normal operation through one dedicated worker thread:
 history loading, current tick snapshots for new clients, live tick polling, and
-on-demand `symbol_select()` from `stream.subscribe`. This keeps the asyncio
+on-demand `symbol_select()` from `stream.set`. This keeps the asyncio
 WebSocket loop free to accept Go reconnects and send the symbol catalog even
 when MT5 is slow or a large Market Watch list is being polled. Keep the worker
 single-threaded; the MT5 Python package should not be called concurrently from
-multiple runtime threads.
+multiple runtime threads. Queued tick scans and snapshots have priority over
+queued history loads. A history call already executing inside MT5 cannot be
+preempted safely.
 
 On-demand history requests may need a cold-start refresh because MT5 downloads
 bars after the first `copy_rates_*` call. An ordinary request returns a non-empty
@@ -126,6 +129,9 @@ In another terminal, start the Go consumer:
 go run ./cmd/mt5-stream
 ```
 
+The standalone logging consumer does not create browser subscriptions. With the on-demand default,
+set `MT5_SYMBOLS` to at least one symbol if you expect this command to print ticks.
+
 To expose the symbol catalog to the frontend through the Go API, start the normal backend API:
 
 ```bash
@@ -139,10 +145,11 @@ For live prices, the frontend opens the Go API WebSocket `GET /api/v1/mt5/stream
 caches only the latest tick per streamed symbol and fans those ticks out to browser subscribers.
 `GET /api/v1/mt5/ticks?symbols=EURUSD,GBPUSD` remains a one-off snapshot/debug endpoint. Ticks are
 quote/watchlist data only and must not be used to synthesize MT5 chart candles.
-If the Go API asks for a catalog symbol that was not in the initial stream set, it sends
-`stream.subscribe` to this bridge; the bridge calls `symbol_select()` and only adds the symbol to
-the live tick loop if MT5 confirms it is selectable. Symbols rejected by `symbol_select()` must not
-be treated as streamable by the frontend.
+Go sends `stream.set` with its complete replaceable on-demand set. The bridge preserves
+`MT5_SYMBOLS` and any opt-in visible-symbol base, calls `symbol_select()` for newly requested
+catalog symbols, and removes released dynamic symbols from polling without hiding them in Market
+Watch. Multiple tabs are unioned in Go. `stream.subscribe` remains accepted for legacy additive
+clients.
 
 For historical chart candles, the frontend calls
 `GET /api/v1/mt5/history?symbol=EURUSD&timeframe=15m&limit=1500`. For older
@@ -186,8 +193,8 @@ python -m unittest bridge.mt5_stream.test_mt5_server -v
 
 These tests cover tick de-duplication, bounded timestamp normalization, multi-day and intraday
 cold-history offset rejection, all-timeframe freshness boundaries, explicit stale refresh, exact cursor probing,
-`stream.subscribe` symbol selection, and the non-blocking worker wrapper that
-keeps asyncio responsive while MT5 calls are running.
+replaceable `stream.set` selection, and tick-first ordering in the non-blocking
+single worker that keeps asyncio responsive while MT5 calls are running.
 
 ## Payload Contract
 
@@ -256,16 +263,19 @@ request, Go cancels it with the same request id:
 }
 ```
 
-The Go API can request extra live symbols over the same WebSocket:
+The Go API replaces its dynamic live-symbol set over the same WebSocket:
 
 ```json
 {
-  "type": "stream.subscribe",
+  "type": "stream.set",
   "symbols": ["AAPL", "XAUUSD"]
 }
 ```
 
-The Python bridge responds:
+This list replaces only Go's dynamic set; configured base symbols remain active. A changed set
+causes an updated `symbols` catalog plus immediate snapshots for newly added symbols.
+
+A Python history response uses:
 
 ```json
 {
@@ -286,7 +296,6 @@ The Python bridge responds:
 - Bind to `localhost` by default. Do not expose this bridge directly to the internet.
 - Run the Python bridge and Go consumer as separate processes so either side can restart safely.
 - The Go consumer reconnects with exponential backoff if the Python bridge restarts.
-- `stream_symbols` is the source of truth for which catalog symbols can show live
-  prices. Use `MT5_STREAM_ALL_VISIBLE=true` for Market Watch parity, and use
-  `MT5_SYMBOLS` only to add explicit symbols beyond that visible set.
+- `stream_symbols` is the confirmed base-plus-dynamic polling set. The default is on-demand;
+  `MT5_STREAM_ALL_VISIBLE=true` is an explicit higher-CPU compatibility mode.
 - This stream is market-data only. Order execution remains a separate FTMO/MT5 bridge concern.

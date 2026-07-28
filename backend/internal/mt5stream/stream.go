@@ -136,6 +136,7 @@ func (s *TickSubscriber) Close() {
 	s.once.Do(func() {
 		s.service.unregisterTickSubscriber(s.id)
 		close(s.done)
+		s.service.syncBrowserStreamSymbols()
 	})
 }
 
@@ -145,15 +146,15 @@ func (s *TickSubscriber) Subscribe(symbols []string) {
 		return
 	}
 
-	s.service.ensureStreamSymbols(normalized)
 	s.mu.Lock()
 	for _, symbol := range normalized {
 		s.symbols[symbol] = struct{}{}
 	}
 	s.mu.Unlock()
+	s.service.syncBrowserStreamSymbols()
 
-	snapshot := s.service.Ticks(normalized)
-	marketStatus := s.service.MarketStatuses(normalized)
+	snapshot := s.service.ticksCached(normalized)
+	marketStatus := s.service.marketStatusesCached(normalized)
 	s.enqueue(TickStreamMessage{
 		Type:      "snapshot",
 		Connected: snapshot.Connected,
@@ -177,6 +178,7 @@ func (s *TickSubscriber) Unsubscribe(symbols []string) {
 		delete(s.symbols, symbol)
 	}
 	s.mu.Unlock()
+	s.service.syncBrowserStreamSymbols()
 }
 
 func (s *TickSubscriber) SetSymbols(symbols []string) {
@@ -188,6 +190,7 @@ func (s *TickSubscriber) SetSymbols(symbols []string) {
 		s.symbols[symbol] = struct{}{}
 	}
 	s.mu.Unlock()
+	s.service.syncBrowserStreamSymbols()
 
 	if len(normalized) == 0 {
 		s.enqueue(TickStreamMessage{
@@ -199,9 +202,8 @@ func (s *TickSubscriber) SetSymbols(symbols []string) {
 		return
 	}
 
-	s.service.ensureStreamSymbols(normalized)
-	snapshot := s.service.Ticks(normalized)
-	marketStatus := s.service.MarketStatuses(normalized)
+	snapshot := s.service.ticksCached(normalized)
+	marketStatus := s.service.marketStatusesCached(normalized)
 	s.enqueue(TickStreamMessage{
 		Type:      "snapshot",
 		Connected: snapshot.Connected,

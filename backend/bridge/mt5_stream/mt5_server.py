@@ -13,13 +13,16 @@ import asyncio
 import json
 import logging
 import os
+import queue
 import signal
+import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from itertools import count
 from pathlib import Path
-from typing import Any, Set
+from typing import Any, Callable, Set
 
 import MetaTrader5 as mt5
 import websockets
@@ -53,7 +56,7 @@ class Config:
         symbols_raw = os.getenv("MT5_SYMBOLS", "")
         config = cls(
             symbols=parse_symbols(symbols_raw),
-            stream_all_visible=env_bool("MT5_STREAM_ALL_VISIBLE", True),
+            stream_all_visible=env_bool("MT5_STREAM_ALL_VISIBLE", False),
             host=os.getenv("MT5_STREAM_HOST", "localhost").strip(),
             port=int(os.getenv("MT5_STREAM_PORT", "8765")),
             poll_interval_ms=int(os.getenv("MT5_POLL_INTERVAL_MS", "100")),
@@ -104,23 +107,95 @@ class HistoryFreshness:
 CLIENTS: Set[WebSocketServerProtocol] = set()
 SYMBOL_CATALOG: list[dict[str, Any]] = []
 STREAM_SYMBOLS: tuple[str, ...] = ()
+BASE_STREAM_SYMBOLS: tuple[str, ...] = ()
+DYNAMIC_STREAM_SYMBOLS: tuple[str, ...] = ()
 HISTORY_MESSAGES: list[str] = []
 HISTORY_TASKS: dict[tuple[int, str], asyncio.Task[None]] = {}
 MARKET_STATUSES: dict[str, dict[str, Any]] = {}
 MARKET_STATUS_PATH: Path | None = None
 MT5_TICK_TIME_OFFSET_SECONDS = 0
+MT5_TICK_TIME_OFFSET_READY = False
 # Broker/terminal UTC offsets cannot exceed the civil-time range. A larger
 # tick-to-M1 delta is stale/cold history, not a timezone offset. Without this
 # guard a cold terminal can shift every live tick by days until the bridge is
 # restarted, making latest-history freshness evidence meaningless.
 MAX_TICK_TIME_OFFSET_SECONDS = 14 * 3600
 TICK_OFFSET_CURRENTNESS_TOLERANCE_SECONDS = 180
-# The MetaTrader5 Python module is blocking and should be treated as
-# single-thread-affine. Keep every MT5 call that runs after startup on this one
-# worker thread so asyncio can still accept WebSocket handshakes, send symbol
-# catalogs, and process Go requests while MT5 is polling ticks or warming
-# history.
-MT5_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mt5-worker")
+MT5_PRIORITY_TICK = 0
+MT5_PRIORITY_CONTROL = 5
+MT5_PRIORITY_HISTORY = 10
+
+
+class MT5PriorityExecutor:
+    """One MT5-affine worker with tick-first ordering for queued calls."""
+
+    def __init__(self) -> None:
+        self._queue: queue.PriorityQueue[
+            tuple[int, int, Future[Any] | None, Callable[..., Any] | None, tuple[Any, ...]]
+        ] = queue.PriorityQueue()
+        self._sequence = count()
+        self._lock = threading.Lock()
+        self._shutdown = False
+        self._thread = threading.Thread(
+            target=self._run,
+            name="mt5-worker",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def submit(
+        self,
+        priority: int,
+        func: Callable[..., Any],
+        *args: Any,
+    ) -> Future[Any]:
+        with self._lock:
+            if self._shutdown:
+                raise RuntimeError("MT5 worker is shut down")
+            future: Future[Any] = Future()
+            self._queue.put((priority, next(self._sequence), future, func, args))
+            return future
+
+    def _run(self) -> None:
+        while True:
+            _, _, future, func, args = self._queue.get()
+            try:
+                if future is None or func is None:
+                    return
+                if not future.set_running_or_notify_cancel():
+                    continue
+                try:
+                    future.set_result(func(*args))
+                except BaseException as exc:  # propagate worker failures to asyncio.
+                    future.set_exception(exc)
+            finally:
+                self._queue.task_done()
+
+    def shutdown(self, wait: bool = True, cancel_futures: bool = False) -> None:
+        with self._lock:
+            if self._shutdown:
+                return
+            self._shutdown = True
+            if cancel_futures:
+                while True:
+                    try:
+                        _, _, future, _, _ = self._queue.get_nowait()
+                    except queue.Empty:
+                        break
+                    if future is not None:
+                        future.cancel()
+                    self._queue.task_done()
+            self._queue.put(
+                (2**31 - 1, next(self._sequence), None, None, ()),
+            )
+        if wait:
+            self._thread.join()
+
+
+# MetaTrader5 calls remain strictly single-threaded. Priority changes only the
+# order of work that has not started; a blocking call already inside MT5 cannot
+# be preempted safely.
+MT5_EXECUTOR = MT5PriorityExecutor()
 
 TIMEFRAME_MAP = {
     "1m": mt5.TIMEFRAME_M1,
@@ -373,9 +448,7 @@ async def copy_rates_synced_worker(
     before: int = 0,
     refresh: bool = False,
 ) -> Any:
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        MT5_EXECUTOR,
+    return await run_mt5_worker(
         copy_rates_synced_blocking,
         symbol,
         mt5_timeframe,
@@ -383,6 +456,7 @@ async def copy_rates_synced_worker(
         limit,
         before,
         refresh,
+        priority=MT5_PRIORITY_HISTORY,
     )
 
 
@@ -433,9 +507,7 @@ async def copy_selected_rates_synced_worker(
     around: int = 0,
     refresh: bool = False,
 ) -> tuple[Any, str]:
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        MT5_EXECUTOR,
+    return await run_mt5_worker(
         copy_selected_rates_synced_blocking,
         symbol,
         mt5_timeframe,
@@ -444,13 +516,17 @@ async def copy_selected_rates_synced_worker(
         before,
         around,
         refresh,
+        priority=MT5_PRIORITY_HISTORY,
     )
 
 
-async def run_mt5_worker(func: Any, *args: Any) -> Any:
-    """Run a blocking MT5 function on the single MT5 worker thread."""
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(MT5_EXECUTOR, func, *args)
+async def run_mt5_worker(
+    func: Callable[..., Any],
+    *args: Any,
+    priority: int = MT5_PRIORITY_CONTROL,
+) -> Any:
+    """Run a blocking call on the single priority-aware MT5 worker thread."""
+    return await asyncio.wrap_future(MT5_EXECUTOR.submit(priority, func, *args))
 
 
 def parse_symbols(raw: str) -> tuple[str, ...]:
@@ -770,6 +846,8 @@ def initialize_mt5(cfg: Config) -> tuple[list[dict[str, Any]], tuple[str, ...]]:
 
     global MT5_TICK_TIME_OFFSET_SECONDS
     MT5_TICK_TIME_OFFSET_SECONDS = estimate_mt5_tick_time_offset(stream_symbols)
+    global MT5_TICK_TIME_OFFSET_READY
+    MT5_TICK_TIME_OFFSET_READY = bool(stream_symbols)
 
     LOG.info(
         "MT5 initialized account=%s server=%s symbols=%d stream_symbols=%s",
@@ -884,6 +962,16 @@ async def handle_client_message(websocket: WebSocketServerProtocol, raw: str) ->
         return
 
     message_type = message.get("type")
+    if message_type == "stream.set":
+        added, removed = await set_stream_symbols_worker(message.get("symbols"))
+        if added or removed:
+            await broadcast(symbol_catalog_message())
+            for tick_message in await current_tick_messages_worker(added):
+                await broadcast(tick_message)
+            if added:
+                await broadcast(market_status_message(added))
+        return
+
     if message_type == "stream.subscribe":
         added = await add_stream_symbols_worker(message.get("symbols"))
         if added:
@@ -1018,7 +1106,73 @@ def add_stream_symbols(raw_symbols: Any) -> tuple[str, ...]:
 
 
 async def add_stream_symbols_worker(raw_symbols: Any) -> tuple[str, ...]:
-    return await run_mt5_worker(add_stream_symbols, raw_symbols)
+    return await run_mt5_worker(
+        add_stream_symbols,
+        raw_symbols,
+        priority=MT5_PRIORITY_CONTROL,
+    )
+
+
+def set_stream_symbols(raw_symbols: Any) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Replace Go's dynamic symbol set while preserving configured base symbols."""
+    global DYNAMIC_STREAM_SYMBOLS, STREAM_SYMBOLS
+    global MT5_TICK_TIME_OFFSET_READY, MT5_TICK_TIME_OFFSET_SECONDS
+
+    if not isinstance(raw_symbols, list):
+        return (), ()
+
+    available = {item["name"].upper(): item["name"] for item in SYMBOL_CATALOG}
+    base_keys = {symbol.upper() for symbol in BASE_STREAM_SYMBOLS}
+    current_dynamic_keys = {
+        symbol.upper() for symbol in DYNAMIC_STREAM_SYMBOLS
+    }
+    desired: list[str] = []
+    desired_keys: set[str] = set()
+    for value in raw_symbols:
+        if not isinstance(value, str):
+            continue
+        symbol = available.get(value.strip().upper())
+        if not symbol:
+            continue
+        key = symbol.upper()
+        if key in base_keys or key in desired_keys:
+            continue
+        if key not in current_dynamic_keys:
+            if not mt5.symbol_select(symbol, True):
+                LOG.warning("symbol_select(%s) failed (%s)", symbol, last_mt5_error())
+                continue
+        desired_keys.add(key)
+        desired.append(symbol)
+
+    previous = STREAM_SYMBOLS
+    previous_keys = {symbol.upper() for symbol in previous}
+    next_symbols = tuple([*BASE_STREAM_SYMBOLS, *desired])
+    next_keys = {symbol.upper() for symbol in next_symbols}
+    added = tuple(symbol for symbol in next_symbols if symbol.upper() not in previous_keys)
+    removed = tuple(symbol for symbol in previous if symbol.upper() not in next_keys)
+    if added and not MT5_TICK_TIME_OFFSET_READY:
+        MT5_TICK_TIME_OFFSET_SECONDS = estimate_mt5_tick_time_offset(added)
+        MT5_TICK_TIME_OFFSET_READY = True
+    DYNAMIC_STREAM_SYMBOLS = tuple(desired)
+    STREAM_SYMBOLS = next_symbols
+    if added or removed:
+        LOG.info(
+            "set MT5 stream symbols count=%d added=%s removed=%s",
+            len(STREAM_SYMBOLS),
+            ",".join(added) if added else "(none)",
+            ",".join(removed) if removed else "(none)",
+        )
+    return added, removed
+
+
+async def set_stream_symbols_worker(
+    raw_symbols: Any,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    return await run_mt5_worker(
+        set_stream_symbols,
+        raw_symbols,
+        priority=MT5_PRIORITY_CONTROL,
+    )
 
 
 def symbol_catalog_message() -> str:
@@ -1078,7 +1232,11 @@ def current_tick_messages(symbols: tuple[str, ...]) -> list[str]:
 
 
 async def current_tick_messages_worker(symbols: tuple[str, ...]) -> list[str]:
-    return await run_mt5_worker(current_tick_messages, symbols)
+    return await run_mt5_worker(
+        current_tick_messages,
+        symbols,
+        priority=MT5_PRIORITY_TICK,
+    )
 
 
 def changed_tick_messages(
@@ -1105,7 +1263,12 @@ async def changed_tick_messages_worker(
     symbols: tuple[str, ...],
     last_time_msc_by_symbol: dict[str, int],
 ) -> tuple[list[str], dict[str, int]]:
-    return await run_mt5_worker(changed_tick_messages, symbols, last_time_msc_by_symbol)
+    return await run_mt5_worker(
+        changed_tick_messages,
+        symbols,
+        last_time_msc_by_symbol,
+        priority=MT5_PRIORITY_TICK,
+    )
 
 
 async def load_history_messages(
@@ -1366,9 +1529,12 @@ async def main() -> None:
             # still handled by KeyboardInterrupt around asyncio.run().
             pass
 
-    global SYMBOL_CATALOG, STREAM_SYMBOLS, HISTORY_MESSAGES
+    global SYMBOL_CATALOG, STREAM_SYMBOLS, BASE_STREAM_SYMBOLS
+    global DYNAMIC_STREAM_SYMBOLS, HISTORY_MESSAGES
     global MARKET_STATUSES, MARKET_STATUS_PATH
     SYMBOL_CATALOG, STREAM_SYMBOLS = initialize_mt5(cfg)
+    BASE_STREAM_SYMBOLS = STREAM_SYMBOLS
+    DYNAMIC_STREAM_SYMBOLS = ()
     MARKET_STATUS_PATH = resolve_market_status_path(cfg)
     MARKET_STATUSES = read_market_status_file(
         MARKET_STATUS_PATH,

@@ -471,7 +471,9 @@ History scheduling:
   interrupted. If such a response arrives anyway, Go rejects it at the pending-request boundary so it
   cannot overwrite a newer candle.
 - The Python bridge also runs tick snapshots, live tick polling, and
-  `stream.subscribe` symbol selection through the same single MT5 worker. Do
+  `stream.set` symbol selection through the same single MT5 worker. Queued tick
+  work has priority over queued history work; an MT5 call already executing
+  cannot be preempted. Do
   not call `MetaTrader5` directly from the asyncio WebSocket loop; doing so can
   block new Go bridge handshakes and make `/api/v1/mt5/symbols` return
   `connected=false` with an `i/o timeout`.
@@ -634,10 +636,9 @@ Tick payload:
 ```
 
 The stream is local-only by default and must not be exposed directly to the internet.
-Use `MT5_STREAM_ALL_VISIBLE=true` to stream the visible Market Watch symbols. `MT5_SYMBOLS` adds
-explicit symbols on top of that visible set; it no longer disables visible-symbol streaming. Set
-`MT5_STREAM_ALL_VISIBLE=false` with an empty `MT5_SYMBOLS` value only when you want catalog-only
-mode.
+The default `MT5_STREAM_ALL_VISIBLE=false` keeps polling on demand. `MT5_SYMBOLS` pins a fixed base
+set; Go sends active browser/backend demand as a replaceable `stream.set` list. Set
+`MT5_STREAM_ALL_VISIBLE=true` only to poll every visible Market Watch symbol continuously.
 
 Frontend/backend API response:
 
@@ -802,11 +803,11 @@ timeframe (including `1W`/`1M`) and rejects stale, pending, exhausted, or explic
 freshness without overwriting the current chart. A disconnected refresh boundary triggers the
 full-window authoritative recovery described above instead of leaving stale and warmed price
 segments in one chart series. The `streamSymbols` array from
-`/api/v1/mt5/symbols` is the confirmed live set from the Python bridge. If the browser later
-subscribes to a catalog symbol that is not in that initial set, the Go API sends a
-`stream.subscribe` message to the Python bridge and waits for the bridge catalog update to confirm
-the symbol is selectable. Symbols rejected by `symbol_select()` remain catalog/search-only and
-should not be shown as live streamable rows.
+`/api/v1/mt5/symbols` is the confirmed live set from the Python bridge. Go unions symbols across
+browser subscribers and sticky backend consumers, then sends the complete dynamic set with
+`stream.set`. When the last browser releases a non-sticky symbol, Python removes it from the poll
+loop. The bridge catalog update confirms which requested symbols passed `symbol_select()`; rejected
+symbols remain catalog/search-only.
 
 MT5 history candle `time` values are the UTC bar-open seconds returned by
 MetaQuotes `copy_rates_*`. Do not apply broker/local timezone offsets to candle

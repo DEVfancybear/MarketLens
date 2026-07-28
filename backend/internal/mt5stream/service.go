@@ -16,9 +16,8 @@ import (
 )
 
 const (
-	defaultReconnectMin       = time.Second
-	defaultReconnectMax       = 30 * time.Second
-	defaultStreamRequestRetry = 10 * time.Second
+	defaultReconnectMin = time.Second
+	defaultReconnectMax = 30 * time.Second
 
 	// Cold MT5 symbols can spend several seconds downloading recent history
 	// after the first copy_rates_from request. Keep the WebSocket request budget
@@ -79,7 +78,9 @@ type Service struct {
 	pendingHistory     map[string]chan HistoryMessage
 	historyFlights     map[string]*historyFlight
 	historySlots       chan struct{}
-	pendingStream      map[string]time.Time
+	stickyStream       map[string]struct{}
+	streamSetSent      bool
+	lastStreamSet      string
 	subscribers        map[uint64]*TickSubscriber
 	nextSubscriber     uint64
 	updatedAt          time.Time
@@ -146,7 +147,7 @@ func NewService(cfg Config) *Service {
 		pendingHistory:     make(map[string]chan HistoryMessage),
 		historyFlights:     make(map[string]*historyFlight),
 		historySlots:       make(chan struct{}, defaultHistoryConcurrency),
-		pendingStream:      make(map[string]time.Time),
+		stickyStream:       make(map[string]struct{}),
 		subscribers:        make(map[uint64]*TickSubscriber),
 	}
 }
@@ -185,7 +186,10 @@ func (s *Service) Snapshot() Snapshot {
 
 func (s *Service) Ticks(symbols []string) TickSnapshot {
 	s.ensureStreamSymbols(symbols)
+	return s.ticksCached(symbols)
+}
 
+func (s *Service) ticksCached(symbols []string) TickSnapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -284,9 +288,17 @@ func (s *Service) TicksSince(symbols []string, sinceMS int64) TickSnapshot {
 // observation arrives, and whenever the bridge is disconnected or an
 // observation expires, the state is explicitly unknown.
 func (s *Service) MarketStatuses(symbols []string) MarketStatusSnapshot {
+	return s.marketStatusSnapshot(symbols, true)
+}
+
+func (s *Service) marketStatusesCached(symbols []string) MarketStatusSnapshot {
+	return s.marketStatusSnapshot(symbols, false)
+}
+
+func (s *Service) marketStatusSnapshot(symbols []string, ensureStream bool) MarketStatusSnapshot {
 	requestedAll := len(symbols) == 0
 	requested := normalizeSymbols(symbols)
-	if len(requested) > 0 {
+	if ensureStream && len(requested) > 0 {
 		s.ensureStreamSymbols(requested)
 	}
 
@@ -345,77 +357,92 @@ func tickCursorMS(tick Tick) int64 {
 }
 
 func (s *Service) ensureStreamSymbols(symbols []string) {
-	if len(symbols) == 0 {
-		return
+	s.mu.Lock()
+	for _, symbol := range normalizeSymbols(symbols) {
+		s.stickyStream[symbol] = struct{}{}
 	}
+	s.mu.Unlock()
+	s.syncStreamSymbols()
+}
 
-	requested := make([]string, 0, len(symbols))
-	seenRequested := make(map[string]struct{}, len(symbols))
-	for _, symbol := range symbols {
-		normalized := normalizeSymbol(symbol)
-		if normalized == "" {
-			continue
-		}
-		if _, ok := seenRequested[normalized]; ok {
-			continue
-		}
-		seenRequested[normalized] = struct{}{}
-		requested = append(requested, normalized)
-	}
-	if len(requested) == 0 {
-		return
-	}
+// syncBrowserStreamSymbols updates the bridge's replaceable on-demand set.
+// Sticky consumers such as REST tick snapshots remain included, while browser
+// symbols disappear as soon as the last subscriber releases them.
+func (s *Service) syncBrowserStreamSymbols() {
+	s.syncStreamSymbols()
+}
+
+func (s *Service) syncStreamSymbols() {
+	// Serialize snapshot construction with the write itself. A stale caller
+	// must not overtake a newer subscription update and restore an older set.
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 
 	s.mu.RLock()
 	conn := s.conn
 	connected := s.connected
-	streamed := make(map[string]struct{}, len(s.streamSymbols))
-	for _, symbol := range s.streamSymbols {
-		streamed[normalizeSymbol(symbol)] = struct{}{}
+	catalog := append([]Symbol(nil), s.symbols...)
+	desired := make(map[string]struct{}, len(s.stickyStream))
+	for symbol := range s.stickyStream {
+		desired[symbol] = struct{}{}
 	}
-	now := time.Now()
-	available := make(map[string]struct{}, len(s.symbols))
-	for _, symbol := range s.symbols {
-		available[normalizeSymbol(symbol.Name)] = struct{}{}
-	}
-	missing := make([]string, 0, len(requested))
-	for _, rawSymbol := range requested {
-		symbol := resolveCatalogSymbolLocked(rawSymbol, s.symbols)
-		if _, ok := streamed[symbol]; ok {
-			continue
+	for _, subscriber := range s.subscribers {
+		for _, symbol := range subscriber.symbolSnapshot() {
+			desired[symbol] = struct{}{}
 		}
-		if _, ok := available[symbol]; !ok {
-			continue
-		}
-		if requestedAt, ok := s.pendingStream[symbol]; ok &&
-			now.Sub(requestedAt) < defaultStreamRequestRetry {
-			continue
-		}
-		missing = append(missing, symbol)
 	}
 	s.mu.RUnlock()
 
-	if !connected || conn == nil || len(missing) == 0 {
+	if !connected || conn == nil || len(catalog) == 0 {
 		return
 	}
 
-	payload := map[string]any{
-		"type":    "stream.subscribe",
-		"symbols": missing,
+	resolved := make([]string, 0, len(desired))
+	seen := make(map[string]struct{}, len(desired))
+	available := make(map[string]struct{}, len(catalog))
+	for _, item := range catalog {
+		available[normalizeSymbol(item.Name)] = struct{}{}
 	}
-	s.writeMu.Lock()
-	err := conn.WriteJSON(payload)
-	s.writeMu.Unlock()
-	if err != nil {
-		log.Warn().Err(err).Strs("symbols", missing).Msg("request MT5 stream symbols")
-		return
+	for symbol := range desired {
+		catalogSymbol := resolveCatalogSymbolLocked(symbol, catalog)
+		if _, ok := available[catalogSymbol]; !ok {
+			continue
+		}
+		if _, ok := seen[catalogSymbol]; ok {
+			continue
+		}
+		seen[catalogSymbol] = struct{}{}
+		resolved = append(resolved, catalogSymbol)
 	}
+	sort.Strings(resolved)
+	streamSetKey := strings.Join(resolved, "\x00")
 
 	s.mu.Lock()
-	for _, symbol := range missing {
-		s.pendingStream[symbol] = now
+	if s.conn != conn || !s.connected {
+		s.mu.Unlock()
+		return
 	}
+	if s.streamSetSent && s.lastStreamSet == streamSetKey {
+		s.mu.Unlock()
+		return
+	}
+	s.streamSetSent = true
+	s.lastStreamSet = streamSetKey
 	s.mu.Unlock()
+
+	payload := map[string]any{
+		"type":    "stream.set",
+		"symbols": resolved,
+	}
+	err := conn.WriteJSON(payload)
+	if err != nil {
+		s.mu.Lock()
+		if s.conn == conn && s.lastStreamSet == streamSetKey {
+			s.streamSetSent = false
+		}
+		s.mu.Unlock()
+		log.Warn().Err(err).Strs("symbols", resolved).Msg("set MT5 stream symbols")
+	}
 }
 
 func (s *Service) History(ctx context.Context, symbol, timeframe string, limit int, before int64, refresh bool) HistorySnapshot {
@@ -743,7 +770,6 @@ func (s *Service) readLoop(ctx context.Context, conn *websocket.Conn) error {
 
 func (s *Service) applyCatalog(catalog SymbolCatalog) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.connected = true
 	s.lastErr = ""
 	s.source = catalog.Source
@@ -756,20 +782,15 @@ func (s *Service) applyCatalog(catalog SymbolCatalog) {
 	}
 	s.streamSymbols = append([]string(nil), catalog.StreamSymbols...)
 	s.symbols = append([]Symbol(nil), catalog.Symbols...)
-	confirmed := make(map[string]struct{}, len(s.streamSymbols))
-	for _, symbol := range s.streamSymbols {
-		confirmed[normalizeSymbol(symbol)] = struct{}{}
-	}
-	for symbol := range s.pendingStream {
-		if _, ok := confirmed[symbol]; ok {
-			delete(s.pendingStream, symbol)
-		}
-	}
 	s.updatedAt = time.Now().UTC()
+	count := s.count
+	streamCount := len(s.streamSymbols)
+	s.mu.Unlock()
 	log.Info().
-		Int("count", s.count).
-		Int("stream_symbols", len(s.streamSymbols)).
+		Int("count", count).
+		Int("stream_symbols", streamCount).
 		Msg("loaded MT5 symbol catalog")
+	s.syncStreamSymbols()
 }
 
 func (s *Service) applyTick(tick Tick) {
@@ -981,6 +1002,8 @@ func (s *Service) setConn(conn *websocket.Conn) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.conn = conn
+	s.streamSetSent = false
+	s.lastStreamSet = ""
 }
 
 func (s *Service) clearConn(conn *websocket.Conn) {
@@ -988,6 +1011,8 @@ func (s *Service) clearConn(conn *websocket.Conn) {
 	defer s.mu.Unlock()
 	if s.conn == conn {
 		s.conn = nil
+		s.streamSetSent = false
+		s.lastStreamSet = ""
 	}
 	for id, pending := range s.pendingHistory {
 		delete(s.pendingHistory, id)

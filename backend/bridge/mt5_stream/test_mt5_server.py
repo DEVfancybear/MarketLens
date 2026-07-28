@@ -50,7 +50,12 @@ class Mt5ServerTickTests(unittest.TestCase):
         )
         self.original_catalog = list(mt5_server.SYMBOL_CATALOG)
         self.original_stream_symbols = tuple(mt5_server.STREAM_SYMBOLS)
+        self.original_base_stream_symbols = tuple(mt5_server.BASE_STREAM_SYMBOLS)
+        self.original_dynamic_stream_symbols = tuple(
+            mt5_server.DYNAMIC_STREAM_SYMBOLS
+        )
         self.original_tick_offset = mt5_server.MT5_TICK_TIME_OFFSET_SECONDS
+        self.original_tick_offset_ready = mt5_server.MT5_TICK_TIME_OFFSET_READY
         self.original_history_sync_delay = mt5_server.HISTORY_SYNC_DELAY
         self.original_market_statuses = dict(mt5_server.MARKET_STATUSES)
 
@@ -80,7 +85,10 @@ class Mt5ServerTickTests(unittest.TestCase):
             mt5_server.mt5.copy_rates_range = self.original_copy_rates_range
         mt5_server.SYMBOL_CATALOG = self.original_catalog
         mt5_server.STREAM_SYMBOLS = self.original_stream_symbols
+        mt5_server.BASE_STREAM_SYMBOLS = self.original_base_stream_symbols
+        mt5_server.DYNAMIC_STREAM_SYMBOLS = self.original_dynamic_stream_symbols
         mt5_server.MT5_TICK_TIME_OFFSET_SECONDS = self.original_tick_offset
+        mt5_server.MT5_TICK_TIME_OFFSET_READY = self.original_tick_offset_ready
         mt5_server.HISTORY_SYNC_DELAY = self.original_history_sync_delay
         mt5_server.MARKET_STATUSES = self.original_market_statuses
 
@@ -133,6 +141,77 @@ class Mt5ServerTickTests(unittest.TestCase):
         self.assertEqual(added, ("XAUUSD",))
         self.assertEqual(mt5_server.STREAM_SYMBOLS, ("EURUSD", "XAUUSD"))
         self.assertEqual(selected, [("XAUUSD", True)])
+
+    def test_set_stream_symbols_replaces_dynamic_set_but_keeps_base(self) -> None:
+        mt5_server.SYMBOL_CATALOG = [
+            {"name": "EURUSD"},
+            {"name": "GBPUSD"},
+            {"name": "XAUUSD"},
+        ]
+        mt5_server.BASE_STREAM_SYMBOLS = ("EURUSD",)
+        mt5_server.DYNAMIC_STREAM_SYMBOLS = ("GBPUSD",)
+        mt5_server.STREAM_SYMBOLS = ("EURUSD", "GBPUSD")
+        selected: list[tuple[str, bool]] = []
+        mt5_server.mt5.symbol_select = (
+            lambda symbol, visible: selected.append((symbol, visible)) or True
+        )
+        mt5_server.MT5_TICK_TIME_OFFSET_READY = False
+
+        with patch.object(
+            mt5_server,
+            "estimate_mt5_tick_time_offset",
+            return_value=3600,
+        ):
+            added, removed = mt5_server.set_stream_symbols(
+                ["xauusd", "missing", "EURUSD"]
+            )
+
+        self.assertEqual(added, ("XAUUSD",))
+        self.assertEqual(removed, ("GBPUSD",))
+        self.assertEqual(mt5_server.BASE_STREAM_SYMBOLS, ("EURUSD",))
+        self.assertEqual(mt5_server.DYNAMIC_STREAM_SYMBOLS, ("XAUUSD",))
+        self.assertEqual(mt5_server.STREAM_SYMBOLS, ("EURUSD", "XAUUSD"))
+        self.assertEqual(mt5_server.MT5_TICK_TIME_OFFSET_SECONDS, 3600)
+        self.assertTrue(mt5_server.MT5_TICK_TIME_OFFSET_READY)
+        self.assertEqual(selected, [("XAUUSD", True)])
+
+    def test_priority_executor_runs_queued_tick_before_history(self) -> None:
+        executor = mt5_server.MT5PriorityExecutor()
+        started = threading.Event()
+        release = threading.Event()
+        order: list[str] = []
+
+        def blocking_history() -> None:
+            started.set()
+            release.wait(timeout=1)
+            order.append("blocking-history")
+
+        def record(name: str) -> str:
+            order.append(name)
+            return name
+
+        first = executor.submit(
+            mt5_server.MT5_PRIORITY_HISTORY,
+            blocking_history,
+        )
+        self.assertTrue(started.wait(timeout=1))
+        queued_history = executor.submit(
+            mt5_server.MT5_PRIORITY_HISTORY,
+            record,
+            "queued-history",
+        )
+        queued_tick = executor.submit(
+            mt5_server.MT5_PRIORITY_TICK,
+            record,
+            "tick",
+        )
+        release.set()
+
+        first.result(timeout=1)
+        self.assertEqual(queued_tick.result(timeout=1), "tick")
+        self.assertEqual(queued_history.result(timeout=1), "queued-history")
+        executor.shutdown()
+        self.assertEqual(order, ["blocking-history", "tick", "queued-history"])
 
     def test_market_status_document_keeps_fresh_broker_session(self) -> None:
         now = 1_800_000_000

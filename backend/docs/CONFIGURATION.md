@@ -104,7 +104,7 @@ These variables are used by `bridge/mt5_stream/mt5_server.py` and `cmd/mt5-strea
 | --- | --- | --- | --- |
 | `MT5_STREAM_API_ENABLED` | boolean | `true` | Start the Go API background client for `/api/v1/mt5/symbols`, `/api/v1/mt5/stream`, `/api/v1/mt5/ticks`, `/api/v1/mt5/market-status`, and `/api/v1/mt5/history` |
 | `MT5_SYMBOLS` | string | empty | Comma-separated extra symbols to stream, for example `EURUSD,GBPUSD,XAUUSD` |
-| `MT5_STREAM_ALL_VISIBLE` | boolean | `true` | Stream every MT5 symbol currently marked visible; when true, `MT5_SYMBOLS` is added on top of visible symbols |
+| `MT5_STREAM_ALL_VISIBLE` | boolean | `false` | Opt in to continuously polling every visible Market Watch symbol; leave false for Go-managed on-demand streaming |
 | `MT5_STREAM_HOST` | string | `localhost` | Python WebSocket listen host; must remain loopback because the stream protocol has no remote authentication |
 | `MT5_STREAM_PORT` | integer | `8765` | Python WebSocket listen port |
 | `MT5_POLL_INTERVAL_MS` | integer | `100` | Tick polling interval |
@@ -131,6 +131,11 @@ These variables are used by `bridge/mt5_stream/mt5_server.py` and `cmd/mt5-strea
 | `MT5_VERIFY_TERMINAL_PATH` | string | auto | Optional operator override for the dedicated verifier terminal; the canonical runner otherwise discovers an FTMO terminal or installs FTMO's signed public runtime, clones it under `backend/.data`, and exports the isolated path only to its child processes |
 | `MT5_VERIFY_TIMEOUT` | duration | `30s` | Hard timeout for one per-user MT5 credential verification attempt |
 | `MT5_VERIFY_NATIVE_TIMEOUT_MS` | integer | `8000` | Timeout for the native MT5 initialize-and-login call, clamped to `1000..12000` inside the outer verifier budget |
+
+With `MT5_STREAM_ALL_VISIBLE=false`, `MT5_SYMBOLS` is the fixed base set. Go sends the union of
+active browser subscriptions and backend tick consumers through `stream.set`; Python stops polling
+released dynamic symbols. Enable all-visible mode only when quotes for every Market Watch row are
+required without an active subscriber.
 
 The root `build-production.ps1` provisions `backend/.venv-mt5` and validates its MT5 imports. Leave
 `MT5_VERIFY_PYTHON` empty unless intentionally overriding that runtime. Legacy bare values such as
