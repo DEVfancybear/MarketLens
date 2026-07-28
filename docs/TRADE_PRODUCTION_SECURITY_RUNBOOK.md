@@ -185,6 +185,59 @@ readiness on its first successful poll. Existing EA releases below 1.22 remain
 blocked until their `.ex5` is replaced; do not bypass this gate by editing
 account status in PostgreSQL.
 
+## Portfolio synchronization rollout and triage
+
+Deploy portfolio synchronization changes in this order:
+
+1. Run the canonical backend deployment with
+   `.\run-backend-production.ps1`.
+2. Deploy the frontend.
+3. Upgrade `SMCExecutionEA` one terminal at a time. EA 1.22 remains compatible
+   with the new gateway; EA 1.23 is recommended because it sends portfolio,
+   command-event, and instrument batches through independent retry lanes.
+
+Detaching or restarting the EA does not close broker positions or cancel
+pending orders. During each terminal upgrade, stop submitting new web commands
+to that account, leave its MT5 orders untouched, and preserve `GatewayUrl`. The
+session cache normally restores without a new pairing token when `login`,
+`server`, and `GatewayUrl` have not changed.
+
+The EA attempts a full broker portfolio snapshot at least every ten seconds
+while the gateway is healthy. The Trade UI polls account state every two
+seconds. After the account returns to `READY`, allow about ten seconds for open
+positions and pending orders to appear before treating the state as stale.
+
+| Experts log or observation | Meaning | Production action |
+| --- | --- | --- |
+| `portfolio sync failed, HTTP=...` | The positions/pending-orders lane was rejected or unavailable | Inspect the sanitized response code/message and gateway logs. The last committed portfolio remains authoritative until a complete valid snapshot succeeds |
+| `instrument sync failed, HTTP=...` | Symbol discovery or metadata was rejected | Fix symbol metadata/routing independently. On EA 1.23 this must not suppress portfolio synchronization |
+| `command event sync failed, HTTP=...` | Outcome telemetry is delayed | Do not resend an order. Reconcile the command ID against MT5 and the target-command row, then allow retry or late acknowledgement to finalize it |
+| No EA error, account `READY`, web portfolio empty | Transport is healthy but account selection, ownership, or persistence may be wrong | Confirm the selected execution account, inspect the authenticated account-state response, then compare its account ID with PostgreSQL portfolio rows |
+
+Use read-only queries during reconciliation; never repair this incident by
+inventing portfolio rows or changing command status:
+
+```sql
+SELECT account_id, broker_position_id, snapshot->>'symbol' AS symbol,
+       observed_at, updated_at
+FROM execution_positions
+WHERE user_id = $1
+ORDER BY updated_at DESC;
+
+SELECT account_id, broker_order_id, snapshot->>'symbol' AS symbol,
+       observed_at, updated_at
+FROM execution_pending_orders
+WHERE user_id = $1
+ORDER BY updated_at DESC;
+```
+
+If the web portfolio is empty while MT5 still shows an order, do not submit a
+replacement order. An empty browser view is a synchronization incident, not
+evidence that the broker order does not exist. Capture the account ID, command
+ID, broker ticket, EA version, and the three lane logs before restarting
+services. This synchronization change has no schema migration; rollback does
+not require modifying broker state or deleting portfolio records.
+
 ## Command delivery triage
 
 Use the target command row, not the browser's `202 Accepted`, to identify the

@@ -21,6 +21,35 @@ MT5 supports one active account per terminal. To use multiple accounts, run one
 terminal instance per account and attach the same EA to each instance. The Rust
 gateway derives a stable account ID from `server + login`.
 
+## Upgrade without closing broker positions
+
+Open positions and pending orders belong to the MT5 account, not to the EA
+process. Replacing or restarting `SMCExecutionEA` does not close or cancel them.
+Upgrade one terminal at a time so the other execution accounts remain
+available:
+
+1. Deploy the backend first with `.\run-backend-production.ps1`.
+2. Stop submitting web commands to the account being upgraded. Do not close,
+   cancel, or recreate its broker orders merely because the web portfolio is
+   temporarily empty.
+3. Download the current EA and its `.sha256` file from the Trade workspace,
+   verify the checksum, and replace
+   `MQL5\Experts\SMC\SMCExecutionEA.ex5` in that terminal's data folder.
+4. In Navigator, select **Refresh**, then remove and reattach the EA or restart
+   that terminal so MT5 loads the new binary.
+5. Keep `GatewayUrl` unchanged. The paired session is normally restored because
+   it is bound to `login + server + GatewayUrl`; enter a new one-time token only
+   if the Experts log explicitly requests one.
+6. Confirm the Experts log reports a restored or paired session and the web
+   account returns to `READY`. The web polls every two seconds and EA portfolio
+   snapshots run at most ten seconds apart, so positions and pending orders
+   should appear within about ten seconds after a healthy reconnect.
+
+Version 1.22 remains supported during a rolling deployment because the current
+Rust gateway commits portfolio state independently before processing metadata
+or command events. Version 1.23 is recommended: it also separates these lanes
+inside the EA, providing independent retries and lane-specific diagnostics.
+
 ## Safety and current boundary
 
 - The default EA gateway binds to `127.0.0.1:8790`. Production uses the public
