@@ -89,6 +89,54 @@ func TestClientScopesAccountActionsAndKeepsAdminTokenServerSide(t *testing.T) {
 	}
 }
 
+func TestClientForwardsOrderAuthorizationContext(t *testing.T) {
+	const token = "admin-token-with-at-least-32-characters"
+	const owner = "11111111-1111-4111-8111-111111111111"
+	const authorization = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"
+	const session = "22222222-2222-4222-8222-222222222222"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/v1/admin/orders" {
+			t.Errorf("unexpected gateway path: %s", request.URL.Path)
+		}
+		var body struct {
+			OwnerID                string          `json:"ownerId"`
+			Intent                 json.RawMessage `json:"intent"`
+			Targets                json.RawMessage `json:"targets"`
+			AuthorizationToken     string          `json:"authorizationToken"`
+			AuthorizationSessionID string          `json:"authorizationSessionId"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if body.OwnerID != owner ||
+			body.AuthorizationToken != authorization ||
+			body.AuthorizationSessionID != session {
+			t.Errorf("unexpected order authorization context: %+v", body)
+		}
+		if string(body.Intent) != `{"commandId":"exec_cmd"}` ||
+			string(body.Targets) != `[{"accountId":"mt5_account"}]` {
+			t.Errorf("unexpected order payload: intent=%s targets=%s", body.Intent, body.Targets)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"commandId":"exec_cmd","targets":[]}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(server.URL, token)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	_, err = client.RouteOrder(t.Context(), owner, OrderRequest{
+		Intent:                 json.RawMessage(`{"commandId":"exec_cmd"}`),
+		Targets:                json.RawMessage(`[{"accountId":"mt5_account"}]`),
+		AuthorizationToken:     authorization,
+		AuthorizationSessionID: session,
+	})
+	if err != nil {
+		t.Fatalf("RouteOrder: %v", err)
+	}
+}
+
 func TestClientRejectsInvalidAccountActionAcknowledgement(t *testing.T) {
 	const token = "admin-token-with-at-least-32-characters"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

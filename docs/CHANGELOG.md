@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Live orders no longer lose trade authorization context (2026-07-28)
+
+- Forwarded the one-time trade authorization token and authenticated backend
+  session ID from the public Go execution API to the internal Rust execution
+  gateway when routing an order.
+- Fixed valid `POST /api/v1/execution/orders` requests failing with `422`
+  during the gateway JSON decode before order validation or MT5 submission.
+- Added a Go client regression covering the complete internal order envelope,
+  including owner, intent, targets, authorization token, and session binding.
+
 ### Changed - Optional browser-session trade password (2026-07-28)
 
 - Removed the WebAuthn/passkey enrollment, challenge, verification, encrypted

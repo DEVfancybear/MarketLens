@@ -45,11 +45,16 @@ also expire after 12 hours absolute or two hours without a trade authorization.
    - a random one-time authorization token bound to the exact JSON payload,
      user, active backend session, operation, and expiry.
 7. The frontend sends the one-time token in `X-Trade-Authorization`.
-8. Rust atomically consumes it before enqueueing. Replay, payload mutation,
+8. Go validates the header shape and forwards the token plus the authenticated
+   backend session ID in the loopback-only internal order envelope.
+9. Rust atomically consumes it before enqueueing. Replay, payload mutation,
    operation changes, expiry, revocation, or unavailable storage fail closed.
 
 The unlock cookie never replaces the one-time authorization. It only avoids
 rehashing/re-entering the password for every order.
+
+The internal token/session fields are mandatory. Omitting either causes the
+gateway request to fail closed before order validation or MT5 submission.
 
 ## Password storage and policy
 

@@ -314,13 +314,17 @@ func (c *Client) RouteOrder(
 	order OrderRequest,
 ) (json.RawMessage, error) {
 	body := struct {
-		OwnerID string          `json:"ownerId"`
-		Intent  json.RawMessage `json:"intent"`
-		Targets json.RawMessage `json:"targets"`
+		OwnerID                string          `json:"ownerId"`
+		Intent                 json.RawMessage `json:"intent"`
+		Targets                json.RawMessage `json:"targets"`
+		AuthorizationToken     string          `json:"authorizationToken"`
+		AuthorizationSessionID string          `json:"authorizationSessionId"`
 	}{
-		OwnerID: ownerID,
-		Intent:  order.Intent,
-		Targets: order.Targets,
+		OwnerID:                ownerID,
+		Intent:                 order.Intent,
+		Targets:                order.Targets,
+		AuthorizationToken:     order.AuthorizationToken,
+		AuthorizationSessionID: order.AuthorizationSessionID,
 	}
 	var response json.RawMessage
 	err := c.doJSON(
