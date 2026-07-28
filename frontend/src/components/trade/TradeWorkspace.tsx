@@ -8,6 +8,7 @@ import {
   Check,
   CircleOff,
   Clipboard,
+  Clock3,
   Copy,
   Download,
   FileCheck2,
@@ -59,6 +60,7 @@ import {
 } from "@/services/api/resources/executionApi";
 import { symbolAtom } from "@/store/chartStore";
 import { executionEaDistribution } from "@/services/execution/eaDistribution";
+import { copyTargetAvailability } from "@/services/execution/copyRouting";
 import { useExecutionPairingToken } from "@/hooks/useExecutionPairingToken";
 import {
   executionAccountDropEdge,
@@ -748,6 +750,9 @@ function CopyRoutingPanel() {
   const setTarget = useSetAtom(setCopyTargetAtom);
   const source = accounts.find((account) => account.id === selectedId);
   const available = accounts.filter((account) => account.id !== selectedId);
+  const eligibleTargetCount = available.filter(
+    (account) => copyTargetAvailability(account).eligible,
+  ).length;
 
   return (
     <div className="min-h-0 flex-1 overflow-auto p-4">
@@ -763,7 +768,7 @@ function CopyRoutingPanel() {
           </div>
           <span className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-terminal-border bg-terminal-panel-2 px-2.5 py-1.5 text-[10px] text-ink-muted">
             <Copy size={12} />
-            {available.length} available
+            {eligibleTargetCount} eligible
           </span>
         </div>
 
@@ -787,6 +792,28 @@ function CopyRoutingPanel() {
           </div>
         )}
 
+        <div
+          role="note"
+          className="mt-3 flex gap-2.5 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3"
+        >
+          <Clock3
+            size={15}
+            aria-hidden="true"
+            className="mt-0.5 shrink-0 text-amber-400"
+          />
+          <div>
+            <strong className="block text-[10px] text-ink">
+              Offline targets wait for 5 minutes
+            </strong>
+            <p className="mt-0.5 text-[9px] leading-4 text-ink-muted">
+              Each MT5 account needs its own running terminal and EA. If Exness
+              is offline, start that terminal within 5 minutes; the server
+              revalidates the order before delivery and cancels it after the
+              deadline.
+            </p>
+          </div>
+        </div>
+
         {available.length === 0 ? (
           <div className="mt-5 flex min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-terminal-border-strong bg-terminal-panel-2/35 px-6 text-center">
             <CircleOff size={22} className="text-ink-faint" />
@@ -802,6 +829,7 @@ function CopyRoutingPanel() {
         ) : (
           <div className="mt-4 space-y-2">
             {available.map((account) => {
+              const availability = copyTargetAvailability(account);
               const target = targets[account.id] ?? {
                 accountId: account.id,
                 enabled: false,
@@ -816,19 +844,36 @@ function CopyRoutingPanel() {
                   <label className="flex min-w-0 items-center gap-3">
                     <input
                       type="checkbox"
-                      checked={target.enabled}
+                      checked={target.enabled && availability.eligible}
+                      disabled={!availability.eligible}
+                      aria-describedby={`copy-target-status-${account.id}`}
                       onChange={(event) =>
                         setTarget({
                           accountId: account.id,
                           enabled: event.target.checked,
                         })
                       }
-                      className="h-4 w-4 accent-[var(--accent)]"
+                      className="h-4 w-4 accent-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50 focus-ring"
                     />
                     <span className="min-w-0">
-                      <strong className="block truncate text-[11px] text-ink">
-                        {account.label}
-                      </strong>
+                      <span className="flex min-w-0 items-center gap-2">
+                        <strong className="block truncate text-[11px] text-ink">
+                          {account.label}
+                        </strong>
+                        <span
+                          aria-live="polite"
+                          className={cn(
+                            "shrink-0 rounded-md px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wide",
+                            availability.mode === "ready"
+                              ? "bg-bull/10 text-bull"
+                              : availability.mode === "waiting"
+                                ? "bg-amber-500/10 text-amber-400"
+                                : "bg-bear/10 text-bear",
+                          )}
+                        >
+                          {availability.label}
+                        </span>
+                      </span>
                       <span className="block truncate text-[9px] text-ink-faint">
                         {account.brokerCode} · {account.externalAccountRef}
                       </span>
@@ -882,6 +927,26 @@ function CopyRoutingPanel() {
                       className="h-8 min-w-0 flex-1 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-[10px] text-ink outline-none focus:border-brand"
                     />
                   </label>
+                  <p
+                    id={`copy-target-status-${account.id}`}
+                    className={cn(
+                      "col-span-3 flex items-start gap-1.5 text-[9px] leading-4",
+                      availability.mode === "waiting"
+                        ? "text-amber-300"
+                        : availability.mode === "blocked"
+                          ? "text-bear"
+                          : "text-ink-faint",
+                    )}
+                  >
+                    {availability.mode === "waiting" && (
+                      <Clock3
+                        size={11}
+                        aria-hidden="true"
+                        className="mt-0.5 shrink-0"
+                      />
+                    )}
+                    {availability.detail}
+                  </p>
                   <div className="col-span-3 grid grid-cols-[minmax(0,1fr)_minmax(180px,280px)] items-center gap-3 border-t border-terminal-border pt-2">
                     <span className="text-[9px] text-ink-faint">
                       {canonicalSymbol} broker symbol

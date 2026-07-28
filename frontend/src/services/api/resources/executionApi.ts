@@ -1,7 +1,14 @@
 import { deleteJson, getJson, postJson } from "@/services/api/client";
 import type { ExecutionAccountSummary } from "@/types/execution";
 import type { ExecutionOrderWireRequest } from "@/services/execution/orderRouting";
+import {
+  normalizeExecutionOrderResponse,
+  type ExecutionOrderResponse,
+  type ExecutionTargetSubmission,
+} from "@/services/execution/orderResponse";
 import { authorizeTradeTransaction } from "@/services/security/tradePassword";
+
+export type { ExecutionOrderResponse, ExecutionTargetSubmission };
 
 interface ExecutionAccountsResponse {
   accounts: ExecutionAccountSummary[];
@@ -69,25 +76,6 @@ export const removeExecutionAccount = (
     { retry: { limit: 0 } },
   );
 
-export type ExecutionTargetSubmission =
-  | {
-      status: "queued";
-      accountId: string;
-      commandId: string;
-      warnings: string[];
-    }
-  | {
-      status: "rejected" | "unavailable";
-      accountId: string;
-      code: string;
-      message: string;
-    };
-
-export interface ExecutionOrderResponse {
-  commandId: string;
-  targets: ExecutionTargetSubmission[];
-}
-
 export interface ExecutionPositionWire {
   brokerPositionId: string;
   canonicalSymbol: string;
@@ -134,6 +122,7 @@ export interface ExecutionCommandOutcomeWire {
   commandId: string;
   parentCommandId: string;
   status:
+    | "waiting"
     | "ready"
     | "rejected"
     | "queued"
@@ -148,6 +137,7 @@ export interface ExecutionCommandOutcomeWire {
   message?: string;
   brokerOrderId?: string;
   brokerDealId?: string;
+  expiresAtMs?: number;
   updatedAtMs: number;
 }
 
@@ -221,9 +211,9 @@ export const routeExecutionOrder = (
     "order",
     request as unknown as Record<string, unknown>,
   ).then((authorization) =>
-    postJson<ExecutionOrderResponse>("execution/orders", request, {
+    postJson<unknown>("execution/orders", request, {
       headers: { "X-Trade-Authorization": authorization },
       retry: { limit: 0 },
       timeout: 15_000,
-    }),
+    }).then(normalizeExecutionOrderResponse),
   );

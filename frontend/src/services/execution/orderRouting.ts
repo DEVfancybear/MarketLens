@@ -7,6 +7,7 @@ import type {
   Mt5PendingOrder,
   Mt5Position,
 } from "@/types/mt5";
+import { copyTargetAvailability } from "./copyRouting";
 
 export type CopyableMt5Trade =
   | { kind: "position"; position: Mt5Position }
@@ -57,7 +58,13 @@ export function buildExecutionOrderRequest(input: {
   ];
   for (const account of accounts) {
     const target = copyTargets[account.id];
-    if (!target?.enabled || account.id === selected.id) continue;
+    if (
+      !target?.enabled ||
+      account.id === selected.id ||
+      !copyTargetAvailability(account).eligible
+    ) {
+      continue;
+    }
     targets.push(targetWire(target));
   }
   return buildOrderWire(order, selected, targets);

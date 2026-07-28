@@ -151,13 +151,18 @@ log.
    account risk limits.
 6. Every accepted target receives a target-scoped command ID and idempotency
    key. A rejected target does not cancel or hide other target results.
-7. PostgreSQL stores the command before delivery. Polling leases rather than
+7. An offline MT5 target is persisted as `waiting` with a five-minute
+   `deliver_by` deadline. When its EA reconnects and publishes a fresh account
+   and instrument snapshot, Rust repeats the complete route/risk validation.
+   A successful revalidation changes the same durable target command to
+   `queued`; a failed revalidation is terminal and remains visible.
+8. PostgreSQL stores the command before delivery. Polling leases rather than
    removes commands, so a network interruption causes bounded redelivery until
    a terminal acknowledgement exists.
-8. The EA records `submitting` in its local journal before `OrderSend`, performs
+9. The EA records `submitting` in its local journal before `OrderSend`, performs
    `OrderCheck`, submits once, and reconciles ambiguous results from active and
    historical MT5 state. It never blindly repeats an unknown submission.
-9. EA events, portfolio snapshots, command outcomes, and security audit records
+10. EA events, portfolio snapshots, command outcomes, and security audit records
    are persisted before the API reports success.
 
 Delivery has two distinct deadline outcomes:
@@ -175,6 +180,20 @@ after the deadline. Migration `0029_execution_delivery_outcome_unknown`
 converts the legacy `DELIVERY_EXPIRED` failure representation to the
 reconcilable state.
 
+Deferred copy has a separate pre-delivery deadline:
+
+- `waiting`: the target terminal was offline when the user submitted the route.
+  The response includes `expiresAtMs`, and migration
+  `0033_execution_deferred_copy` stores the same absolute deadline.
+- `DEFERRED_DELIVERY_EXPIRED`: no fresh target snapshot became routable within
+  five minutes. The target is marked failed without ever exposing an
+  `EaCommand` to MT5. Starting the terminal after expiry cannot revive it.
+
+This waiting window does not mean that a terminal can execute while offline.
+Each broker account still needs a separate MT5 process with the common EA.
+For example, FTMO and Exness copy requires two concurrently running terminals,
+which may be on the same Windows machine, separate machines, or VPS hosts.
+
 Copy allocation modes share the same route:
 
 - same quantity;
@@ -184,9 +203,10 @@ Copy allocation modes share the same route:
 - per-target maximum quantity.
 
 The Trade workspace also exposes a Copy action on each observed MT5 position
-and pending order. The dialog can select multiple ready accounts and uses the
-allocation configured for each account, defaulting to same quantity when no
-rule exists. It emits one route whose target list excludes the source account:
+and pending order. The dialog can select multiple ready or offline-waiting
+accounts and uses the allocation configured for each account, defaulting to
+same quantity when no rule exists. It emits one route whose target list
+excludes the source account:
 an existing position becomes a new market intent, while an existing pending
 order preserves its side, kind, quantity, entry, stop loss, and take profit.
 Every target still receives an independently validated result.

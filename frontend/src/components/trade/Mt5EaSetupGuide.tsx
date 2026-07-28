@@ -80,6 +80,29 @@ export function Mt5EaSetupGuide({
           <span>Demo và Live sử dụng cùng một quy trình.</span>
         </div>
 
+        <div
+          role="note"
+          className="flex items-start gap-2.5 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-[10px] leading-4 text-ink-muted"
+        >
+          <MonitorCheck
+            size={16}
+            aria-hidden="true"
+            className="mt-0.5 shrink-0 text-amber-400"
+          />
+          <div>
+            <strong className="block text-[11px] text-ink">
+              Mỗi account cần một terminal MT5 riêng đang chạy
+            </strong>
+            <p className="mt-1">
+              Để copy FTMO → Exness, cài hai terminal vào hai thư mục khác
+              nhau, đăng nhập mỗi account ở một terminal và gắn EA riêng cho
+              từng terminal. Nếu Exness offline lúc gửi lệnh, server chờ tối đa
+              5 phút; mở terminal Exness trong thời gian đó để hệ thống kiểm tra
+              lại và giao lệnh. Quá hạn, lệnh chờ tự hủy.
+            </p>
+          </div>
+        </div>
+
         <GuideStep
           number={1}
           icon={<Download size={16} />}

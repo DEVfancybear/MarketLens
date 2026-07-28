@@ -5,12 +5,16 @@ import { useAtomValue, useSetAtom } from "jotai";
 import {
   AlertTriangle,
   Check,
+  Clock3,
   Copy,
   LoaderCircle,
   RadioTower,
 } from "lucide-react";
 import { PlatformContentDialog } from "@/components/ui/PlatformDialog";
-import { routeExecutionOrder } from "@/services/api/resources/executionApi";
+import {
+  routeExecutionOrder,
+  type ExecutionTargetSubmission,
+} from "@/services/api/resources/executionApi";
 import { makeClientCommandId } from "@/services/execution/identifiers";
 import {
   buildExecutionCopyRequest,
@@ -30,6 +34,7 @@ import type {
   ExecutionAccountSummary,
 } from "@/types/execution";
 import { userFacingErrorMessage } from "@/services/feedback/errorReporter";
+import { copyTargetAvailability } from "@/services/execution/copyRouting";
 
 export type { CopyableMt5Trade };
 
@@ -53,25 +58,28 @@ export function CopyTradeDialog({
       ),
     [accounts, source?.id],
   );
-  const readyIds = useMemo(
+  const selectableIds = useMemo(
     () =>
       available
-        .filter(isReadyTarget)
+        .filter((account) => copyTargetAvailability(account).eligible)
         .map((account) => account.id),
     [available],
   );
   const defaultIds = useMemo(() => {
-    const configured = readyIds.filter(
+    const configured = selectableIds.filter(
       (accountId) => configuredTargets[accountId]?.enabled,
     );
-    return configured.length > 0 ? configured : readyIds;
-  }, [configuredTargets, readyIds]);
+    return configured.length > 0 ? configured : selectableIds;
+  }, [configuredTargets, selectableIds]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(
     () => new Set(defaultIds),
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submittingRef = useRef(false);
+  const selectedCount = selectableIds.filter((accountId) =>
+    selectedIds.has(accountId),
+  ).length;
 
   if (!source) return null;
 
@@ -84,7 +92,11 @@ export function CopyTradeDialog({
     const commandId = makeClientCommandId("exec_copy");
     try {
       const targets = available
-        .filter((account) => selectedIds.has(account.id) && isReadyTarget(account))
+        .filter(
+          (account) =>
+            selectedIds.has(account.id) &&
+            copyTargetAvailability(account).eligible,
+        )
         .map((account) =>
           targetDraft(account.id, configuredTargets[account.id]),
         );
@@ -97,33 +109,51 @@ export function CopyTradeDialog({
       const queued = response.targets.filter(
         (target) => target.status === "queued",
       );
-      const rejected = response.targets.filter(
-        (target) => target.status !== "queued",
+      const waiting = response.targets.filter(
+        (target) => target.status === "waiting",
       );
+      const rejected = response.targets.filter(
+        (
+          target,
+        ): target is Extract<
+          ExecutionTargetSubmission,
+          { status: "rejected" | "unavailable" }
+        > => target.status === "rejected" || target.status === "unavailable",
+      );
+      const accepted = queued.length + waiting.length;
       addLog({
         accountId: source.id,
         level: rejected.length > 0 ? "warn" : "info",
         direction: "gateway",
         type: "order.copy",
-        message: `${queued.length} copied, ${rejected.length} rejected`,
+        message: `${queued.length} queued, ${waiting.length} waiting, ${rejected.length} rejected`,
         requestId: commandId,
         clientOrderId: commandId,
       });
-      if (queued.length > 0) {
+      if (accepted > 0) {
         pushToast({
           title:
             rejected.length > 0
-              ? "Trade partially copied"
-              : `Trade copied to ${queued.length} account${queued.length === 1 ? "" : "s"}`,
+              ? "Trade partially accepted"
+              : waiting.length > 0
+                ? `Waiting for ${waiting.length} offline account${waiting.length === 1 ? "" : "s"}`
+                : `Trade copied to ${queued.length} account${queued.length === 1 ? "" : "s"}`,
           message:
-            rejected.length > 0
-              ? rejected
-                  .map((target) => `${accountName(accounts, target.accountId)}: ${target.message}`)
-                  .join(" · ")
-              : queued
-                  .map((target) => accountName(accounts, target.accountId))
-                  .join(", "),
-          variant: rejected.length > 0 ? "warn" : "success",
+            [
+              ...queued.map((target) =>
+                accountName(accounts, target.accountId),
+              ),
+              ...waiting.map(
+                (target) =>
+                  `${accountName(accounts, target.accountId)}: open MT5 before ${formatDeadline(target.expiresAtMs)}`,
+              ),
+              ...rejected.map(
+                (target) =>
+                  `${accountName(accounts, target.accountId)}: ${target.message}`,
+              ),
+            ].join(" · "),
+          variant:
+            rejected.length > 0 || waiting.length > 0 ? "warn" : "success",
         });
         onClose();
         return;
@@ -174,7 +204,7 @@ export function CopyTradeDialog({
           </button>
           <button
             type="button"
-            disabled={busy || selectedIds.size === 0}
+            disabled={busy || selectedCount === 0}
             onClick={() => void submit()}
             className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-50 focus-ring"
           >
@@ -183,8 +213,8 @@ export function CopyTradeDialog({
             ) : (
               <Copy size={15} />
             )}
-            Copy to {selectedIds.size} account
-            {selectedIds.size === 1 ? "" : "s"}
+            Copy to {selectedCount} account
+            {selectedCount === 1 ? "" : "s"}
           </button>
         </>
       }
@@ -206,17 +236,19 @@ export function CopyTradeDialog({
           </div>
           <button
             type="button"
-            disabled={busy || readyIds.length === 0}
+            disabled={busy || selectableIds.length === 0}
             onClick={() =>
               setSelectedIds((current) =>
-                current.size === readyIds.length
+                selectedCount === selectableIds.length
                   ? new Set()
-                  : new Set(readyIds),
+                  : new Set(selectableIds),
               )
             }
             className="min-h-8 rounded-lg px-2.5 text-[10px] font-semibold text-brand hover:bg-brand/10 disabled:opacity-50 focus-ring"
           >
-            {selectedIds.size === readyIds.length ? "Clear all" : "Select all ready"}
+            {selectedCount === selectableIds.length
+              ? "Clear all"
+              : "Select all available"}
           </button>
         </div>
 
@@ -228,8 +260,9 @@ export function CopyTradeDialog({
             </div>
           )}
           {available.map((account) => {
-            const ready = isReadyTarget(account);
-            const checked = selectedIds.has(account.id);
+            const availability = copyTargetAvailability(account);
+            const selectable = availability.eligible;
+            const checked = selectable && selectedIds.has(account.id);
             const target = targetDraft(account.id, configuredTargets[account.id]);
             return (
               <label
@@ -238,12 +271,12 @@ export function CopyTradeDialog({
                   checked
                     ? "border-brand/45 bg-brand/10"
                     : "border-terminal-border bg-terminal-panel-2/40"
-                } ${ready ? "cursor-pointer hover:border-terminal-border-strong" : "cursor-not-allowed opacity-55"}`}
+                } ${selectable ? "cursor-pointer hover:border-terminal-border-strong" : "cursor-not-allowed opacity-55"}`}
               >
                 <input
                   type="checkbox"
                   checked={checked}
-                  disabled={!ready || busy}
+                  disabled={!selectable || busy}
                   onChange={(event) => {
                     const next = new Set(selectedIds);
                     if (event.target.checked) next.add(account.id);
@@ -261,21 +294,22 @@ export function CopyTradeDialog({
                   </span>
                 </span>
                 <span className="flex shrink-0 items-center gap-1.5 text-[9px]">
-                  {ready ? (
+                  {availability.mode === "ready" ? (
                     <>
                       <Check size={11} className="text-bull" />
                       <span className="text-ink-muted">
                         {allocationLabel(target)}
                       </span>
                     </>
+                  ) : availability.mode === "waiting" ? (
+                    <>
+                      <Clock3 size={11} className="text-amber-400" />
+                      <span className="text-amber-300">Wait up to 5 min</span>
+                    </>
                   ) : (
                     <>
                       <RadioTower size={11} className="text-bear" />
-                      <span className="text-bear">
-                        {account.status !== "ready"
-                          ? account.status
-                          : "trading disabled"}
-                      </span>
+                      <span className="text-bear">{availability.label}</span>
                     </>
                   )}
                 </span>
@@ -325,10 +359,6 @@ function tradeSummary(trade: CopyableMt5Trade) {
   };
 }
 
-function isReadyTarget(account: ExecutionAccountSummary): boolean {
-  return account.status === "ready" && account.tradeAllowed;
-}
-
 function targetDraft(
   accountId: string,
   configured?: CopyTargetDraft,
@@ -358,6 +388,14 @@ function accountName(
   accountId: string,
 ): string {
   return accounts.find((account) => account.id === accountId)?.label ?? accountId;
+}
+
+function formatDeadline(expiresAtMs: number): string {
+  return new Date(expiresAtMs).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 function SummaryItem({ label, value }: { label: string; value: string }) {

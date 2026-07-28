@@ -1,5 +1,12 @@
 # Current Progress
 
+- Deferred offline MT5 copy (2026-07-28): an offline FTMO/Exness target can remain selected and
+  enters a PostgreSQL-backed `waiting` state for five minutes. Reconnection alone is not enough:
+  the target EA must publish a fresh authenticated account/instrument snapshot, after which Rust
+  reruns routing and risk validation before queueing. A background sweep makes expiry terminal
+  with `DEFERRED_DELIVERY_EXPIRED`. The UI shows the exact deadline and explains that every account
+  requires its own running MT5 terminal/EA. See `TRADE_EXECUTION_ARCHITECTURE.md`.
+
 - Trade step-up/security (2026-07-28): users may enable a separate trade password. It is requested
   once per browser trade session and shared across tabs through a hardened, server-backed session
   cookie. One-time authorizations remain bound to the exact JSON payload, user, active session,
@@ -10,8 +17,9 @@
   rejected before the durable queue. See `TRADE_PASSWORD_AUTHORIZATION.md`.
 
 - Existing-trade multi-copy (2026-07-28): desktop and mobile MT5 position/pending-order rows now
-  expose one Copy action. Its dialog supports multiple ready target accounts, reuses configured
-  allocation rules, excludes the source account, and submits one exact-payload multi-target route.
+  expose one Copy action. Its dialog supports multiple ready or temporarily offline target
+  accounts, reuses configured allocation rules, excludes the source account, and submits one
+  exact-payload multi-target route.
   Each target remains independently validated and reported; later close, cancel, or modify actions
   are not implicitly mirrored. See `TRADE_EXECUTION_ARCHITECTURE.md`.
 

@@ -4,6 +4,7 @@ export interface ExecutionOutcomeLike {
   commandId: string;
   parentCommandId: string;
   status:
+    | "waiting"
     | "ready"
     | "rejected"
     | "queued"
@@ -18,6 +19,7 @@ export interface ExecutionOutcomeLike {
   message?: string;
   brokerOrderId?: string;
   brokerDealId?: string;
+  expiresAtMs?: number;
   updatedAtMs: number;
 }
 
@@ -78,6 +80,19 @@ export function presentExecutionOutcome(
         message:
           outcome.message ??
           "The EA did not receive this command before its delivery deadline.",
+        variant: "error",
+      },
+    };
+  }
+
+  if (outcome.rejectCode === "DEFERRED_DELIVERY_EXPIRED") {
+    return {
+      level: "error",
+      toast: {
+        title: `Offline copy expired for ${accountLabel}`,
+        message:
+          outcome.message ??
+          "The target MT5 terminal did not reconnect within 5 minutes. Reconcile both accounts before submitting a new copy.",
         variant: "error",
       },
     };

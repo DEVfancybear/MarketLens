@@ -49,6 +49,9 @@ const MAX_EA_EVENTS_PER_BATCH: usize = 128;
 const MAX_LEGACY_EA_CLOCK_SKEW_MS: u64 = 24 * 60 * 60 * 1_000;
 const COMMAND_LEASE: Duration = Duration::from_secs(15);
 const COMMAND_DELIVERY_TTL: Duration = Duration::from_secs(2 * 60);
+const DEFERRED_ORDER_TTL: Duration = Duration::from_secs(5 * 60);
+const DEFERRED_EXPIRY_SWEEP_INTERVAL: Duration = Duration::from_secs(5);
+const MAX_DEFERRED_ACTIVATIONS_PER_EVENT: usize = 16;
 const EA_POLL_FRESHNESS: Duration = Duration::from_secs(15);
 const MIN_SUPPORTED_EA_VERSION: (u32, u32, u32) = (1, 22, 0);
 const DEFAULT_PAIRING_TTL: Duration = Duration::from_secs(5 * 60);
@@ -195,6 +198,7 @@ struct CommandOutcomeView {
     message: Option<String>,
     broker_order_id: Option<String>,
     broker_deal_id: Option<String>,
+    expires_at_ms: Option<u64>,
     updated_at_ms: u64,
 }
 
@@ -274,7 +278,7 @@ struct AdminCommandRequest {
     authorization_session_id: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AdminOrderTarget {
     account_id: AccountId,
@@ -293,6 +297,13 @@ struct AdminOrderRequest {
     authorization_session_id: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DeferredOrderEnvelope {
+    intent: OrderIntent,
+    target: AdminOrderTarget,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AdminOrderResponse {
@@ -301,12 +312,21 @@ struct AdminOrderResponse {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "status", rename_all = "camelCase")]
+#[serde(
+    tag = "status",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 enum AdminTargetSubmission {
     Queued {
         account_id: AccountId,
         command_id: execution_domain::CommandId,
         warnings: Vec<RouteWarning>,
+    },
+    Waiting {
+        account_id: AccountId,
+        command_id: execution_domain::CommandId,
+        expires_at_ms: u64,
     },
     Rejected {
         account_id: AccountId,
@@ -357,6 +377,16 @@ async fn main() {
         .await
         .unwrap_or_else(|error| panic!("failed to connect execution database: {error}"));
     let state = GatewayState::new_production(&config.admin_token, database);
+    let deferred_expiry_state = state.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(DEFERRED_EXPIRY_SWEEP_INTERVAL);
+        loop {
+            interval.tick().await;
+            if let Err(error) = deferred_expiry_state.expire_deferred_orders().await {
+                error!(?error, "failed to sweep expired deferred copy orders");
+            }
+        }
+    });
     let ea_app = Router::new()
         .route("/health", get(health))
         .route("/v1/ea/sessions", post(create_ea_session))
@@ -673,7 +703,7 @@ impl GatewayState {
                     WHERE user_id = $1
                       AND target_account_id = $2
                       AND terminal_ack_at IS NULL
-                      AND status IN ('ready', 'queued', 'unknown')
+                      AND status IN ('waiting', 'ready', 'queued', 'unknown')
                     RETURNING parent_command_id
                 ),
                 affected_parents AS (
@@ -2018,6 +2048,588 @@ impl GatewayState {
         }
         Ok(())
     }
+
+    async fn defer_order(
+        &self,
+        owner_uuid: Uuid,
+        intent: &OrderIntent,
+        target: &AdminOrderTarget,
+    ) -> Result<(execution_domain::CommandId, u64), AdapterError> {
+        let Some(database) = &self.inner.database else {
+            return Err(AdapterError::Transport(
+                "deferred order repository is unavailable".into(),
+            ));
+        };
+        let command_id = execution_domain::CommandId::new(format!(
+            "{}:{}",
+            intent.command_id, target.account_id
+        ));
+        let idempotency_key = format!("{}:{}", intent.idempotency_key, target.account_id);
+        let envelope = DeferredOrderEnvelope {
+            intent: intent.clone(),
+            target: target.clone(),
+        };
+        let envelope_json = serde_json::to_value(&envelope).map_err(|error| {
+            error!(%error, "failed to serialize deferred order");
+            AdapterError::Transport("deferred order serialization failed".into())
+        })?;
+        let intent_json = serde_json::to_value(intent).map_err(|error| {
+            error!(%error, "failed to serialize deferred order intent");
+            AdapterError::Transport("deferred order serialization failed".into())
+        })?;
+        let expires_at_ms = now_ms() + DEFERRED_ORDER_TTL.as_millis() as u64;
+        let mut transaction = database.begin().await.map_err(|error| {
+            error!(%error, "failed to begin deferred order transaction");
+            AdapterError::Transport("deferred order repository unavailable".into())
+        })?;
+        let account_exists = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM execution_accounts
+                WHERE user_id = $1
+                  AND id = $2
+                  AND status <> 'disabled'
+                  AND venue_kind = 'metatrader5'
+            )
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(target.account_id.as_str())
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(|error| {
+            error!(%error, "failed to resolve deferred target account");
+            AdapterError::Transport("deferred order repository unavailable".into())
+        })?;
+        if !account_exists {
+            return Err(AdapterError::AccountOffline);
+        }
+
+        let pending_count = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT count(*)
+            FROM execution_target_commands
+            WHERE user_id = $1
+              AND target_account_id = $2
+              AND terminal_ack_at IS NULL
+              AND status IN ('waiting', 'ready', 'queued', 'submitted', 'unknown')
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(target.account_id.as_str())
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(|error| {
+            error!(%error, "failed to count deferred target commands");
+            AdapterError::Transport("deferred order repository unavailable".into())
+        })?;
+        if pending_count >= MAX_COMMANDS_PER_ACCOUNT as i64 {
+            return Err(AdapterError::Backpressure);
+        }
+
+        if let Some(row) = sqlx::query(
+            r#"
+            SELECT
+                command_payload,
+                status,
+                floor(extract(epoch FROM deliver_by) * 1000)::bigint
+                    AS deliver_by_ms
+            FROM execution_target_commands
+            WHERE user_id = $1 AND idempotency_key = $2
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(&idempotency_key)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|error| {
+            error!(%error, "failed to check deferred order idempotency");
+            AdapterError::Transport("deferred order repository unavailable".into())
+        })? {
+            let existing = row
+                .try_get::<sqlx::types::Json<serde_json::Value>, _>("command_payload")
+                .map_err(|error| {
+                    error!(%error, "failed to decode deferred idempotency payload");
+                    AdapterError::Transport("deferred order repository unavailable".into())
+                })?
+                .0;
+            let status: String = row.try_get("status").map_err(|error| {
+                error!(%error, "failed to decode deferred idempotency status");
+                AdapterError::Transport("deferred order repository unavailable".into())
+            })?;
+            let deliver_by_ms = row
+                .try_get::<Option<i64>, _>("deliver_by_ms")
+                .map_err(|error| {
+                    error!(%error, "failed to decode deferred idempotency expiry");
+                    AdapterError::Transport("deferred order repository unavailable".into())
+                })?
+                .unwrap_or_default()
+                .max(0) as u64;
+            if existing == envelope_json && status == "waiting" && deliver_by_ms > now_ms() {
+                transaction.commit().await.map_err(|error| {
+                    error!(%error, "failed to commit idempotent deferred order");
+                    AdapterError::Transport("deferred order repository unavailable".into())
+                })?;
+                return Ok((command_id, deliver_by_ms));
+            }
+            return Err(AdapterError::IdempotencyConflict);
+        }
+
+        sqlx::query(
+            r#"
+            INSERT INTO execution_commands (
+                id, user_id, source_account_id, idempotency_key, intent, status
+            )
+            VALUES ($1, $2, $3, $4, $5, 'routed')
+            ON CONFLICT DO NOTHING
+            "#,
+        )
+        .bind(intent.command_id.as_str())
+        .bind(owner_uuid)
+        .bind(intent.source_account_id.as_ref().map(AccountId::as_str))
+        .bind(format!("parent:{}", intent.command_id))
+        .bind(sqlx::types::Json(intent_json))
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| {
+            error!(%error, "failed to persist deferred parent command");
+            AdapterError::Transport("deferred order repository unavailable".into())
+        })?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO execution_target_commands (
+                id, user_id, parent_command_id, target_account_id,
+                idempotency_key, command_payload, status, deliver_by
+            )
+            VALUES (
+                $1, $2, $3, $4, $5, $6, 'waiting',
+                to_timestamp($7::double precision / 1000.0)
+            )
+            "#,
+        )
+        .bind(command_id.as_str())
+        .bind(owner_uuid)
+        .bind(intent.command_id.as_str())
+        .bind(target.account_id.as_str())
+        .bind(&idempotency_key)
+        .bind(sqlx::types::Json(envelope_json))
+        .bind(expires_at_ms as i64)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| {
+            error!(%error, "failed to persist deferred target command");
+            AdapterError::Transport("deferred order repository unavailable".into())
+        })?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO execution_audit_log (
+                user_id, actor_type, actor_id, action,
+                resource_type, resource_id, details
+            )
+            VALUES (
+                $1, 'service', 'execution-gateway', 'command.waiting',
+                'execution_target_command', $2,
+                jsonb_build_object(
+                    'accountId', $3,
+                    'idempotencyKey', $4,
+                    'deliverByMs', $5
+                )
+            )
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(command_id.as_str())
+        .bind(target.account_id.as_str())
+        .bind(&idempotency_key)
+        .bind(expires_at_ms as i64)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| {
+            error!(%error, "failed to audit deferred target command");
+            AdapterError::Transport("deferred order repository unavailable".into())
+        })?;
+        transaction.commit().await.map_err(|error| {
+            error!(%error, "failed to commit deferred order");
+            AdapterError::Transport("deferred order repository unavailable".into())
+        })?;
+        Ok((command_id, expires_at_ms))
+    }
+
+    async fn activate_deferred_orders(&self, session: &EaSession) -> Result<(), ApiError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(());
+        };
+        let owner_uuid = parse_owner_id(&session.owner_id)?;
+        let session_uuid = Uuid::parse_str(session.session_id.as_str()).map_err(|_| {
+            ApiError::new(
+                StatusCode::UNAUTHORIZED,
+                "UNAUTHORIZED",
+                "EA session identity is invalid",
+            )
+        })?;
+        let rows = sqlx::query(
+            r#"
+            WITH candidates AS (
+                SELECT id
+                FROM execution_target_commands
+                WHERE user_id = $1
+                  AND target_account_id = $2
+                  AND status = 'waiting'
+                  AND deliver_by > now()
+                  AND next_attempt_at <= now()
+                  AND (lease_expires_at IS NULL OR lease_expires_at <= now())
+                ORDER BY created_at, id
+                FOR UPDATE SKIP LOCKED
+                LIMIT $3
+            )
+            UPDATE execution_target_commands commands
+            SET lease_owner = $4,
+                lease_expires_at = now() + ($5 * interval '1 millisecond'),
+                updated_at = now()
+            FROM candidates
+            WHERE commands.user_id = $1
+              AND commands.id = candidates.id
+            RETURNING
+                commands.id,
+                commands.command_payload,
+                floor(extract(epoch FROM commands.created_at) * 1000)::bigint
+                    AS waiting_since_ms
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(session.account_id.as_str())
+        .bind(MAX_DEFERRED_ACTIVATIONS_PER_EVENT as i64)
+        .bind(session_uuid)
+        .bind(COMMAND_LEASE.as_millis() as i64)
+        .fetch_all(database)
+        .await
+        .map_err(|error| ApiError::database("lease deferred copy orders", error))?;
+
+        for row in rows {
+            let command_id: String = row
+                .try_get("id")
+                .map_err(|error| ApiError::database("decode deferred command id", error))?;
+            let envelope = row
+                .try_get::<sqlx::types::Json<DeferredOrderEnvelope>, _>("command_payload")
+                .map_err(|error| ApiError::database("decode deferred order", error))?
+                .0;
+            let waiting_since_ms = row
+                .try_get::<i64, _>("waiting_since_ms")
+                .map_err(|error| ApiError::database("decode deferred order age", error))?
+                .max(0) as u64;
+            if !self
+                .deferred_instrument_refreshed(
+                    owner_uuid,
+                    &envelope.target.account_id,
+                    &envelope.intent.canonical_symbol,
+                    waiting_since_ms,
+                )
+                .await?
+            {
+                self.release_deferred_order(owner_uuid, &command_id, session_uuid)
+                    .await?;
+                continue;
+            }
+            let context = self
+                .load_route_target(
+                    owner_uuid,
+                    &envelope.target,
+                    &envelope.intent.canonical_symbol,
+                    envelope.intent.side,
+                )
+                .await?;
+            let Some(context) = context else {
+                self.release_deferred_order(owner_uuid, &command_id, session_uuid)
+                    .await?;
+                continue;
+            };
+            if context.account.status != AccountStatus::Ready {
+                self.release_deferred_order(owner_uuid, &command_id, session_uuid)
+                    .await?;
+                continue;
+            }
+            let source_equity = self
+                .source_equity(owner_uuid, envelope.intent.source_account_id.as_ref())
+                .await?;
+            let result = route_order(&envelope.intent, source_equity, &[context])
+                .into_iter()
+                .next()
+                .ok_or_else(|| {
+                    ApiError::new(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "DEFERRED_ROUTE_EMPTY",
+                        "deferred order routing returned no target result",
+                    )
+                })?;
+            match result {
+                TargetRouteResult::Ready { account_id, order } => {
+                    let order = *order;
+                    let command_json = serde_json::to_value(EaCommand::Place {
+                        order: order.clone(),
+                    })
+                    .map_err(|error| {
+                        error!(%error, "failed to serialize activated deferred order");
+                        ApiError::new(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "DEFERRED_ORDER_SERIALIZATION_FAILED",
+                            "deferred order could not be activated",
+                        )
+                    })?;
+                    let updated = sqlx::query(
+                        r#"
+                        UPDATE execution_target_commands
+                        SET command_payload = $5,
+                            status = 'queued',
+                            next_attempt_at = now(),
+                            lease_owner = NULL,
+                            lease_expires_at = NULL,
+                            reject_code = NULL,
+                            reject_message = NULL,
+                            updated_at = now()
+                        WHERE user_id = $1
+                          AND id = $2
+                          AND target_account_id = $3
+                          AND status = 'waiting'
+                          AND deliver_by > now()
+                          AND lease_owner = $4
+                        "#,
+                    )
+                    .bind(owner_uuid)
+                    .bind(&command_id)
+                    .bind(account_id.as_str())
+                    .bind(session_uuid)
+                    .bind(sqlx::types::Json(command_json))
+                    .execute(database)
+                    .await
+                    .map_err(|error| ApiError::database("activate deferred copy order", error))?;
+                    if updated.rows_affected() == 1 {
+                        self.audit_order_route_outcome(
+                            owner_uuid,
+                            &envelope.intent,
+                            &account_id,
+                            "order.deferred_queued",
+                            "TARGET_RECONNECTED",
+                            "target reconnected before the deferred copy deadline",
+                        )
+                        .await?;
+                        info!(
+                            account_id = %account_id,
+                            command_id,
+                            "activated deferred copy order"
+                        );
+                    }
+                }
+                TargetRouteResult::Rejected {
+                    account_id,
+                    code,
+                    message,
+                } => {
+                    let reject_code = serde_json::to_value(code)
+                        .ok()
+                        .and_then(|value| value.as_str().map(str::to_owned))
+                        .unwrap_or_else(|| "UNKNOWN_REJECTION".into());
+                    let updated = sqlx::query(
+                        r#"
+                        UPDATE execution_target_commands
+                        SET status = 'rejected',
+                            reject_code = $5,
+                            reject_message = $6,
+                            terminal_ack_at = now(),
+                            lease_owner = NULL,
+                            lease_expires_at = NULL,
+                            updated_at = now()
+                        WHERE user_id = $1
+                          AND id = $2
+                          AND target_account_id = $3
+                          AND status = 'waiting'
+                          AND lease_owner = $4
+                        "#,
+                    )
+                    .bind(owner_uuid)
+                    .bind(&command_id)
+                    .bind(account_id.as_str())
+                    .bind(session_uuid)
+                    .bind(&reject_code)
+                    .bind(&message)
+                    .execute(database)
+                    .await
+                    .map_err(|error| ApiError::database("reject deferred copy order", error))?;
+                    if updated.rows_affected() == 1 {
+                        sqlx::query(
+                            r#"
+                            UPDATE execution_commands
+                            SET status = 'partially_rejected',
+                                updated_at = now()
+                            WHERE user_id = $1 AND id = $2
+                            "#,
+                        )
+                        .bind(owner_uuid)
+                        .bind(envelope.intent.command_id.as_str())
+                        .execute(database)
+                        .await
+                        .map_err(|error| {
+                            ApiError::database("finalize rejected deferred copy", error)
+                        })?;
+                        self.audit_order_route_outcome(
+                            owner_uuid,
+                            &envelope.intent,
+                            &account_id,
+                            "order.deferred_rejected",
+                            &reject_code,
+                            &message,
+                        )
+                        .await?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn deferred_instrument_refreshed(
+        &self,
+        owner_uuid: Uuid,
+        account_id: &AccountId,
+        canonical_symbol: &str,
+        waiting_since_ms: u64,
+    ) -> Result<bool, ApiError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(false);
+        };
+        sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM execution_symbol_mappings mappings
+                JOIN execution_instruments instruments
+                  ON instruments.user_id = mappings.user_id
+                 AND instruments.account_id = mappings.account_id
+                 AND instruments.venue_symbol = mappings.venue_symbol
+                WHERE mappings.user_id = $1
+                  AND mappings.account_id = $2
+                  AND upper(mappings.canonical_symbol) = upper($3)
+                  AND mappings.enabled = true
+                  AND instruments.updated_at >=
+                      to_timestamp($4::double precision / 1000.0)
+            )
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(account_id.as_str())
+        .bind(canonical_symbol.trim())
+        .bind(waiting_since_ms as i64)
+        .fetch_one(database)
+        .await
+        .map_err(|error| ApiError::database("check deferred instrument refresh", error))
+    }
+
+    async fn release_deferred_order(
+        &self,
+        owner_uuid: Uuid,
+        command_id: &str,
+        session_uuid: Uuid,
+    ) -> Result<(), ApiError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(());
+        };
+        sqlx::query(
+            r#"
+            UPDATE execution_target_commands
+            SET next_attempt_at = now() + interval '1 second',
+                lease_owner = NULL,
+                lease_expires_at = NULL,
+                updated_at = now()
+            WHERE user_id = $1
+              AND id = $2
+              AND status = 'waiting'
+              AND lease_owner = $3
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(command_id)
+        .bind(session_uuid)
+        .execute(database)
+        .await
+        .map_err(|error| ApiError::database("release deferred copy order", error))?;
+        Ok(())
+    }
+
+    async fn expire_deferred_orders(&self) -> Result<u64, ApiError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(0);
+        };
+        let expired = sqlx::query_scalar::<_, i64>(
+            r#"
+            WITH expired AS MATERIALIZED (
+                UPDATE execution_target_commands
+                SET status = 'failed',
+                    reject_code = 'DEFERRED_DELIVERY_EXPIRED',
+                    reject_message =
+                        'Target terminal did not reconnect within the 5 minute copy window',
+                    terminal_ack_at = now(),
+                    lease_owner = NULL,
+                    lease_expires_at = NULL,
+                    updated_at = now()
+                WHERE status = 'waiting'
+                  AND deliver_by <= now()
+                RETURNING user_id, id, parent_command_id, target_account_id
+            ),
+            audited AS (
+                INSERT INTO execution_audit_log (
+                    user_id, actor_type, actor_id, action,
+                    resource_type, resource_id, details
+                )
+                SELECT
+                    user_id,
+                    'service',
+                    'execution-gateway',
+                    'command.deferred_expired',
+                    'execution_target_command',
+                    id,
+                    jsonb_build_object(
+                        'accountId', target_account_id,
+                        'parentCommandId', parent_command_id,
+                        'deferredTtlMs', $1
+                    )
+                FROM expired
+                RETURNING sequence
+            ),
+            updated_parents AS (
+                UPDATE execution_commands parent
+                SET status = CASE
+                        WHEN EXISTS (
+                            SELECT 1
+                            FROM execution_target_commands target
+                            WHERE target.user_id = parent.user_id
+                              AND target.parent_command_id = parent.id
+                              AND target.status NOT IN (
+                                  'rejected', 'cancelled', 'failed'
+                              )
+                        ) THEN 'partially_rejected'
+                        ELSE 'failed'
+                    END,
+                    updated_at = now()
+                WHERE (parent.user_id, parent.id) IN (
+                    SELECT DISTINCT user_id, parent_command_id
+                    FROM expired
+                )
+                RETURNING parent.id
+            )
+            SELECT count(*) FROM expired
+            "#,
+        )
+        .bind(DEFERRED_ORDER_TTL.as_millis() as i64)
+        .fetch_one(database)
+        .await
+        .map_err(|error| ApiError::database("expire deferred copy orders", error))?;
+        if expired > 0 {
+            warn!(expired, "expired deferred copy orders");
+        }
+        Ok(expired.max(0) as u64)
+    }
 }
 
 #[async_trait]
@@ -2114,7 +2726,7 @@ impl EaCommandQueue for GatewayState {
                 WHERE user_id = $1
                   AND target_account_id = $2
                   AND terminal_ack_at IS NULL
-                  AND status IN ('ready', 'queued', 'submitted', 'unknown')
+                  AND status IN ('waiting', 'ready', 'queued', 'submitted', 'unknown')
                 "#,
             )
             .bind(owner_uuid)
@@ -2353,7 +2965,7 @@ async fn poll_commands(
                       first_delivered_at IS NULL OR
                       reject_code IS DISTINCT FROM 'DELIVERY_OUTCOME_UNKNOWN'
                   )
-                  AND COALESCE(first_delivered_at, created_at) <=
+                  AND COALESCE(first_delivered_at, next_attempt_at, created_at) <=
                       now() - ($3 * interval '1 millisecond')
                 RETURNING id, parent_command_id
             ),
@@ -2422,7 +3034,7 @@ async fn poll_commands(
                   AND target_account_id = $2
                   AND terminal_ack_at IS NULL
                   AND status IN ('ready', 'queued', 'unknown')
-                  AND COALESCE(first_delivered_at, created_at) >
+                  AND COALESCE(first_delivered_at, next_attempt_at, created_at) >
                       now() - ($6 * interval '1 millisecond')
                   AND next_attempt_at <= now()
                   AND (lease_expires_at IS NULL OR lease_expires_at <= now())
@@ -2594,6 +3206,10 @@ async fn accept_events(
     state
         .persist_database_payload(&session, &[], &[], &[], false, &events)
         .await?;
+    // A deferred copy is activated only after this authenticated terminal has
+    // refreshed its account and instrument snapshots. The next EA poll will
+    // lease the newly queued command.
+    state.activate_deferred_orders(&session).await?;
     let completed_command_ids: Vec<String> = events
         .iter()
         .filter_map(event_command_id)
@@ -3051,6 +3667,8 @@ async fn account_state(
                 ) AS message,
                 commands.broker_order_id,
                 commands.broker_deal_id,
+                floor(extract(epoch FROM commands.deliver_by) * 1000)::bigint
+                    AS expires_at_ms,
                 floor(extract(epoch FROM commands.updated_at) * 1000)::bigint
                     AS updated_at_ms
             FROM execution_target_commands commands
@@ -3097,6 +3715,10 @@ async fn account_state(
                 broker_deal_id: row
                     .try_get("broker_deal_id")
                     .map_err(|error| ApiError::database("decode broker deal id", error))?,
+                expires_at_ms: row
+                    .try_get::<Option<i64>, _>("expires_at_ms")
+                    .map_err(|error| ApiError::database("decode command expiry", error))?
+                    .map(|value| value.max(0) as u64),
                 updated_at_ms: row
                     .try_get::<i64, _>("updated_at_ms")
                     .map_err(|error| ApiError::database("decode command update time", error))?
@@ -3367,6 +3989,7 @@ async fn route_admin_order(
         .source_equity(owner_uuid, request.intent.source_account_id.as_ref())
         .await?;
     let mut contexts = Vec::with_capacity(request.targets.len());
+    let mut deferred_targets = Vec::new();
     let mut submissions = Vec::with_capacity(request.targets.len());
     for target in &request.targets {
         match state
@@ -3379,7 +4002,14 @@ async fn route_admin_order(
             .await?
         {
             Some(context) if execution_transport_enabled(context.account.venue_kind) => {
-                contexts.push(context);
+                if matches!(
+                    context.account.status,
+                    AccountStatus::Offline | AccountStatus::Connecting
+                ) {
+                    deferred_targets.push(target.clone());
+                } else {
+                    contexts.push(context);
+                }
             }
             Some(_) => {
                 let code = "NATIVE_ADAPTER_NOT_ENABLED";
@@ -3435,6 +4065,38 @@ async fn route_admin_order(
             &request.authorization_token,
         )
         .await?;
+    for target in deferred_targets {
+        match state
+            .defer_order(owner_uuid, &request.intent, &target)
+            .await
+        {
+            Ok((command_id, expires_at_ms)) => {
+                submissions.push(AdminTargetSubmission::Waiting {
+                    account_id: target.account_id,
+                    command_id,
+                    expires_at_ms,
+                });
+            }
+            Err(error) => {
+                let (code, message) = adapter_submission_error(error);
+                state
+                    .audit_order_route_outcome(
+                        owner_uuid,
+                        &request.intent,
+                        &target.account_id,
+                        "order.defer_unavailable",
+                        code,
+                        &message,
+                    )
+                    .await?;
+                submissions.push(AdminTargetSubmission::Unavailable {
+                    account_id: target.account_id,
+                    code,
+                    message,
+                });
+            }
+        }
+    }
     for result in routed {
         match result {
             TargetRouteResult::Ready { account_id, order } => {
@@ -4734,6 +5396,23 @@ mod tests {
         assert!(execution_transport_enabled(VenueKind::MetaTrader5));
         assert!(!execution_transport_enabled(VenueKind::BinanceSpot));
         assert!(!execution_transport_enabled(VenueKind::BinanceUsdM));
+    }
+
+    #[test]
+    fn deferred_submission_uses_camel_case_fields_and_an_absolute_deadline() {
+        let value = serde_json::to_value(AdminTargetSubmission::Waiting {
+            account_id: AccountId::new("mt5_exness"),
+            command_id: CommandId::new("parent:mt5_exness"),
+            expires_at_ms: 300_000,
+        })
+        .expect("serialize waiting target");
+
+        assert_eq!(value["status"], "waiting");
+        assert_eq!(value["accountId"], "mt5_exness");
+        assert_eq!(value["commandId"], "parent:mt5_exness");
+        assert_eq!(value["expiresAtMs"], 300_000);
+        assert!(value.get("account_id").is_none());
+        assert!(value.get("expires_at_ms").is_none());
     }
 
     #[test]

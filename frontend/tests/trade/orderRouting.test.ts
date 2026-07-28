@@ -91,6 +91,49 @@ test("risk-percent copy serializes basis points, not a floating percent", () => 
   assert.equal(wire.intent.limitPrice, "2400");
 });
 
+test("keeps offline MT5 copy targets but excludes targets that cannot become executable", () => {
+  const offline = { ...target, status: "offline" as const };
+  const blocked = {
+    ...target,
+    id: "mt5_blocked",
+    status: "blocked" as const,
+    statusReason: "ea_update_required" as const,
+  };
+  const wire = buildExecutionOrderRequest({
+    order: {
+      clientOrderId: "mt5_ord_deferred",
+      chartSymbol: "EURUSD",
+      brokerSymbol: "EURUSD",
+      side: "buy",
+      type: "limit",
+      volume: 0.1,
+      price: 1.09,
+      sl: 1.08,
+    },
+    selected: source,
+    accounts: [source, offline, blocked],
+    copyTargets: {
+      [offline.id]: {
+        accountId: offline.id,
+        enabled: true,
+        allocationMode: "sameQuantity",
+        multiplier: 1,
+      },
+      [blocked.id]: {
+        accountId: blocked.id,
+        enabled: true,
+        allocationMode: "sameQuantity",
+        multiplier: 1,
+      },
+    },
+  });
+
+  assert.deepEqual(
+    wire.targets.map((item) => item.accountId),
+    [source.id, offline.id],
+  );
+});
+
 test("existing-trade copy targets multiple accounts without resubmitting to source", () => {
   const secondTarget: ExecutionAccountSummary = {
     ...target,

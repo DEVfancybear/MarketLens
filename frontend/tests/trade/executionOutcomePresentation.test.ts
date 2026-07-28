@@ -72,6 +72,21 @@ test("distinguishes a command never delivered from a broker rejection", () => {
   assert.equal(result.toast?.title, "Command not delivered to FTMO Live");
 });
 
+test("explains that an expired offline copy was never revived", () => {
+  const result = presentExecutionOutcome(
+    {
+      ...base,
+      status: "failed",
+      rejectCode: "DEFERRED_DELIVERY_EXPIRED",
+    },
+    "Exness",
+  );
+
+  assert.equal(result.toast?.variant, "error");
+  assert.equal(result.toast?.title, "Offline copy expired for Exness");
+  assert.match(result.toast?.message ?? "", /within 5 minutes/);
+});
+
 test("uses broker rejection only for a confirmed failure outcome", () => {
   const result = presentExecutionOutcome(
     { ...base, status: "failed", message: "Invalid volume" },
@@ -97,5 +112,6 @@ test("includes all broker terminal outcomes in activity processing", () => {
   ] as const) {
     assert.equal(isTerminalExecutionOutcome(status), true);
   }
+  assert.equal(isTerminalExecutionOutcome("waiting"), false);
   assert.equal(isTerminalExecutionOutcome("queued"), false);
 });

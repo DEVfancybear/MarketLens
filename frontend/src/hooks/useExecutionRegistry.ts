@@ -9,6 +9,7 @@ import {
   getExecutionInstruments,
   routeExecutionOrder,
   submitExecutionCommand,
+  type ExecutionTargetSubmission,
 } from "@/services/api/resources/executionApi";
 import {
   projectExecutionInstrumentsToMt5Symbols,
@@ -307,7 +308,9 @@ export function useExecutionRegistry() {
               (outcome) => outcome.status === "unknown",
             );
             const nonterminal = related.some((outcome) =>
-              ["ready", "queued", "submitted"].includes(outcome.status),
+              ["waiting", "ready", "queued", "submitted"].includes(
+                outcome.status,
+              ),
             );
             const status =
               failed > 0 && successful > 0
@@ -481,15 +484,30 @@ export function useExecutionRegistry() {
             const queued = response.targets.filter(
               (target) => target.status === "queued",
             );
-            const rejected = response.targets.filter(
-              (target) => target.status !== "queued",
+            const waiting = response.targets.filter(
+              (target) => target.status === "waiting",
             );
+            const rejected = response.targets.filter(
+              (
+                target,
+              ): target is Extract<
+                ExecutionTargetSubmission,
+                { status: "rejected" | "unavailable" }
+              > =>
+                target.status === "rejected" ||
+                target.status === "unavailable",
+            );
+            const accepted = queued.length + waiting.length;
+            const accounts = store.get(executionAccountsAtom);
+            const accountName = (accountId: string) =>
+              accounts.find((account) => account.id === accountId)?.label ??
+              accountId;
             store.set(mt5PendingCommandsAtom, (commands) =>
               commands.map((command) =>
                 command.id === order.clientOrderId
                   ? {
                       ...command,
-                      status: queued.length > 0 ? "acked" : "rejected",
+                      status: accepted > 0 ? "acked" : "rejected",
                     }
                   : command,
               ),
@@ -498,20 +516,29 @@ export function useExecutionRegistry() {
               level: rejected.length > 0 ? "warn" : "info",
               direction: "gateway",
               type: "order.route",
-              message: `${queued.length} queued, ${rejected.length} rejected`,
+              message: `${queued.length} queued, ${waiting.length} waiting, ${rejected.length} rejected`,
               requestId: order.clientOrderId,
               clientOrderId: order.clientOrderId,
             });
-            if (rejected.length > 0) {
+            if (waiting.length > 0 || rejected.length > 0) {
               store.set(pushToastAtom, {
                 title:
-                  queued.length > 0
+                  rejected.length > 0 && accepted > 0
                     ? "Order partially routed"
-                    : "Order rejected",
-                message: rejected
-                  .map((target) => `${target.accountId}: ${target.message}`)
-                  .join(" · "),
-                variant: queued.length > 0 ? "warn" : "error",
+                    : waiting.length > 0 && rejected.length === 0
+                      ? "Waiting for offline MT5"
+                      : "Order rejected",
+                message: [
+                  ...waiting.map(
+                    (target) =>
+                      `${accountName(target.accountId)}: open MT5 before ${new Date(target.expiresAtMs).toLocaleTimeString()}`,
+                  ),
+                  ...rejected.map(
+                    (target) =>
+                      `${accountName(target.accountId)}: ${target.message}`,
+                  ),
+                ].join(" · "),
+                variant: accepted > 0 ? "warn" : "error",
               });
             }
           })

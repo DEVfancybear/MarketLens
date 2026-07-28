@@ -4,13 +4,29 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Five-minute offline MT5 copy window (2026-07-28)
+
+- Offline MT5 targets can now be selected for copy routing. Rust persists each
+  target as `waiting` with an absolute five-minute deadline instead of
+  immediately rejecting it as not ready.
+- When the target EA reconnects, the gateway waits for a fresh authenticated
+  account and instrument snapshot, then reruns symbol, quantity, SL/TP, risk,
+  and trading-permission validation before changing the command to `queued`.
+- A background expiry sweep marks an undelivered target
+  `DEFERRED_DELIVERY_EXPIRED`; an expired command can never be revived by
+  starting MT5 later.
+- Added migration `0033_execution_deferred_copy`, camelCase/legacy response
+  normalization, `waiting` outcome support, deadline-aware toasts, and
+  user-facing guidance that each MT5 account needs its own terminal/EA.
+
 ### Added - One-action multi-account trade copy (2026-07-28)
 
 - Added a Copy action to every live MT5 position and pending-order row on
   desktop and mobile.
 - Added an accessible multi-select target dialog that defaults to configured
-  copy-routing targets, falls back to all ready MT5 accounts, and reuses each
-  target's allocation rule.
+  copy-routing targets, falls back to all eligible MT5 accounts, and reuses
+  each target's allocation rule. Offline targets use the bounded waiting
+  window described above.
 - Existing positions copy as new market orders; pending orders preserve side,
   kind, quantity, entry, stop loss, and take profit. The source account is
   excluded so the existing trade is never submitted twice.

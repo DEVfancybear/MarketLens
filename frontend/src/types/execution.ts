@@ -66,6 +66,11 @@ export type CopyRoutePreview =
     }
   | {
       accountId: string;
+      status: "waiting";
+      expiresInMs: number;
+    }
+  | {
+      accountId: string;
       status: "blocked";
       reason:
         | "TARGET_DISABLED"

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { previewCopyRoutes } from "../../src/services/execution/copyRouting";
+import {
+  copyTargetAvailability,
+  OFFLINE_COPY_TTL_MS,
+  previewCopyRoutes,
+} from "../../src/services/execution/copyRouting";
 import type { ExecutionAccountSummary } from "../../src/types/execution";
 
 const accounts: ExecutionAccountSummary[] = [
@@ -74,8 +78,8 @@ test("previews each copy target independently", () => {
     },
     {
       accountId: "target-b",
-      status: "blocked",
-      reason: "TARGET_NOT_READY",
+      status: "waiting",
+      expiresInMs: 300_000,
     },
   ]);
 });
@@ -103,4 +107,25 @@ test("floors quantity to the target step and respects the target cap", () => {
     quantity: 0.6,
     allocationMode: "multiplier",
   });
+});
+
+test("offline MT5 targets remain selectable for the five-minute delivery window", () => {
+  const availability = copyTargetAvailability(accounts[2]!);
+
+  assert.equal(OFFLINE_COPY_TTL_MS, 300_000);
+  assert.equal(availability.eligible, true);
+  assert.equal(availability.mode, "waiting");
+  assert.match(availability.detail, /within 5 minutes/);
+});
+
+test("online targets without trading permission remain blocked", () => {
+  const availability = copyTargetAvailability({
+    ...accounts[1]!,
+    tradeAllowed: false,
+    statusReason: "broker_trading_disabled",
+  });
+
+  assert.equal(availability.eligible, false);
+  assert.equal(availability.mode, "blocked");
+  assert.equal(availability.label, "Trading disabled");
 });

@@ -288,6 +288,32 @@ upgrade. Avoid sending commands to the terminal while replacing the EA, keep
 `GatewayUrl` unchanged, and wait about ten seconds after `READY` for the
 portfolio snapshot to reach the web.
 
+### User setup: FTMO to Exness copy
+
+One MT5 process can be logged into only one broker account at a time. To keep
+both sides executable:
+
+1. Keep the FTMO terminal logged into the source account.
+2. Install the Exness MT5 terminal into a different Windows installation
+   directory and log it into the target account. A second PC or VPS is also
+   supported.
+3. In each terminal, copy the published `SMCExecutionEA.ex5` to that terminal's
+   own `MQL5\Experts` data directory and attach it to exactly one chart.
+4. Enable Algo Trading and allow the WebRequest origin shown by the in-app EA
+   setup guide.
+5. Generate and consume a separate one-time pairing token for each terminal.
+   Do not reuse the FTMO pairing token for Exness.
+6. Select FTMO as the source and Exness as a copy target. `READY` means
+   immediate delivery. `Offline · waits 5 min` means the server has accepted a
+   bounded deferred target.
+7. For a deferred target, start Exness MT5 and its EA before the displayed
+   deadline. The gateway waits for a fresh account/instrument snapshot and
+   revalidates the route before queueing it.
+
+If the deadline passes, the target becomes `DEFERRED_DELIVERY_EXPIRED`. Do not
+expect the order to appear after opening MT5 later; submit a new copy only
+after reconciling the source and target accounts.
+
 For lane-specific log interpretation, safe database reconciliation, and the
 rule against resubmitting an order that is absent only from the browser, follow
 `TRADE_PRODUCTION_SECURITY_RUNBOOK.md` under **Portfolio synchronization rollout

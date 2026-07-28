@@ -1,9 +1,77 @@
 import type {
   CopyRoutePreview,
   CopyRoutePreviewInput,
+  ExecutionAccountSummary,
 } from "@/types/execution";
 
 const EPSILON = 1e-12;
+export const OFFLINE_COPY_TTL_MS = 5 * 60 * 1_000;
+
+export type CopyTargetAvailability =
+  | {
+      eligible: true;
+      mode: "ready" | "waiting";
+      label: string;
+      detail: string;
+    }
+  | {
+      eligible: false;
+      mode: "blocked";
+      label: string;
+      detail: string;
+    };
+
+export function copyTargetAvailability(
+  account: ExecutionAccountSummary,
+): CopyTargetAvailability {
+  if (account.venueKind !== "metatrader5") {
+    return {
+      eligible: false,
+      mode: "blocked",
+      label: "Unavailable",
+      detail: "This venue does not have an enabled execution adapter.",
+    };
+  }
+  if (account.status === "ready" && account.tradeAllowed) {
+    return {
+      eligible: true,
+      mode: "ready",
+      label: "Ready",
+      detail: "The EA is online and can receive the copy immediately.",
+    };
+  }
+  if (account.status === "offline" || account.status === "connecting") {
+    return {
+      eligible: true,
+      mode: "waiting",
+      label: "Offline · waits 5 min",
+      detail:
+        "Start this account's MT5 terminal and EA within 5 minutes. The server revalidates the order before delivery.",
+    };
+  }
+  if (account.statusReason === "ea_update_required") {
+    return {
+      eligible: false,
+      mode: "blocked",
+      label: "EA update required",
+      detail: "Install the latest SMCExecutionEA before copying to this account.",
+    };
+  }
+  if (!account.tradeAllowed) {
+    return {
+      eligible: false,
+      mode: "blocked",
+      label: "Trading disabled",
+      detail: "Enable Algo Trading and broker trading permission first.",
+    };
+  }
+  return {
+    eligible: false,
+    mode: "blocked",
+    label: account.status === "disabled" ? "Disabled" : "Not ready",
+    detail: "Reconnect or repair this terminal before selecting it as a target.",
+  };
+}
 
 /**
  * Client-side preview only. Rust repeats every calculation and risk check
@@ -20,6 +88,13 @@ export function previewCopyRoutes(
     }
     const account = byId.get(target.accountId);
     if (!account) return blocked(target.accountId, "TARGET_NOT_FOUND");
+    if (account.status === "offline" || account.status === "connecting") {
+      return {
+        accountId: target.accountId,
+        status: "waiting",
+        expiresInMs: OFFLINE_COPY_TTL_MS,
+      };
+    }
     if (account.status !== "ready") {
       return blocked(target.accountId, "TARGET_NOT_READY");
     }
