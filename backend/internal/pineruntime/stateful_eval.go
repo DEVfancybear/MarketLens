@@ -1,6 +1,7 @@
 package pineruntime
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -8,6 +9,11 @@ import (
 )
 
 const statefulMaxLoopIterations = 10000
+
+var (
+	errStatefulBreak    = errors.New("break")
+	errStatefulContinue = errors.New("continue")
+)
 
 func (vm *statefulVM) executeBlock(statements []statefulStmt, scope *statefulScope) (statefulValue, error) {
 	last := statefulNA()
@@ -22,6 +28,14 @@ func (vm *statefulVM) executeBlock(statements []statefulStmt, scope *statefulSco
 			last, err = vm.executeIf(statement, scope)
 		case *statefulForStmt:
 			last, err = vm.executeFor(statement, scope)
+		case *statefulWhileStmt:
+			last, err = vm.executeWhile(statement, scope)
+		case *statefulControlStmt:
+			if statement.kind == "break" {
+				err = errStatefulBreak
+			} else {
+				err = errStatefulContinue
+			}
 		case *statefulNoopStmt:
 			continue
 		default:
@@ -74,7 +88,7 @@ func (vm *statefulVM) executeAssignment(statement *statefulAssignStmt, scope *st
 		}
 	}
 	switch statement.op {
-	case "+=", "-=", "*=", "/=":
+	case "+=", "-=", "*=", "/=", "%=":
 		value, err = statefulBinary(strings.TrimSuffix(statement.op, "="), cell.value, value)
 		if err != nil {
 			return statefulNA(), err
@@ -128,6 +142,12 @@ func (vm *statefulVM) executeFor(statement *statefulForStmt, scope *statefulScop
 			}
 			loopCell.value, loopCell.initialized = cloneStatefulValue(value), true
 			last, err = vm.executeBlock(statement.body, scope)
+			if errors.Is(err, errStatefulBreak) {
+				return last, nil
+			}
+			if errors.Is(err, errStatefulContinue) {
+				continue
+			}
 			if err != nil {
 				return statefulNA(), err
 			}
@@ -139,6 +159,17 @@ func (vm *statefulVM) executeFor(statement *statefulForStmt, scope *statefulScop
 		return statefulNA(), err
 	}
 	from := int(math.Round(statefulNumeric(fromValue)))
+	stepSize := 1
+	if statement.step != nil {
+		stepValue, err := vm.evaluate(statement.step, scope)
+		if err != nil {
+			return statefulNA(), err
+		}
+		stepSize = int(math.Round(statefulNumeric(stepValue)))
+		if stepSize <= 0 {
+			return statefulNA(), fmt.Errorf("for loop step must be greater than zero")
+		}
+	}
 	// Pine re-evaluates the `to` expression on each iteration.  This matters
 	// when the loop body removes array elements.
 	for current := from; ; {
@@ -147,9 +178,9 @@ func (vm *statefulVM) executeFor(statement *statefulForStmt, scope *statefulScop
 			return statefulNA(), err
 		}
 		to := int(math.Round(statefulNumeric(toValue)))
-		step := 1
+		step := stepSize
 		if from > to {
-			step = -1
+			step = -stepSize
 		}
 		if (step > 0 && current > to) || (step < 0 && current < to) {
 			break
@@ -160,12 +191,45 @@ func (vm *statefulVM) executeFor(statement *statefulForStmt, scope *statefulScop
 		}
 		loopCell.value, loopCell.initialized = statefulNumber(float64(current)), true
 		last, err = vm.executeBlock(statement.body, scope)
-		if err != nil {
+		if errors.Is(err, errStatefulBreak) {
+			break
+		}
+		if !errors.Is(err, errStatefulContinue) && err != nil {
 			return statefulNA(), err
 		}
 		current += step
 	}
 	return last, nil
+}
+
+func (vm *statefulVM) executeWhile(statement *statefulWhileStmt, scope *statefulScope) (statefulValue, error) {
+	last := statefulNA()
+	for iterations := 0; ; iterations++ {
+		if iterations >= statefulMaxLoopIterations {
+			return statefulNA(), fmt.Errorf("loop iteration limit exceeded")
+		}
+		condition, err := vm.evaluate(statement.condition, scope)
+		if err != nil {
+			return statefulNA(), err
+		}
+		truthy, err := vm.booleanValue(condition)
+		if err != nil {
+			return statefulNA(), err
+		}
+		if !truthy {
+			return last, nil
+		}
+		last, err = vm.executeBlock(statement.body, scope)
+		if errors.Is(err, errStatefulBreak) {
+			return last, nil
+		}
+		if errors.Is(err, errStatefulContinue) {
+			continue
+		}
+		if err != nil {
+			return statefulNA(), err
+		}
+	}
 }
 
 func (vm *statefulVM) evaluate(expression statefulExpr, scope *statefulScope) (statefulValue, error) {
@@ -189,6 +253,9 @@ func (vm *statefulVM) evaluate(expression statefulExpr, scope *statefulScope) (s
 		number := statefulNumeric(operand)
 		if !statefulUsable(number) {
 			return statefulNA(), nil
+		}
+		if value.operator == "+" {
+			return statefulNumber(number), nil
 		}
 		return statefulNumber(-number), nil
 	case *statefulBinaryExpr:
@@ -288,6 +355,10 @@ func statefulKindName(kind statefulValueKind) string {
 		return "UDT"
 	case statefulValueArray:
 		return "array"
+	case statefulValueMap:
+		return "map"
+	case statefulValueMatrix:
+		return "matrix"
 	case statefulValueObject:
 		return "drawing"
 	case statefulValuePlot:
@@ -333,6 +404,11 @@ func statefulBinary(operator string, left, right statefulValue) (statefulValue, 
 			return statefulNA(), nil
 		}
 		return statefulNumber(a / b), nil
+	case "%":
+		if b == 0 {
+			return statefulNA(), nil
+		}
+		return statefulNumber(math.Mod(a, b)), nil
 	case ">":
 		return statefulBool(a > b), nil
 	case ">=":
@@ -355,6 +431,15 @@ func statefulEqual(left, right statefulValue) bool {
 	}
 	if left.kind == statefulValueObject || right.kind == statefulValueObject {
 		return left.object == right.object
+	}
+	if left.kind == statefulValueArray || right.kind == statefulValueArray {
+		return left.array == right.array
+	}
+	if left.kind == statefulValueMap || right.kind == statefulValueMap {
+		return left.mapData == right.mapData
+	}
+	if left.kind == statefulValueMatrix || right.kind == statefulValueMatrix {
+		return left.matrix == right.matrix
 	}
 	if left.kind == statefulValueBool && right.kind == statefulValueBool {
 		return left.boolean == right.boolean
@@ -397,7 +482,7 @@ func (vm *statefulVM) resolveIdentifier(name string, scope *statefulScope) (stat
 		return statefulNA(), nil
 	case "barstate":
 		return statefulString("barstate"), nil
-	case "syminfo", "xloc", "position", "size", "format", "line", "box", "label", "table", "array", "color", "math", "str", "ta", "request", "plot", "shape", "location", "extend":
+	case "syminfo", "xloc", "position", "size", "format", "line", "box", "label", "table", "array", "map", "matrix", "color", "math", "str", "ta", "request", "plot", "shape", "location", "extend":
 		return statefulString(name), nil
 	default:
 		return statefulNA(), fmt.Errorf("unknown identifier %q", name)
@@ -530,11 +615,30 @@ func (vm *statefulVM) evaluateCall(call *statefulCallExpr, scope *statefulScope)
 	if function, ok := vm.program.functions[name]; ok {
 		return vm.callFunction(function, call, scope, nil)
 	}
+	for _, namespace := range []string{"array.", "map.", "matrix."} {
+		if strings.HasPrefix(name, namespace) &&
+			name != namespace+"new" && name != "array.from" &&
+			!strings.HasPrefix(name, "array.new_") {
+			receiver, err := vm.callArgument(call, scope, "", 0)
+			if err != nil {
+				return statefulNA(), err
+			}
+			methodCall := *call
+			methodCall.arguments = append([]statefulCallArgument(nil), call.arguments[1:]...)
+			return vm.evaluateMethod(&methodCall, strings.TrimPrefix(name, namespace), receiver, scope)
+		}
+	}
 	switch name {
 	case "input", "input.int", "input.float", "input.bool", "input.color", "input.string", "input.timeframe", "input.source", "input.symbol", "input.session", "input.text_area":
 		return vm.evaluateInput(name, call, scope)
-	case "array.new":
+	case "array.new", "array.new_float", "array.new_int", "array.new_bool", "array.new_string", "array.new_color", "array.new_line", "array.new_box", "array.new_label":
 		return vm.constructArray(call, scope)
+	case "array.from":
+		return vm.constructArrayFrom(call, scope)
+	case "map.new":
+		return vm.constructMap(call), nil
+	case "matrix.new":
+		return vm.constructMatrix(call, scope)
 	case "math.min", "min":
 		return vm.numericReduce(call, scope, math.Min)
 	case "math.max", "max":
@@ -547,14 +651,45 @@ func (vm *statefulVM) evaluateCall(call *statefulCallExpr, scope *statefulScope)
 		return statefulNumber(math.Abs(statefulNumeric(value))), nil
 	case "math.exp", "exp":
 		return vm.numericUnary(call, scope, math.Exp)
+	case "math.sin", "sin":
+		return vm.numericUnary(call, scope, math.Sin)
 	case "math.cos", "cos":
 		return vm.numericUnary(call, scope, math.Cos)
+	case "math.tan", "tan":
+		return vm.numericUnary(call, scope, math.Tan)
+	case "math.asin":
+		return vm.numericUnary(call, scope, math.Asin)
+	case "math.acos":
+		return vm.numericUnary(call, scope, math.Acos)
+	case "math.atan":
+		return vm.numericUnary(call, scope, math.Atan)
 	case "math.sqrt", "sqrt":
 		return vm.numericUnary(call, scope, math.Sqrt)
+	case "math.log":
+		return vm.numericUnary(call, scope, math.Log)
+	case "math.log10":
+		return vm.numericUnary(call, scope, math.Log10)
 	case "math.round", "round":
 		return vm.numericUnary(call, scope, math.Round)
 	case "math.floor", "floor":
 		return vm.numericUnary(call, scope, math.Floor)
+	case "math.ceil":
+		return vm.numericUnary(call, scope, math.Ceil)
+	case "math.sign":
+		return vm.numericUnary(call, scope, func(value float64) float64 {
+			switch {
+			case value > 0:
+				return 1
+			case value < 0:
+				return -1
+			default:
+				return 0
+			}
+		})
+	case "math.pow":
+		return vm.numericBinary(call, scope, math.Pow)
+	case "math.avg":
+		return vm.numericAverage(call, scope)
 	case "int":
 		return vm.numericUnary(call, scope, math.Trunc)
 	case "float":
@@ -565,8 +700,27 @@ func (vm *statefulVM) evaluateCall(call *statefulCallExpr, scope *statefulScope)
 			return statefulNA(), err
 		}
 		return statefulBool(statefulTruthy(value)), nil
+	case "string":
+		value, err := vm.callArgument(call, scope, "", 0)
+		if err != nil {
+			return statefulNA(), err
+		}
+		return statefulString(statefulValueText(value, "")), nil
 	case "ta.sma", "sma", "ta.ema", "ema", "ta.rma", "rma", "ta.wma", "wma", "ta.vwma", "vwma":
 		return vm.evaluateMovingAverage(name, call, scope)
+	case "ta.change", "change", "ta.mom", "mom",
+		"ta.highest", "highest", "ta.lowest", "lowest",
+		"ta.highestbars", "highestbars", "ta.lowestbars", "lowestbars",
+		"ta.barssince", "barssince", "ta.cross", "cross",
+		"ta.crossover", "crossover", "ta.crossunder", "crossunder",
+		"ta.rising", "rising", "ta.falling", "falling",
+		"ta.dev", "dev", "ta.stdev", "stdev", "ta.variance", "variance",
+		"ta.range", "range", "ta.roc", "roc", "ta.rsi", "rsi",
+		"ta.atr", "atr", "ta.tr", "tr", "ta.hma", "hma",
+		"ta.bb", "bb", "ta.bbw", "bbw", "ta.macd", "macd":
+		return vm.evaluateTAFunction(name, call, scope)
+	case "math.sum":
+		return vm.evaluateRollingSum(call, scope)
 	case "ta.valuewhen", "valuewhen":
 		return vm.evaluateValueWhen(call, scope)
 	case "ta.cum", "cum":
@@ -618,6 +772,10 @@ func (vm *statefulVM) evaluateCall(call *statefulCallExpr, scope *statefulScope)
 			format = statefulValueText(formatValue, "")
 		}
 		return statefulString(statefulValueText(value, format)), nil
+	case "str.length", "str.lower", "str.upper", "str.trim",
+		"str.contains", "str.startswith", "str.endswith",
+		"str.replace_all", "str.substring", "str.pos", "str.repeat", "str.format":
+		return vm.evaluateStringFunction(name, call, scope)
 	case "na":
 		if len(call.arguments) == 0 {
 			return statefulBool(true), nil
@@ -653,6 +811,8 @@ func (vm *statefulVM) evaluateCall(call *statefulCallExpr, scope *statefulScope)
 		return vm.constructTable(call, scope)
 	case "plot":
 		return vm.evaluatePlot(call, scope)
+	case "plotshape", "plotchar", "plotarrow":
+		return vm.evaluatePlotMarker(name, call, scope)
 	case "fill":
 		return vm.evaluateFill(call, scope)
 	case "alertcondition":
@@ -664,7 +824,7 @@ func (vm *statefulVM) evaluateCall(call *statefulCallExpr, scope *statefulScope)
 
 func statefulNamespace(name string) bool {
 	switch name {
-	case "input", "array", "math", "ta", "color", "str", "request", "box", "line", "label", "table", "plot", "shape", "location", "extend":
+	case "input", "array", "map", "matrix", "math", "ta", "color", "str", "request", "box", "line", "label", "table", "plot", "shape", "location", "extend":
 		return true
 	default:
 		return false
@@ -686,6 +846,44 @@ func (vm *statefulVM) evaluateMethod(call *statefulCallExpr, name string, receiv
 				return statefulNA(), fmt.Errorf("array index %d out of bounds", index)
 			}
 			return cloneStatefulValue(array.values[index]), nil
+		case "set":
+			index, err := vm.methodIndex(call, scope)
+			if err != nil {
+				return statefulNA(), err
+			}
+			if index < 0 || index >= len(array.values) {
+				return statefulNA(), fmt.Errorf("array index %d out of bounds", index)
+			}
+			value, err := vm.callArgument(call, scope, "", 1)
+			if err != nil {
+				return statefulNA(), err
+			}
+			array.values[index] = cloneStatefulValue(value)
+			return statefulNA(), nil
+		case "first":
+			if len(array.values) == 0 {
+				return statefulNA(), fmt.Errorf("array is empty")
+			}
+			return cloneStatefulValue(array.values[0]), nil
+		case "last":
+			if len(array.values) == 0 {
+				return statefulNA(), fmt.Errorf("array is empty")
+			}
+			return cloneStatefulValue(array.values[len(array.values)-1]), nil
+		case "pop":
+			if len(array.values) == 0 {
+				return statefulNA(), fmt.Errorf("array is empty")
+			}
+			last := array.values[len(array.values)-1]
+			array.values = array.values[:len(array.values)-1]
+			return last, nil
+		case "shift":
+			if len(array.values) == 0 {
+				return statefulNA(), fmt.Errorf("array is empty")
+			}
+			first := array.values[0]
+			array.values = array.values[1:]
+			return first, nil
 		case "remove":
 			index, err := vm.methodIndex(call, scope)
 			if err != nil {
@@ -704,6 +902,22 @@ func (vm *statefulVM) evaluateMethod(call *statefulCallExpr, name string, receiv
 			}
 			array.values = append([]statefulValue{cloneStatefulValue(value)}, array.values...)
 			return statefulNA(), nil
+		case "insert":
+			index, err := vm.methodIndex(call, scope)
+			if err != nil {
+				return statefulNA(), err
+			}
+			if index < 0 || index > len(array.values) {
+				return statefulNA(), fmt.Errorf("array index %d out of bounds", index)
+			}
+			value, err := vm.callArgument(call, scope, "", 1)
+			if err != nil {
+				return statefulNA(), err
+			}
+			array.values = append(array.values, statefulNA())
+			copy(array.values[index+1:], array.values[index:])
+			array.values[index] = cloneStatefulValue(value)
+			return statefulNA(), nil
 		case "push":
 			value, err := vm.callArgument(call, scope, "", 0)
 			if err != nil {
@@ -714,7 +928,56 @@ func (vm *statefulVM) evaluateMethod(call *statefulCallExpr, name string, receiv
 		case "clear":
 			array.values = nil
 			return statefulNA(), nil
+		case "includes":
+			value, err := vm.callArgument(call, scope, "", 0)
+			if err != nil {
+				return statefulNA(), err
+			}
+			return statefulBool(statefulArrayIndex(array, value, false) >= 0), nil
+		case "indexof":
+			value, err := vm.callArgument(call, scope, "", 0)
+			if err != nil {
+				return statefulNA(), err
+			}
+			return statefulNumber(float64(statefulArrayIndex(array, value, false))), nil
+		case "lastindexof":
+			value, err := vm.callArgument(call, scope, "", 0)
+			if err != nil {
+				return statefulNA(), err
+			}
+			return statefulNumber(float64(statefulArrayIndex(array, value, true))), nil
+		case "copy":
+			values := make([]statefulValue, len(array.values))
+			for index := range array.values {
+				values[index] = cloneStatefulValue(array.values[index])
+			}
+			return statefulValue{kind: statefulValueArray, array: &statefulArray{elementType: array.elementType, values: values}}, nil
+		case "reverse":
+			for left, right := 0, len(array.values)-1; left < right; left, right = left+1, right-1 {
+				array.values[left], array.values[right] = array.values[right], array.values[left]
+			}
+			return statefulNA(), nil
+		case "concat":
+			other, err := vm.callArgument(call, scope, "", 0)
+			if err != nil {
+				return statefulNA(), err
+			}
+			if other.kind != statefulValueArray || other.array == nil {
+				return statefulNA(), fmt.Errorf("array.concat() expects an array")
+			}
+			for _, value := range other.array.values {
+				array.values = append(array.values, cloneStatefulValue(value))
+			}
+			return statefulValue{kind: statefulValueArray, array: array}, nil
+		case "sum", "avg", "min", "max":
+			return statefulArrayAggregate(array, name)
 		}
+	}
+	if receiver.kind == statefulValueMap && receiver.mapData != nil {
+		return vm.evaluateMapMethod(call, name, receiver.mapData, scope)
+	}
+	if receiver.kind == statefulValueMatrix && receiver.matrix != nil {
+		return vm.evaluateMatrixMethod(call, name, receiver.matrix, scope)
 	}
 	if receiver.kind == statefulValueObject && receiver.object != nil {
 		object := receiver.object
@@ -859,6 +1122,257 @@ func (vm *statefulVM) constructArray(call *statefulCallExpr, scope *statefulScop
 	return statefulValue{kind: statefulValueArray, array: &statefulArray{elementType: call.generic, values: values}}, nil
 }
 
+func (vm *statefulVM) constructArrayFrom(call *statefulCallExpr, scope *statefulScope) (statefulValue, error) {
+	values := make([]statefulValue, 0, len(call.arguments))
+	for _, argument := range call.arguments {
+		value, err := vm.evaluate(argument.expression, scope)
+		if err != nil {
+			return statefulNA(), err
+		}
+		values = append(values, cloneStatefulValue(value))
+	}
+	return statefulValue{kind: statefulValueArray, array: &statefulArray{values: values}}, nil
+}
+
+func (vm *statefulVM) constructMap(call *statefulCallExpr) statefulValue {
+	types := strings.SplitN(call.generic, ",", 2)
+	keyType, valueType := "", ""
+	if len(types) > 0 {
+		keyType = types[0]
+	}
+	if len(types) > 1 {
+		valueType = types[1]
+	}
+	return statefulValue{
+		kind: statefulValueMap,
+		mapData: &statefulMap{
+			keyType:   keyType,
+			valueType: valueType,
+		},
+	}
+}
+
+func (vm *statefulVM) constructMatrix(call *statefulCallExpr, scope *statefulScope) (statefulValue, error) {
+	rowValue, err := vm.callArgument(call, scope, "rows", 0)
+	if err != nil {
+		return statefulNA(), err
+	}
+	columnValue, err := vm.callArgument(call, scope, "columns", 1)
+	if err != nil {
+		return statefulNA(), err
+	}
+	rows := int(math.Max(0, math.Round(statefulNumeric(rowValue))))
+	columns := int(math.Max(0, math.Round(statefulNumeric(columnValue))))
+	initial := statefulNA()
+	if len(call.arguments) > 2 {
+		initial, err = vm.callArgument(call, scope, "initial_value", 2)
+		if err != nil {
+			return statefulNA(), err
+		}
+	}
+	values := make([][]statefulValue, rows)
+	for row := range values {
+		values[row] = make([]statefulValue, columns)
+		for column := range values[row] {
+			values[row][column] = cloneStatefulValue(initial)
+		}
+	}
+	return statefulValue{
+		kind:   statefulValueMatrix,
+		matrix: &statefulMatrix{elementType: call.generic, rows: values},
+	}, nil
+}
+
+func statefulArrayIndex(array *statefulArray, target statefulValue, reverse bool) int {
+	if reverse {
+		for index := len(array.values) - 1; index >= 0; index-- {
+			if statefulEqual(array.values[index], target) {
+				return index
+			}
+		}
+		return -1
+	}
+	for index, value := range array.values {
+		if statefulEqual(value, target) {
+			return index
+		}
+	}
+	return -1
+}
+
+func statefulArrayAggregate(array *statefulArray, operation string) (statefulValue, error) {
+	if len(array.values) == 0 {
+		return statefulNA(), nil
+	}
+	result := 0.0
+	count := 0
+	for _, value := range array.values {
+		number := statefulNumeric(value)
+		if !statefulUsable(number) {
+			continue
+		}
+		if count == 0 || operation == "min" && number < result || operation == "max" && number > result {
+			result = number
+		} else if operation == "sum" || operation == "avg" {
+			result += number
+		}
+		count++
+	}
+	if count == 0 {
+		return statefulNA(), nil
+	}
+	if operation == "avg" {
+		result /= float64(count)
+	}
+	return statefulNumber(result), nil
+}
+
+func statefulMapIndex(data *statefulMap, key statefulValue) int {
+	for index, entry := range data.entries {
+		if statefulEqual(entry.key, key) {
+			return index
+		}
+	}
+	return -1
+}
+
+func (vm *statefulVM) evaluateMapMethod(call *statefulCallExpr, name string, data *statefulMap, scope *statefulScope) (statefulValue, error) {
+	switch name {
+	case "size":
+		return statefulNumber(float64(len(data.entries))), nil
+	case "clear":
+		data.entries = nil
+		return statefulNA(), nil
+	case "copy":
+		copied := &statefulMap{keyType: data.keyType, valueType: data.valueType}
+		for _, entry := range data.entries {
+			copied.entries = append(copied.entries, statefulMapEntry{
+				key: cloneStatefulValue(entry.key), value: cloneStatefulValue(entry.value),
+			})
+		}
+		return statefulValue{kind: statefulValueMap, mapData: copied}, nil
+	case "keys", "values":
+		values := make([]statefulValue, 0, len(data.entries))
+		for _, entry := range data.entries {
+			if name == "keys" {
+				values = append(values, cloneStatefulValue(entry.key))
+			} else {
+				values = append(values, cloneStatefulValue(entry.value))
+			}
+		}
+		return statefulValue{kind: statefulValueArray, array: &statefulArray{values: values}}, nil
+	}
+	key, err := vm.callArgument(call, scope, "key", 0)
+	if err != nil {
+		return statefulNA(), err
+	}
+	index := statefulMapIndex(data, key)
+	switch name {
+	case "contains":
+		return statefulBool(index >= 0), nil
+	case "get":
+		if index < 0 {
+			return statefulNA(), nil
+		}
+		return cloneStatefulValue(data.entries[index].value), nil
+	case "remove":
+		if index < 0 {
+			return statefulNA(), nil
+		}
+		removed := data.entries[index].value
+		data.entries = append(data.entries[:index], data.entries[index+1:]...)
+		return removed, nil
+	case "put":
+		value, err := vm.callArgument(call, scope, "value", 1)
+		if err != nil {
+			return statefulNA(), err
+		}
+		if index >= 0 {
+			data.entries[index].value = cloneStatefulValue(value)
+		} else {
+			data.entries = append(data.entries, statefulMapEntry{
+				key: cloneStatefulValue(key), value: cloneStatefulValue(value),
+			})
+		}
+		return statefulNA(), nil
+	default:
+		return statefulNA(), fmt.Errorf("unsupported map method %s()", name)
+	}
+}
+
+func statefulMatrixDimensions(matrix *statefulMatrix) (int, int) {
+	rows := len(matrix.rows)
+	if rows == 0 {
+		return 0, 0
+	}
+	return rows, len(matrix.rows[0])
+}
+
+func (vm *statefulVM) evaluateMatrixMethod(call *statefulCallExpr, name string, matrix *statefulMatrix, scope *statefulScope) (statefulValue, error) {
+	rows, columns := statefulMatrixDimensions(matrix)
+	switch name {
+	case "rows":
+		return statefulNumber(float64(rows)), nil
+	case "columns":
+		return statefulNumber(float64(columns)), nil
+	case "copy":
+		copied := &statefulMatrix{elementType: matrix.elementType, rows: make([][]statefulValue, rows)}
+		for row := range matrix.rows {
+			copied.rows[row] = make([]statefulValue, len(matrix.rows[row]))
+			for column := range matrix.rows[row] {
+				copied.rows[row][column] = cloneStatefulValue(matrix.rows[row][column])
+			}
+		}
+		return statefulValue{kind: statefulValueMatrix, matrix: copied}, nil
+	case "transpose":
+		transposed := &statefulMatrix{elementType: matrix.elementType, rows: make([][]statefulValue, columns)}
+		for column := 0; column < columns; column++ {
+			transposed.rows[column] = make([]statefulValue, rows)
+			for row := 0; row < rows; row++ {
+				transposed.rows[column][row] = cloneStatefulValue(matrix.rows[row][column])
+			}
+		}
+		return statefulValue{kind: statefulValueMatrix, matrix: transposed}, nil
+	case "fill":
+		value, err := vm.callArgument(call, scope, "value", 0)
+		if err != nil {
+			return statefulNA(), err
+		}
+		for row := range matrix.rows {
+			for column := range matrix.rows[row] {
+				matrix.rows[row][column] = cloneStatefulValue(value)
+			}
+		}
+		return statefulNA(), nil
+	}
+	rowValue, err := vm.callArgument(call, scope, "row", 0)
+	if err != nil {
+		return statefulNA(), err
+	}
+	columnValue, err := vm.callArgument(call, scope, "column", 1)
+	if err != nil {
+		return statefulNA(), err
+	}
+	row := int(math.Round(statefulNumeric(rowValue)))
+	column := int(math.Round(statefulNumeric(columnValue)))
+	if row < 0 || row >= rows || column < 0 || column >= columns {
+		return statefulNA(), fmt.Errorf("matrix index [%d,%d] out of bounds", row, column)
+	}
+	switch name {
+	case "get":
+		return cloneStatefulValue(matrix.rows[row][column]), nil
+	case "set":
+		value, err := vm.callArgument(call, scope, "value", 2)
+		if err != nil {
+			return statefulNA(), err
+		}
+		matrix.rows[row][column] = cloneStatefulValue(value)
+		return statefulNA(), nil
+	default:
+		return statefulNA(), fmt.Errorf("unsupported matrix method %s()", name)
+	}
+}
+
 func (vm *statefulVM) evaluateInput(name string, call *statefulCallExpr, scope *statefulScope) (statefulValue, error) {
 	if override, ok := vm.request.InputOverrides[vm.assigningName]; ok {
 		switch name {
@@ -976,6 +1490,111 @@ func (vm *statefulVM) numericUnary(call *statefulCallExpr, scope *statefulScope,
 	return statefulNumber(operation(point)), nil
 }
 
+func (vm *statefulVM) numericBinary(call *statefulCallExpr, scope *statefulScope, operation func(float64, float64) float64) (statefulValue, error) {
+	left, err := vm.callArgument(call, scope, "", 0)
+	if err != nil {
+		return statefulNA(), err
+	}
+	right, err := vm.callArgument(call, scope, "", 1)
+	if err != nil {
+		return statefulNA(), err
+	}
+	a, b := statefulNumeric(left), statefulNumeric(right)
+	if !statefulUsable(a) || !statefulUsable(b) {
+		return statefulNA(), nil
+	}
+	return statefulNumber(operation(a, b)), nil
+}
+
+func (vm *statefulVM) numericAverage(call *statefulCallExpr, scope *statefulScope) (statefulValue, error) {
+	if len(call.arguments) == 0 {
+		return statefulNA(), nil
+	}
+	total := 0.0
+	for _, argument := range call.arguments {
+		value, err := vm.evaluate(argument.expression, scope)
+		if err != nil {
+			return statefulNA(), err
+		}
+		number := statefulNumeric(value)
+		if !statefulUsable(number) {
+			return statefulNA(), nil
+		}
+		total += number
+	}
+	return statefulNumber(total / float64(len(call.arguments))), nil
+}
+
+func (vm *statefulVM) evaluateStringFunction(name string, call *statefulCallExpr, scope *statefulScope) (statefulValue, error) {
+	sourceValue, err := vm.callArgument(call, scope, "source", 0)
+	if err != nil {
+		return statefulNA(), err
+	}
+	source := statefulValueText(sourceValue, "")
+	switch name {
+	case "str.length":
+		return statefulNumber(float64(len([]rune(source)))), nil
+	case "str.lower":
+		return statefulString(strings.ToLower(source)), nil
+	case "str.upper":
+		return statefulString(strings.ToUpper(source)), nil
+	case "str.trim":
+		return statefulString(strings.TrimSpace(source)), nil
+	case "str.format":
+		formatted := source
+		for index := 1; index < len(call.arguments); index++ {
+			value, err := vm.evaluate(call.arguments[index].expression, scope)
+			if err != nil {
+				return statefulNA(), err
+			}
+			formatted = strings.ReplaceAll(formatted,
+				fmt.Sprintf("{%d}", index-1), statefulValueText(value, ""))
+		}
+		return statefulString(formatted), nil
+	}
+	targetValue, err := vm.callArgument(call, scope, "str", 1)
+	if err != nil {
+		return statefulNA(), err
+	}
+	target := statefulValueText(targetValue, "")
+	switch name {
+	case "str.contains":
+		return statefulBool(strings.Contains(source, target)), nil
+	case "str.startswith":
+		return statefulBool(strings.HasPrefix(source, target)), nil
+	case "str.endswith":
+		return statefulBool(strings.HasSuffix(source, target)), nil
+	case "str.pos":
+		return statefulNumber(float64(strings.Index(source, target))), nil
+	case "str.repeat":
+		count := int(math.Max(0, math.Round(statefulNumeric(targetValue))))
+		return statefulString(strings.Repeat(source, count)), nil
+	case "str.replace_all":
+		replacementValue, err := vm.callArgument(call, scope, "replacement", 2)
+		if err != nil {
+			return statefulNA(), err
+		}
+		return statefulString(strings.ReplaceAll(source, target, statefulValueText(replacementValue, ""))), nil
+	case "str.substring":
+		runes := []rune(source)
+		begin := int(math.Round(statefulNumeric(targetValue)))
+		end := len(runes)
+		if len(call.arguments) > 2 {
+			endValue, err := vm.callArgument(call, scope, "end_pos", 2)
+			if err != nil {
+				return statefulNA(), err
+			}
+			end = int(math.Round(statefulNumeric(endValue)))
+		}
+		if begin < 0 || begin > end || end > len(runes) {
+			return statefulNA(), fmt.Errorf("substring indexes [%d,%d] out of bounds", begin, end)
+		}
+		return statefulString(string(runes[begin:end])), nil
+	default:
+		return statefulNA(), fmt.Errorf("unsupported string function %s()", name)
+	}
+}
+
 func (vm *statefulVM) evaluateMovingAverage(name string, call *statefulCallExpr, scope *statefulScope) (statefulValue, error) {
 	source, err := vm.callArgument(call, scope, "source", 0)
 	if err != nil {
@@ -1066,6 +1685,410 @@ func (vm *statefulVM) evaluateValueWhen(call *statefulCallExpr, scope *statefulS
 		return statefulNA(), nil
 	}
 	return cloneStatefulValue(state.values[index]), nil
+}
+
+func (vm *statefulVM) recordHistoryCall(call *statefulCallExpr, scope *statefulScope, values ...statefulValue) *statefulHistoryCall {
+	site := statefulCallSite{call: call, scope: scope}
+	state := vm.historyCalls[site]
+	if state == nil {
+		state = &statefulHistoryCall{lastBar: -1}
+		vm.historyCalls[site] = state
+	}
+	for len(state.arguments) < len(values) {
+		history := make([]statefulValue, state.lastBar+1)
+		for index := range history {
+			history[index] = statefulNA()
+		}
+		state.arguments = append(state.arguments, history)
+	}
+	for state.lastBar+1 < vm.bar {
+		for index := range state.arguments {
+			state.arguments[index] = append(state.arguments[index], statefulNA())
+		}
+		state.lastBar++
+	}
+	if state.lastBar == vm.bar {
+		for index, value := range values {
+			state.arguments[index][vm.bar] = cloneStatefulValue(value)
+		}
+		return state
+	}
+	for index := range state.arguments {
+		value := statefulNA()
+		if index < len(values) {
+			value = cloneStatefulValue(values[index])
+		}
+		state.arguments[index] = append(state.arguments[index], value)
+	}
+	state.lastBar = vm.bar
+	return state
+}
+
+func statefulHistoryAt(state *statefulHistoryCall, argument, bar int) statefulValue {
+	if state == nil || argument < 0 || argument >= len(state.arguments) ||
+		bar < 0 || bar >= len(state.arguments[argument]) {
+		return statefulNA()
+	}
+	return cloneStatefulValue(state.arguments[argument][bar])
+}
+
+func statefulWindowNumbers(state *statefulHistoryCall, argument, end, length int) []float64 {
+	if length <= 0 {
+		return nil
+	}
+	start := end - length + 1
+	if start < 0 {
+		start = 0
+	}
+	values := []float64{}
+	for bar := start; bar <= end; bar++ {
+		number := statefulNumeric(statefulHistoryAt(state, argument, bar))
+		if statefulUsable(number) {
+			values = append(values, number)
+		}
+	}
+	return values
+}
+
+func statefulMeanAndDeviation(values []float64) (float64, float64, bool) {
+	if len(values) == 0 {
+		return math.NaN(), math.NaN(), false
+	}
+	mean := 0.0
+	for _, value := range values {
+		mean += value
+	}
+	mean /= float64(len(values))
+	variance := 0.0
+	for _, value := range values {
+		delta := value - mean
+		variance += delta * delta
+	}
+	variance /= float64(len(values))
+	return mean, math.Sqrt(variance), true
+}
+
+func (vm *statefulVM) callLength(call *statefulCallExpr, scope *statefulScope, name string, index, fallback int) (int, error) {
+	value, err := vm.callArgument(call, scope, name, index)
+	if err != nil {
+		return 0, err
+	}
+	number := statefulNumeric(value)
+	if !statefulUsable(number) {
+		return fallback, nil
+	}
+	length := int(math.Round(number))
+	if length <= 0 {
+		return 0, fmt.Errorf("length must be greater than zero")
+	}
+	return length, nil
+}
+
+func (vm *statefulVM) evaluateRollingSum(call *statefulCallExpr, scope *statefulScope) (statefulValue, error) {
+	source, err := vm.callArgument(call, scope, "source", 0)
+	if err != nil {
+		return statefulNA(), err
+	}
+	length, err := vm.callLength(call, scope, "length", 1, 1)
+	if err != nil {
+		return statefulNA(), err
+	}
+	state := vm.recordHistoryCall(call, scope, source)
+	values := statefulWindowNumbers(state, 0, vm.bar, length)
+	if len(values) < length {
+		return statefulNA(), nil
+	}
+	sum := 0.0
+	for _, value := range values {
+		sum += value
+	}
+	return statefulNumber(sum), nil
+}
+
+func (vm *statefulVM) evaluateTAFunction(name string, call *statefulCallExpr, scope *statefulScope) (statefulValue, error) {
+	name = strings.TrimPrefix(name, "ta.")
+	switch name {
+	case "atr", "tr":
+		return vm.evaluateTrueRangeFunction(name, call, scope)
+	}
+
+	sourceIndex, lengthIndex := 0, 1
+	sourceName, lengthName := "source", "length"
+	var source statefulValue
+	var err error
+	if (name == "highest" || name == "highestbars" || name == "lowest" || name == "lowestbars") && len(call.arguments) == 1 {
+		if name == "highest" || name == "highestbars" {
+			source, err = vm.resolveIdentifier("high", scope)
+		} else {
+			source, err = vm.resolveIdentifier("low", scope)
+		}
+		sourceIndex, lengthIndex = -1, 0
+	} else {
+		source, err = vm.callArgument(call, scope, sourceName, sourceIndex)
+	}
+	if err != nil {
+		return statefulNA(), err
+	}
+
+	switch name {
+	case "cross", "crossover", "crossunder":
+		second, err := vm.callArgument(call, scope, "source2", 1)
+		if err != nil {
+			return statefulNA(), err
+		}
+		state := vm.recordHistoryCall(call, scope, source, second)
+		currentA := statefulNumeric(statefulHistoryAt(state, 0, vm.bar))
+		currentB := statefulNumeric(statefulHistoryAt(state, 1, vm.bar))
+		previousA := statefulNumeric(statefulHistoryAt(state, 0, vm.bar-1))
+		previousB := statefulNumeric(statefulHistoryAt(state, 1, vm.bar-1))
+		if !statefulUsable(currentA) || !statefulUsable(currentB) ||
+			!statefulUsable(previousA) || !statefulUsable(previousB) {
+			return statefulBool(false), nil
+		}
+		over := currentA > currentB && previousA <= previousB
+		under := currentA < currentB && previousA >= previousB
+		if name == "crossover" {
+			return statefulBool(over), nil
+		}
+		if name == "crossunder" {
+			return statefulBool(under), nil
+		}
+		return statefulBool(over || under), nil
+	case "barssince":
+		state := vm.recordHistoryCall(call, scope, source)
+		for bar := vm.bar; bar >= 0; bar-- {
+			value := statefulHistoryAt(state, 0, bar)
+			if value.kind == statefulValueBool && value.boolean {
+				return statefulNumber(float64(vm.bar - bar)), nil
+			}
+		}
+		return statefulNA(), nil
+	case "macd":
+		fastLength, err := vm.callLength(call, scope, "fastlen", 1, 12)
+		if err != nil {
+			return statefulNA(), err
+		}
+		slowLength, err := vm.callLength(call, scope, "slowlen", 2, 26)
+		if err != nil {
+			return statefulNA(), err
+		}
+		signalLength, err := vm.callLength(call, scope, "siglen", 3, 9)
+		if err != nil {
+			return statefulNA(), err
+		}
+		state := vm.recordHistoryCall(call, scope, source)
+		values := statefulHistoryNumbers(state, 0)
+		fast := exponentialAverage(values, fastLength)
+		slow := exponentialAverage(values, slowLength)
+		line := make([]float64, len(values))
+		for index := range line {
+			line[index] = math.NaN()
+			if statefulUsable(fast[index]) && statefulUsable(slow[index]) {
+				line[index] = fast[index] - slow[index]
+			}
+		}
+		signal := exponentialAverage(line, signalLength)
+		if vm.bar >= len(line) || !statefulUsable(line[vm.bar]) || !statefulUsable(signal[vm.bar]) {
+			return statefulValue{kind: statefulValueTuple, tuple: []statefulValue{statefulNA(), statefulNA(), statefulNA()}}, nil
+		}
+		return statefulValue{kind: statefulValueTuple, tuple: []statefulValue{
+			statefulNumber(line[vm.bar]),
+			statefulNumber(signal[vm.bar]),
+			statefulNumber(line[vm.bar] - signal[vm.bar]),
+		}}, nil
+	}
+
+	length, err := vm.callLength(call, scope, lengthName, lengthIndex, 1)
+	if err != nil {
+		return statefulNA(), err
+	}
+	state := vm.recordHistoryCall(call, scope, source)
+	current := statefulNumeric(statefulHistoryAt(state, 0, vm.bar))
+	previous := statefulNumeric(statefulHistoryAt(state, 0, vm.bar-length))
+
+	switch name {
+	case "change":
+		currentValue := statefulHistoryAt(state, 0, vm.bar)
+		previousValue := statefulHistoryAt(state, 0, vm.bar-length)
+		if currentValue.kind == statefulValueBool && previousValue.kind == statefulValueBool {
+			return statefulBool(currentValue.boolean != previousValue.boolean), nil
+		}
+		if !statefulUsable(current) || !statefulUsable(previous) {
+			return statefulNA(), nil
+		}
+		return statefulNumber(current - previous), nil
+	case "mom":
+		if !statefulUsable(current) || !statefulUsable(previous) {
+			return statefulNA(), nil
+		}
+		return statefulNumber(current - previous), nil
+	case "roc":
+		if !statefulUsable(current) || !statefulUsable(previous) || previous == 0 {
+			return statefulNA(), nil
+		}
+		return statefulNumber(100 * (current - previous) / previous), nil
+	case "highest", "lowest", "highestbars", "lowestbars":
+		best := math.NaN()
+		bestOffset := -1
+		for offset := 0; offset < length; offset++ {
+			value := statefulNumeric(statefulHistoryAt(state, 0, vm.bar-offset))
+			if !statefulUsable(value) {
+				continue
+			}
+			if !statefulUsable(best) ||
+				(strings.HasPrefix(name, "highest") && value > best) ||
+				(strings.HasPrefix(name, "lowest") && value < best) {
+				best, bestOffset = value, offset
+			}
+		}
+		if bestOffset < 0 {
+			return statefulNA(), nil
+		}
+		if strings.HasSuffix(name, "bars") {
+			return statefulNumber(float64(-bestOffset)), nil
+		}
+		return statefulNumber(best), nil
+	case "rising", "falling":
+		if !statefulUsable(current) {
+			return statefulBool(false), nil
+		}
+		for offset := 1; offset <= length; offset++ {
+			value := statefulNumeric(statefulHistoryAt(state, 0, vm.bar-offset))
+			if !statefulUsable(value) {
+				continue
+			}
+			if name == "rising" && current <= value || name == "falling" && current >= value {
+				return statefulBool(false), nil
+			}
+		}
+		return statefulBool(vm.bar > 0), nil
+	case "dev", "stdev", "variance", "range", "bb", "bbw":
+		values := statefulWindowNumbers(state, 0, vm.bar, length)
+		if len(values) < length {
+			if name == "bb" {
+				return statefulValue{kind: statefulValueTuple, tuple: []statefulValue{
+					statefulNA(), statefulNA(), statefulNA(),
+				}}, nil
+			}
+			return statefulNA(), nil
+		}
+		mean, deviation, ok := statefulMeanAndDeviation(values)
+		if !ok {
+			return statefulNA(), nil
+		}
+		switch name {
+		case "dev":
+			total := 0.0
+			for _, value := range values {
+				total += math.Abs(value - mean)
+			}
+			return statefulNumber(total / float64(len(values))), nil
+		case "stdev":
+			return statefulNumber(deviation), nil
+		case "variance":
+			return statefulNumber(deviation * deviation), nil
+		case "range":
+			minimum, maximum := values[0], values[0]
+			for _, value := range values[1:] {
+				minimum = math.Min(minimum, value)
+				maximum = math.Max(maximum, value)
+			}
+			return statefulNumber(maximum - minimum), nil
+		case "bb", "bbw":
+			multiplier, err := vm.callArgument(call, scope, "mult", 2)
+			if err != nil {
+				return statefulNA(), err
+			}
+			mult := statefulNumeric(multiplier)
+			upper, lower := mean+mult*deviation, mean-mult*deviation
+			if name == "bbw" {
+				if mean == 0 {
+					return statefulNA(), nil
+				}
+				return statefulNumber((upper - lower) / mean), nil
+			}
+			return statefulValue{kind: statefulValueTuple, tuple: []statefulValue{
+				statefulNumber(mean), statefulNumber(upper), statefulNumber(lower),
+			}}, nil
+		}
+	case "rsi":
+		values := statefulHistoryNumbers(state, 0)
+		gains := make([]float64, len(values))
+		losses := make([]float64, len(values))
+		for index := range values {
+			gains[index], losses[index] = math.NaN(), math.NaN()
+			if index > 0 && statefulUsable(values[index]) && statefulUsable(values[index-1]) {
+				delta := values[index] - values[index-1]
+				gains[index] = math.Max(delta, 0)
+				losses[index] = math.Max(-delta, 0)
+			}
+		}
+		averageGain := runningMovingAverage(gains, length)
+		averageLoss := runningMovingAverage(losses, length)
+		if vm.bar >= len(averageGain) || !statefulUsable(averageGain[vm.bar]) || !statefulUsable(averageLoss[vm.bar]) {
+			return statefulNA(), nil
+		}
+		if averageLoss[vm.bar] == 0 {
+			return statefulNumber(100), nil
+		}
+		return statefulNumber(100 - 100/(1+averageGain[vm.bar]/averageLoss[vm.bar])), nil
+	case "hma":
+		values := statefulHistoryNumbers(state, 0)
+		half := int(math.Max(1, math.Round(float64(length)/2)))
+		root := int(math.Max(1, math.Round(math.Sqrt(float64(length)))))
+		fullWMA := weightedMovingAverage(values, length)
+		halfWMA := weightedMovingAverage(values, half)
+		combined := make([]float64, len(values))
+		for index := range values {
+			combined[index] = math.NaN()
+			if statefulUsable(fullWMA[index]) && statefulUsable(halfWMA[index]) {
+				combined[index] = 2*halfWMA[index] - fullWMA[index]
+			}
+		}
+		hull := weightedMovingAverage(combined, root)
+		if vm.bar >= len(hull) || !statefulUsable(hull[vm.bar]) {
+			return statefulNA(), nil
+		}
+		return statefulNumber(hull[vm.bar]), nil
+	}
+	return statefulNA(), fmt.Errorf("unsupported TA function ta.%s()", name)
+}
+
+func statefulHistoryNumbers(state *statefulHistoryCall, argument int) []float64 {
+	if state == nil || argument < 0 || argument >= len(state.arguments) {
+		return nil
+	}
+	values := make([]float64, len(state.arguments[argument]))
+	for index, value := range state.arguments[argument] {
+		values[index] = statefulNumeric(value)
+	}
+	return values
+}
+
+func (vm *statefulVM) evaluateTrueRangeFunction(name string, call *statefulCallExpr, scope *statefulScope) (statefulValue, error) {
+	trueRanges := make([]float64, vm.bar+1)
+	for index := range trueRanges {
+		candle := vm.candles[index]
+		if index == 0 {
+			trueRanges[index] = candle.High - candle.Low
+			continue
+		}
+		previousClose := vm.candles[index-1].Close
+		trueRanges[index] = math.Max(candle.High-candle.Low,
+			math.Max(math.Abs(candle.High-previousClose), math.Abs(candle.Low-previousClose)))
+	}
+	if name == "tr" {
+		return statefulNumber(trueRanges[vm.bar]), nil
+	}
+	length, err := vm.callLength(call, scope, "length", 0, 14)
+	if err != nil {
+		return statefulNA(), err
+	}
+	average := runningMovingAverage(trueRanges, length)
+	if vm.bar >= len(average) || !statefulUsable(average[vm.bar]) {
+		return statefulNA(), nil
+	}
+	return statefulNumber(average[vm.bar]), nil
 }
 
 func (vm *statefulVM) evaluatePivot(call *statefulCallExpr, scope *statefulScope, kind string) (statefulValue, error) {
@@ -1528,6 +2551,88 @@ func (vm *statefulVM) evaluatePlot(call *statefulCallExpr, scope *statefulScope)
 		plot.lastBar = vm.bar
 	}
 	return statefulValue{kind: statefulValuePlot, plot: plot}, nil
+}
+
+func (vm *statefulVM) evaluatePlotMarker(name string, call *statefulCallExpr, scope *statefulScope) (statefulValue, error) {
+	series, err := vm.callArgument(call, scope, "series", 0)
+	if err != nil {
+		return statefulNA(), err
+	}
+	marker := ""
+	location := vm.textArgument(call, scope, "location", 3, "location.abovebar")
+	y := vm.candles[vm.bar].High
+	if location == "location.belowbar" {
+		y = vm.candles[vm.bar].Low
+	}
+	if name == "plotarrow" {
+		value := statefulNumeric(series)
+		if !statefulUsable(value) || value == 0 {
+			return statefulNA(), nil
+		}
+		if value > 0 {
+			marker, location, y = "▲", "location.belowbar", vm.candles[vm.bar].Low
+		} else {
+			marker, location, y = "▼", "location.abovebar", vm.candles[vm.bar].High
+		}
+	} else {
+		visible, err := vm.booleanValue(series)
+		if err != nil {
+			return statefulNA(), err
+		}
+		if !visible {
+			return statefulNA(), nil
+		}
+		if name == "plotchar" {
+			marker = vm.textArgument(call, scope, "char", 2, "•")
+		} else {
+			style := vm.textArgument(call, scope, "style", 2, "shape.xcross")
+			marker = statefulShapeText(style)
+			if text := vm.textArgument(call, scope, "text", 6, ""); text != "" {
+				marker = text
+			}
+		}
+		if location == "location.absolute" {
+			y = statefulNumeric(series)
+		}
+	}
+	object := vm.newObject(statefulLabelObject)
+	object.x1 = float64(vm.bar) + vm.numberArgumentOr(call, scope, "offset", 5, 0)
+	object.y1 = y
+	object.xloc = "xloc.bar_index"
+	object.text = marker
+	object.style = "label.style_none"
+	object.color = vm.colorArgument(call, scope, "textcolor", 7,
+		vm.colorArgument(call, scope, "color", 4, defaultColors[0]))
+	object.background = "transparent"
+	object.position = location
+	object.textSize = vm.textArgument(call, scope, "size", 9, "size.auto")
+	vm.retainObject(object, vm.program.maxLabels)
+	return statefulValue{kind: statefulValueObject, object: object}, nil
+}
+
+func statefulShapeText(style string) string {
+	switch style {
+	case "shape.triangleup":
+		return "▲"
+	case "shape.triangledown":
+		return "▼"
+	case "shape.arrowup":
+		return "↑"
+	case "shape.arrowdown":
+		return "↓"
+	case "shape.circle":
+		return "●"
+	case "shape.square":
+		return "■"
+	case "shape.diamond":
+		return "◆"
+	case "shape.cross":
+		return "+"
+	case "shape.labelup", "shape.labeldown":
+		return ""
+	default:
+		return "×"
+	}
 }
 
 func (vm *statefulVM) evaluateFill(call *statefulCallExpr, scope *statefulScope) (statefulValue, error) {

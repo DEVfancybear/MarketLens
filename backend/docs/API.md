@@ -1076,6 +1076,36 @@ runtime receives source plus candles and returns chart primitives.
 | POST   | `/api/v1/pine-runtime/inputs`  | Extract Inputs-tab schema                    |
 | POST   | `/api/v1/pine-runtime/styles`  | Extract Style-tab schema                     |
 | POST   | `/api/v1/pine-runtime/compile` | Compile source against supplied OHLCV bars and optional replay cutoff |
+| GET    | `/api/v1/pine-runtime/capabilities` | Report implemented, partial, and engine-dependent Pine v6 features |
+
+The capabilities route is the machine-readable compatibility contract. Clients
+should query it instead of inferring runtime coverage from the Pine language
+version alone:
+
+```json
+{
+  "languageVersion": 6,
+  "executionMode": "closed-bar",
+  "supported": [
+    "for/while loops with break and continue",
+    "arrays, ordered maps, and basic matrices",
+    "core ta, math, and string functions"
+  ],
+  "partial": [
+    "request.security for the current symbol",
+    "drawing and plot surface"
+  ],
+  "engineRequired": [
+    "realtime rollback and varip",
+    "strategy order simulation",
+    "library imports",
+    "external-symbol and lower-timeframe data feeds"
+  ]
+}
+```
+
+See `docs/PINE_V6_SUPPORT_MATRIX.md` for the detailed support matrix and
+implementation roadmap.
 
 Compile request:
 
@@ -1128,7 +1158,9 @@ series patterns, plot/hline/fill output, fixed higher-timeframe
 `request.security()` aggregation for the current symbol (positional or named
 required arguments),
 and the Pine functions needed by VSA Volume, Better RSI, ADR-style scripts,
-and confirmed `ta.pivothigh()` / `ta.pivotlow()` calculations. `plot(...,
+and confirmed `ta.pivothigh()` / `ta.pivotlow()` calculations. The stateful
+path also covers `while`, loop controls, ordered maps, basic matrices,
+legacy namespace arrays, and common TA/math/string families. `plot(...,
 style=linebr)` and
 `plot.style_linebr` compile into independent chart series split at every `na`
 gap so the frontend never bridges conditional plot ranges. `hline()` and

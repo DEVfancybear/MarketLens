@@ -682,6 +682,27 @@ func TestHandlerCompileUsesHTTPContract(t *testing.T) {
 	}
 }
 
+func TestHandlerExposesPineV6Capabilities(t *testing.T) {
+	app := fiber.New()
+	NewHandler().Register(app.Group("/api/v1"))
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/pine-runtime/capabilities", nil)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("capabilities route: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("capabilities status = %d", resp.StatusCode)
+	}
+	var decoded PineRuntimeCapabilities
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		t.Fatalf("decode capabilities: %v", err)
+	}
+	if decoded.LanguageVersion != 6 || decoded.ExecutionMode != "closed-bar" ||
+		len(decoded.Supported) == 0 || len(decoded.EngineRequired) == 0 {
+		t.Fatalf("capabilities response: %+v", decoded)
+	}
+}
+
 func TestHandlerCompileAppliesReplayCutoffBeforeSavedSourceExecution(t *testing.T) {
 	app := fiber.New()
 	NewHandler().Register(app.Group("/api/v1"))
@@ -748,9 +769,9 @@ func TestCompilerFailsClosedForUnsupportedPineFeatures(t *testing.T) {
 		"strategy": `//@version=5
 strategy("Orders")
 strategy.entry("L", strategy.long)`,
-		"visual": `//@version=5
-indicator("Shapes")
-plotshape(close > open)`,
+		"bar-visual": `//@version=5
+indicator("Custom candles")
+plotcandle(open, high, low, close)`,
 		"multi-symbol": `//@version=5
 indicator("Other symbol")
 plot(request.security("NASDAQ:AAPL", "D", close))`,

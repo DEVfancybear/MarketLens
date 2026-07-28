@@ -4,6 +4,21 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Extended - Pine v6 conformance foundation (2026-07-28)
+
+- Added `while`, `break`, `continue`, `for ... by`, modulo operators, generic
+  collection annotations, legacy namespace arrays, ordered maps, and basic
+  matrices to the stateful runtime.
+- Added call-site-isolated history for stateful TA evaluation and expanded the
+  TA surface with change/momentum, extrema, crosses, RSI, ATR, bands, HMA, and
+  MACD families.
+- Normalized `plotshape`, `plotchar`, and `plotarrow` output into the common
+  drawing transport.
+- Added Pine v6 conformance tests, the
+  `GET /api/v1/pine-runtime/capabilities` contract, and a documented support
+  matrix that separates implemented behavior from features requiring realtime,
+  strategy, library, or external data engines.
+
 ### Fixed - MT5 open-position and pending-order synchronization (2026-07-28)
 - Fixed valid MT5 positions and pending Limit/Stop orders remaining empty in
   the Trade workspace when an unrelated instrument metadata record or command

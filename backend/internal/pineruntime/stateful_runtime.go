@@ -21,6 +21,8 @@ const (
 	statefulValueTuple
 	statefulValueRecord
 	statefulValueArray
+	statefulValueMap
+	statefulValueMatrix
 	statefulValueObject
 	statefulValuePlot
 )
@@ -33,6 +35,8 @@ type statefulValue struct {
 	tuple   []statefulValue
 	record  *statefulRecord
 	array   *statefulArray
+	mapData *statefulMap
+	matrix  *statefulMatrix
 	object  *statefulObject
 	plot    *statefulPlot
 }
@@ -45,6 +49,22 @@ type statefulRecord struct {
 type statefulArray struct {
 	elementType string
 	values      []statefulValue
+}
+
+type statefulMapEntry struct {
+	key   statefulValue
+	value statefulValue
+}
+
+type statefulMap struct {
+	keyType   string
+	valueType string
+	entries   []statefulMapEntry
+}
+
+type statefulMatrix struct {
+	elementType string
+	rows        [][]statefulValue
 }
 
 type statefulObjectKind string
@@ -106,6 +126,11 @@ type statefulValueWhenCall struct {
 	lastBar int
 }
 
+type statefulHistoryCall struct {
+	arguments [][]statefulValue
+	lastBar   int
+}
+
 type statefulCallSite struct {
 	call  *statefulCallExpr
 	scope *statefulScope
@@ -148,9 +173,9 @@ func cloneStatefulValue(value statefulValue) statefulValue {
 				cloned.record.fields[key] = cloneStatefulValue(field)
 			}
 		}
-	// Arrays and drawing/plot handles are Pine reference types.  Their pointer
-	// identity must survive assignment and array insertion.
-	case statefulValueArray, statefulValueObject, statefulValuePlot:
+	// Collections and drawing/plot handles are Pine reference types. Their
+	// pointer identity must survive assignment and collection insertion.
+	case statefulValueArray, statefulValueMap, statefulValueMatrix, statefulValueObject, statefulValuePlot:
 	}
 	return cloned
 }
@@ -218,6 +243,7 @@ type statefulVM struct {
 	functionLastBar  map[statefulCallSite]int
 	numericCalls     map[statefulCallSite]*statefulNumericCall
 	valueWhenCalls   map[statefulCallSite]*statefulValueWhenCall
+	historyCalls     map[statefulCallSite]*statefulHistoryCall
 	cumulativeCalls  map[statefulCallSite]float64
 	nextObjectID     int
 	nextPlotID       int
@@ -240,6 +266,7 @@ func newStatefulVM(ctx context.Context, program *statefulProgram, request Compil
 		functionLastBar: map[statefulCallSite]int{},
 		numericCalls:    map[statefulCallSite]*statefulNumericCall{},
 		valueWhenCalls:  map[statefulCallSite]*statefulValueWhenCall{},
+		historyCalls:    map[statefulCallSite]*statefulHistoryCall{},
 		cumulativeCalls: map[statefulCallSite]float64{},
 		version:         ExtractMeta(request.SourceCode).Version,
 	}
@@ -271,7 +298,10 @@ func compileStatefulPine(ctx context.Context, request CompileRequest, id string)
 
 func statefulSourceCandidate(source string) bool {
 	cleaned := normalizeSource(source)
-	if strings.Contains(cleaned, "array.new<") {
+	if regexp.MustCompile(`\b(array\.(new(?:_[A-Za-z]+)?|from)|map\.|matrix\.)`).MatchString(cleaned) {
+		return true
+	}
+	if regexp.MustCompile(`\b(plotshape|plotchar|plotarrow)\s*\(`).MatchString(cleaned) {
 		return true
 	}
 	if regexp.MustCompile(`(?m)^\s*type\s+[A-Za-z_][A-Za-z0-9_]*\s*$`).MatchString(cleaned) {
@@ -280,7 +310,7 @@ func statefulSourceCandidate(source string) bool {
 	// Tuple assignment and loops require per-bar scopes and cannot be represented
 	// by the vector evaluator's single pineValue result.
 	return regexp.MustCompile(`(?m)^\s*\[[^\]]+\]\s*=`).MatchString(cleaned) ||
-		regexp.MustCompile(`(?m)^\s*for\s+`).MatchString(cleaned)
+		regexp.MustCompile(`(?m)^\s*(for|while)\s+`).MatchString(cleaned)
 }
 
 func (vm *statefulVM) run() error {

@@ -87,12 +87,30 @@ type statefulForStmt struct {
 	variable string
 	from     statefulExpr
 	to       statefulExpr
+	step     statefulExpr
 	in       statefulExpr
 	body     []statefulStmt
 }
 
 func (*statefulForStmt) statefulStatement() {}
 func (s *statefulForStmt) lineNumber() int  { return s.line }
+
+type statefulWhileStmt struct {
+	line      int
+	condition statefulExpr
+	body      []statefulStmt
+}
+
+func (*statefulWhileStmt) statefulStatement() {}
+func (s *statefulWhileStmt) lineNumber() int  { return s.line }
+
+type statefulControlStmt struct {
+	line int
+	kind string
+}
+
+func (*statefulControlStmt) statefulStatement() {}
+func (s *statefulControlStmt) lineNumber() int  { return s.line }
 
 type statefulNoopStmt struct{ line int }
 
@@ -185,6 +203,20 @@ func (p *statefulSourceParser) parseBlock(start int, parentIndent int) ([]statef
 			}
 			statements = append(statements, stmt)
 			index = next
+			continue
+		}
+		if strings.HasPrefix(text, "while ") {
+			stmt, next, err := p.parseWhile(index)
+			if err != nil {
+				return nil, err
+			}
+			statements = append(statements, stmt)
+			index = next
+			continue
+		}
+		if text == "break" || text == "continue" {
+			statements = append(statements, &statefulControlStmt{line: line.line, kind: text})
+			index++
 			continue
 		}
 		if strings.HasPrefix(text, "else") {
@@ -357,12 +389,23 @@ func (p *statefulSourceParser) parseFor(index int) (*statefulForStmt, int, error
 		if toAt < 0 {
 			return nil, index, fmt.Errorf("line %d: for range missing to", line.line)
 		}
+		fromText := strings.TrimSpace(rangeText[:toAt])
+		toText := strings.TrimSpace(rangeText[toAt+2:])
+		if byAt := statefulTopLevelWord(toText, "by"); byAt >= 0 {
+			stepText := strings.TrimSpace(toText[byAt+2:])
+			toText = strings.TrimSpace(toText[:byAt])
+			var err error
+			stmt.step, err = parseStatefulExpression(stepText)
+			if err != nil {
+				return nil, index, fmt.Errorf("line %d: %w", line.line, err)
+			}
+		}
 		var err error
-		stmt.from, err = parseStatefulExpression(strings.TrimSpace(rangeText[:toAt]))
+		stmt.from, err = parseStatefulExpression(fromText)
 		if err != nil {
 			return nil, index, fmt.Errorf("line %d: %w", line.line, err)
 		}
-		stmt.to, err = parseStatefulExpression(strings.TrimSpace(rangeText[toAt+2:]))
+		stmt.to, err = parseStatefulExpression(toText)
 		if err != nil {
 			return nil, index, fmt.Errorf("line %d: %w", line.line, err)
 		}
@@ -375,13 +418,38 @@ func (p *statefulSourceParser) parseFor(index int) (*statefulForStmt, int, error
 	return stmt, statefulBlockEnd(p.lines, index+1, line.indent), nil
 }
 
+func (p *statefulSourceParser) parseWhile(index int) (*statefulWhileStmt, int, error) {
+	line := p.lines[index]
+	conditionText := strings.TrimSpace(strings.TrimPrefix(line.text, "while"))
+	if conditionText == "" {
+		return nil, index, fmt.Errorf("line %d: while loop has no condition", line.line)
+	}
+	condition, err := parseStatefulExpression(conditionText)
+	if err != nil {
+		return nil, index, fmt.Errorf("line %d: %w", line.line, err)
+	}
+	body, err := p.parseBlock(index+1, line.indent)
+	if err != nil {
+		return nil, index, err
+	}
+	if len(body) == 0 {
+		return nil, index, fmt.Errorf("line %d: while loop body is empty", line.line)
+	}
+	p.program.usesState = true
+	return &statefulWhileStmt{line: line.line, condition: condition, body: body},
+		statefulBlockEnd(p.lines, index+1, line.indent), nil
+}
+
 func (p *statefulSourceParser) parseSimple(line statefulLogicalLine) ([]statefulStmt, error) {
 	text := strings.TrimSpace(line.text)
 	if strings.HasPrefix(text, "alertcondition(") {
 		return []statefulStmt{&statefulNoopStmt{line: line.line}}, nil
 	}
 	parts := []string{text}
-	if strings.HasPrefix(text, "var ") && len(splitTopLevel(text)) > 1 {
+	// Multiple persistent declarations in one statement repeat the `var`
+	// keyword after each comma. Do not split generic types such as
+	// `map<string, float>`, whose comma is part of the type annotation.
+	if strings.HasPrefix(text, "var ") && strings.Contains(text, ", var ") && len(splitTopLevel(text)) > 1 {
 		parts = splitTopLevel(text)
 	}
 	out := []statefulStmt{}
@@ -602,7 +670,7 @@ func statefulAssignmentOperator(text string) (int, string) {
 		}
 		if index+1 < len(text) {
 			candidate := text[index : index+2]
-			if candidate == ":=" || candidate == "+=" || candidate == "-=" || candidate == "*=" || candidate == "/=" {
+			if candidate == ":=" || candidate == "+=" || candidate == "-=" || candidate == "*=" || candidate == "/=" || candidate == "%=" {
 				return index, candidate
 			}
 		}
@@ -830,7 +898,7 @@ func tokenizeStatefulExpression(text string) ([]statefulToken, error) {
 			}
 		}
 		switch char {
-		case '+', '-', '*', '/', '<', '>':
+		case '+', '-', '*', '/', '%', '<', '>':
 			tokens = append(tokens, statefulToken{kind: statefulTokenOperator, text: string(char)})
 		case '(':
 			tokens = append(tokens, statefulToken{kind: statefulTokenLeftParen, text: "("})
@@ -947,7 +1015,7 @@ func (p *statefulExpressionParser) parseAdditive() (statefulExpr, error) {
 	return p.parseBinary(func() (statefulExpr, error) { return p.parseMultiplicative() }, map[string]bool{"+": true, "-": true})
 }
 func (p *statefulExpressionParser) parseMultiplicative() (statefulExpr, error) {
-	return p.parseBinary(func() (statefulExpr, error) { return p.parseUnary() }, map[string]bool{"*": true, "/": true})
+	return p.parseBinary(func() (statefulExpr, error) { return p.parseUnary() }, map[string]bool{"*": true, "/": true, "%": true})
 }
 
 func (p *statefulExpressionParser) parseBinary(next func() (statefulExpr, error), operators map[string]bool) (statefulExpr, error) {
@@ -978,7 +1046,8 @@ func (p *statefulExpressionParser) parseBinary(next func() (statefulExpr, error)
 
 func (p *statefulExpressionParser) parseUnary() (statefulExpr, error) {
 	token := p.peek()
-	if (token.kind == statefulTokenIdentifier && token.text == "not") || (token.kind == statefulTokenOperator && token.text == "-") {
+	if (token.kind == statefulTokenIdentifier && token.text == "not") ||
+		(token.kind == statefulTokenOperator && (token.text == "-" || token.text == "+")) {
 		p.next()
 		value, err := p.parseUnary()
 		if err != nil {
@@ -1060,19 +1129,45 @@ func (p *statefulExpressionParser) parsePostfix(expression statefulExpr) (statef
 			}
 			expression = &statefulIndexExpr{receiver: expression, index: index}
 		case statefulTokenOperator:
-			if p.peek().text != "<" || p.index+3 >= len(p.tokens) ||
-				p.tokens[p.index+1].kind != statefulTokenIdentifier ||
-				p.tokens[p.index+2].text != ">" ||
-				p.tokens[p.index+3].kind != statefulTokenLeftParen {
+			if p.peek().text != "<" {
 				return expression, nil
 			}
-			// Pine's array.new<T>() generic annotation.  Comparisons are
+			end := p.index + 1
+			expectIdentifier := true
+			for end < len(p.tokens) && p.tokens[end].text != ">" {
+				if expectIdentifier && p.tokens[end].kind != statefulTokenIdentifier {
+					return expression, nil
+				}
+				if !expectIdentifier && p.tokens[end].kind != statefulTokenComma {
+					return expression, nil
+				}
+				expectIdentifier = !expectIdentifier
+				end++
+			}
+			if end >= len(p.tokens) || expectIdentifier ||
+				end+1 >= len(p.tokens) || p.tokens[end+1].kind != statefulTokenLeftParen {
+				return expression, nil
+			}
+			// Pine's collection.new<T>() and map.new<K,V>() generic annotations.
+			// Comparisons are
 			// consumed at the comparison-precedence level, so '<' here can
 			// only follow a callable expression.
 			p.next()
-			generic := p.next()
-			if generic.kind != statefulTokenIdentifier || p.next().text != ">" {
-				return nil, fmt.Errorf("invalid generic call")
+			generics := []string{}
+			for {
+				generic := p.next()
+				if generic.kind != statefulTokenIdentifier {
+					return nil, fmt.Errorf("invalid generic call")
+				}
+				generics = append(generics, generic.text)
+				if p.peek().text == ">" {
+					p.next()
+					break
+				}
+				if p.peek().kind != statefulTokenComma {
+					return nil, fmt.Errorf("invalid generic call")
+				}
+				p.next()
 			}
 			if p.peek().kind != statefulTokenLeftParen {
 				return nil, fmt.Errorf("generic annotation must precede a call")
@@ -1081,7 +1176,7 @@ func (p *statefulExpressionParser) parsePostfix(expression statefulExpr) (statef
 			if err != nil {
 				return nil, err
 			}
-			call.generic = generic.text
+			call.generic = strings.Join(generics, ",")
 			expression = call
 		case statefulTokenLeftParen:
 			call, err := p.parseCall(expression)
@@ -1127,7 +1222,11 @@ func statefulExpressionContainsState(expression statefulExpr) bool {
 	switch value := expression.(type) {
 	case *statefulCallExpr:
 		name := statefulExpressionName(value.callee)
-		if strings.HasPrefix(name, "array.new") || name == "request.security" || name == "box.new" || name == "line.new" || name == "label.new" || name == "table.new" {
+		if strings.HasPrefix(name, "array.new") || name == "array.from" ||
+			name == "map.new" || name == "matrix.new" ||
+			name == "request.security" || name == "box.new" ||
+			name == "line.new" || name == "label.new" || name == "table.new" ||
+			name == "plotshape" || name == "plotchar" || name == "plotarrow" {
 			return true
 		}
 		for _, argument := range value.arguments {

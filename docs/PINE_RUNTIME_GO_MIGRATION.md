@@ -23,6 +23,11 @@ compilation, while the frontend stays responsible for:
 - Chart rendering from backend-normalized `PineCompilation` payloads.
 - No browser-side Pine parsing/compilation fallback.
 
+The Pine v6 capability contract and phased parity plan are maintained in
+[`PINE_V6_SUPPORT_MATRIX.md`](./PINE_V6_SUPPORT_MATRIX.md). The runtime must not
+claim full TradingView parity while strategy, realtime rollback, imported
+libraries, or external market-data contexts remain engine-level gaps.
+
 ## Non-Goals
 
 - Do not execute arbitrary Pine, JavaScript, or Go plugins.

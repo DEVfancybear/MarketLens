@@ -138,6 +138,14 @@ type RuntimeError struct {
 	Line    int    `json:"line,omitempty"`
 }
 
+type PineRuntimeCapabilities struct {
+	LanguageVersion int      `json:"languageVersion"`
+	ExecutionMode   string   `json:"executionMode"`
+	Supported       []string `json:"supported"`
+	Partial         []string `json:"partial"`
+	EngineRequired  []string `json:"engineRequired"`
+}
+
 type MetaRequest struct {
 	SourceCode string `json:"sourceCode"`
 }

@@ -36,6 +36,7 @@ func NewHandler() *Handler {
 
 func (h *Handler) Register(router fiber.Router) {
 	g := router.Group("/pine-runtime")
+	g.Get("/capabilities", h.capabilities)
 	g.Post("/meta", h.meta)
 	g.Post("/inputs", h.inputs)
 	g.Post("/styles", h.styles)
@@ -43,6 +44,28 @@ func (h *Handler) Register(router fiber.Router) {
 	router.Get("/indicator-runtime/catalog", h.indicatorCatalog)
 	router.Post("/indicator-runtime/definition", h.indicatorDefinition)
 	router.Post("/indicator-runtime/compute", h.computeIndicator)
+}
+
+func (h *Handler) capabilities(c fiber.Ctx) error {
+	return c.JSON(PineRuntimeCapabilities{
+		LanguageVersion: 6,
+		ExecutionMode:   "closed-bar",
+		Supported: []string{
+			"series-history", "explicit-v6-booleans", "lazy-logical-operators",
+			"if-ternary", "for-for-in-while-break-continue", "user-functions-methods-udts",
+			"arrays", "ordered-maps", "matrices-basic", "ta-core", "math-string-core",
+			"plot-hline-fill", "plotshape-plotchar-plotarrow", "line-box-label-table",
+		},
+		Partial: []string{
+			"request.security-current-symbol", "drawing-method-surface",
+			"type-qualifier-validation", "switch-in-stateful-sources", "alerts-declarations",
+		},
+		EngineRequired: []string{
+			"realtime-rollback-varip", "strategy-broker-emulator", "libraries-imports",
+			"multi-symbol-external-data", "request.security_lower_tf", "financial-seed-footprint-data",
+			"polylines", "plotcandle-plotbar-barcolor-bgcolor",
+		},
+	})
 }
 
 func (h *Handler) indicatorCatalog(c fiber.Ctx) error {
