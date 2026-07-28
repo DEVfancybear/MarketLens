@@ -101,6 +101,10 @@ import {
 import { installChartBenchmarkHarness } from "@/services/chartBenchmarkHarness";
 import { installChartInteractionTestHarness } from "./chartInteractionTestHarness";
 import { measureChartPaneMetrics } from "./chartPaneMetrics";
+import {
+  paneLegendTopsEqual,
+  resolvePaneLegendTops,
+} from "./paneLegendLayout";
 import { crosshairTimeToTimestamp } from "./crosshairSynchronization";
 import { removeChartAfterCurrentStack } from "./chartLifecycle";
 import {
@@ -310,6 +314,10 @@ export function PriceChart({
   const visibleLogicalRangeRef = useRef<LogicalRange | null>(null);
   const derivedDataEnabledRef = useRef(true);
   const lastCrosshairTimeRef = useRef<number | null>(null);
+  const [paneLegendLayout, setPaneLegendLayout] = useState<{
+    signature: string;
+    tops: Record<string, number>;
+  }>({ signature: "", tops: {} });
 
   const theme = useAtomValue(themeAtom);
   const gridVisible = useAtomValue(gridVisibleAtom);
@@ -1042,6 +1050,10 @@ export function PriceChart({
   );
   const paneIndicators = useMemo(() => indicators.filter((i) => i.separatePane), [indicators]);
   const visiblePaneIndicators = useMemo(() => paneIndicators.filter((i) => i.visible !== false), [paneIndicators]);
+  const paneLayoutSignature = useMemo(
+    () => paneIndicators.map((item) => item.id).join("|"),
+    [paneIndicators],
+  );
   const overlayLegendIndicators = useMemo(() => indicators.filter((i) => !i.separatePane), [indicators]);
   useEffect(() => {
     const onRuntimeUpdate = () => setPineRuntimeVersion((value) => value + 1);
@@ -1107,7 +1119,6 @@ export function PriceChart({
     const chart = chartRef.current;
     if (!chart || !ready) return;
     const store = indSeriesRef.current;
-    const paneLayoutSignature = paneIndicators.map((item) => item.id).join("|");
     if (paneLayoutSignatureRef.current !== paneLayoutSignature) {
       for (const series of store.values()) {
         series.forEach((item) => chart.removeSeries(item));
@@ -1327,10 +1338,77 @@ export function PriceChart({
     chartIndicatorResults,
     indicatorRuntimeContext.replayCutoff,
     optimizationDecision.derivedData,
+    paneLayoutSignature,
     paneIndicators,
     ready,
     theme,
   ]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const container = containerRef.current;
+    if (!chart || !container || !ready || paneIndicators.length === 0) {
+      setPaneLegendLayout((current) =>
+        current.signature === paneLayoutSignature && Object.keys(current.tops).length === 0
+          ? current
+          : { signature: paneLayoutSignature, tops: {} },
+      );
+      return;
+    }
+
+    let disposed = false;
+    let measurementFrame: number | null = null;
+
+    const measure = () => {
+      measurementFrame = null;
+      if (disposed) return;
+      const chartRect = container.getBoundingClientRect();
+      const panes = chart.panes();
+      const tops = resolvePaneLegendTops(
+        { top: chartRect.top, height: chartRect.height },
+        paneIndicators.flatMap((indicator, index) => {
+          const paneElement = panes[index + 1]?.getHTMLElement();
+          if (!paneElement) return [];
+          const rect = paneElement.getBoundingClientRect();
+          return [{
+            id: indicator.id,
+            rect: { top: rect.top, height: rect.height },
+          }];
+        }),
+      );
+      setPaneLegendLayout((current) =>
+        current.signature === paneLayoutSignature &&
+        paneLegendTopsEqual(current.tops, tops)
+          ? current
+          : { signature: paneLayoutSignature, tops },
+      );
+    };
+
+    const scheduleMeasurement = () => {
+      if (disposed || measurementFrame != null) return;
+      measurementFrame = requestAnimationFrame(measure);
+    };
+
+    const paneElements = chart
+      .panes()
+      .slice(1)
+      .map((pane) => pane.getHTMLElement())
+      .filter((element): element is HTMLElement => element != null);
+    const observer = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(scheduleMeasurement);
+    observer?.observe(container);
+    paneElements.forEach((element) => observer?.observe(element));
+    window.addEventListener("resize", scheduleMeasurement);
+    scheduleMeasurement();
+
+    return () => {
+      disposed = true;
+      if (measurementFrame != null) cancelAnimationFrame(measurementFrame);
+      observer?.disconnect();
+      window.removeEventListener("resize", scheduleMeasurement);
+    };
+  }, [paneIndicators, paneLayoutSignature, ready]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -1516,16 +1594,17 @@ export function PriceChart({
         valueTextById={overlayLegendValueText}
       />
       {paneIndicators.map((indicator, index) => {
-        const paneElement = chartRef.current?.panes()[index + 1]?.getHTMLElement();
-        const chartElement = containerRef.current;
-        if (!paneElement || !chartElement) return null;
-        const paneRect = paneElement.getBoundingClientRect();
-        const chartRect = chartElement.getBoundingClientRect();
+        const top = paneLegendLayout.signature === paneLayoutSignature
+          ? paneLegendLayout.tops[indicator.id]
+          : undefined;
+        if (top == null) return null;
         return (
           <div
             key={indicator.id}
+            data-indicator-pane-legend={indicator.id}
+            data-pane-index={index + 1}
             className="absolute left-1 z-30 max-w-[calc(100%-96px)]"
-            style={{ top: Math.max(0, paneRect.top - chartRect.top + 4) }}
+            style={{ top }}
           >
             <IndicatorLegend
               indicators={[indicator]}

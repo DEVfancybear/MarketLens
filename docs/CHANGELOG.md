@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Indicator pane legends remain attached to native panes (2026-07-29)
+
+- Replaced render-time pane DOM measurement with one common
+  `ResizeObserver`/`requestAnimationFrame` geometry pipeline for every
+  separate-pane indicator.
+- Prevented legends from flashing over the main price chart while native panes
+  are still laying out, and kept them aligned after indicator changes, chart
+  resize, and pane-height changes.
+- Added unit geometry coverage and a two-pane browser regression that verifies
+  initial and post-resize legend alignment.
+
 ### Changed - Frontend validation and operations moved to TypeScript (2026-07-29)
 
 - Replaced the standalone JavaScript/MJS source checks with executable

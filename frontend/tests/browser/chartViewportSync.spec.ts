@@ -9,6 +9,33 @@ async function snapshot(page: Page) {
   });
 }
 
+async function paneLegendAlignment(page: Page) {
+  return page.evaluate(() => {
+    if (!window.__chartInteractionTest) throw new Error("Chart test harness unavailable");
+    const panes = window.__chartInteractionTest.snapshot().paneBoxes;
+    return Array.from(document.querySelectorAll<HTMLElement>("[data-indicator-pane-legend]"))
+      .map((legend) => {
+        const paneIndex = Number(legend.dataset.paneIndex);
+        const pane = panes[paneIndex];
+        return pane
+          ? {
+              id: legend.dataset.indicatorPaneLegend ?? "",
+              delta: legend.getBoundingClientRect().top - pane.y,
+            }
+          : null;
+      })
+      .filter((item): item is { id: string; delta: number } => item != null);
+  });
+}
+
+async function expectPaneLegendsAligned(page: Page) {
+  await expect.poll(async () => {
+    const alignment = await paneLegendAlignment(page);
+    return alignment.length === 2 &&
+      alignment.every(({ delta }) => Math.abs(delta - 4) <= 1);
+  }).toBe(true);
+}
+
 test("crosshair, zoom, resize, and prepend stay synchronized", async ({ page }) => {
   await page.route("**/api/v1/mt5/symbols", async (route) => {
     await route.fulfill({
@@ -90,6 +117,7 @@ test("crosshair, zoom, resize, and prepend stay synchronized", async ({ page }) 
     window.__chartInteractionTest?.snapshot().paneMetrics.paneCount === 3
   );
   expect(hydrationErrors).toEqual([]);
+  await expectPaneLegendsAligned(page);
 
   await test.step("crosshair keeps one UTC timestamp across native panes", async () => {
     const initial = await snapshot(page);
@@ -158,6 +186,7 @@ test("crosshair, zoom, resize, and prepend stay synchronized", async ({ page }) 
     expect(after.paneMetrics.plotAreaWidths).toHaveLength(3);
     expect(after.paneMetrics.widthDrift).toBeLessThanOrEqual(1);
     expect(new Set(after.paneMetrics.plotAreaWidths).size).toBe(1);
+    await expectPaneLegendsAligned(page);
   });
 
   await test.step("history prepend preserves visible timestamps and zoom span", async () => {

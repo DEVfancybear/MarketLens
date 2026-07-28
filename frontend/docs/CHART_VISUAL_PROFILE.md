@@ -55,6 +55,7 @@ generic terminal canvas. The visual baseline is intentionally quiet:
 | Market data store | `src/store/marketDataStore.ts` | Runtime source of truth for quote/candle ingress |
 | Indicator panes | `src/components/chart/PriceChart.tsx` | Creates native LWC 5 panes that share the main time scale and crosshair |
 | Indicator legend | `src/components/chart/IndicatorLegend.tsx` | Lightweight TradingView-style status-line controls |
+| Pane legend geometry | `src/components/chart/paneLegendLayout.ts` | Converts native pane rectangles into stable chart-local legend offsets |
 | Guard tests | `tests/chart/chartVisualProfile.test.ts` | Locks critical margin/right-offset defaults |
 
 ## 4. Shared Profile Contract
@@ -185,6 +186,15 @@ indicator series live in one chart, they share the same time scale even when an
 indicator returns sparse data. Do not restore transparent anchor series or a
 second chart instance to solve pane alignment.
 
+Native pane geometry is owned by Lightweight Charts, not React. `PriceChart`
+must not call `getBoundingClientRect()` while rendering a pane legend. It
+observes the chart container and every indicator pane with one
+`ResizeObserver`, coalesces measurements through `requestAnimationFrame`, and
+stores offsets keyed by the current ordered indicator signature. A legend
+remains hidden until its pane has a non-zero measured height. This common path
+applies to every separate-pane indicator and keeps legends aligned after
+add/remove/reorder, chart resize, and pane-height changes.
+
 Indicator reference guides such as Pine `hline()` and `fill()` are viewport
 artifacts. They are projected by `indicatorSeriesProjection.ts` onto the current
 logical viewport, including the right-offset whitespace after the latest candle.
@@ -210,6 +220,8 @@ Manual checks:
 - right price axis is stable and wide enough for BTC/forex labels,
 - no volume bars are visible on a clean default chart,
 - adding a Volume/VSA indicator still renders volume through the indicator path,
+- every separate-pane indicator legend starts inside its owning pane and stays
+  aligned after resizing the chart or changing pane heights,
 - current price marker contains only price and countdown, matches the live right
   price-scale width and never overlaps the market sidebar,
 - countdown visibly changes once per second and is not clipped near the bottom

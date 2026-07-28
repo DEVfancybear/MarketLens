@@ -98,6 +98,7 @@ chart; the browser must not substitute a local clock or a viewport edge.
 | Dynamic catalog browser | `src/components/toolbar/IndicatorMenu.tsx` |
 | Dynamic settings renderer | `src/components/toolbar/IndicatorSettingsDialog.tsx` |
 | Dynamic legend labels/inputs | `src/components/chart/IndicatorLegend.tsx` |
+| Separate-pane legend geometry | `src/components/chart/paneLegendLayout.ts` |
 | Generic chart primitive renderer | `src/components/chart/PriceChart.tsx` |
 
 The frontend may contain generic display policy, such as rendering a
@@ -122,6 +123,15 @@ Every separate indicator pane restores autoscale when its series changes from
 empty to non-empty. Async first results (for example RSI warm-up/runtime data)
 therefore become visible on their first write even if the pane temporarily had
 no native price range. Subsequent writes preserve the user's scale state.
+
+Separate-pane legends use the same identity-neutral geometry pipeline as their
+series. `PriceChart` observes the native Lightweight Charts pane elements and
+the chart container, measures them on the next animation frame, and stores
+chart-local offsets by indicator ID plus ordered pane signature. React render
+only consumes those offsets; it never measures native chart DOM synchronously.
+Not-yet-laid-out panes are omitted instead of placing their legends at the main
+chart origin. Browser coverage verifies multiple pane legends both on initial
+load and after viewport resize.
 
 Sparse Pine plots retain their discontinuities. In particular,
 `plot.style_linebr` is emitted as a line-break series, so `na` values do not
