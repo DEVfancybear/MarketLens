@@ -40,7 +40,7 @@ Keep this list in sync across:
 - `src/store/smcStore.ts`
 - `src/components/toolbar/SmcMenu.tsx`
 - `src/components/smc/SmcLayer.tsx`
-- `scripts/check-smc-overlay-parity.mjs`
+- `tests/architecture/smcOverlayParity.test.ts`
 
 Default state:
 

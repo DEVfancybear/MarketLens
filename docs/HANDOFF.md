@@ -376,7 +376,7 @@ JavaScript execution path for user source. Read `docs/INDICATOR_ARCHITECTURE.md`
   closing the browser after setting an alert produced no push notification, only showing up on
   reopen. Root cause: closed-browser delivery needs a second always-on process
   (`npm run push-worker` or an external cron); neither was running (verified via the OS process
-  list — no `next` or `push-alert-worker.mjs` process at all), which is the pre-existing "Worker
+  list — no `next` or compiled `push-alert-worker.js` process at all), which is the pre-existing "Worker
   not running" failure mode, not a regression in the FCM/evaluate code fixed earlier the same day.
   Fixed by adding `src/instrumentation.ts`, which starts `evaluatePushAlerts()` in-process via
   Next's `register()` hook on server boot (skipped on Vercel/`DISABLE_PUSH_WORKER=true`), so

@@ -9,6 +9,7 @@ out/
 
 # Test build output
 .test-build/
+.tools-build/
 test-results/
 playwright-report/
 *.tsbuildinfo

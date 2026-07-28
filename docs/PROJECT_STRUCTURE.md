@@ -27,9 +27,11 @@ separate runtimes, dependencies, docs, and deployment paths.
 frontend/
 |-- src/               # App code, components, stores, services, hooks, types
 |-- public/            # Static assets
-|-- tests/             # Frontend test suites
-|-- scripts/           # Frontend validation and utility scripts
+|-- tests/             # TypeScript behavior, architecture, and browser suites
+|-- tools/             # Typed workers, migrations, and benchmark entrypoints
 |-- docs/              # Frontend architecture and feature docs
+|-- tsconfig.test.json # Node test compilation
+|-- tsconfig.tools.json # Operational tool compilation
 `-- package.json       # Frontend dependencies and scripts
 ```
 

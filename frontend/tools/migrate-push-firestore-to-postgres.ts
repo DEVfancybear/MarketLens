@@ -1,19 +1,35 @@
-import { cert, getApps, initializeApp } from "firebase-admin/app";
-import { FieldPath, getFirestore } from "firebase-admin/firestore";
+import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
+import {
+  FieldPath,
+  getFirestore,
+  type DocumentData,
+  type QueryDocumentSnapshot,
+} from "firebase-admin/firestore";
 
 const COLLECTION = "pushAlertDevices";
 const PAGE_SIZE = 200;
 const REQUEST_TIMEOUT_MS = 15_000;
 const apply = process.argv.includes("--apply");
 
-function requiredEnv(name) {
+interface WorkerDevice {
+  version: number;
+  [key: string]: unknown;
+}
+
+interface WorkerPayload {
+  device?: WorkerDevice;
+  message?: string;
+}
+
+function requiredEnv(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`${name} is required`);
   return value;
 }
 
-function firebaseApp() {
-  if (getApps().length) return getApps()[0];
+function firebaseApp(): App {
+  const existing = getApps()[0];
+  if (existing) return existing;
   return initializeApp({
     credential: cert({
       projectId: requiredEnv("FIREBASE_PROJECT_ID"),
@@ -23,11 +39,14 @@ function firebaseApp() {
   });
 }
 
-function backendBase() {
+function backendBase(): string {
   return requiredEnv("NEXT_PUBLIC_API_BASE_URL").replace(/\/+$/, "");
 }
 
-async function workerRequest(path, body) {
+async function workerRequest(
+  path: string,
+  body: Record<string, unknown>,
+): Promise<WorkerPayload> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
@@ -43,7 +62,7 @@ async function workerRequest(path, body) {
         signal: controller.signal,
       },
     );
-    const payload = await response.json().catch(() => ({}));
+    const payload = (await response.json().catch(() => ({}))) as WorkerPayload;
     if (!response.ok) {
       throw new Error(
         `${path} returned ${response.status}: ${payload.message ?? "unknown error"}`,
@@ -55,11 +74,14 @@ async function workerRequest(path, body) {
   }
 }
 
-function isObject(value) {
+function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function migrationDevice(data, current) {
+function migrationDevice(
+  data: DocumentData,
+  current: WorkerDevice,
+): Record<string, unknown> {
   return {
     ...current,
     token: data.token.trim(),
@@ -80,7 +102,9 @@ function migrationDevice(data, current) {
   };
 }
 
-async function importDocument(document) {
+async function importDocument(
+  document: QueryDocumentSnapshot<DocumentData>,
+): Promise<void> {
   const data = document.data();
   const token = typeof data.token === "string" ? data.token.trim() : "";
   const firebaseUid =
@@ -102,7 +126,7 @@ async function importDocument(document) {
   });
 }
 
-async function main() {
+async function main(): Promise<void> {
   requiredEnv("FIREBASE_PROJECT_ID");
   requiredEnv("FIREBASE_CLIENT_EMAIL");
   requiredEnv("FIREBASE_PRIVATE_KEY");
@@ -112,7 +136,7 @@ async function main() {
   }
 
   const firestore = getFirestore(firebaseApp());
-  let cursor;
+  let cursor: QueryDocumentSnapshot<DocumentData> | undefined;
   let scanned = 0;
   let imported = 0;
   let failed = 0;
@@ -135,7 +159,7 @@ async function main() {
         failed += 1;
         console.error(
           `[failed] ${document.id}:`,
-          error instanceof Error ? error.message : error,
+          error instanceof Error ? error.message : String(error),
         );
       }
     }
@@ -153,10 +177,10 @@ async function main() {
   if (failed > 0) process.exitCode = 1;
 }
 
-main().catch((error) => {
+void main().catch((error: unknown) => {
   console.error(
     "Firestore push migration failed:",
-    error instanceof Error ? error.message : error,
+    error instanceof Error ? error.message : String(error),
   );
   process.exitCode = 1;
 });

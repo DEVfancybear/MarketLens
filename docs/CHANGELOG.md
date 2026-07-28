@@ -4,6 +4,20 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Frontend validation and operations moved to TypeScript (2026-07-29)
+
+- Replaced the standalone JavaScript/MJS source checks with executable
+  `node:test` TypeScript suites under `frontend/tests/architecture`, including
+  updated SMC menu ownership and Replay/Pine boundary coverage.
+- Replaced the obsolete duplicate-drawing evidence script with a regression
+  test that verifies duplicate IDs are non-empty, unique, independently
+  mutable, and removable through undo.
+- Moved the push worker, Firestore migration, and chart/drawing benchmarks to
+  typed `frontend/tools` entrypoints compiled through `tsconfig.tools.json`.
+- Centralized clean TypeScript test compilation in `npm run test:build`, added
+  `npm run test:architecture`, and removed the legacy `frontend/scripts`
+  JavaScript/MJS sources.
+
 ### Added - Five-minute offline MT5 copy window (2026-07-28)
 
 - Offline MT5 targets can now be selected for copy routing. Rust persists each

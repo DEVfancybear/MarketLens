@@ -63,7 +63,7 @@ Push failures are logged and do not block alert history or other notification ch
 | `src/server/canonicalAlertTrigger.ts` | Service-authenticated worker acknowledgement to Go/PostgreSQL. |
 | `src/server/pushAlertLifecycle.ts` | Enforces canonical persistence before notification delivery. |
 | `src/server/pushAlertDeliveryPolicy.ts` | Retains failed delivery work, creates FCM per-device work, and groups Telegram/Discord by canonical event/channel in-run. |
-| `scripts/push-alert-worker.mjs` | Local worker loop for closed-browser push evaluation. |
+| `tools/push-alert-worker.ts` | Local worker loop for closed-browser push evaluation. |
 | `src/components/alerts/AlertCenter.tsx` | Push toggle/status/error UI. |
 | `src/components/alerts/AlertEditDialog.tsx` | Per-alert Push flag. |
 | `.env.example` | Documents public Firebase config and server-only admin credentials. |

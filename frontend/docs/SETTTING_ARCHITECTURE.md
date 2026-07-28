@@ -87,7 +87,7 @@ backend-provided bindings to migrate them generically.
 | Instance persistence/actions | `src/store/chartStore.ts` |
 | Shared input-row layout | `src/components/toolbar/indicatorSettingsInputRows.ts` |
 | Common output/status styles | `src/services/indicatorStyle.ts` |
-| Regression guard | `scripts/check-pine-indicator.mjs` |
+| Regression guard | `tests/architecture/pineIndicatorBoundary.test.ts` |
 
 ## Maintenance rule
 

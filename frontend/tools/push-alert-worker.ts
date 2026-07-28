@@ -1,6 +1,15 @@
 import { existsSync, readFileSync } from "node:fs";
 
-function loadEnvFile(file) {
+interface WorkerResponse {
+  devices?: number;
+  alerts?: number;
+  triggered?: number;
+  skipped?: number;
+  errors?: unknown[];
+  error?: string;
+}
+
+function loadEnvFile(file: string): void {
   if (!existsSync(file)) return;
   const raw = readFileSync(file, "utf8");
   for (const line of raw.split(/\r?\n/)) {
@@ -32,41 +41,52 @@ const baseUrl = (process.env.PUSH_WORKER_URL ?? "http://localhost:3000").replace
 const intervalMs = Number(process.env.PUSH_WORKER_INTERVAL_MS ?? "15000");
 const secret = process.env.PUSH_WORKER_SECRET ?? "";
 
-async function tick() {
-  const headers = {};
+async function tick(): Promise<void> {
+  const headers: Record<string, string> = {};
   if (secret) headers["x-push-worker-secret"] = secret;
 
-  const res = await fetch(`${baseUrl}/api/push/evaluate`, {
+  const response = await fetch(`${baseUrl}/api/push/evaluate`, {
     method: "POST",
     headers,
   });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(body.error ?? `HTTP ${res.status}`);
+  const body = (await response.json().catch(() => ({}))) as WorkerResponse;
+  if (!response.ok) {
+    throw new Error(body.error ?? `HTTP ${response.status}`);
   }
-  const errors = Array.isArray(body.errors) && body.errors.length > 0
-    ? ` errors=${body.errors.length}`
-    : "";
+  const errors =
+    Array.isArray(body.errors) && body.errors.length > 0
+      ? ` errors=${body.errors.length}`
+      : "";
   console.log(
     `[push-worker] devices=${body.devices ?? 0} alerts=${body.alerts ?? 0} triggered=${body.triggered ?? 0} skipped=${body.skipped ?? 0}${errors}`,
   );
   if (Array.isArray(body.errors)) {
     for (const error of body.errors.slice(0, 5)) {
-      console.warn(`[push-worker] ${error}`);
+      console.warn(`[push-worker] ${String(error)}`);
     }
   }
 }
 
-console.log(
-  `[push-worker] polling ${baseUrl}/api/push/evaluate every ${intervalMs}ms`,
-);
+function logTickError(error: unknown): void {
+  console.error(
+    `[push-worker] ${error instanceof Error ? error.message : String(error)}`,
+  );
+}
 
-await tick().catch((error) => {
-  console.error(`[push-worker] ${error instanceof Error ? error.message : error}`);
+async function main(): Promise<void> {
+  if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+    throw new Error("PUSH_WORKER_INTERVAL_MS must be a positive number");
+  }
+  console.log(
+    `[push-worker] polling ${baseUrl}/api/push/evaluate every ${intervalMs}ms`,
+  );
+  await tick().catch(logTickError);
+  setInterval(() => {
+    void tick().catch(logTickError);
+  }, intervalMs);
+}
+
+void main().catch((error: unknown) => {
+  logTickError(error);
+  process.exitCode = 1;
 });
-
-setInterval(() => {
-  void tick().catch((error) => {
-    console.error(`[push-worker] ${error instanceof Error ? error.message : error}`);
-  });
-}, intervalMs);

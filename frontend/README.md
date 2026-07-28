@@ -54,12 +54,19 @@ Focused tests live under `frontend/tests/` and compile to `.test-build/`:
 ```bash
 npm run test:chart
 npm run test:replay
+npm run test:architecture
 npm run test:watchlist
 npm run test:position
 npm run test:trade
 npm run test:drawing
+npm run test:alerts
 npm run test:ui
 ```
+
+Architecture checks are executable TypeScript tests under
+`tests/architecture/`. Operational utilities and performance harnesses live
+under `tools/`; `npm run tools:build` performs a clean compile to the ignored
+`.tools-build/` directory before worker, migration, or benchmark commands run.
 
 ## Environment
 
