@@ -4,6 +4,21 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Near-instant warm Replay activation (2026-07-27)
+- Reused the backend's already-loaded latest chart window when it contains the
+  selected Replay bar and at least one playable future interval. Selecting a bar
+  from the visible chart no longer starts a redundant strict-before MT5 history
+  request that could occupy the single native history worker for 60–70 seconds.
+- Preserved the authoritative immutable-dataset boundary by copying the warm
+  backend window into the normal checksum-addressed Replay dataset; no browser
+  candle data is uploaded or trusted.
+- Kept deep-history correctness unchanged. Select date, First day, sparse market
+  closures, and any selection outside the warm window still use the validated
+  strict-before fetch/probe path.
+- Added regressions proving warm creation performs exactly one cache-only read
+  and no deep-history round trip, while a cache miss cannot enqueue native MT5
+  work before fallback.
+
 ### Fixed - Replay history retention across every chart timeframe (2026-07-27)
 - Stopped preparing every intraday Replay session from a fixed 5,000-row `1m`
   dataset. Auto Replay now pins the shared playback resolution (`1m` through
@@ -46,8 +61,9 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   uninterruptible native MT5 call still occupies the sole history worker.
   Once the full window is ready, it atomically replaces the viewport seed and
   invalidates indicator warm-up context.
-- Kept strict-before pagination and Replay dataset loading on their full-window
-  paths; progressive loading applies only to a cold latest-window chart read.
+- Kept strict-before pagination and Replay's out-of-cache deep-history fallback
+  on their full-window paths; progressive loading applies only to a cold
+  latest-window chart read.
 - Added an end-to-end Go service regression for `XRPUSD 1M` covering the
   24-bar first paint, one 60-bar background fill, and the completed cached
   response.

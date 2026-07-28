@@ -560,6 +560,32 @@ func (s *Service) History(ctx context.Context, symbol, timeframe string, limit i
 	return snapshot
 }
 
+// CachedHistory returns only the in-memory backend window and never starts,
+// joins, cancels, or waits for a native MT5 history request. Replay uses this
+// read to make visible-chart activation an O(memory) operation before deciding
+// whether a strict-before deep-history request is actually necessary.
+func (s *Service) CachedHistory(symbol, timeframe string, limit int, before int64) HistorySnapshot {
+	symbol = normalizeSymbol(symbol)
+	timeframe = normalizeTimeframe(timeframe)
+	limit = clampLimit(limit)
+	if symbol == "" || timeframe == "" {
+		return HistorySnapshot{
+			Connected: false,
+			BridgeURL: s.cfg.BridgeURL,
+			Source:    "mt5",
+			Symbol:    symbol,
+			Timeframe: timeframe,
+			Candles:   []Candle{},
+			LastError: "symbol and timeframe are required",
+		}
+	}
+	candles := s.cachedHistory(symbol, timeframe, limit, before)
+	snapshot := s.historySnapshot(symbol, timeframe, candles, "")
+	snapshot.RefreshPending = s.backgroundHistoryRefreshPending(symbol, timeframe)
+	s.annotateSnapshotFreshness(&snapshot, symbol, timeframe, candles)
+	return snapshot
+}
+
 func (s *Service) HistoryAround(
 	ctx context.Context,
 	symbol, timeframe string,

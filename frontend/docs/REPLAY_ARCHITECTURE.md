@@ -126,6 +126,15 @@ row. The batch contains the finalized version of the previously-forming candle,
 the completed new candles, and the latest forming candle. `cursor.advanced`
 follows it in the same authoritative event order.
 
+Replay creation first uses the MT5 service's cache-only latest-window API at the
+resolved Replay source timeframe. The read cannot schedule or wait for native
+MT5 work. When that backend cache contains the selected bar plus a playable
+future row, session preparation pins it immediately into the normal
+immutable/checksummed dataset. This is the common visible-chart path. A
+selection outside the warm window falls back to the strict-before 70/30
+history/future request and sparse-calendar probes; browser candles are never
+submitted as Replay authority.
+
 Sparse market calendars do not consume hundreds of empty Replay intervals.
 Session preparation compares the returned candle tail with the requested
 history boundary, probes beyond a page that ends inside a closure, and requires
@@ -298,11 +307,12 @@ limits projection writes. ESLint applies matching restricted imports. See
 `../../docs/REPLAY_BACKEND_PHASE6.md` from the monorepo root for the deletion proof
 and full verification runbook.
 
-Regression coverage includes Auto interval/source selection across every
-supported timeframe, synchronized layout source resolution, timeframe replacement,
-speed batching and elapsed catch-up, immediate fast Play, ordered batch events,
-no-ledger fast path, projection batch merging, finalized-forming-bar overlap,
-OHLC interpolation bounds, normal-speed single append, and high-speed append.
+Regression coverage includes warm-cache activation without a strict-before
+round trip, Auto interval/source selection across every supported timeframe,
+synchronized layout source resolution, timeframe replacement, speed batching
+and elapsed catch-up, immediate fast Play, ordered batch events, no-ledger fast
+path, projection batch merging, finalized-forming-bar overlap, OHLC
+interpolation bounds, normal-speed single append, and high-speed append.
 It also includes stale paginated-history refresh, partial first-bucket forks,
 mobile touch/keyboard selection, compact landscape, session-expiry cleanup, and
 the active `Select bar -> Select date -> First day` empty-to-one-bar viewport.

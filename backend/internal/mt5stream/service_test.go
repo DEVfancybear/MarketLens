@@ -954,3 +954,29 @@ func TestCanceledQueuedHistoryRequestIsNotSentToBridge(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 }
+
+func TestCachedHistoryNeverStartsNativeHistoryWork(t *testing.T) {
+	service := NewService(Config{})
+	service.applyHistory(HistoryMessage{
+		Source:    "mt5",
+		Symbol:    "GBPUSD",
+		Timeframe: "1H",
+		Candles: []Candle{
+			{Time: 100, Open: 1.30, High: 1.31, Low: 1.29, Close: 1.305},
+			{Time: 200, Open: 1.305, High: 1.32, Low: 1.30, Close: 1.315},
+		},
+	})
+
+	snapshot := service.CachedHistory("gbpusd", "1h", 5_000, 0)
+	if len(snapshot.Candles) != 2 || snapshot.Symbol != "GBPUSD" || snapshot.Timeframe != "1H" {
+		t.Fatalf("unexpected cached snapshot: %+v", snapshot)
+	}
+	service.mu.RLock()
+	pending := len(service.pendingHistory)
+	flights := len(service.historyFlights)
+	refreshes := len(service.backgroundRefresh)
+	service.mu.RUnlock()
+	if pending != 0 || flights != 0 || refreshes != 0 {
+		t.Fatalf("cache-only read scheduled native work: pending=%d flights=%d refreshes=%d", pending, flights, refreshes)
+	}
+}

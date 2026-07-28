@@ -14,6 +14,7 @@ import (
 
 type HistorySource interface {
 	Snapshot() mt5stream.Snapshot
+	CachedHistory(symbol, timeframe string, limit int, before int64) mt5stream.HistorySnapshot
 	History(context.Context, string, string, int, int64, bool) mt5stream.HistorySnapshot
 }
 
@@ -250,6 +251,21 @@ func (s *Service) replayHistoryWindow(
 	replayInterval int,
 	selectionTime time.Time,
 ) (mt5stream.HistorySnapshot, []Bar, error) {
+	// The active chart has normally loaded this exact native timeframe already.
+	// Read the latest window through mt5stream's cache-only API first (including
+	// while a background refresh is running), avoiding a second strict-before
+	// MT5 bridge request during Replay activation. A cache miss cannot enqueue
+	// native work; only a selection outside the warm window falls through to the
+	// deep-history path below.
+	latestHistory := s.history.CachedHistory(symbol, sourceTimeframe, s.maxBars, 0)
+	latestBars, err := normalizeCandles(latestHistory.Candles)
+	if err != nil {
+		return latestHistory, latestBars, err
+	}
+	if replayWindowCanStart(latestBars, selectionTime, sourceSeconds, replayInterval) {
+		return latestHistory, latestBars, nil
+	}
+
 	lookaheadSeconds := max(int64(float64(s.maxBars*sourceSeconds)*replayHistoryFutureShare), int64(sourceSeconds))
 	before := selectionTime.UTC().Unix() + lookaheadSeconds
 	minimumFutureRows := max(1, (replayInterval+sourceSeconds-1)/sourceSeconds)
@@ -307,6 +323,27 @@ func (s *Service) replayHistoryWindow(
 		}
 	}
 	return history, bars, nil
+}
+
+func replayWindowCanStart(
+	bars []Bar,
+	selectionTime time.Time,
+	sourceSeconds int,
+	replayInterval int,
+) bool {
+	if len(bars) == 0 || selectionTime.Before(bars[0].Time) {
+		return false
+	}
+	cursor, _, found := barAtOrBefore(bars, selectionTime)
+	if !found {
+		return false
+	}
+	availableEnd := bars[len(bars)-1].Time.Add(time.Duration(sourceSeconds) * time.Second)
+	if !selectionTime.Before(availableEnd) {
+		return false
+	}
+	minimumFutureRows := max(1, (replayInterval+sourceSeconds-1)/sourceSeconds)
+	return len(bars)-int(cursor)-1 >= minimumFutureRows
 }
 
 func resolveReplayIntervalForTracks(requested string, tracks []normalizedTrackInput) (int, error) {

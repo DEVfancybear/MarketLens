@@ -49,6 +49,23 @@ typecheck, and production build.
 
 ## Verification
 
+### Warm-cache activation fast path (2026-07-27)
+
+Selecting a bar that is already present on the chart first reads the backend
+MT5 service's cache-only latest window. That call cannot start, join, cancel, or
+wait for native MT5 work and returns the existing Go cache immediately,
+including while a background refresh is in flight. If the window contains the
+selected row and the minimum playable future rows, Replay pins the window
+through the same checksum-addressed immutable dataset transaction and embeds
+its revealed aggregate bars in the create response.
+
+The fast path does not accept browser candles and does not weaken pagination
+coverage rules. A date outside the latest backend window, a window without a
+future row, or an empty cache falls through to the strict-before request and the
+existing sparse-calendar probes. Regression coverage asserts the one-read warm
+path, a cache miss with zero scheduled native work, and the deep-history
+fallback.
+
 ### Sparse-market playback continuity (2026-07-13)
 
 Replay session preparation retains the normal 70/30 history/future window, but

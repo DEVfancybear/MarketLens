@@ -12,14 +12,28 @@ import (
 type fakeHistory struct {
 	snapshot          mt5stream.Snapshot
 	result            mt5stream.HistorySnapshot
+	latestResult      *mt5stream.HistorySnapshot
 	symbol, timeframe string
 	limit             int
 	before            int64
 	respectBefore     bool
 	calls             []int64
+	cachedCalls       int
 }
 
 func (f *fakeHistory) Snapshot() mt5stream.Snapshot { return f.snapshot }
+func (f *fakeHistory) CachedHistory(symbol, timeframe string, limit int, before int64) mt5stream.HistorySnapshot {
+	f.cachedCalls++
+	f.symbol = symbol
+	f.timeframe = timeframe
+	f.limit = limit
+	f.before = before
+	result := f.result
+	if before == 0 && f.latestResult != nil {
+		result = *f.latestResult
+	}
+	return result
+}
 func (f *fakeHistory) History(_ context.Context, symbol, timeframe string, limit int, before int64, _ bool) mt5stream.HistorySnapshot {
 	f.symbol = symbol
 	f.timeframe = timeframe
@@ -27,6 +41,9 @@ func (f *fakeHistory) History(_ context.Context, symbol, timeframe string, limit
 	f.before = before
 	f.calls = append(f.calls, before)
 	result := f.result
+	if before == 0 && f.latestResult != nil {
+		result = *f.latestResult
+	}
 	if f.respectBefore && before > 0 {
 		result.Candles = nil
 		for _, candle := range f.result.Candles {
@@ -93,6 +110,35 @@ func TestServiceCreatePinsPausedSingleChartDataset(t *testing.T) {
 	}
 }
 
+func TestServiceCreatePinsWarmLatestHistoryWithoutStrictBeforeRoundTrip(t *testing.T) {
+	start := time.Unix(1_700_006_400, 0).UTC().Truncate(time.Hour)
+	history := &fakeHistory{
+		snapshot: mt5stream.Snapshot{Symbols: []mt5stream.Symbol{{Name: "GBPUSD"}}},
+		result: mt5stream.HistorySnapshot{Source: "mt5", UpdatedAt: start, Candles: []mt5stream.Candle{
+			{Time: start.Add(-2 * time.Hour).Unix(), Open: 1.30, High: 1.31, Low: 1.29, Close: 1.305, Volume: 10},
+			{Time: start.Add(-time.Hour).Unix(), Open: 1.305, High: 1.32, Low: 1.30, Close: 1.315, Volume: 11},
+			{Time: start.Unix(), Open: 1.315, High: 1.33, Low: 1.31, Close: 1.325, Volume: 12},
+			{Time: start.Add(time.Hour).Unix(), Open: 1.325, High: 1.34, Low: 1.32, Close: 1.335, Volume: 13},
+		}},
+	}
+	store := &fakeStore{snapshot: SessionSnapshot{Status: "paused"}}
+
+	_, err := NewService(store, history, 5_000).Create(context.Background(), "user", CreateSessionInput{
+		Start:          StartInput{Kind: "time", Time: start},
+		ReplayInterval: "auto",
+		Tracks:         []TrackInput{{Slot: 0, Symbol: "GBPUSD", ChartTimeframe: "1H"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if history.cachedCalls != 1 || len(history.calls) != 0 {
+		t.Fatalf("warm Replay activation left the cache-only path: cached=%d deep=%v", history.cachedCalls, history.calls)
+	}
+	if got := len(store.prepared.Tracks[0].InitialBars); got != 3 {
+		t.Fatalf("initial bars=%d want=3", got)
+	}
+}
+
 func TestServiceCreateHistoryLookaheadCrossesWeekendForPlayback(t *testing.T) {
 	// This is the exact calendar shape behind the Select bar -> Replay -> Play
 	// regression: a Friday 15m selection must pin enough future 1m source data
@@ -113,6 +159,7 @@ func TestServiceCreateHistoryLookaheadCrossesWeekendForPlayback(t *testing.T) {
 	history := &fakeHistory{
 		snapshot:      mt5stream.Snapshot{Symbols: []mt5stream.Symbol{{Name: "EURUSD"}}},
 		respectBefore: true,
+		latestResult:  &mt5stream.HistorySnapshot{},
 		result:        mt5stream.HistorySnapshot{Source: "mt5", UpdatedAt: nextSession, Candles: candles},
 	}
 	store := &fakeStore{snapshot: SessionSnapshot{Status: "paused"}}
@@ -163,6 +210,7 @@ func TestServiceCreateHistoryLookaheadDoesNotStopAtOneFridayInterval(t *testing.
 	history := &fakeHistory{
 		snapshot:      mt5stream.Snapshot{Symbols: []mt5stream.Symbol{{Name: "EURUSD"}}},
 		respectBefore: true,
+		latestResult:  &mt5stream.HistorySnapshot{},
 		result:        mt5stream.HistorySnapshot{Source: "mt5", UpdatedAt: nextSession, Candles: candles},
 	}
 	store := &fakeStore{snapshot: SessionSnapshot{Status: "paused"}}
@@ -194,6 +242,7 @@ func TestServiceCreateDailyHistoryProbesPastWeekendBoundary(t *testing.T) {
 	history := &fakeHistory{
 		snapshot:      mt5stream.Snapshot{Symbols: []mt5stream.Symbol{{Name: "EURUSD"}}},
 		respectBefore: true,
+		latestResult:  &mt5stream.HistorySnapshot{},
 		result: mt5stream.HistorySnapshot{Source: "mt5", UpdatedAt: tuesday, Candles: []mt5stream.Candle{
 			{Time: selected.Add(-24 * time.Hour).Unix(), Open: 1, High: 2, Low: .5, Close: 1.2, Volume: 10},
 			{Time: selected.Unix(), Open: 1.2, High: 2, Low: 1, Close: 1.5, Volume: 11},
