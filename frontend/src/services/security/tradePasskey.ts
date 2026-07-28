@@ -18,6 +18,11 @@ interface AuthorizationResponse {
   expiresAtMs: number;
 }
 
+const pendingApprovalMessage =
+  "Another trade approval is already in progress. Complete or cancel the open passkey prompt, then try again.";
+
+let authorizationCeremonyInFlight = false;
+
 const base64UrlToBytes = (value: string): Uint8Array<ArrayBuffer> => {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
   const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
@@ -171,7 +176,7 @@ async function beginAuthorization(
   );
 }
 
-export async function authorizeTradeTransaction(
+async function performTradeAuthorization(
   operation: TradeAuthorizationOperation,
   payload: Record<string, unknown>,
 ): Promise<string> {
@@ -205,4 +210,37 @@ export async function authorizeTradeTransaction(
     throw new Error("The server returned an invalid trade authorization.");
   }
   return authorization.token;
+}
+
+function isPendingCredentialRequest(error: unknown): boolean {
+  const candidate = error as { name?: unknown; message?: unknown } | null;
+  const message =
+    typeof candidate?.message === "string"
+      ? candidate.message.toLowerCase()
+      : "";
+  return (
+    candidate?.name === "InvalidStateError" ||
+    message.includes("request is already pending")
+  );
+}
+
+export async function authorizeTradeTransaction(
+  operation: TradeAuthorizationOperation,
+  payload: Record<string, unknown>,
+): Promise<string> {
+  if (authorizationCeremonyInFlight) {
+    throw new Error(pendingApprovalMessage);
+  }
+
+  authorizationCeremonyInFlight = true;
+  try {
+    return await performTradeAuthorization(operation, payload);
+  } catch (error) {
+    if (isPendingCredentialRequest(error)) {
+      throw new Error(pendingApprovalMessage);
+    }
+    throw error;
+  } finally {
+    authorizationCeremonyInFlight = false;
+  }
 }

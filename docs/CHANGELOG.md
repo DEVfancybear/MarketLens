@@ -4,6 +4,15 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Concurrent passkey approval prompts (2026-07-28)
+
+- Serialized frontend trade-authorization ceremonies so repeated order actions
+  cannot open overlapping WebAuthn requests while a Windows Hello/passkey
+  prompt is still active.
+- Replaced the misleading execution-service title for client-side approval
+  failures and translated the browser's `A request is already pending` error
+  into guidance to complete or cancel the existing prompt before retrying.
+
 ### Fixed - Synced passkey trade verification (2026-07-28)
 
 - Stopped rejecting an otherwise valid WebAuthn assertion solely because a

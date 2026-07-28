@@ -524,7 +524,7 @@ export function useExecutionRegistry() {
               ),
             );
             store.set(pushToastAtom, {
-              title: "Execution service unavailable",
+              title: "Order approval failed",
               message: userFacingErrorMessage(
                 error,
                 "The order was not accepted by the durable execution queue.",

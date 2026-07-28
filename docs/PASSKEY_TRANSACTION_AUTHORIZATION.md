@@ -47,6 +47,17 @@ A counter anomaly on a non-syncable, device-bound credential remains a hard
 failure. The backend records the validation category and challenge ID without
 logging the assertion, credential material, or authorization token.
 
+### Browser ceremony concurrency
+
+The frontend permits only one trade-authorization ceremony at a time. Repeated
+order clicks while a Windows Hello or passkey prompt is open fail locally and
+do not start another challenge or submit another assertion. The user must
+complete or cancel the existing prompt before attempting another order.
+
+This single-flight guard is scoped to browser ceremony coordination only. Each
+successful authorization token remains bound to one exact transaction payload
+and is never shared with another pending order.
+
 Production must set:
 
 ```env
@@ -100,6 +111,8 @@ Then verify on the deployed HTTPS hostname:
 
 - first trade enrolls a passkey and asks for user verification;
 - every subsequent order/close/cancel command asks for verification;
+- repeated order actions while a passkey prompt is open do not start a second
+  browser credential request;
 - a backup-eligible synced passkey remains usable when its provider does not
   maintain a monotonic signature counter;
 - a device-bound passkey with the same counter anomaly returns `403`;
