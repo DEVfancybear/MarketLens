@@ -4,6 +4,21 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - One-action multi-account trade copy (2026-07-28)
+
+- Added a Copy action to every live MT5 position and pending-order row on
+  desktop and mobile.
+- Added an accessible multi-select target dialog that defaults to configured
+  copy-routing targets, falls back to all ready MT5 accounts, and reuses each
+  target's allocation rule.
+- Existing positions copy as new market orders; pending orders preserve side,
+  kind, quantity, entry, stop loss, and take profit. The source account is
+  excluded so the existing trade is never submitted twice.
+- One exact-payload authorization covers the multi-target route, while Rust
+  still validates, queues, and reports every target independently.
+- Added order-routing regressions for multi-target copy and the empty/source-only
+  fail-closed boundary.
+
 ### Fixed - Live execution no longer loses trade authorization context (2026-07-28)
 
 - Forwarded the one-time trade authorization token and authenticated backend

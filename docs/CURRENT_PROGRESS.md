@@ -9,6 +9,12 @@
   orders from failing gateway decode with `422` and prevent cancel, close, or modify from being
   rejected before the durable queue. See `TRADE_PASSWORD_AUTHORIZATION.md`.
 
+- Existing-trade multi-copy (2026-07-28): desktop and mobile MT5 position/pending-order rows now
+  expose one Copy action. Its dialog supports multiple ready target accounts, reuses configured
+  allocation rules, excludes the source account, and submits one exact-payload multi-target route.
+  Each target remains independently validated and reported; later close, cancel, or modify actions
+  are not implicitly mirrored. See `TRADE_EXECUTION_ARCHITECTURE.md`.
+
 > Trade execution update (2026-07-27): legacy MT5 verification/Connector
 > milestones below are historical. Current implementation and remaining native
 > venue work are tracked in `TRADE_EXECUTION_ARCHITECTURE.md`.

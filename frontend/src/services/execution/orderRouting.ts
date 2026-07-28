@@ -2,7 +2,15 @@ import type {
   CopyTargetDraft,
   ExecutionAccountSummary,
 } from "@/types/execution";
-import type { Mt5OrderRequest } from "@/types/mt5";
+import type {
+  Mt5OrderRequest,
+  Mt5PendingOrder,
+  Mt5Position,
+} from "@/types/mt5";
+
+export type CopyableMt5Trade =
+  | { kind: "position"; position: Mt5Position }
+  | { kind: "pendingOrder"; order: Mt5PendingOrder };
 
 export interface ExecutionOrderWireRequest {
   intent: {
@@ -50,19 +58,76 @@ export function buildExecutionOrderRequest(input: {
   for (const account of accounts) {
     const target = copyTargets[account.id];
     if (!target?.enabled || account.id === selected.id) continue;
-    targets.push({
-      accountId: account.id,
-      allocation: allocationWire(target),
-      ...(target.maxQuantity != null
-        ? { maxQuantity: executionDecimal(target.maxQuantity) }
-        : {}),
-    });
+    targets.push(targetWire(target));
   }
+  return buildOrderWire(order, selected, targets);
+}
+
+/**
+ * Copies an existing broker position or pending order only to the explicitly
+ * selected targets. The source account is intentionally not included because
+ * it already owns the trade being copied.
+ */
+export function buildExecutionCopyRequest(input: {
+  order: Mt5OrderRequest;
+  source: ExecutionAccountSummary;
+  targets: CopyTargetDraft[];
+}): ExecutionOrderWireRequest {
+  const targets = input.targets
+    .filter(
+      (target) => target.enabled && target.accountId !== input.source.id,
+    )
+    .map(targetWire);
+  if (targets.length === 0) {
+    throw new Error("at least one copy target is required");
+  }
+  return buildOrderWire(input.order, input.source, targets);
+}
+
+export function copyableTradeOrder(
+  trade: CopyableMt5Trade,
+  commandId: string,
+): Mt5OrderRequest {
+  if (trade.kind === "pendingOrder") {
+    const order = trade.order;
+    return {
+      clientOrderId: commandId,
+      chartSymbol: order.symbol,
+      brokerSymbol: order.brokerSymbol,
+      side: order.side,
+      type: order.type,
+      volume: order.volume,
+      price: order.price,
+      sl: order.sl,
+      tp: order.tp,
+      comment: "SMC copied pending order",
+    };
+  }
+  const position = trade.position;
+  return {
+    clientOrderId: commandId,
+    chartSymbol: position.symbol,
+    brokerSymbol: position.brokerSymbol,
+    side: position.side === "long" ? "buy" : "sell",
+    type: "market",
+    volume: position.volume,
+    marketPrice: position.currentPrice,
+    sl: position.sl,
+    tp: position.tp,
+    comment: "SMC copied position",
+  };
+}
+
+function buildOrderWire(
+  order: Mt5OrderRequest,
+  source: ExecutionAccountSummary,
+  targets: ExecutionOrderWireRequest["targets"],
+): ExecutionOrderWireRequest {
   return {
     intent: {
       commandId: order.clientOrderId,
       idempotencyKey: order.clientOrderId,
-      sourceAccountId: selected.id,
+      sourceAccountId: source.id,
       canonicalSymbol: order.chartSymbol,
       side: order.side,
       kind: order.type,
@@ -82,6 +147,18 @@ export function buildExecutionOrderRequest(input: {
       metadata: order.comment ? { comment: order.comment } : {},
     },
     targets,
+  };
+}
+
+function targetWire(
+  target: CopyTargetDraft,
+): ExecutionOrderWireRequest["targets"][number] {
+  return {
+    accountId: target.accountId,
+    allocation: allocationWire(target),
+    ...(target.maxQuantity != null
+      ? { maxQuantity: executionDecimal(target.maxQuantity) }
+      : {}),
   };
 }
 

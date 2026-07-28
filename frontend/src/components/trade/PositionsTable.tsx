@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import {
   positionsAtom,
   closePositionAtom,
@@ -18,9 +19,13 @@ import { fmtMoney, fmtPrice } from "@/utils/format";
 import { fmtDateTime } from "@/utils/time";
 import { useAtomValue, useSetAtom } from "jotai";
 import { cn } from "@/utils/cn";
-import { Ban, Pencil, X } from "lucide-react";
+import { Ban, Copy, Pencil, X } from "lucide-react";
 import { useReplayTrading } from "@/store/replayTradingClientStore";
 import { usePlatformDialog } from "@/components/ui/PlatformDialog";
+import {
+  CopyTradeDialog,
+  type CopyableMt5Trade,
+} from "./CopyTradeDialog";
 
 /** Open & pending positions with mark-to-market P/L and close controls. */
 export function PositionsTable() {
@@ -34,6 +39,7 @@ export function PositionsTable() {
   const cancelMt5Order = useSetAtom(cancelMt5OrderAtom);
   const replayTrading = useReplayTrading();
   const { requestPrompt, requestConfirm, dialog } = usePlatformDialog();
+  const [copyTrade, setCopyTrade] = useState<CopyableMt5Trade | null>(null);
 
   const live = positions.filter(
     (p) => p.status === "open" || p.status === "pending",
@@ -95,7 +101,20 @@ export function PositionsTable() {
                     </td>
                     <td className="text-right text-ink-faint">-</td>
                     <td className="text-right">
+                      <div className="flex items-center justify-end gap-1">
                       <button
+                        type="button"
+                        onClick={() =>
+                          setCopyTrade({ kind: "pendingOrder", order })
+                        }
+                        className="inline-flex h-5 w-5 items-center justify-center rounded-sm bg-terminal-hover text-ink hover:bg-brand hover:text-white focus-ring"
+                        title="Copy pending order"
+                        aria-label={`Copy pending order ${order.ticket}`}
+                      >
+                        <Copy size={11} />
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => {
                           void requestConfirm({
                             title: `Cancel pending order ${order.ticket}?`,
@@ -113,9 +132,11 @@ export function PositionsTable() {
                         }}
                         className="inline-flex h-5 w-5 items-center justify-center rounded-sm bg-terminal-hover text-ink hover:bg-bear hover:text-white"
                         title="Cancel pending order"
+                        aria-label={`Cancel pending order ${order.ticket}`}
                       >
                         <Ban size={12} />
                       </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -157,7 +178,18 @@ export function PositionsTable() {
                     {fmtMoney(position.profit)}
                   </td>
                   <td className="text-right">
+                    <div className="flex items-center justify-end gap-1">
                     <button
+                      type="button"
+                      onClick={() => setCopyTrade({ kind: "position", position })}
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-sm bg-terminal-hover text-ink hover:bg-brand hover:text-white focus-ring"
+                      title="Copy position"
+                      aria-label={`Copy position ${position.ticket}`}
+                    >
+                      <Copy size={11} />
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => {
                         void requestConfirm({
                           title: `Close MT5 ticket ${position.ticket}?`,
@@ -174,9 +206,11 @@ export function PositionsTable() {
                       }}
                       className="inline-flex h-5 w-5 items-center justify-center rounded-sm bg-terminal-hover text-ink hover:bg-bear hover:text-white"
                       title="Close position"
+                      aria-label={`Close position ${position.ticket}`}
                     >
                       <X size={12} />
                     </button>
+                    </div>
                   </td>
                 </tr>
               );
@@ -185,6 +219,12 @@ export function PositionsTable() {
         </table>
       </div>
       {dialog}
+      {copyTrade && (
+        <CopyTradeDialog
+          trade={copyTrade}
+          onClose={() => setCopyTrade(null)}
+        />
+      )}
       </>
     );
   }

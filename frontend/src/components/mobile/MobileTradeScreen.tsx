@@ -5,6 +5,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import {
   Ban,
   BookOpen,
+  Copy,
   Download,
   Pencil,
   RotateCcw,
@@ -17,6 +18,10 @@ import { ExecutionConnectionStatus } from "@/components/trade/ExecutionConnectio
 import { Mt5CommandLog } from "@/components/trade/Mt5CommandLog";
 import { Mt5EaSetupGuide } from "@/components/trade/Mt5EaSetupGuide";
 import { ExecutionAccountManagementDialog } from "@/components/trade/ExecutionAccountManagementDialog";
+import {
+  CopyTradeDialog,
+  type CopyableMt5Trade,
+} from "@/components/trade/CopyTradeDialog";
 import {
   cancelPendingAtom,
   closePositionAtom,
@@ -178,10 +183,12 @@ function MobilePositionList({
   const cancelSimulator = useSetAtom(cancelPendingAtom);
   const closeMt5 = useSetAtom(closeMt5PositionAtom);
   const replay = useReplayTrading();
+  const [copyTrade, setCopyTrade] = useState<CopyableMt5Trade | null>(null);
 
   if (executionMode === "mt5") {
     if (!mt5Positions.length && !mt5Pending.length) return <EmptyPositions message="Connect the bridge and send a live order from the ticket." />;
-    return <div className="mobile-position-list">
+    return <>
+    <div className="mobile-position-list">
       {mt5Positions.map((position) => {
         const precision = getMarketSymbol(position.symbol)?.pricePrecision ?? 2;
         return <article key={`mt5-${position.ticket}`} className="mobile-position-card">
@@ -191,7 +198,14 @@ function MobilePositionList({
           <Metric label="Volume" value={position.volume.toFixed(4)} />
           <Metric label="Stop / target" value={`${position.sl ? fmtPrice(position.sl, precision) : "—"} / ${position.tp ? fmtPrice(position.tp, precision) : "—"}`} />
           <Metric label="P/L" value={fmtMoney(position.profit)} tone={position.profit} />
-          <div className="mobile-position-actions"><button type="button" className="is-danger" onClick={() => {
+          <div className="mobile-position-actions">
+            <button
+              type="button"
+              onClick={() => setCopyTrade({ kind: "position", position })}
+            >
+              <Copy size={17} />Copy
+            </button>
+            <button type="button" className="is-danger" onClick={() => {
             void requestConfirm({
               title: `Close MT5 ticket ${position.ticket}?`,
               description: "The live position will be closed at the broker.",
@@ -210,9 +224,24 @@ function MobilePositionList({
           <Metric label="Entry" value={fmtPrice(order.price, precision)} />
           <Metric label="Volume" value={order.volume.toFixed(4)} />
           <Metric label="Stop / target" value={`${order.sl ? fmtPrice(order.sl, precision) : "—"} / ${order.tp ? fmtPrice(order.tp, precision) : "—"}`} />
+          <div className="mobile-position-actions">
+            <button
+              type="button"
+              onClick={() => setCopyTrade({ kind: "pendingOrder", order })}
+            >
+              <Copy size={17} />Copy
+            </button>
+          </div>
         </article>;
       })}
-    </div>;
+    </div>
+    {copyTrade && (
+      <CopyTradeDialog
+        trade={copyTrade}
+        onClose={() => setCopyTrade(null)}
+      />
+    )}
+    </>;
   }
 
   if (replay.active) {

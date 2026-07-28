@@ -183,6 +183,19 @@ Copy allocation modes share the same route:
 - risk percent;
 - per-target maximum quantity.
 
+The Trade workspace also exposes a Copy action on each observed MT5 position
+and pending order. The dialog can select multiple ready accounts and uses the
+allocation configured for each account, defaulting to same quantity when no
+rule exists. It emits one route whose target list excludes the source account:
+an existing position becomes a new market intent, while an existing pending
+order preserves its side, kind, quantity, entry, stop loss, and take profit.
+Every target still receives an independently validated result.
+
+This action is a one-time snapshot, not a persistent leader/follower
+relationship. Later close, cancel, or modify actions on the source are not
+automatically mirrored. The UI states this boundary before submission so users
+do not assume an ongoing copy-trading linkage.
+
 Cross-venue quantity units are rejected unless a future adapter provides an
 explicit, tested conversion. Lots are never silently interpreted as base units,
 contracts, or quote notional.
