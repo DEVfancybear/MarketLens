@@ -28,6 +28,7 @@ import {
   setSymbolAtom,
   timeframeAtom,
   setTimeframeAtom,
+  resolvedChartTimeZoneAtom,
 } from "@/store/chartStore";
 import { TF_SECONDS, type Drawing, type Point } from "@/types";
 import { getDrawingToolManifestEntry } from "@/types/drawingToolManifest";
@@ -108,6 +109,7 @@ export function DrawingLayer() {
   const selectedDrawingIds = useAtomValue(selectedDrawingIdsAtom);
   const symbol = useAtomValue(symbolAtom);
   const timeframe = useAtomValue(timeframeAtom);
+  const timeZone = useAtomValue(resolvedChartTimeZoneAtom);
   const drawingLayoutId = useAtomValue(drawingLayoutIdAtom);
   const drawingChartId = useAtomValue(drawingChartIdAtom);
   const barIntervalSeconds = useMemo(
@@ -127,11 +129,12 @@ export function DrawingLayer() {
     return {
       symbol,
       candles,
+      timeZone,
       tickSize,
       pricePrecision: catalog?.pricePrecision ?? 2,
       pointValue,
     };
-  }, [candles, mt5SymbolInfo, symbol]);
+  }, [candles, mt5SymbolInfo, symbol, timeZone]);
   const visibleDrawings = useMemo(
     () => drawings.filter((drawing) => isDrawingVisibleAtTimeframe(drawing, timeframe)),
     [drawings, timeframe],

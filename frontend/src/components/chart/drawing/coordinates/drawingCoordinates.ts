@@ -1,5 +1,10 @@
 import type { Candle, Point } from "../../../../types";
 import type { IChartApi, UTCTimestamp } from "lightweight-charts";
+import {
+  formatDateInput,
+  formatTimeInput,
+  parseLocalDateTime,
+} from "../../chartTimeNavigation";
 
 export interface TimeCoordinateExtrapolation {
   time: number;
@@ -252,15 +257,20 @@ export function timeAtCandleIndex(candles: readonly Candle[], index: number): nu
   return candles[safe].time;
 }
 
-export function toLocalDateTimeInput(unixSeconds: number): string {
+export function toLocalDateTimeInput(
+  unixSeconds: number,
+  timeZone?: string,
+): string {
   if (!Number.isFinite(unixSeconds)) return "";
-  const date = new Date(unixSeconds * 1000);
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
-    `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  const timeMs = unixSeconds * 1000;
+  return `${formatDateInput(timeMs, timeZone)}T${formatTimeInput(timeMs, timeZone)}`;
 }
 
-export function fromLocalDateTimeInput(value: string): number | null {
-  const milliseconds = new Date(value).getTime();
-  return Number.isFinite(milliseconds) ? Math.floor(milliseconds / 1000) : null;
+export function fromLocalDateTimeInput(
+  value: string,
+  timeZone?: string,
+): number | null {
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::\d{2})?$/.exec(value);
+  if (!match) return null;
+  return parseLocalDateTime(match[1], match[2], timeZone);
 }

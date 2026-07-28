@@ -18,6 +18,7 @@ import {
   setTimeframeAtom,
   symbolAtom,
   timeframeAtom,
+  resolvedChartTimeZoneAtom,
 } from "@/store/chartStore";
 import {
   activeChartSlotAtom,
@@ -332,6 +333,7 @@ function ChartPreviewPane({
   );
   const indicatorRegistry = useAtomValue(indicatorsAtom);
   const activeDrawingRevision = useAtomValue(drawingsAtom);
+  const timeZone = useAtomValue(resolvedChartTimeZoneAtom);
   const indicators = useMemo(
     () =>
       selectIndicatorsForChart(indicatorRegistry, {
@@ -384,6 +386,7 @@ function ChartPreviewPane({
         indicatorsOverride={indicators}
         symbolOverride={pane.symbol}
         timeframeOverride={pane.timeframe}
+        timeZone={timeZone}
         replayTrackSlot={pane.slot}
         interactive={false}
         registerAsMain={false}

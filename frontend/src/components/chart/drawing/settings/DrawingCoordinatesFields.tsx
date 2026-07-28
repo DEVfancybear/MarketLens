@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useAtomValue } from "jotai";
+import { resolvedChartTimeZoneAtom } from "@/store/chartStore";
 import type { Candle, Point } from "../../../../types";
 import {
   fromLocalDateTimeInput,
@@ -61,6 +63,7 @@ export function DrawingCoordinatesFields({
   showPrice?: boolean;
   onChange: (points: Point[]) => void;
 }) {
+  const timeZone = useAtomValue(resolvedChartTimeZoneAtom);
   const patchPoint = (index: number, patch: Partial<Point>) =>
     onChange(updateDrawingPoint(points, index, patch));
 
@@ -107,9 +110,12 @@ export function DrawingCoordinatesFields({
                 <input
                   type="datetime-local"
                   aria-label={`${title} date and time`}
-                  value={toLocalDateTimeInput(point.time)}
+                  value={toLocalDateTimeInput(point.time, timeZone)}
                   onChange={(event) => {
-                    const time = fromLocalDateTimeInput(event.target.value);
+                    const time = fromLocalDateTimeInput(
+                      event.target.value,
+                      timeZone,
+                    );
                     if (time != null) patchPoint(index, { time });
                   }}
                   className="h-[34px] min-w-0 w-full rounded-[5px] border border-terminal-border-strong bg-terminal-raised px-2 text-[11px] text-ink-muted outline-none focus:border-brand focus:ring-1 focus:ring-brand"

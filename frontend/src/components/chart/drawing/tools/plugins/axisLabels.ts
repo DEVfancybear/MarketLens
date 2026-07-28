@@ -5,9 +5,6 @@ import { canvasFont } from "./shared";
 const LABEL_HEIGHT = 20;
 const EDGE_GAP = 3;
 const HORIZONTAL_PADDING = 8;
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
 export interface AxisLabelRect {
   text: string;
   x: number;
@@ -16,13 +13,21 @@ export interface AxisLabelRect {
   height: number;
 }
 
-function pad2(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
-export function formatAxisTime(timeSec: number): string {
+export function formatAxisTime(timeSec: number, timeZone = "UTC"): string {
   const date = new Date(timeSec * 1000);
-  return `${WEEKDAYS[date.getUTCDay()]} ${pad2(date.getUTCDate())} ${MONTHS[date.getUTCMonth()]} ${pad2(date.getUTCFullYear() % 100)} ${pad2(date.getUTCHours())}:${pad2(date.getUTCMinutes())}`;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return `${get("weekday")} ${get("day")} ${get("month")} ${get("year")} ${get("hour")}:${get("minute")}`;
 }
 
 export function formatAxisPrice(price: number, proj: Projector): string {
@@ -118,7 +123,10 @@ export function timeAxisLabelRect(
   proj: Pick<Projector, "width" | "height" | "market">,
   x: number,
 ): AxisLabelRect {
-  const text = formatAxisTime(d.points[0]?.time ?? 0);
+  const text = formatAxisTime(
+    d.points[0]?.time ?? 0,
+    proj.market?.timeZone ?? "UTC",
+  );
   const width = Math.min(
     Math.max(36, Math.ceil(text.length * 7 + HORIZONTAL_PADDING * 2)),
     Math.max(36, proj.width - 8),

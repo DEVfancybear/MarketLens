@@ -16,6 +16,8 @@ import "./tools/adapters";
 export interface DrawingMarketContext {
   symbol: string;
   candles: readonly { time: number; close: number; high: number; low: number }[];
+  /** Resolved IANA display zone. Drawing coordinates themselves remain UTC. */
+  timeZone?: string;
   tickSize?: number;
   pricePrecision?: number;
   pointValue?: number;

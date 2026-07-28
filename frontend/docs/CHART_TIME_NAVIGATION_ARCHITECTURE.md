@@ -298,8 +298,10 @@ Supported behavior:
   the UI temporarily falls back to the browser timezone.
 - `UTC` and named IANA zones such as `America/New_York` use browser `Intl`.
 - The toolbar clock, UTC offset text, `Go to` date/time parsing and defaults,
-  temporary Go-to marker, chart time-axis ticks, and floating crosshair label
-  all use the selected timezone.
+  live temporary Go-to marker, chart time-axis ticks, floating crosshair label,
+  selected vertical/cross-line drawing badges, and read-only layout preview
+  panes all use the selected timezone. Drawing coordinate date/time inputs use
+  the same zone and convert edits back to the unchanged Unix UTC coordinate.
 - Candle timestamps remain unchanged. Lightweight Charts itself receives UTC
   timestamps; the app converts user-entered wall time to UTC seconds before
   calling `setVisibleRange` / `setVisibleLogicalRange`.
@@ -309,6 +311,17 @@ that zone to `PriceChart`. Lightweight Charts formatter callbacks are
 synchronous, so crosshair movement never calls the backend. The backend owns
 the timezone choice; the frontend only renders an existing Unix timestamp in
 that zone.
+
+`resolvedChartTimeZoneAtom` is the single synchronous display-zone input for
+canvas drawing renderers and secondary chart panes. Drawing state stores only
+UTC Unix coordinates; it must never persist a timezone-adjusted timestamp or a
+preformatted date label. Temporary overlays such as the Go-to marker likewise
+store the resolved UTC candle time and derive their label during render so an
+already-visible overlay updates immediately when the timezone changes.
+
+The backend must return candle, drawing, Replay, and Go-to resolution times as
+Unix UTC values. It may provide the IANA zone for the `Exchange` option, but it
+must not localize or offset the timestamps themselves.
 
 Do not shift or rewrite the candle dataset for timezone selection in this app.
 That would also move drawings, replay boundaries, indicators, and trade levels.
@@ -361,7 +374,14 @@ Manual checks:
   `00:00` on `4H`, `1D`, `1W`, and `1M`,
 - verify current clock displays the backend-configured Exchange time and UTC
   offset,
-- click the clock, choose `UTC` and `America/New_York`, then confirm the clock,
-  offset, Go-to defaults, marker chip, time-axis ticks, and crosshair label all
-  follow the selected timezone,
+- click the clock, choose `UTC`, `Asia/Ho_Chi_Minh`, and
+  `America/New_York`, then confirm the clock, offset, Go-to defaults, marker
+  chip, time-axis ticks, crosshair label, and secondary panes all follow the
+  selected timezone,
+- keep a Go-to marker visible while changing timezone and confirm its chip
+  reformats in place without moving the marker,
+- select a vertical line and a cross line, change timezone across a date
+  boundary such as `2026-07-24 20:45 UTC` / `2026-07-25 03:45
+  Asia/Ho_Chi_Minh`, and confirm the bottom time badge follows the selected
+  zone without moving the drawing,
 - test with Replay loaded so date jumps clamp to replay-visible candles.

@@ -5,6 +5,7 @@ import { useAtomValue } from "jotai";
 import type { Drawing, Timeframe } from "@/types";
 import { TF_SECONDS } from "@/types";
 import { mt5SymbolInfoAtom } from "@/store/mt5Store";
+import { resolvedChartTimeZoneAtom } from "@/store/chartStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { useChartCtx } from "./ChartContext";
 import {
@@ -26,6 +27,7 @@ export function DrawingPreviewLayer({
   const ctx = useChartCtx();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bridgeSymbolInfo = useAtomValue(mt5SymbolInfoAtom)[symbol];
+  const timeZone = useAtomValue(resolvedChartTimeZoneAtom);
   const visibleDrawings = useMemo(
     () =>
       drawings
@@ -84,6 +86,7 @@ export function DrawingPreviewLayer({
       market: {
         symbol,
         candles: ctx.candles,
+        timeZone,
         tickSize,
         pricePrecision: catalog?.pricePrecision ?? 2,
         pointValue,
@@ -95,7 +98,7 @@ export function DrawingPreviewLayer({
       renderDrawing(graphics, drawing, projector, false);
       graphics.restore();
     }
-  }, [bridgeSymbolInfo, ctx, symbol, timeframe, visibleDrawings]);
+  }, [bridgeSymbolInfo, ctx, symbol, timeZone, timeframe, visibleDrawings]);
 
   return (
     <canvas

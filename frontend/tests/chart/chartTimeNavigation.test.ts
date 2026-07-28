@@ -166,6 +166,19 @@ test("go-to marker label can render in selected time zone", () => {
   );
 });
 
+test("an existing go-to marker epoch reformats when the selected time zone changes", () => {
+  const time = Date.UTC(2026, 6, 24, 20, 45, 0, 0) / 1000;
+
+  assert.equal(
+    formatGoToMarkerLabel(time, "UTC"),
+    "Fri 24 Jul '26\n20:45",
+  );
+  assert.equal(
+    formatGoToMarkerLabel(time, "Asia/Ho_Chi_Minh"),
+    "Sat 25 Jul '26\n03:45",
+  );
+});
+
 test("chart crosshair and time-axis labels follow the Go-to time zone", () => {
   const time = Date.UTC(2026, 5, 30, 17, 15, 0, 0) / 1000;
   const backendExchangeTimeZone = "Asia/Ho_Chi_Minh";

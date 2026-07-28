@@ -52,6 +52,26 @@ test("local datetime conversion round-trips to minute precision", () => {
   assert.equal(fromLocalDateTimeInput("invalid"), null);
 });
 
+test("drawing coordinate datetime follows the selected chart timezone without moving UTC", () => {
+  const timestamp = Date.UTC(2026, 6, 24, 20, 45, 0, 0) / 1000;
+
+  assert.equal(
+    toLocalDateTimeInput(timestamp, "UTC"),
+    "2026-07-24T20:45",
+  );
+  assert.equal(
+    toLocalDateTimeInput(timestamp, "Asia/Ho_Chi_Minh"),
+    "2026-07-25T03:45",
+  );
+  assert.equal(
+    fromLocalDateTimeInput(
+      "2026-07-25T03:45",
+      "Asia/Ho_Chi_Minh",
+    ),
+    timestamp,
+  );
+});
+
 test("future projection keeps a 20-bar width across a session gap", () => {
   const fifteenMinutes = 15 * 60;
   const fridayClose = 1_704_412_800;

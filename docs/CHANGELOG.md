@@ -4,6 +4,20 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Drawing and Go-to labels follow the selected chart timezone (2026-07-29)
+
+- Kept backend candle, drawing, Replay, and Go-to coordinates as immutable Unix
+  UTC values while routing the resolved IANA display zone through every chart
+  pane and drawing canvas.
+- Fixed selected vertical-line and cross-line time badges showing UTC after the
+  chart was set to a named zone such as `Asia/Ho_Chi_Minh`.
+- Made drawing coordinate date/time fields render and parse in the same
+  selected chart timezone while preserving their Unix UTC value.
+- Stopped caching preformatted Go-to marker text so a visible marker now
+  reformats immediately when the timezone changes without moving its candle.
+- Added the reported cross-date regression for `2026-07-24 20:45 UTC` /
+  `2026-07-25 03:45 Asia/Ho_Chi_Minh`, including drawing-projector coverage.
+
 ### Fixed - Indicator pane legends remain attached to native panes (2026-07-29)
 
 - Replaced render-time pane DOM measurement with one common

@@ -68,7 +68,6 @@ import { ChartPopupSurface } from "./ChartPopupSurface";
 type GoToMarkerState = {
   id: number;
   time: number;
-  label: string;
 };
 type PendingShortcutState = {
   resolution: TimeNavigationResolution;
@@ -265,6 +264,7 @@ export function ChartTimeToolbar({
   const setTimeZoneId = useSetAtom(setChartTimeZoneAtom);
   const setResolvedTimeZone = useSetAtom(resolvedChartTimeZoneAtom);
   const [goToMarker, setGoToMarker] = useState<GoToMarkerState | null>(null);
+  const clearGoToMarker = useCallback(() => setGoToMarker(null), []);
   const [lastGoToSelection, setLastGoToSelection] =
     useState<GoToSelection | null>(null);
   const [pendingGoToNavigation, setPendingGoToNavigation] =
@@ -490,10 +490,6 @@ export function ChartTimeToolbar({
     setGoToMarker({
       id: pendingGoToNavigation.id,
       time: pendingGoToNavigation.resolvedTime,
-      label: formatGoToMarkerLabel(
-        pendingGoToNavigation.resolvedTime,
-        activeTimeZone,
-      ),
     });
     clearChartCrosshair(chart, () => setCrosshair(null));
     setActiveShortcut(null);
@@ -589,7 +585,8 @@ export function ChartTimeToolbar({
           key={goToMarker.id}
           chart={chart}
           marker={goToMarker}
-          onDone={() => setGoToMarker(null)}
+          timeZone={activeTimeZone}
+          onDone={clearGoToMarker}
         />
       )}
       {tooltipState &&
@@ -902,10 +899,12 @@ function TimeInput({
 function GoToJumpMarker({
   chart,
   marker,
+  timeZone,
   onDone,
 }: {
   chart: IChartApi;
   marker: GoToMarkerState;
+  timeZone?: string;
   onDone: () => void;
 }) {
   const [position, setPosition] = useState<{
@@ -1002,7 +1001,7 @@ function GoToJumpMarker({
         className="absolute left-0 -translate-x-1/2 whitespace-pre rounded-lg border border-terminal-border-strong bg-terminal-raised px-2.5 py-1.5 text-center text-[12px] font-semibold leading-[16px] text-ink shadow-floating"
         style={{ top: position.chipTop }}
       >
-        {marker.label}
+        {formatGoToMarkerLabel(marker.time, timeZone)}
         <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[5px] border-t-[5px] border-x-transparent border-t-terminal-border-strong" />
       </div>
     </div>,

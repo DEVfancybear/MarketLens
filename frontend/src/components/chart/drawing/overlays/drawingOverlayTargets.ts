@@ -1,5 +1,6 @@
 import type { Drawing } from "../../../../types/drawing";
 import { getDrawingToolManifestEntry } from "../../../../types/drawingToolManifest";
+import type { DrawingMarketContext } from "../drawingRenderer";
 import { getTool } from "../tools/ToolRegistry";
 import {
   priceAxisLabelRect,
@@ -20,13 +21,7 @@ export interface SelectionTextOverlayTarget {
 export interface SelectionTextOverlayViewport {
   width: number;
   height: number;
-  market?: {
-    symbol: string;
-    candles: readonly { time: number; close: number; high: number; low: number }[];
-    tickSize?: number;
-    pricePrecision?: number;
-    pointValue?: number;
-  };
+  market?: DrawingMarketContext;
 }
 
 export function resolveSelectionTextOverlay(
