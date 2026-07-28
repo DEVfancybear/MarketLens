@@ -200,8 +200,8 @@ func (s *Service) GetUser(ctx context.Context, userID string) (User, error) {
 }
 
 // VerifyUserIdentity requires a live Firebase proof for the exact backend user.
-// Passkey enrollment uses this second bearer proof so a copied backend cookie
-// alone cannot register an attacker's authenticator.
+// Trade-security changes use this second bearer proof so a copied backend
+// cookie alone cannot change the user's execution protection.
 func (s *Service) VerifyUserIdentity(ctx context.Context, idToken, userID string) (User, error) {
 	user, _, err := s.resolveGoogleUser(ctx, idToken)
 	if err != nil {

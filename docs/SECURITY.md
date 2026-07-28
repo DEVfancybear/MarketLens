@@ -105,11 +105,12 @@ before exposing the service publicly.
 
 ## High-value transaction control
 
-The confirmation dialog remains a safety affordance. Live orders and execution commands now also
-require WebAuthn user verification. Go issues a short-lived one-time token bound to the exact JSON
-payload, user, and active session; Rust atomically consumes it before enqueueing and fails closed on
-reuse, mutation, expiry, revocation, or unavailable database state. See
-[PASSKEY_TRANSACTION_AUTHORIZATION.md](PASSKEY_TRANSACTION_AUTHORIZATION.md).
+The confirmation dialog remains a safety affordance. Users may enable an optional second trade
+password, requested once per browser trade session and shared across its tabs through a
+non-persistent, `HttpOnly`, server-backed unlock cookie. Go always issues a short-lived one-time
+token bound to the exact JSON payload, user, and active session; Rust atomically consumes it before
+enqueueing and fails closed on reuse, mutation, expiry, revocation, or unavailable database state.
+See [TRADE_PASSWORD_AUTHORIZATION.md](TRADE_PASSWORD_AUTHORIZATION.md).
 
 The frontend also enforces a per-request nonce CSP with production `strict-dynamic`, no script
 attributes, no `unsafe-eval`, no framing, and no object embedding. This substantially reduces XSS

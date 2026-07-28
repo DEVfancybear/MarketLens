@@ -1,7 +1,7 @@
 "use client";
 
 import { useAtomValue } from "jotai";
-import { Cloud, CloudOff, LogOut, ShieldCheck, UserRound } from "lucide-react";
+import { Cloud, CloudOff, KeyRound, LogOut, ShieldCheck, UserRound } from "lucide-react";
 import {
   authErrorAtom,
   authStatusAtom,
@@ -10,6 +10,7 @@ import {
 } from "@/store/authStore";
 import { SignInButton } from "@/components/auth/SignInButton";
 import { authUserInitials, signOutFromTerminal } from "@/services/auth/terminalAccount";
+import { openTradeSecuritySettings } from "@/services/security/tradePassword";
 
 export function MobileAccountAvatar() {
   const user = useAtomValue(authUserAtom);
@@ -49,6 +50,10 @@ export function MobileAccountWorkspace() {
         <span><ShieldCheck size={20} /></span>
         <span><strong>Account security</strong><small>Authentication is managed by Google and Firebase.</small></span>
       </div>
+      <button type="button" className="mobile-account-state w-full text-left" onClick={openTradeSecuritySettings}>
+        <span><KeyRound size={20} /></span>
+        <span><strong>Trade security</strong><small>Turn the optional second password for live trades on or off.</small></span>
+      </button>
       <button type="button" className="mobile-sign-out" onClick={() => void signOutFromTerminal()}><LogOut size={18} />Sign out</button>
     </div>
   );

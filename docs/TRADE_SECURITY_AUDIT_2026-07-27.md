@@ -94,12 +94,14 @@ unauthorized.
 
 ## Follow-up milestone completed — 2026-07-28
 
-The recommended strict CSP and WebAuthn transaction step-up are implemented. Each authorization is
-bound to the exact `jsonb` payload, user, active session, operation, short expiry, and one-time
-token. The Rust execution boundary consumes it atomically before enqueueing. Passkey ceremonies
-require user verification, and their state and credential material are encrypted at rest.
+The recommended strict CSP and transaction step-up are implemented. Users may enable an optional
+Argon2id-hashed trade password, requested once per browser trade session. Browser unlocks are
+random, hashed at rest, bound to the user and active backend session, and carried only in a
+non-persistent hardened cookie. Each execution authorization remains bound to the exact `jsonb`
+payload, user, active session, operation, short expiry, and one-time token. The Rust execution
+boundary consumes it atomically before enqueueing.
 
 The frontend now uses a fresh nonce per document with production `strict-dynamic`; script
 attributes, object embedding, and framing are blocked, and `unsafe-eval` is development-only. See
-[PASSKEY_TRANSACTION_AUTHORIZATION.md](PASSKEY_TRANSACTION_AUTHORIZATION.md) for the protocol and
+[TRADE_PASSWORD_AUTHORIZATION.md](TRADE_PASSWORD_AUTHORIZATION.md) for the protocol and
 rollout checklist.

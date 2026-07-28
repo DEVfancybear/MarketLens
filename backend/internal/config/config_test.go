@@ -85,6 +85,7 @@ func TestValidateExecutionServicesRemainLoopbackOnly(t *testing.T) {
 				CORSAllowedOrigins:     []string{"http://localhost:3000"},
 				AlertEvaluatorInterval: 15 * time.Second,
 				AlertEvaluatorTimeout:  30 * time.Second,
+				TradeAuthorizationTTL:  45 * time.Second,
 				MT5BridgeDialTimeout:   10 * time.Second,
 				MT5BridgeReconnectMin:  time.Second,
 				MT5BridgeReconnectMax:  30 * time.Second,

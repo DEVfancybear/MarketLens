@@ -1,16 +1,16 @@
 # Current Progress
 
-- Trade step-up/security (2026-07-28): every live order and execution command now requires
-  WebAuthn user verification. One-time authorizations are bound to the exact JSON payload, user,
-  active session, operation, and short expiry, then atomically consumed by Rust before enqueue.
-  The frontend also enforces a per-request nonce CSP with production `strict-dynamic`. See
-  `PASSKEY_TRANSACTION_AUTHORIZATION.md`.
+- Trade step-up/security (2026-07-28): users may enable a separate trade password. It is requested
+  once per browser trade session and shared across tabs through a hardened, server-backed session
+  cookie. One-time authorizations remain bound to the exact JSON payload, user, active session,
+  operation, and short expiry, then atomically consumed by Rust before enqueue. See
+  `TRADE_PASSWORD_AUTHORIZATION.md`.
 
 > Trade execution update (2026-07-27): legacy MT5 verification/Connector
 > milestones below are historical. Current implementation and remaining native
 > venue work are tracked in `TRADE_EXECUTION_ARCHITECTURE.md`.
 
-Last updated: 2026-07-27
+Last updated: 2026-07-28
 
 ## Current Milestone
 

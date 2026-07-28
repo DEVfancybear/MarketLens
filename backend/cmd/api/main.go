@@ -153,14 +153,12 @@ func main() {
 		journalHandler = journal.NewHandler(journal.NewRepo(pool.Pool), screenshotSigner, requireAuth)
 		simTradingHandler = simtrading.NewHandler(simtrading.NewRepo(pool.Pool), requireAuth)
 		if cfg.ExecutionAdminToken != "" {
-			tradeAuthService, tradeAuthErr := tradeauth.NewService(pool.Pool, svc, cfg)
-			if tradeAuthErr != nil {
-				stdlog.Fatalf("trade passkey init error: %v", tradeAuthErr)
-			}
+			tradeAuthService := tradeauth.NewService(pool.Pool, svc, cfg)
 			tradeAuthHandler = tradeauth.NewHandler(
 				tradeAuthService,
 				requireAuth,
 				requireActiveSession,
+				cfg,
 			)
 			executionClient, executionErr := execution.NewClient(
 				cfg.ExecutionAdminURL,

@@ -73,9 +73,9 @@ export function subscribeAuth(
   );
 }
 
-/** Fresh Firebase ID token for the current user, or null when signed out. */
-export async function currentIdToken(): Promise<string | null> {
+/** Firebase ID token for the current user, or null when signed out. */
+export async function currentIdToken(forceRefresh = false): Promise<string | null> {
   if (!authConfigured()) return null;
   const user = authInstance().currentUser;
-  return user ? user.getIdToken() : null;
+  return user ? user.getIdToken(forceRefresh) : null;
 }

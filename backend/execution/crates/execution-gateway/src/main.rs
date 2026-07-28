@@ -4816,12 +4816,19 @@ mod tests {
 
     #[test]
     fn trade_authorization_migration_enforces_exact_one_time_payloads() {
-        let migration =
+        let original_migration =
             include_str!("../../../../migrations/0031_trade_passkey_authorization.up.sql");
-        assert!(migration.contains("payload               jsonb NOT NULL"));
-        assert!(migration.contains("token_hash            bytea NOT NULL UNIQUE"));
-        assert!(migration.contains("consumed_at"));
-        assert!(migration.contains("REFERENCES sessions(id) ON DELETE CASCADE"));
+        let password_migration =
+            include_str!("../../../../migrations/0032_optional_trade_password.up.sql");
+        assert!(original_migration.contains("payload               jsonb NOT NULL"));
+        assert!(original_migration.contains("token_hash            bytea NOT NULL UNIQUE"));
+        assert!(original_migration.contains("consumed_at"));
+        assert!(original_migration.contains("REFERENCES sessions(id) ON DELETE CASCADE"));
+        assert!(password_migration.contains("CREATE TABLE trade_security_settings"));
+        assert!(password_migration.contains("CREATE TABLE trade_unlock_sessions"));
+        assert!(password_migration.contains("DROP COLUMN credential_id"));
+        assert!(password_migration.contains("DROP TABLE webauthn_credentials"));
+        assert!(password_migration.contains("verification_method"));
     }
 
     #[test]

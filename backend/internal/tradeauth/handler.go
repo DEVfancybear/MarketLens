@@ -12,127 +12,145 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/smc-trading-terminal/backend/internal/auth"
+	"github.com/smc-trading-terminal/backend/internal/config"
 )
 
 type Handler struct {
-	service         *Service
-	requireAuth     fiber.Handler
-	requireActive   fiber.Handler
-	ceremonyLimit   fiber.Handler
-	enrollmentLimit fiber.Handler
+	service              *Service
+	cfg                  config.Config
+	requireAuth          fiber.Handler
+	requireActive        fiber.Handler
+	authorizationLimit   fiber.Handler
+	configurationLimiter fiber.Handler
 }
 
 func NewHandler(
 	service *Service,
 	requireAuth fiber.Handler,
 	requireActive fiber.Handler,
+	cfg config.Config,
 ) *Handler {
 	return &Handler{
-		service:         service,
-		requireAuth:     requireAuth,
-		requireActive:   requireActive,
-		ceremonyLimit:   newUserRateLimiter(120, time.Minute),
-		enrollmentLimit: newUserRateLimiter(10, 10*time.Minute),
+		service:              service,
+		cfg:                  cfg,
+		requireAuth:          requireAuth,
+		requireActive:        requireActive,
+		authorizationLimit:   newUserRateLimiter(120, time.Minute),
+		configurationLimiter: newUserRateLimiter(10, 10*time.Minute),
 	}
 }
 
 func (h *Handler) Register(router fiber.Router) {
-	router.Get("/execution/passkeys", h.requireAuth, h.requireActive, h.list)
-	router.Post("/execution/passkeys/register/options", h.requireAuth, h.enrollmentLimit, h.requireActive, h.beginRegistration)
-	router.Post("/execution/passkeys/register/verify", h.requireAuth, h.enrollmentLimit, h.requireActive, h.finishRegistration)
-	router.Post("/execution/authorizations/options", h.requireAuth, h.ceremonyLimit, h.requireActive, h.beginAuthorization)
-	router.Post("/execution/authorizations/verify", h.requireAuth, h.ceremonyLimit, h.requireActive, h.finishAuthorization)
+	router.Get(
+		"/execution/trade-security",
+		h.requireAuth,
+		h.requireActive,
+		h.status,
+	)
+	router.Put(
+		"/execution/trade-security",
+		h.requireAuth,
+		h.configurationLimiter,
+		h.requireActive,
+		h.configure,
+	)
+	router.Post(
+		"/execution/authorizations",
+		h.requireAuth,
+		h.authorizationLimit,
+		h.requireActive,
+		h.authorize,
+	)
+	router.Delete(
+		"/execution/trade-security/unlock",
+		h.requireAuth,
+		h.requireActive,
+		h.lock,
+	)
 }
 
-func (h *Handler) list(c fiber.Ctx) error {
-	items, err := h.service.ListCredentials(c.Context(), userID(c))
+func (h *Handler) status(c fiber.Ctx) error {
+	result, err := h.service.Status(
+		c.Context(),
+		userID(c),
+		sessionID(c),
+		c.Cookies(h.unlockCookieName()),
+	)
 	if err != nil {
 		return serviceError(err)
 	}
 	c.Set(fiber.HeaderCacheControl, "no-store")
-	return c.JSON(fiber.Map{"passkeys": items})
+	return c.JSON(result)
 }
 
-func (h *Handler) beginRegistration(c fiber.Ctx) error {
+func (h *Handler) configure(c fiber.Ctx) error {
 	var request struct {
-		IDToken string `json:"idToken"`
+		Enabled  bool   `json:"enabled"`
+		Password string `json:"password"`
+		IDToken  string `json:"idToken"`
 	}
 	if err := decodeStrict(c.Body(), &request); err != nil ||
 		strings.TrimSpace(request.IDToken) == "" ||
-		len(request.IDToken) > auth.MaxIDTokenLength {
-		return fiber.NewError(fiber.StatusBadRequest, "valid idToken is required")
+		len(request.IDToken) > auth.MaxIDTokenLength ||
+		len(request.Password) > maxTradePasswordBytes {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
 	}
-	result, err := h.service.BeginRegistration(
-		c.Context(), userID(c), sessionID(c), request.IDToken,
+	result, err := h.service.Configure(
+		c.Context(),
+		userID(c),
+		request.IDToken,
+		request.Enabled,
+		request.Password,
 	)
 	if err != nil {
 		return serviceError(err)
 	}
+	clearTradeUnlockCookie(c, h.cfg)
 	c.Set(fiber.HeaderCacheControl, "no-store")
 	return c.JSON(result)
 }
 
-func (h *Handler) finishRegistration(c fiber.Ctx) error {
-	var request struct {
-		ChallengeID string          `json:"challengeId"`
-		Label       string          `json:"label"`
-		Credential  json.RawMessage `json:"credential"`
-	}
-	if err := decodeStrict(c.Body(), &request); err != nil ||
-		!validChallengeID(request.ChallengeID) ||
-		len(request.Credential) == 0 {
-		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
-	}
-	result, err := h.service.FinishRegistration(
-		c.Context(), userID(c), sessionID(c), request.ChallengeID,
-		request.Label, request.Credential,
-	)
-	if err != nil {
-		return serviceError(err)
-	}
-	c.Set(fiber.HeaderCacheControl, "no-store")
-	return c.Status(fiber.StatusCreated).JSON(result)
-}
-
-func (h *Handler) beginAuthorization(c fiber.Ctx) error {
+func (h *Handler) authorize(c fiber.Ctx) error {
 	var request struct {
 		Operation string          `json:"operation"`
 		Payload   json.RawMessage `json:"payload"`
+		Password  string          `json:"password"`
 	}
-	if err := decodeStrict(c.Body(), &request); err != nil {
+	if err := decodeStrict(c.Body(), &request); err != nil ||
+		len(request.Password) > maxTradePasswordBytes {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
 	}
-	result, err := h.service.BeginAuthorization(
-		c.Context(), userID(c), sessionID(c), request.Operation, request.Payload,
+	result, err := h.service.Authorize(
+		c.Context(),
+		userID(c),
+		sessionID(c),
+		request.Operation,
+		request.Payload,
+		request.Password,
+		c.Cookies(h.unlockCookieName()),
 	)
 	if err != nil {
 		return serviceError(err)
+	}
+	if result.UnlockToken != "" {
+		setTradeUnlockCookie(c, h.cfg, result.UnlockToken)
 	}
 	c.Set(fiber.HeaderCacheControl, "no-store")
 	return c.JSON(result)
 }
 
-func (h *Handler) finishAuthorization(c fiber.Ctx) error {
-	var request struct {
-		ChallengeID string          `json:"challengeId"`
-		Operation   string          `json:"operation"`
-		Payload     json.RawMessage `json:"payload"`
-		Credential  json.RawMessage `json:"credential"`
-	}
-	if err := decodeStrict(c.Body(), &request); err != nil ||
-		!validChallengeID(request.ChallengeID) ||
-		len(request.Credential) == 0 {
-		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
-	}
-	result, err := h.service.FinishAuthorization(
-		c.Context(), userID(c), sessionID(c), request.ChallengeID,
-		request.Operation, request.Payload, request.Credential,
-	)
-	if err != nil {
+func (h *Handler) lock(c fiber.Ctx) error {
+	if err := h.service.Lock(c.Context(), userID(c), sessionID(c)); err != nil {
 		return serviceError(err)
 	}
+	clearTradeUnlockCookie(c, h.cfg)
 	c.Set(fiber.HeaderCacheControl, "no-store")
-	return c.JSON(result)
+	return c.JSON(fiber.Map{"ok": true})
+}
+
+func (h *Handler) unlockCookieName() string {
+	name, _ := tradeUnlockCookieScope(h.cfg)
+	return name
 }
 
 func userID(c fiber.Ctx) string {
@@ -143,21 +161,6 @@ func userID(c fiber.Ctx) string {
 func sessionID(c fiber.Ctx) string {
 	value, _ := c.Locals(auth.LocalSessionID).(string)
 	return value
-}
-
-func validChallengeID(value string) bool {
-	if len(value) != 36 {
-		return false
-	}
-	for _, character := range value {
-		if (character >= '0' && character <= '9') ||
-			(character >= 'a' && character <= 'f') ||
-			character == '-' {
-			continue
-		}
-		return false
-	}
-	return true
 }
 
 func decodeStrict(body []byte, target any) error {
@@ -180,12 +183,23 @@ func serviceError(err error) error {
 	switch {
 	case errors.Is(err, auth.ErrUnauthorized):
 		return fiber.NewError(fiber.StatusUnauthorized, "unauthorized")
-	case errors.Is(err, ErrPasskeyRequired):
-		return fiber.NewError(fiber.StatusPreconditionRequired, "trade passkey required")
-	case errors.Is(err, ErrCeremonyRejected), errors.Is(err, ErrAuthorizationRejected):
-		return fiber.NewError(fiber.StatusForbidden, "passkey verification failed")
+	case errors.Is(err, ErrPasswordRequired):
+		return fiber.NewError(fiber.StatusPreconditionRequired, "trade password required")
+	case errors.Is(err, ErrPasswordInvalid):
+		return fiber.NewError(fiber.StatusForbidden, "trade password verification failed")
+	case errors.Is(err, ErrPasswordLocked):
+		return fiber.NewError(fiber.StatusTooManyRequests, "trade password temporarily locked")
+	case errors.Is(err, ErrPasswordNotConfigured):
+		return fiber.NewError(fiber.StatusConflict, "set a trade password before enabling protection")
+	case errors.Is(err, ErrPasswordPolicy):
+		return fiber.NewError(
+			fiber.StatusBadRequest,
+			"trade password must be 8-128 characters and not commonly used",
+		)
+	case errors.Is(err, ErrAuthorizationRejected):
+		return fiber.NewError(fiber.StatusBadRequest, "invalid trade authorization request")
 	default:
-		log.Error().Err(err).Msg("passkey service request failed")
-		return fiber.NewError(fiber.StatusInternalServerError, "passkey service unavailable")
+		log.Error().Err(err).Msg("trade authorization service request failed")
+		return fiber.NewError(fiber.StatusInternalServerError, "trade authorization service unavailable")
 	}
 }

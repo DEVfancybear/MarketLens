@@ -20,7 +20,7 @@ func newUserRateLimiter(maximum int, window time.Duration) fiber.Handler {
 		LimitReached: func(c fiber.Ctx) error {
 			return fiber.NewError(
 				fiber.StatusTooManyRequests,
-				"too many passkey requests",
+				"too many trade security requests",
 			)
 		},
 	})

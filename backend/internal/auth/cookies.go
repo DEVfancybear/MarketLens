@@ -17,6 +17,12 @@ const (
 
 	accessCookiePath  = "/"
 	refreshCookiePath = "/api/v1/auth"
+
+	// The execution package validates and owns this cookie. Auth logout also
+	// expires it so signing out cannot leave a browser trade session unlocked.
+	tradeUnlockCookieName         = "trade_unlock"
+	hardenedTradeUnlockCookieName = "__Host-trade_unlock"
+	tradeUnlockCookiePath         = "/api/v1/execution"
 )
 
 // SetAuthCookies writes the access + refresh tokens as hardened cookies:
@@ -45,8 +51,8 @@ func SetAuthCookies(c fiber.Ctx, cfg config.Config, access, refresh string) {
 	})
 }
 
-// ClearAuthCookies expires both auth cookies (logout). Path/flags must match the
-// originals for the browser to overwrite them.
+// ClearAuthCookies expires both auth cookies and the browser trade unlock.
+// Path/flags must match the originals for the browser to overwrite them.
 func ClearAuthCookies(c fiber.Ctx, cfg config.Config) {
 	secure := cfg.AuthCookiesSecure()
 	expired := time.Now().Add(-time.Hour)
@@ -65,6 +71,22 @@ func ClearAuthCookies(c fiber.Ctx, cfg config.Config) {
 		Name:     RefreshCookieName,
 		Value:    "",
 		Path:     refreshCookiePath,
+		MaxAge:   -1,
+		Expires:  expired,
+		HTTPOnly: true,
+		Secure:   secure,
+		SameSite: "Strict",
+	})
+	tradeCookieName := tradeUnlockCookieName
+	tradeCookiePath := tradeUnlockCookiePath
+	if secure {
+		tradeCookieName = hardenedTradeUnlockCookieName
+		tradeCookiePath = "/"
+	}
+	c.Cookie(&fiber.Cookie{
+		Name:     tradeCookieName,
+		Value:    "",
+		Path:     tradeCookiePath,
 		MaxAge:   -1,
 		Expires:  expired,
 		HTTPOnly: true,

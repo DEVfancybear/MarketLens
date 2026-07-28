@@ -183,9 +183,19 @@ func TestAuthFlow_GoogleLoginMeRefreshLogout(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("logout status = %d, want 200", resp.StatusCode)
 	}
-	for _, ck := range resp.Cookies() {
-		if ck.Name == AccessCookieName && ck.MaxAge > 0 {
-			t.Fatal("logout should expire the access cookie")
+	expiredCookies := map[string]bool{
+		AccessCookieName:      false,
+		RefreshCookieName:     false,
+		tradeUnlockCookieName: false,
+	}
+	for _, cookie := range resp.Cookies() {
+		if _, expected := expiredCookies[cookie.Name]; expected && cookie.MaxAge < 0 {
+			expiredCookies[cookie.Name] = true
+		}
+	}
+	for name, expired := range expiredCookies {
+		if !expired {
+			t.Fatalf("logout did not expire %s", name)
 		}
 	}
 }

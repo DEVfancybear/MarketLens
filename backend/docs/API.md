@@ -3,8 +3,9 @@
 > Execution note (2026-07-26): the legacy MT5 credential verification and
 > Connector endpoints described later in this historical API snapshot have
 > been removed. Current execution routes and security boundaries are documented
-> in `../../docs/TRADE_EXECUTION_ARCHITECTURE.md`; do not implement or operate
-> the removed endpoints.
+> in `../../docs/TRADE_EXECUTION_ARCHITECTURE.md` and the optional browser-session
+> password contract in `../../docs/TRADE_PASSWORD_AUTHORIZATION.md`; do not
+> implement or operate the removed endpoints.
 
 Base URL (dev): `http://localhost:8080`
 API prefix: `/api/v1` (except `/health`).

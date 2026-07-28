@@ -1,7 +1,7 @@
 import { deleteJson, getJson, postJson } from "@/services/api/client";
 import type { ExecutionAccountSummary } from "@/types/execution";
 import type { ExecutionOrderWireRequest } from "@/services/execution/orderRouting";
-import { authorizeTradeTransaction } from "@/services/security/tradePasskey";
+import { authorizeTradeTransaction } from "@/services/security/tradePassword";
 
 interface ExecutionAccountsResponse {
   accounts: ExecutionAccountSummary[];

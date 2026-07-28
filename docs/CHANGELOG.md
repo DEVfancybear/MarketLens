@@ -4,25 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
-### Fixed - Concurrent passkey approval prompts (2026-07-28)
+### Changed - Optional browser-session trade password (2026-07-28)
 
-- Serialized frontend trade-authorization ceremonies so repeated order actions
-  cannot open overlapping WebAuthn requests while a Windows Hello/passkey
-  prompt is still active.
-- Replaced the misleading execution-service title for client-side approval
-  failures and translated the browser's `A request is already pending` error
-  into guidance to complete or cancel the existing prompt before retrying.
-
-### Fixed - Synced passkey trade verification (2026-07-28)
-
-- Stopped rejecting an otherwise valid WebAuthn assertion solely because a
-  backup-eligible, synced passkey reported a non-monotonic signature counter.
-  Signature, RP ID, origin, challenge, user-presence, and user-verification
-  checks remain mandatory; the same counter anomaly on a device-bound passkey
-  still fails closed.
-- Added structured backend diagnostics for assertion-validation failures and
-  surfaced passkey-specific verification guidance in the Trade workspace
-  instead of replacing it with a generic execution-service error.
+- Removed the WebAuthn/passkey enrollment, challenge, verification, encrypted
+  credential storage, frontend ceremony code, and Go dependencies.
+- Added an optional per-user trade password with Argon2id hashing, common-value
+  rejection, request throttling, and escalating temporary account locks.
+- The password is requested once per browser trade session. A random,
+  server-backed `HttpOnly`, `SameSite=Strict`, production-`Secure` session
+  cookie shares the unlock across tabs without exposing it to frontend code.
+- Added explicit browser locking, 12-hour absolute and two-hour idle unlock
+  limits, and revocation on password or security-setting changes.
+- Preserved one-time exact-payload authorization for every live action and
+  atomic Rust consumption, including when password protection is disabled.
 
 ### Fixed - Go to restores the visible price range (2026-07-28)
 
@@ -73,16 +67,12 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - Added a Rust regression proving auxiliary metadata validation remains
   fail-closed without coupling it to the valid portfolio envelope.
 
-### Added - Strict CSP and passkey-bound trade step-up (2026-07-28)
+### Added - Strict CSP and exact-payload trade authorization (2026-07-28)
 
-- Added WebAuthn passkey enrollment and user-verification ceremonies for every live order and
-  execution command.
 - Added one-time 256-bit authorization tokens bound to the exact transaction payload, user,
   active session, operation, and short expiry.
 - Made the Rust execution gateway atomically consume authorizations before enqueueing; payload
   mutation, replay, expiry, revoked sessions, and unavailable authorization storage fail closed.
-- Added encrypted-at-rest WebAuthn credentials and ceremony state plus production configuration
-  validation for RP origins and encryption secrets.
 - Added an enforced per-request nonce CSP with production `strict-dynamic`, development-only
   `unsafe-eval`, blocked script attributes/framing/objects, and a dedicated Firebase worker policy.
 

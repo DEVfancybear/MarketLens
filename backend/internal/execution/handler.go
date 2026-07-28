@@ -218,7 +218,7 @@ func (h *Handler) queueCommand(c fiber.Ctx) error {
 	if !validTradeAuthorizationToken(request.AuthorizationToken) {
 		return fiber.NewError(
 			fiber.StatusPreconditionRequired,
-			"passkey authorization required",
+			"trade authorization required",
 		)
 	}
 	response, err := h.gateway.QueueCommand(
@@ -247,7 +247,7 @@ func (h *Handler) routeOrder(c fiber.Ctx) error {
 	if !validTradeAuthorizationToken(request.AuthorizationToken) {
 		return fiber.NewError(
 			fiber.StatusPreconditionRequired,
-			"passkey authorization required",
+			"trade authorization required",
 		)
 	}
 	response, err := h.gateway.RouteOrder(
@@ -463,7 +463,7 @@ func gatewayHTTPError(err error) error {
 		case fiber.StatusForbidden:
 			return fiber.NewError(
 				fiber.StatusForbidden,
-				"passkey authorization was rejected",
+				"trade authorization was rejected",
 			)
 		case fiber.StatusNotFound:
 			return fiber.NewError(fiber.StatusNotFound, "execution account was not found")

@@ -514,7 +514,7 @@ func TestOrderOwnerAlwaysComesFromAuthenticatedSession(t *testing.T) {
 	}
 }
 
-func TestTradingRoutesFailClosedWithoutPasskeyAuthorization(t *testing.T) {
+func TestTradingRoutesFailClosedWithoutTradeAuthorization(t *testing.T) {
 	for _, testCase := range []struct {
 		path string
 		body string
@@ -545,7 +545,7 @@ func TestTradingRoutesFailClosedWithoutPasskeyAuthorization(t *testing.T) {
 				t.Fatalf("status = %d, want 428", response.StatusCode)
 			}
 			if gateway.orderOwner != "" || gateway.commandCalls != 0 {
-				t.Fatal("request without passkey authorization reached gateway")
+				t.Fatal("request without trade authorization reached gateway")
 			}
 		})
 	}

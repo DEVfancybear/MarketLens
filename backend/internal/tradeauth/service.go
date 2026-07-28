@@ -1,571 +1,556 @@
 package tradeauth
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
-	"github.com/go-webauthn/webauthn/protocol"
-	"github.com/go-webauthn/webauthn/webauthn"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/rs/zerolog/log"
+	"golang.org/x/crypto/argon2"
 
 	"github.com/smc-trading-terminal/backend/internal/auth"
 	"github.com/smc-trading-terminal/backend/internal/config"
 )
 
-const maxTransactionPayloadBytes = 256 * 1024
+const (
+	maxTransactionPayloadBytes = 256 * 1024
+	minTradePasswordRunes      = 8
+	maxTradePasswordRunes      = 128
+	maxTradePasswordBytes      = 512
+
+	argonMemoryKiB = 19 * 1024
+	argonTime      = 2
+	argonThreads   = 1
+	argonSaltBytes = 16
+	argonKeyBytes  = 32
+
+	tradeUnlockAbsoluteTTL = 12 * time.Hour
+	tradeUnlockIdleTTL     = 2 * time.Hour
+)
 
 var (
-	ErrPasskeyRequired       = errors.New("trade passkey required")
-	ErrCeremonyRejected      = errors.New("webauthn ceremony rejected")
-	ErrAuthorizationRejected = errors.New("trade authorization rejected")
+	ErrPasswordRequired       = errors.New("trade password required")
+	ErrPasswordInvalid        = errors.New("trade password invalid")
+	ErrPasswordLocked         = errors.New("trade password temporarily locked")
+	ErrPasswordNotConfigured  = errors.New("trade password not configured")
+	ErrPasswordPolicy         = errors.New("trade password does not meet policy")
+	ErrAuthorizationRejected  = errors.New("trade authorization rejected")
+	commonTradePasswordValues = map[string]struct{}{
+		"12345678": {}, "123456789": {}, "1234567890": {},
+		"abcdefgh": {}, "admin123": {}, "letmein123": {},
+		"password": {}, "password1": {}, "password123": {},
+		"qwerty123": {}, "trading123": {}, "welcome123": {},
+	}
 )
 
 type IdentityVerifier interface {
 	VerifyUserIdentity(ctx context.Context, idToken, userID string) (auth.User, error)
-	GetUser(ctx context.Context, userID string) (auth.User, error)
 }
 
 type Service struct {
 	pool             *pgxpool.Pool
 	identity         IdentityVerifier
-	webAuthn         *webauthn.WebAuthn
-	box              *sealedBox
-	challengeTTL     time.Duration
 	authorizationTTL time.Duration
 	now              func() time.Time
 }
 
-type BeginCeremony struct {
-	ChallengeID string `json:"challengeId"`
-	Options     any    `json:"options"`
+type SecurityStatus struct {
+	Enabled       bool   `json:"enabled"`
+	Configured    bool   `json:"configured"`
+	Unlocked      bool   `json:"unlocked"`
+	LockedUntilMS *int64 `json:"lockedUntilMs,omitempty"`
 }
 
 type Authorization struct {
 	Token       string `json:"token"`
 	ExpiresAtMS int64  `json:"expiresAtMs"`
-}
-
-type CredentialSummary struct {
-	ID         string `json:"id"`
-	Label      string `json:"label"`
-	CreatedAt  int64  `json:"createdAtMs"`
-	LastUsedAt *int64 `json:"lastUsedAtMs,omitempty"`
+	UnlockToken string `json:"-"`
 }
 
 func NewService(
 	pool *pgxpool.Pool,
 	identity IdentityVerifier,
 	cfg config.Config,
-) (*Service, error) {
-	secret := cfg.WebAuthnEncryptionKey
-	if secret == "" && !cfg.IsProduction() {
-		secret = cfg.AuthJWTSecret
-	}
-	box, err := newSealedBox(secret)
-	if err != nil {
-		return nil, err
-	}
-	wa, err := webauthn.New(&webauthn.Config{
-		RPID:          cfg.WebAuthnRPID,
-		RPDisplayName: "SMC Trading Terminal",
-		RPOrigins:     cfg.WebAuthnRPOrigins,
-		AuthenticatorSelection: protocol.AuthenticatorSelection{
-			ResidentKey:      protocol.ResidentKeyRequirementPreferred,
-			UserVerification: protocol.VerificationRequired,
-		},
-		AttestationPreference: protocol.PreferNoAttestation,
-		Timeouts: webauthn.TimeoutsConfig{
-			Login: webauthn.TimeoutConfig{
-				Enforce: true,
-				Timeout: cfg.WebAuthnChallengeTTL,
-			},
-			Registration: webauthn.TimeoutConfig{
-				Enforce: true,
-				Timeout: cfg.WebAuthnChallengeTTL,
-			},
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("tradeauth: initialize WebAuthn: %w", err)
-	}
+) *Service {
 	return &Service{
 		pool:             pool,
 		identity:         identity,
-		webAuthn:         wa,
-		box:              box,
-		challengeTTL:     cfg.WebAuthnChallengeTTL,
 		authorizationTTL: cfg.TradeAuthorizationTTL,
 		now:              time.Now,
-	}, nil
+	}
 }
 
-type webAuthnUser struct {
-	id          []byte
-	name        string
-	displayName string
-	credentials []webauthn.Credential
-}
-
-func (u webAuthnUser) WebAuthnID() []byte                         { return u.id }
-func (u webAuthnUser) WebAuthnName() string                       { return u.name }
-func (u webAuthnUser) WebAuthnDisplayName() string                { return u.displayName }
-func (u webAuthnUser) WebAuthnCredentials() []webauthn.Credential { return u.credentials }
-
-func (s *Service) BeginRegistration(
+func (s *Service) Status(
 	ctx context.Context,
-	userID, sessionID, idToken string,
-) (BeginCeremony, error) {
-	user, err := s.identity.VerifyUserIdentity(ctx, idToken, userID)
+	userID, sessionID, rawUnlockToken string,
+) (SecurityStatus, error) {
+	var enabled bool
+	var passwordHash sql.NullString
+	var lockedUntil sql.NullTime
+	err := s.pool.QueryRow(ctx, `
+		SELECT enabled, password_hash, locked_until
+		FROM trade_security_settings
+		WHERE user_id = $1::uuid
+	`, userID).Scan(&enabled, &passwordHash, &lockedUntil)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return SecurityStatus{}, nil
+	}
 	if err != nil {
-		return BeginCeremony{}, err
+		return SecurityStatus{}, err
 	}
-	webUser, err := s.loadUser(ctx, s.pool, user)
-	if err != nil {
-		return BeginCeremony{}, err
+	status := securityStatus(enabled, passwordHash.Valid, lockedUntil, s.now())
+	if status.Enabled {
+		status.Unlocked, err = s.tradeUnlockValid(
+			ctx,
+			userID,
+			sessionID,
+			rawUnlockToken,
+			s.now().UTC(),
+		)
+		if err != nil {
+			return SecurityStatus{}, err
+		}
 	}
-	options, session, err := s.webAuthn.BeginRegistration(
-		webUser,
-		webauthn.WithResidentKeyRequirement(protocol.ResidentKeyRequirementPreferred),
-		webauthn.WithAuthenticatorSelection(protocol.AuthenticatorSelection{
-			ResidentKey:      protocol.ResidentKeyRequirementPreferred,
-			UserVerification: protocol.VerificationRequired,
-		}),
-		webauthn.WithConveyancePreference(protocol.PreferNoAttestation),
-	)
-	if err != nil {
-		return BeginCeremony{}, fmt.Errorf("%w: %v", ErrCeremonyRejected, err)
-	}
-	challengeID := uuid.NewString()
-	if err := s.storeChallenge(
-		ctx, challengeID, userID, sessionID, "registration", "", nil, session,
-	); err != nil {
-		return BeginCeremony{}, err
-	}
-	return BeginCeremony{ChallengeID: challengeID, Options: options}, nil
+	return status, nil
 }
 
-func (s *Service) FinishRegistration(
+func (s *Service) Configure(
 	ctx context.Context,
-	userID, sessionID, challengeID, label string,
-	response json.RawMessage,
-) (CredentialSummary, error) {
+	userID, idToken string,
+	enabled bool,
+	password string,
+) (SecurityStatus, error) {
+	if _, err := s.identity.VerifyUserIdentity(ctx, idToken, userID); err != nil {
+		return SecurityStatus{}, err
+	}
+
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return CredentialSummary{}, err
+		return SecurityStatus{}, err
 	}
 	defer tx.Rollback(ctx)
 
-	session, _, err := s.lockChallenge(
-		ctx, tx, challengeID, userID, sessionID, "registration", "", nil,
-	)
-	if err != nil {
-		return CredentialSummary{}, err
+	var currentHash sql.NullString
+	err = tx.QueryRow(ctx, `
+		SELECT password_hash
+		FROM trade_security_settings
+		WHERE user_id = $1::uuid
+		FOR UPDATE
+	`, userID).Scan(&currentHash)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return SecurityStatus{}, err
 	}
-	user, err := s.identity.GetUser(ctx, userID)
-	if err != nil {
-		return CredentialSummary{}, err
+
+	if password != "" {
+		hash, hashErr := hashTradePassword(password)
+		if hashErr != nil {
+			return SecurityStatus{}, hashErr
+		}
+		currentHash = sql.NullString{String: hash, Valid: true}
 	}
-	webUser, err := s.loadUser(ctx, tx, user)
-	if err != nil {
-		return CredentialSummary{}, err
+	if enabled && !currentHash.Valid {
+		return SecurityStatus{}, ErrPasswordNotConfigured
 	}
-	parsed, err := protocol.ParseCredentialCreationResponseBytes(response)
-	if err != nil {
-		return CredentialSummary{}, fmt.Errorf("%w: invalid registration response", ErrCeremonyRejected)
+
+	var passwordHash any
+	if currentHash.Valid {
+		passwordHash = currentHash.String
 	}
-	credential, err := s.webAuthn.CreateCredential(webUser, session, parsed)
-	if err != nil || !credential.Flags.UserPresent || !credential.Flags.UserVerified {
-		return CredentialSummary{}, fmt.Errorf("%w: credential verification failed", ErrCeremonyRejected)
+	if _, err = tx.Exec(ctx, `
+		INSERT INTO trade_security_settings
+			(user_id, enabled, password_hash, failed_attempts, locked_until)
+		VALUES ($1::uuid, $2, $3, 0, NULL)
+		ON CONFLICT (user_id) DO UPDATE
+		SET enabled = EXCLUDED.enabled,
+		    password_hash = EXCLUDED.password_hash,
+		    failed_attempts = 0,
+		    locked_until = NULL
+	`, userID, enabled, passwordHash); err != nil {
+		return SecurityStatus{}, err
 	}
-	if strings.TrimSpace(label) == "" {
-		label = "Passkey"
+	if _, err = tx.Exec(ctx, `
+		DELETE FROM trade_unlock_sessions
+		WHERE user_id = $1::uuid
+	`, userID); err != nil {
+		return SecurityStatus{}, err
 	}
-	label = strings.TrimSpace(label)
-	if len(label) > 80 {
-		return CredentialSummary{}, fmt.Errorf("%w: invalid passkey label", ErrCeremonyRejected)
+	if _, err = tx.Exec(ctx, `
+		DELETE FROM trade_authorizations
+		WHERE user_id = $1::uuid AND consumed_at IS NULL
+	`, userID); err != nil {
+		return SecurityStatus{}, err
 	}
-	credentialJSON, err := json.Marshal(credential)
-	if err != nil {
-		return CredentialSummary{}, err
+	if err = tx.Commit(ctx); err != nil {
+		return SecurityStatus{}, err
 	}
-	sealed, err := s.box.seal(credentialJSON, credentialAAD(userID, credential.ID))
-	if err != nil {
-		return CredentialSummary{}, err
-	}
-	credentialRowID := uuid.NewString()
-	createdAt := s.now().UTC()
-	_, err = tx.Exec(ctx, `
-		INSERT INTO webauthn_credentials
-			(id, user_id, credential_id, credential_data, label, created_at)
-		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6)
-	`, credentialRowID, userID, credential.ID, sealed, label, createdAt)
-	if err != nil {
-		return CredentialSummary{}, fmt.Errorf("%w: credential already registered", ErrCeremonyRejected)
-	}
-	if err := s.consumeChallenge(ctx, tx, challengeID); err != nil {
-		return CredentialSummary{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return CredentialSummary{}, err
-	}
-	return CredentialSummary{
-		ID:        credentialRowID,
-		Label:     label,
-		CreatedAt: createdAt.UnixMilli(),
-	}, nil
+	return SecurityStatus{Enabled: enabled, Configured: currentHash.Valid}, nil
 }
 
-func (s *Service) BeginAuthorization(
+func (s *Service) Authorize(
 	ctx context.Context,
 	userID, sessionID, operation string,
 	payload json.RawMessage,
-) (BeginCeremony, error) {
-	if err := validateOperationPayload(operation, payload); err != nil {
-		return BeginCeremony{}, err
-	}
-	user, err := s.identity.GetUser(ctx, userID)
-	if err != nil {
-		return BeginCeremony{}, err
-	}
-	webUser, err := s.loadUser(ctx, s.pool, user)
-	if err != nil {
-		return BeginCeremony{}, err
-	}
-	if len(webUser.credentials) == 0 {
-		return BeginCeremony{}, ErrPasskeyRequired
-	}
-	options, session, err := s.webAuthn.BeginLogin(
-		webUser,
-		webauthn.WithUserVerification(protocol.VerificationRequired),
-	)
-	if err != nil {
-		return BeginCeremony{}, fmt.Errorf("%w: %v", ErrCeremonyRejected, err)
-	}
-	challengeID := uuid.NewString()
-	if err := s.storeChallenge(
-		ctx, challengeID, userID, sessionID, "transaction", operation, payload, session,
-	); err != nil {
-		return BeginCeremony{}, err
-	}
-	return BeginCeremony{ChallengeID: challengeID, Options: options}, nil
-}
-
-func (s *Service) FinishAuthorization(
-	ctx context.Context,
-	userID, sessionID, challengeID, operation string,
-	payload, response json.RawMessage,
+	password, rawUnlockToken string,
 ) (Authorization, error) {
 	if err := validateOperationPayload(operation, payload); err != nil {
 		return Authorization{}, err
 	}
+
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Authorization{}, err
 	}
 	defer tx.Rollback(ctx)
 
-	session, storedPayload, err := s.lockChallenge(
-		ctx, tx, challengeID, userID, sessionID, "transaction", operation, payload,
-	)
-	if err != nil {
+	enabled := false
+	failedAttempts := 0
+	var passwordHash sql.NullString
+	var lockedUntil sql.NullTime
+	err = tx.QueryRow(ctx, `
+		SELECT enabled, password_hash, failed_attempts, locked_until
+		FROM trade_security_settings
+		WHERE user_id = $1::uuid
+		FOR UPDATE
+	`, userID).Scan(&enabled, &passwordHash, &failedAttempts, &lockedUntil)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return Authorization{}, err
 	}
-	user, err := s.identity.GetUser(ctx, userID)
-	if err != nil {
-		return Authorization{}, err
-	}
-	webUser, rows, err := s.loadUserWithRows(ctx, tx, user, true)
-	if err != nil {
-		return Authorization{}, err
-	}
-	parsed, err := protocol.ParseCredentialRequestResponseBytes(response)
-	if err != nil {
-		return Authorization{}, fmt.Errorf("%w: invalid assertion response", ErrAuthorizationRejected)
-	}
-	credential, err := s.webAuthn.ValidateLogin(webUser, session, parsed)
-	if err != nil {
-		log.Warn().
-			Err(err).
-			Str("challenge_id", challengeID).
-			Msg("passkey assertion validation rejected")
-		return Authorization{}, fmt.Errorf("%w: passkey assertion failed", ErrAuthorizationRejected)
-	}
-	if !acceptableAssertionCredential(credential) {
-		log.Warn().
-			Str("challenge_id", challengeID).
-			Bool("user_present", credential.Flags.UserPresent).
-			Bool("user_verified", credential.Flags.UserVerified).
-			Bool("clone_warning", credential.Authenticator.CloneWarning).
-			Bool("backup_eligible", credential.Flags.BackupEligible).
-			Msg("passkey assertion did not meet the authorization policy")
-		return Authorization{}, fmt.Errorf("%w: passkey assertion failed", ErrAuthorizationRejected)
-	}
-	if credential.Authenticator.CloneWarning {
-		// Synced passkeys do not provide a reliable monotonic signature counter.
-		// The assertion signature, RP ID, origin, challenge, user presence, and
-		// user verification have already been validated above.
-		log.Warn().
-			Str("challenge_id", challengeID).
-			Msg("accepting synced passkey assertion with a counter anomaly")
-	}
-	rowID, ok := rows[base64.RawURLEncoding.EncodeToString(credential.ID)]
-	if !ok {
-		return Authorization{}, ErrAuthorizationRejected
-	}
-	credentialJSON, err := json.Marshal(credential)
-	if err != nil {
-		return Authorization{}, err
-	}
-	sealed, err := s.box.seal(credentialJSON, credentialAAD(userID, credential.ID))
-	if err != nil {
-		return Authorization{}, err
-	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE webauthn_credentials
-		SET credential_data = $1, last_used_at = $2
-		WHERE id = $3::uuid AND user_id = $4::uuid
-	`, sealed, s.now().UTC(), rowID, userID); err != nil {
-		return Authorization{}, err
+
+	method := "disabled"
+	unlockToken := ""
+	now := s.now().UTC()
+	if enabled {
+		unlocked, unlockErr := refreshTradeUnlock(
+			ctx,
+			tx,
+			userID,
+			sessionID,
+			rawUnlockToken,
+			now,
+		)
+		if unlockErr != nil {
+			return Authorization{}, unlockErr
+		}
+		if unlocked {
+			method = "session"
+		} else {
+			method = "password"
+			if lockedUntil.Valid && lockedUntil.Time.After(now) {
+				return Authorization{}, ErrPasswordLocked
+			}
+			if password == "" {
+				return Authorization{}, ErrPasswordRequired
+			}
+			if !passwordHash.Valid {
+				return Authorization{}, errors.New("tradeauth: enabled trade password has no hash")
+			}
+			matches, verifyErr := verifyTradePassword(password, passwordHash.String)
+			if verifyErr != nil {
+				return Authorization{}, fmt.Errorf("tradeauth: verify password hash: %w", verifyErr)
+			}
+			if !matches {
+				failedAttempts++
+				lockDuration := passwordLockDuration(failedAttempts)
+				var nextLockedUntil any
+				if lockDuration > 0 {
+					nextLockedUntil = now.Add(lockDuration)
+				}
+				if _, err = tx.Exec(ctx, `
+					UPDATE trade_security_settings
+					SET failed_attempts = $2, locked_until = $3
+					WHERE user_id = $1::uuid
+				`, userID, failedAttempts, nextLockedUntil); err != nil {
+					return Authorization{}, err
+				}
+				if err = tx.Commit(ctx); err != nil {
+					return Authorization{}, err
+				}
+				if lockDuration > 0 {
+					return Authorization{}, ErrPasswordLocked
+				}
+				return Authorization{}, ErrPasswordInvalid
+			}
+			if _, err = tx.Exec(ctx, `
+				UPDATE trade_security_settings
+				SET failed_attempts = 0, locked_until = NULL
+				WHERE user_id = $1::uuid
+			`, userID); err != nil {
+				return Authorization{}, err
+			}
+			var unlockHash []byte
+			unlockToken, unlockHash, err = generateAuthorizationToken()
+			if err != nil {
+				return Authorization{}, err
+			}
+			if _, err = tx.Exec(ctx, `
+				INSERT INTO trade_unlock_sessions
+					(user_id, session_id, token_hash, expires_at, last_used_at)
+				VALUES ($1::uuid, $2::uuid, $3, $4, $5)
+				ON CONFLICT (user_id, session_id) DO UPDATE
+				SET token_hash = EXCLUDED.token_hash,
+				    expires_at = EXCLUDED.expires_at,
+				    last_used_at = EXCLUDED.last_used_at
+			`, userID, sessionID, unlockHash, now.Add(tradeUnlockAbsoluteTTL), now); err != nil {
+				return Authorization{}, err
+			}
+		}
 	}
 
 	rawToken, tokenHash, err := generateAuthorizationToken()
 	if err != nil {
 		return Authorization{}, err
 	}
-	expiresAt := s.now().UTC().Add(s.authorizationTTL)
-	if _, err := tx.Exec(ctx, `
+	expiresAt := now.Add(s.authorizationTTL)
+	if _, err = tx.Exec(ctx, `
 		INSERT INTO trade_authorizations
-			(user_id, session_id, credential_id, operation, payload, token_hash, expires_at)
-		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5::jsonb, $6, $7)
-	`, userID, sessionID, rowID, operation, string(storedPayload), tokenHash, expiresAt); err != nil {
+			(user_id, session_id, operation, payload, token_hash, expires_at, verification_method)
+		VALUES ($1::uuid, $2::uuid, $3, $4::jsonb, $5, $6, $7)
+	`, userID, sessionID, operation, string(payload), tokenHash, expiresAt, method); err != nil {
 		return Authorization{}, err
 	}
-	if err := s.consumeChallenge(ctx, tx, challengeID); err != nil {
+	if err = tx.Commit(ctx); err != nil {
 		return Authorization{}, err
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return Authorization{}, err
-	}
-	return Authorization{Token: rawToken, ExpiresAtMS: expiresAt.UnixMilli()}, nil
+
+	_, _ = s.pool.Exec(ctx, `
+		DELETE FROM trade_authorizations
+		WHERE expires_at < now() - interval '1 hour'
+		   OR consumed_at < now() - interval '1 hour'
+	`)
+	_, _ = s.pool.Exec(ctx, `
+		DELETE FROM trade_unlock_sessions
+		WHERE expires_at < now()
+		   OR last_used_at < now() - interval '2 hours'
+	`)
+	return Authorization{
+		Token:       rawToken,
+		ExpiresAtMS: expiresAt.UnixMilli(),
+		UnlockToken: unlockToken,
+	}, nil
 }
 
-func acceptableAssertionCredential(credential *webauthn.Credential) bool {
-	if credential == nil ||
-		!credential.Flags.UserPresent ||
-		!credential.Flags.UserVerified {
-		return false
-	}
-	return !credential.Authenticator.CloneWarning || credential.Flags.BackupEligible
-}
-
-func (s *Service) ListCredentials(ctx context.Context, userID string) ([]CredentialSummary, error) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT id::text, label, created_at, last_used_at
-		FROM webauthn_credentials
-		WHERE user_id = $1::uuid
-		ORDER BY created_at
-	`, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	result := make([]CredentialSummary, 0)
-	for rows.Next() {
-		var item CredentialSummary
-		var created time.Time
-		var lastUsed *time.Time
-		if err := rows.Scan(&item.ID, &item.Label, &created, &lastUsed); err != nil {
-			return nil, err
-		}
-		item.CreatedAt = created.UnixMilli()
-		if lastUsed != nil {
-			ms := lastUsed.UnixMilli()
-			item.LastUsedAt = &ms
-		}
-		result = append(result, item)
-	}
-	return result, rows.Err()
-}
-
-type queryer interface {
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-}
-
-func (s *Service) loadUser(
+func (s *Service) Lock(
 	ctx context.Context,
-	q queryer,
-	user auth.User,
-) (webAuthnUser, error) {
-	webUser, _, err := s.loadUserWithRows(ctx, q, user, false)
-	return webUser, err
-}
-
-func (s *Service) loadUserWithRows(
-	ctx context.Context,
-	q queryer,
-	user auth.User,
-	lock bool,
-) (webAuthnUser, map[string]string, error) {
-	userUUID, err := uuid.Parse(user.ID)
-	if err != nil {
-		return webAuthnUser{}, nil, err
-	}
-	statement := `
-		SELECT id::text, credential_id, credential_data
-		FROM webauthn_credentials
-		WHERE user_id = $1::uuid
-		ORDER BY created_at`
-	if lock {
-		statement += " FOR UPDATE"
-	}
-	rows, err := q.Query(ctx, statement, user.ID)
-	if err != nil {
-		return webAuthnUser{}, nil, err
-	}
-	defer rows.Close()
-	credentials := make([]webauthn.Credential, 0)
-	rowIDs := make(map[string]string)
-	for rows.Next() {
-		var rowID string
-		var credentialID, sealed []byte
-		if err := rows.Scan(&rowID, &credentialID, &sealed); err != nil {
-			return webAuthnUser{}, nil, err
-		}
-		plaintext, err := s.box.open(sealed, credentialAAD(user.ID, credentialID))
-		if err != nil {
-			return webAuthnUser{}, nil, err
-		}
-		var credential webauthn.Credential
-		if err := json.Unmarshal(plaintext, &credential); err != nil {
-			return webAuthnUser{}, nil, err
-		}
-		if !bytes.Equal(credential.ID, credentialID) {
-			return webAuthnUser{}, nil, fmt.Errorf("tradeauth: credential integrity mismatch")
-		}
-		credentials = append(credentials, credential)
-		rowIDs[base64.RawURLEncoding.EncodeToString(credential.ID)] = rowID
-	}
-	if err := rows.Err(); err != nil {
-		return webAuthnUser{}, nil, err
-	}
-	displayName := user.DisplayName
-	if displayName == "" {
-		displayName = user.Email
-	}
-	return webAuthnUser{
-		id:          userUUID[:],
-		name:        user.Email,
-		displayName: displayName,
-		credentials: credentials,
-	}, rowIDs, nil
-}
-
-func (s *Service) storeChallenge(
-	ctx context.Context,
-	challengeID, userID, sessionID, ceremony, operation string,
-	payload json.RawMessage,
-	session *webauthn.SessionData,
+	userID, sessionID string,
 ) error {
-	sessionJSON, err := json.Marshal(session)
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	sealed, err := s.box.seal(
-		sessionJSON,
-		challengeAAD(challengeID, userID, sessionID),
-	)
-	if err != nil {
+	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, `
+		DELETE FROM trade_unlock_sessions
+		WHERE user_id = $1::uuid AND session_id = $2::uuid
+	`, userID, sessionID); err != nil {
 		return err
 	}
-	expiresAt := s.now().UTC().Add(s.challengeTTL)
-	var payloadArg any
-	if payload != nil {
-		payloadArg = string(payload)
+	if _, err = tx.Exec(ctx, `
+		DELETE FROM trade_authorizations
+		WHERE user_id = $1::uuid
+		  AND session_id = $2::uuid
+		  AND consumed_at IS NULL
+	`, userID, sessionID); err != nil {
+		return err
 	}
-	_, err = s.pool.Exec(ctx, `
-		INSERT INTO webauthn_challenges
-			(id, user_id, session_id, ceremony, operation, payload, session_data, expires_at)
-		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, NULLIF($5, ''), $6::jsonb, $7, $8)
-	`, challengeID, userID, sessionID, ceremony, operation, payloadArg, sealed, expiresAt)
-	if err == nil {
-		_, _ = s.pool.Exec(ctx, `
-			DELETE FROM webauthn_challenges
-			WHERE expires_at < now() - interval '1 hour' OR consumed_at < now() - interval '1 hour'
-		`)
-		_, _ = s.pool.Exec(ctx, `
-			DELETE FROM trade_authorizations
-			WHERE expires_at < now() - interval '1 hour' OR consumed_at < now() - interval '1 hour'
-		`)
-	}
-	return err
+	return tx.Commit(ctx)
 }
 
-func (s *Service) lockChallenge(
+func (s *Service) tradeUnlockValid(
+	ctx context.Context,
+	userID, sessionID, rawToken string,
+	now time.Time,
+) (bool, error) {
+	hash, ok := opaqueTokenHash(rawToken)
+	if !ok {
+		return false, nil
+	}
+	idleCutoff := now.Add(-tradeUnlockIdleTTL)
+	var valid bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM trade_unlock_sessions
+			WHERE user_id = $1::uuid
+			  AND session_id = $2::uuid
+			  AND token_hash = $3
+			  AND expires_at > $4
+			  AND last_used_at > $5
+		)
+	`, userID, sessionID, hash, now, idleCutoff).Scan(&valid)
+	return valid, err
+}
+
+func refreshTradeUnlock(
 	ctx context.Context,
 	tx pgx.Tx,
-	challengeID, userID, sessionID, ceremony, operation string,
-	payload json.RawMessage,
-) (webauthn.SessionData, json.RawMessage, error) {
-	var sealed []byte
-	var storedPayload []byte
+	userID, sessionID, rawToken string,
+	now time.Time,
+) (bool, error) {
+	hash, ok := opaqueTokenHash(rawToken)
+	if !ok {
+		return false, nil
+	}
+	idleCutoff := now.Add(-tradeUnlockIdleTTL)
+	var id string
 	err := tx.QueryRow(ctx, `
-		SELECT session_data, COALESCE(payload::text, 'null')
-		FROM webauthn_challenges
-		WHERE id = $1::uuid
-		  AND user_id = $2::uuid
-		  AND session_id = $3::uuid
-		  AND ceremony = $4
-		  AND COALESCE(operation, '') = $5
-		  AND consumed_at IS NULL
-		  AND expires_at > now()
-		  AND ($6::jsonb IS NULL OR payload = $6::jsonb)
-		FOR UPDATE
-	`, challengeID, userID, sessionID, ceremony, operation, nullableJSON(payload)).
-		Scan(&sealed, &storedPayload)
+		UPDATE trade_unlock_sessions
+		SET last_used_at = $4
+		WHERE user_id = $1::uuid
+		  AND session_id = $2::uuid
+		  AND token_hash = $3
+		  AND expires_at > $4
+		  AND last_used_at > $5
+		RETURNING id::text
+	`, userID, sessionID, hash, now, idleCutoff).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return webauthn.SessionData{}, nil, ErrCeremonyRejected
+		return false, nil
 	}
-	if err != nil {
-		return webauthn.SessionData{}, nil, err
-	}
-	plaintext, err := s.box.open(
-		sealed,
-		challengeAAD(challengeID, userID, sessionID),
-	)
-	if err != nil {
-		return webauthn.SessionData{}, nil, err
-	}
-	var session webauthn.SessionData
-	if err := json.Unmarshal(plaintext, &session); err != nil {
-		return webauthn.SessionData{}, nil, err
-	}
-	return session, json.RawMessage(storedPayload), nil
+	return err == nil, err
 }
 
-func (s *Service) consumeChallenge(ctx context.Context, tx pgx.Tx, challengeID string) error {
-	tag, err := tx.Exec(ctx, `
-		UPDATE webauthn_challenges
-		SET consumed_at = now()
-		WHERE id = $1::uuid AND consumed_at IS NULL
-	`, challengeID)
-	if err != nil {
-		return err
+func opaqueTokenHash(raw string) ([]byte, bool) {
+	if len(raw) != 43 {
+		return nil, false
 	}
-	if tag.RowsAffected() != 1 {
-		return ErrCeremonyRejected
+	for _, character := range []byte(raw) {
+		if (character >= 'a' && character <= 'z') ||
+			(character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') ||
+			character == '-' || character == '_' {
+			continue
+		}
+		return nil, false
+	}
+	sum := sha256.Sum256([]byte(raw))
+	return sum[:], true
+}
+
+func securityStatus(
+	enabled, configured bool,
+	lockedUntil sql.NullTime,
+	now time.Time,
+) SecurityStatus {
+	status := SecurityStatus{Enabled: enabled, Configured: configured}
+	if lockedUntil.Valid && lockedUntil.Time.After(now) {
+		value := lockedUntil.Time.UnixMilli()
+		status.LockedUntilMS = &value
+	}
+	return status
+}
+
+func validateTradePassword(password string) error {
+	if !utf8.ValidString(password) || len(password) > maxTradePasswordBytes {
+		return fmt.Errorf("%w: password is too long", ErrPasswordPolicy)
+	}
+	length := utf8.RuneCountInString(password)
+	if length < minTradePasswordRunes || length > maxTradePasswordRunes {
+		return fmt.Errorf(
+			"%w: password must contain between %d and %d characters",
+			ErrPasswordPolicy,
+			minTradePasswordRunes,
+			maxTradePasswordRunes,
+		)
+	}
+	if _, common := commonTradePasswordValues[strings.ToLower(password)]; common {
+		return fmt.Errorf("%w: choose a less common password", ErrPasswordPolicy)
 	}
 	return nil
+}
+
+func hashTradePassword(password string) (string, error) {
+	if err := validateTradePassword(password); err != nil {
+		return "", err
+	}
+	salt := make([]byte, argonSaltBytes)
+	if _, err := rand.Read(salt); err != nil {
+		return "", err
+	}
+	hash := argon2.IDKey(
+		[]byte(password),
+		salt,
+		argonTime,
+		argonMemoryKiB,
+		argonThreads,
+		argonKeyBytes,
+	)
+	return fmt.Sprintf(
+		"$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
+		argon2.Version,
+		argonMemoryKiB,
+		argonTime,
+		argonThreads,
+		base64.RawStdEncoding.EncodeToString(salt),
+		base64.RawStdEncoding.EncodeToString(hash),
+	), nil
+}
+
+func verifyTradePassword(password, encoded string) (bool, error) {
+	parts := strings.Split(encoded, "$")
+	if len(parts) != 6 || parts[0] != "" || parts[1] != "argon2id" {
+		return false, errors.New("invalid Argon2id encoding")
+	}
+	version, err := strconv.Atoi(strings.TrimPrefix(parts[2], "v="))
+	if err != nil || version != argon2.Version {
+		return false, errors.New("unsupported Argon2id version")
+	}
+	var memory uint32
+	var iterations uint32
+	var threads uint8
+	if _, err = fmt.Sscanf(
+		parts[3],
+		"m=%d,t=%d,p=%d",
+		&memory,
+		&iterations,
+		&threads,
+	); err != nil ||
+		memory != argonMemoryKiB ||
+		iterations != argonTime ||
+		threads != argonThreads {
+		return false, errors.New("unexpected Argon2id parameters")
+	}
+	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
+	if err != nil || len(salt) != argonSaltBytes {
+		return false, errors.New("invalid Argon2id salt")
+	}
+	expected, err := base64.RawStdEncoding.DecodeString(parts[5])
+	if err != nil || len(expected) != argonKeyBytes {
+		return false, errors.New("invalid Argon2id hash")
+	}
+	actual := argon2.IDKey(
+		[]byte(password),
+		salt,
+		iterations,
+		memory,
+		threads,
+		uint32(len(expected)),
+	)
+	return subtle.ConstantTimeCompare(actual, expected) == 1, nil
+}
+
+func passwordLockDuration(failedAttempts int) time.Duration {
+	if failedAttempts < 5 {
+		return 0
+	}
+	exponent := failedAttempts - 5
+	if exponent > 5 {
+		exponent = 5
+	}
+	duration := 30 * time.Second * time.Duration(1<<exponent)
+	if duration > 15*time.Minute {
+		return 15 * time.Minute
+	}
+	return duration
 }
 
 func validateOperationPayload(operation string, payload json.RawMessage) error {
@@ -597,19 +582,4 @@ func generateAuthorizationToken() (raw string, hash []byte, err error) {
 	raw = base64.RawURLEncoding.EncodeToString(value)
 	sum := sha256.Sum256([]byte(raw))
 	return raw, sum[:], nil
-}
-
-func credentialAAD(userID string, credentialID []byte) string {
-	return "credential\x00" + userID + "\x00" + base64.RawURLEncoding.EncodeToString(credentialID)
-}
-
-func challengeAAD(challengeID, userID, sessionID string) string {
-	return "challenge\x00" + challengeID + "\x00" + userID + "\x00" + sessionID
-}
-
-func nullableJSON(payload json.RawMessage) any {
-	if payload == nil {
-		return nil
-	}
-	return string(payload)
 }

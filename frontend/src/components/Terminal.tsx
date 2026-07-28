@@ -14,6 +14,7 @@ import { useHotkeys } from "@/hooks/useHotkeys";
 import { AppSettingsDialog } from "@/components/settings/AppSettingsDialog";
 import { DrawingAlertDialog } from "@/components/chart/drawing/alerts/DrawingAlertDialog";
 import { useTerminalPlatform } from "@/hooks/useTerminalPlatform";
+import { TradeSecurityDialog } from "@/components/security/TradeSecurityDialog";
 
 const DesktopTerminal = dynamic(
   () => import("@/components/desktop/DesktopTerminal").then((module) => module.DesktopTerminal),
@@ -49,6 +50,7 @@ export function Terminal() {
       <ObjectSettingsDialog />
       <AppSettingsDialog />
       <DrawingAlertDialog />
+      <TradeSecurityDialog />
       <Toaster />
     </>
   );

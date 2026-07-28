@@ -1,8 +1,9 @@
 "use client";
-import { LogOut } from "lucide-react";
+import { KeyRound, LogOut } from "lucide-react";
 import { Dropdown, MenuItem } from "@/components/ui/Dropdown";
 import type { AuthUser } from "@/store/authStore";
 import { authUserInitials, signOutFromTerminal } from "@/services/auth/terminalAccount";
+import { openTradeSecuritySettings } from "@/services/security/tradePassword";
 
 /** Avatar dropdown shown when signed in: identity + sign out. */
 export function UserMenu({ user }: { user: AuthUser }) {
@@ -51,6 +52,15 @@ export function UserMenu({ user }: { user: AuthUser }) {
             </div>
           </div>
           <div className="my-1 h-px bg-terminal-border" />
+          <MenuItem
+            onClick={() => {
+              close();
+              openTradeSecuritySettings();
+            }}
+          >
+            <KeyRound size={13} />
+            Trade security
+          </MenuItem>
           <MenuItem
             onClick={() => {
               close();
