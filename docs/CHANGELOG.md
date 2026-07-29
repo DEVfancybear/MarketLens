@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Stable chart viewport during rapid market switches (2026-07-29)
+
+- Treated every symbol or timeframe identity change as a fresh candle data
+  window even when the old and new markets share the same timestamps, as
+  commonly happens between Forex pairs on the same interval.
+- Deferred the market-change viewport reset until the next animation frame so
+  stale indicator series from the previous market are reconciled before
+  autoscale runs, preventing the transient price-scale collapse and chart
+  jitter seen while switching symbols repeatedly in production.
+- Added chart regression coverage for overlapping-timestamp market changes,
+  same-market history prepends, and disjoint same-market replacements.
+
 ### Fixed - Desktop top toolbar clipping at narrow widths and browser zoom (2026-07-29)
 
 - Reworked the shared desktop `TopToolbar` density rules so Chart and Trade

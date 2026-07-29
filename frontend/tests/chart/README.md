@@ -20,6 +20,8 @@ Current coverage:
 - logical range centering that preserves the current zoom span,
 - candle series merge/update planning for REST-history vs realtime races, including stale MT5
   refresh-tail detection,
+- candle data-window reset policy for symbol/timeframe changes whose timestamps
+  overlap, same-market history prepends, and disjoint replacements,
 - custom Pine `request.security()` cache-key policy for MT5 same-window OHLC refreshes,
 - local date/time draft parsing,
 - fixed Monday-first calendar grid generation.

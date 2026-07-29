@@ -122,6 +122,7 @@ import {
 import { indicatorPointsInViewport, resolveCandleViewport, type CandleViewport } from "@/services/candleViewport";
 import type { IndicatorMagnetPoint } from "./drawing/interaction/OhlcMagnetSnap";
 import { getDrawingToolManifestEntry } from "@/types/drawingToolManifest";
+import { isCandleDataWindowReset } from "./chartDataWindowPolicy";
 
 function drawingCursorCrosshairOptions(
   theme: Parameters<typeof crosshairOptions>[0],
@@ -245,25 +246,6 @@ function logicalRangeAfterDataReplacement(
   };
 }
 
-function candleWindowsOverlap(
-  previous: readonly Candle[],
-  next: readonly Candle[],
-): boolean {
-  const previousFirst = previous[0]?.time;
-  const previousLast = previous.at(-1)?.time;
-  const nextFirst = next[0]?.time;
-  const nextLast = next.at(-1)?.time;
-  if (
-    previousFirst == null ||
-    previousLast == null ||
-    nextFirst == null ||
-    nextLast == null
-  ) {
-    return false;
-  }
-  return previousFirst <= nextLast && nextFirst <= previousLast;
-}
-
 /**
  * Main candlestick chart. Plots the supplied (replay-aware) candles, overlays
  * non-pane indicators, reports the crosshair, and exposes an imperative
@@ -311,6 +293,8 @@ export function PriceChart({
   const pendingMarketViewportResetRef = useRef(true);
   const initializedReplaySessionRef = useRef<string | null>(null);
   const activeReplaySessionRef = useRef<string | null>(null);
+  const activeMarketSeriesKeyRef = useRef("");
+  const appliedMarketSeriesKeyRef = useRef<string | null>(null);
   const prevCandlesRef = useRef<Candle[]>([]);
   const candleByTimeRef = useRef<Map<number, Candle>>(new Map());
   const prevThemeRef = useRef<string>("");
@@ -354,6 +338,8 @@ export function PriceChart({
   const storedTimeframe = useAtomValue(timeframeAtom);
   const symbol = symbolOverride ?? storedSymbol;
   const timeframe = timeframeOverride ?? storedTimeframe;
+  const marketSeriesKey = `${symbol}:${timeframe}`;
+  activeMarketSeriesKeyRef.current = marketSeriesKey;
   const marketSymbol = getMarketSymbol(symbol);
   const indicatorRuntimeContext = useMemo<IndicatorRuntimeContext>(() => {
     const context: IndicatorRuntimeContext = {
@@ -814,6 +800,8 @@ export function PriceChart({
 
     const prev = prevCandlesRef.current;
     const last = candles[candles.length - 1];
+    const marketSeriesChanged =
+      appliedMarketSeriesKeyRef.current !== marketSeriesKey;
 
     // Realtime fast path: a forming-bar tick (same length, same last time) or a
     // single appended bar → series.update() instead of a full setData. Smooth
@@ -823,8 +811,12 @@ export function PriceChart({
     const updatePlan = resolveRealtimeSeriesUpdatePlan(prev, candles, sameTheme);
     const replayBurst = replayPlaying && sameTheme ? replayAppendedCandles(prev, candles) : null;
     const structuralDataWindowChange = sameTheme && prev.length > 0 && candles.length > 0 && updatePlan === "replace";
-    const dataWindowReset =
-      structuralDataWindowChange && !candleWindowsOverlap(prev, candles);
+    const dataWindowReset = isCandleDataWindowReset({
+      previous: prev,
+      next: candles,
+      structuralDataWindowChange,
+      marketSeriesChanged,
+    });
     const visibleRangeBeforeReplace =
       structuralDataWindowChange && !dataWindowReset && fittedRef.current
         ? chartRef.current?.timeScale().getVisibleLogicalRange()
@@ -939,6 +931,7 @@ export function PriceChart({
 
     prevCandlesRef.current = candles;
     prevThemeRef.current = theme;
+    appliedMarketSeriesKeyRef.current = marketSeriesKey;
     if (last) {
       cs.applyOptions({
         priceLineColor: last.close >= last.open ? c.bull : c.bear,
@@ -972,10 +965,30 @@ export function PriceChart({
       pendingMarketViewportResetRef.current = false;
       lastAutoFitLengthRef.current = candles.length;
       fittedRef.current = true;
-      viewportControllerRef.current?.reset(
-        timeScaleDefaults(timeframe),
-        "market-change",
-      );
+      const viewport = viewportControllerRef.current;
+      if (dataWindowReset && viewport) {
+        // Candle and indicator effects reconcile in declaration order. Delay a
+        // market reset by one frame so old-symbol overlay values cannot enter
+        // the new symbol's autoscale and visibly squash/expand the candles.
+        if (autoFitRafRef.current !== null) {
+          cancelAnimationFrame(autoFitRafRef.current);
+        }
+        const expectedMarketSeriesKey = marketSeriesKey;
+        const frame = requestAnimationFrame(() => {
+          if (autoFitRafRef.current !== frame) return;
+          autoFitRafRef.current = null;
+          if (
+            viewportControllerRef.current !== viewport ||
+            activeMarketSeriesKeyRef.current !== expectedMarketSeriesKey
+          ) {
+            return;
+          }
+          viewport.reset(timeScaleDefaults(timeframe), "market-change");
+        });
+        autoFitRafRef.current = frame;
+      } else {
+        viewport?.reset(timeScaleDefaults(timeframe), "market-change");
+      }
     } else if (initializeReplayViewport && replaySessionId) {
       initializedReplaySessionRef.current = replaySessionId;
       lastAutoFitLengthRef.current = candles.length;
