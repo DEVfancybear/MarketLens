@@ -228,54 +228,59 @@ export function TopToolbar() {
   };
 
   return (
-    <div className="flex h-full items-center gap-2 px-3">
-      <div className="mr-1 flex h-10 shrink-0 items-center gap-2.5 pr-3 xl:min-w-[154px]">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand text-[var(--accent-contrast)] shadow-accent">
+    <div
+      data-top-toolbar
+      className="flex h-full min-w-0 items-center gap-1 overflow-x-clip whitespace-nowrap px-2 xl:gap-2 xl:px-3"
+    >
+      <div className="mr-1 flex h-10 shrink-0 items-center gap-2.5 pr-1 min-[1720px]:min-w-[154px] min-[1720px]:pr-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand text-[var(--accent-contrast)] shadow-accent">
           <ChartCandlestick size={19} strokeWidth={2.2} />
         </div>
-        <div className="hidden min-w-0 xl:block">
+        <div className="hidden min-w-0 min-[1720px]:block">
           <div className="text-[13px] font-bold leading-4 tracking-[-0.02em] text-ink">SMC Terminal</div>
-          <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-ink-faint">{t("workspace.live")}</div>
+          <div className="whitespace-nowrap text-[9px] font-semibold uppercase tracking-[0.18em] text-ink-faint">{t("workspace.live")}</div>
         </div>
       </div>
 
       <nav
         aria-label="Desktop workspace"
-        className="flex h-10 shrink-0 items-center gap-1 rounded-xl border border-terminal-border bg-terminal-panel-2/70 p-1"
+        className="flex h-10 shrink-0 items-center gap-0.5 rounded-xl border border-terminal-border bg-terminal-panel-2/70 p-1 xl:gap-1"
       >
         <button
           type="button"
+          aria-label={t("workspace.chart")}
           aria-current={desktopWorkspace === "chart" ? "page" : undefined}
           onClick={() => setDesktopWorkspace("chart")}
           className={cn(
-            "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60",
+            "flex h-8 items-center gap-1.5 rounded-lg px-2 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 xl:px-2.5",
             desktopWorkspace === "chart"
               ? "bg-terminal-raised text-ink shadow-sm"
               : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
           )}
         >
           <ChartCandlestick size={14} />
-          {t("workspace.chart")}
+          <span className="hidden xl:inline">{t("workspace.chart")}</span>
         </button>
         <button
           type="button"
+          aria-label={t("workspace.trade")}
           aria-current={desktopWorkspace === "trade" ? "page" : undefined}
           onClick={() => setDesktopWorkspace("trade")}
           className={cn(
-            "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60",
+            "flex h-8 items-center gap-1.5 rounded-lg px-2 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 xl:px-2.5",
             desktopWorkspace === "trade"
               ? "bg-brand/15 text-brand"
               : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
           )}
         >
           <WalletCards size={14} />
-          {t("workspace.trade")}
+          <span className="hidden xl:inline">{t("workspace.trade")}</span>
         </button>
       </nav>
 
       <div
         className={cn(
-          "h-10 items-center gap-1 rounded-xl border border-terminal-border bg-terminal-panel-2/70 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,.025)]",
+          "h-10 shrink-0 items-center gap-1 rounded-xl border border-terminal-border bg-terminal-panel-2/70 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,.025)]",
           desktopWorkspace === "chart" ? "flex" : "hidden",
         )}
       >
@@ -290,7 +295,7 @@ export function TopToolbar() {
 
       <div
         className={cn(
-          "h-10 items-center gap-0.5 rounded-xl border border-terminal-border bg-terminal-panel-2/55 p-1",
+          "h-10 shrink-0 items-center gap-0.5 rounded-xl border border-terminal-border bg-terminal-panel-2/55 p-1",
           desktopWorkspace === "chart" ? "flex" : "hidden",
         )}
       >
@@ -300,6 +305,7 @@ export function TopToolbar() {
 
       <button
         onClick={toggleReplay}
+        aria-label={replaySelection !== "idle" ? t("toolbar.cancelSelect") : t("toolbar.replay")}
         className={cn(
           "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold transition-colors",
           replay.snapshot || replaySelection !== "idle"
@@ -308,7 +314,9 @@ export function TopToolbar() {
         )}
       >
         <PlayCircle size={14} />
-        {replaySelection !== "idle" ? t("toolbar.cancelSelect") : t("toolbar.replay")}
+        <span className="hidden xl:inline">
+          {replaySelection !== "idle" ? t("toolbar.cancelSelect") : t("toolbar.replay")}
+        </span>
       </button>
 
       {/* Persisted layouts plus visual chart presets. */}
@@ -323,7 +331,9 @@ export function TopToolbar() {
             className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/70"
           >
             <LayoutIcon size={14} />
-            {activeLayout?.name ?? t("toolbar.layout")}
+            <span className="hidden max-w-24 truncate xl:inline 2xl:max-w-36">
+              {activeLayout?.name ?? t("toolbar.layout")}
+            </span>
           </button>
         )}
       >
@@ -472,7 +482,7 @@ export function TopToolbar() {
         </div>
       )}
 
-      <div className="ml-auto flex h-10 items-center gap-1 rounded-xl border border-terminal-border bg-terminal-panel-2/45 p-1">
+      <div className="ml-auto flex h-10 shrink-0 items-center gap-0.5 rounded-xl border border-terminal-border bg-terminal-panel-2/45 p-1 xl:gap-1">
         <ConnectionBadge />
         <div className="h-5 w-px bg-terminal-border" />
         <button
@@ -494,7 +504,7 @@ export function TopToolbar() {
               align="right"
               width={238}
               trigger={(open) => (
-                <IconButton label={t("toolbar.snapshot")} active={open}>
+                <IconButton label={t("toolbar.snapshot")} active={open} size="sm">
                   <Camera size={15} />
                 </IconButton>
               )}
@@ -541,6 +551,7 @@ export function TopToolbar() {
               label="Toggle watchlist"
               onClick={toggleRight}
               active={rightOpen}
+              size="sm"
             >
               {rightOpen ? (
                 <PanelRightClose size={15} />
@@ -552,16 +563,17 @@ export function TopToolbar() {
               label="Object tree"
               onClick={() => showRightPanelTab("objects")}
               active={rightOpen && rightPanelTab === "objects"}
+              size="sm"
             >
               <ListTree size={15} />
             </IconButton>
           </>
         )}
         <LanguageMenu compact />
-        <IconButton label={theme === "dark" ? t("toolbar.theme.light") : t("toolbar.theme.dark")} onClick={toggleTheme}>
+        <IconButton label={theme === "dark" ? t("toolbar.theme.light") : t("toolbar.theme.dark")} onClick={toggleTheme} size="sm">
           {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
         </IconButton>
-        <IconButton label={fullscreen ? t("toolbar.fullscreen.exit") : t("toolbar.fullscreen.enter")} onClick={toggleFullscreen}>
+        <IconButton label={fullscreen ? t("toolbar.fullscreen.exit") : t("toolbar.fullscreen.enter")} onClick={toggleFullscreen} size="sm">
           {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
         </IconButton>
         <div className="h-5 w-px bg-terminal-border" />

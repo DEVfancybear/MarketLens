@@ -31,20 +31,20 @@ export function SymbolSearch() {
       trigger={(open) => (
         <button
           className={cn(
-            "flex h-8 items-center gap-2 rounded-lg px-2.5 text-ink transition-colors hover:bg-terminal-hover",
+            "flex h-8 min-w-0 items-center gap-2 rounded-lg px-2.5 text-ink transition-colors hover:bg-terminal-hover",
             open && "bg-brand/10 text-brand",
           )}
         >
-          <Search size={14} className="text-ink-muted" />
-          <span className="text-[13px] font-bold leading-none tracking-[-0.02em] text-ink">
+          <Search size={14} className="shrink-0 text-ink-muted" />
+          <span className="max-w-24 truncate text-[13px] font-bold leading-none tracking-[-0.02em] text-ink 2xl:max-w-32">
             {symbol || "Symbol"}
           </span>
           {meta && (
-            <span className="rounded-md border border-terminal-border bg-terminal-panel-3 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-ink-muted">
+            <span className="hidden rounded-md border border-terminal-border bg-terminal-panel-3 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-ink-muted 2xl:inline-flex">
               {contractTagOf(meta.assetClass)}
             </span>
           )}
-          <span className="text-[10px] font-medium uppercase tracking-wide text-ink-faint">
+          <span className="hidden text-[10px] font-medium uppercase tracking-wide text-ink-faint 2xl:inline">
             {meta?.exchange ?? ""}
           </span>
         </button>

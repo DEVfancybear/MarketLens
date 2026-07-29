@@ -4,6 +4,21 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Desktop top toolbar clipping at narrow widths and browser zoom (2026-07-29)
+
+- Reworked the shared desktop `TopToolbar` density rules so Chart and Trade
+  keep the same anchored left and right controls from the 1100px desktop
+  boundary through wide screens, including longer Vietnamese labels.
+- Progressively hides secondary button text, symbol contract/exchange metadata,
+  branding copy, and the connection label while retaining every action's
+  accessible name; saved layout names are now bounded and truncated.
+- Changed both desktop workspace shells to non-scrollable clipping so browser
+  focus cannot scroll a hidden overflow area and cut off the left side of the
+  toolbar.
+- Added browser regression coverage for Vietnamese Chart and Trade workspaces
+  at 1100, 1280, 1431, 1536, 1600, and 1720px with populated market-symbol
+  metadata.
+
 ### Added - TradingView-style emoji, sticker, and icon picker (2026-07-29)
 
 - Replaced the single empty Icons action with a TradingView-style picker:

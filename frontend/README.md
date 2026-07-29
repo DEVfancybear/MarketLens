@@ -115,6 +115,25 @@ Never prefix Firebase Admin credentials with `NEXT_PUBLIC_`. The Go API uses Adm
 device-token ownership data and schedules the Next evaluator via `ALERT_EVALUATOR_*`. See
 `.env.example` for all optional quote-provider, external-notification, and MT5 values.
 
+## Responsive Desktop Toolbar
+
+The desktop application shell starts at a 1100px fine-pointer viewport. Chart and Trade share
+`TopToolbar`, so responsive behavior must be implemented there rather than patched inside an
+individual workspace.
+
+- 1100-1279px: workspace and Replay/Layout actions use icon-first controls.
+- Below 1536px: the active symbol remains visible while secondary contract and exchange metadata
+  are hidden.
+- Below 1720px: the brand subtitle and connection-status text are hidden; their icons, tooltips,
+  and accessible labels remain available.
+- Saved layout names are truncated to a bounded width.
+- Desktop shells use `overflow: clip`; do not replace it with `overflow: hidden`, because a focused
+  off-screen control can programmatically scroll a hidden overflow container and clip the toolbar's
+  left edge.
+
+The browser regression in `tests/browser/platformUi.spec.ts` verifies Vietnamese Chart and Trade
+toolbars at 1100, 1280, 1431, 1536, 1600, and 1720px with populated symbol metadata.
+
 ## Project Structure
 
 ```text

@@ -397,6 +397,7 @@ export function IndicatorMenu({
       <button
         ref={triggerRef}
         type="button"
+        aria-label="Indicators"
         onClick={() => setToolbarOpen(true)}
         className={cn(
           "flex h-8 items-center gap-1.5 rounded-lg border border-transparent px-2.5 text-[11px] font-semibold transition-colors",
@@ -406,7 +407,7 @@ export function IndicatorMenu({
         )}
       >
         <ChartNoAxesCombined size={15} />
-        Indicators
+        <span className="hidden xl:inline">Indicators</span>
       </button>
 
       {open &&

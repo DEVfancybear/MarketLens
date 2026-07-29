@@ -66,7 +66,8 @@ export function SignInButton({
     <button
       onClick={onClick}
       disabled={busy}
-      className={`flex h-7 items-center gap-2 rounded px-2.5 text-[11px] font-medium transition-colors hover:bg-terminal-hover disabled:opacity-60 ${
+      aria-label={label}
+      className={`flex h-7 items-center gap-0 rounded px-2 text-[11px] font-medium transition-colors hover:bg-terminal-hover disabled:opacity-60 xl:gap-2 xl:px-2.5 ${
         error ? "text-bear hover:text-bear" : "text-ink-muted hover:text-ink"
       }`}
       title={error ?? "Sign in with Google"}
@@ -76,7 +77,7 @@ export function SignInButton({
       ) : (
         <GoogleIcon size={14} />
       )}
-      <span>{label}</span>
+      <span className="hidden xl:inline">{label}</span>
     </button>
   );
 }

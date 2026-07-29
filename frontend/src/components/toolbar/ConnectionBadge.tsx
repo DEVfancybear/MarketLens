@@ -25,7 +25,7 @@ export function ConnectionBadge() {
         className={cn('h-2 w-2 rounded-full', pulsing && 'animate-pulse')}
         style={{ backgroundColor: color }}
       />
-      <span className="hidden font-medium md:inline">{label}</span>
+      <span className="hidden whitespace-nowrap font-medium min-[1720px]:inline">{label}</span>
     </div>
   );
 }

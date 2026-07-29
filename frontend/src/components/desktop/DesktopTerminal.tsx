@@ -32,7 +32,7 @@ export function DesktopTerminal() {
   if (workspace === "trade") {
     return (
       <div
-        className="desktop-terminal flex h-dvh w-screen flex-col overflow-hidden bg-terminal-bg"
+        className="desktop-terminal flex h-dvh w-screen flex-col overflow-clip bg-terminal-bg"
         data-platform="desktop"
       >
         <div className="h-14 shrink-0 border-b border-terminal-border bg-terminal-panel/95 shadow-[0_1px_0_rgba(255,255,255,.025)] backdrop-blur-xl">

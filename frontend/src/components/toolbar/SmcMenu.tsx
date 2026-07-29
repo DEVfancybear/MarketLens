@@ -22,6 +22,7 @@ export function SmcMenu() {
       trigger={(open) => (
         <button
           type="button"
+          aria-label="SMC"
           aria-haspopup="menu"
           aria-expanded={open}
           aria-controls={menuId}
@@ -33,7 +34,7 @@ export function SmcMenu() {
           )}
         >
           <Boxes size={14} />
-          SMC
+          <span className="hidden xl:inline">SMC</span>
         </button>
       )}
     >

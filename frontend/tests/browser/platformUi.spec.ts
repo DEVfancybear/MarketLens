@@ -125,6 +125,62 @@ test.describe("isolated terminal platforms", () => {
     await expect(page.locator('.mobile-chart')).toBeVisible();
   });
 
+  test("localized desktop toolbar stays anchored across chart and trade workspaces", async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem("app-language", JSON.stringify("vi"));
+    });
+
+    const expectToolbarContained = async (expectedWidth: number) => {
+      const toolbar = page.locator("[data-top-toolbar]");
+      await expect(toolbar).toBeVisible();
+      expect(
+        await toolbar.evaluate((element) => {
+          const toolbarRect = element.getBoundingClientRect();
+          const tolerance = 1;
+          const childrenContained = Array.from(element.children).every((child) => {
+            const rect = child.getBoundingClientRect();
+            return (
+              rect.left >= toolbarRect.left - tolerance &&
+              rect.right <= toolbarRect.right + tolerance
+            );
+          });
+          const terminalShells = Array.from(
+            document.querySelectorAll<HTMLElement>(".desktop-terminal"),
+          );
+          return {
+            childrenContained,
+            toolbarOverflow: element.scrollWidth - element.clientWidth,
+            shellsAnchored: terminalShells.every((shell) => shell.scrollLeft === 0),
+            viewportWidth: window.innerWidth,
+          };
+        }),
+      ).toEqual({
+        childrenContained: true,
+        toolbarOverflow: 0,
+        shellsAnchored: true,
+        viewportWidth: expectedWidth,
+      });
+    };
+
+    await page.setViewportSize({ width: 1100, height: 768 });
+    await page.goto("/");
+
+    const desktop = page.locator('[data-platform="desktop"]');
+    await expect(desktop).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('[data-platform="mobile"]')).toHaveCount(0);
+
+    for (const width of [1100, 1280, 1431, 1536, 1600, 1720]) {
+      await page.setViewportSize({ width, height: 768 });
+      await expectToolbarContained(width);
+
+      await desktop.getByRole("button", { name: "Giao dịch", exact: true }).click();
+      await expectToolbarContained(width);
+
+      await page.getByRole("button", { name: "Biểu đồ", exact: true }).click();
+      await expectToolbarContained(width);
+    }
+  });
+
   test("mobile watchlist actions use the shared platform dialog", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     let nativeDialogCount = 0;
