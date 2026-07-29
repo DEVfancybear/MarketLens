@@ -6,9 +6,21 @@ import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
 import type { Projector } from "../../drawingRenderer";
 import {
   type DrawingToolPlugin, registerTool, defaultMovePoints,
-  HANDLE_RADIUS, TOL, pointDist, distToRect,
+  TOL, distToRect,
 } from "../ToolRegistry";
-import { handle, applyStyle, line, renderShapeText } from "./shared";
+import {
+  BOX_CORNER_HANDLE_IDS,
+  boxSelectionAnchorHits,
+  boxSelectionAnchors,
+  moveBoxSelectionAnchor,
+} from "../boxSelectionHandles";
+import {
+  handle,
+  squareHandle,
+  applyStyle,
+  line,
+  renderShapeText,
+} from "./shared";
 
 const EXTENDED_RECT_SPAN = 100000;
 
@@ -54,21 +66,30 @@ const plugin: DrawingToolPlugin = {
     }
     // Inner text with alignment + bold/italic.
     renderShapeText(g, d, ox, oy, w, h);
-    if (selected) { handle(g, x1, y1, d.color); handle(g, x2, y2, d.color); }
+    if (selected) {
+      for (const anchor of boxSelectionAnchors(d, proj.toX, proj.toY)) {
+        if (anchor.x == null || anchor.y == null) continue;
+        if (BOX_CORNER_HANDLE_IDS.has(anchor.index)) {
+          handle(g, anchor.x, anchor.y, d.color);
+        } else {
+          squareHandle(g, anchor.x, anchor.y, d.color);
+        }
+      }
+    }
   },
   hitTest(d: Drawing, px: number, py: number, toX: HitTestProjector, toY: HitTestProjector): HitResult[] {
-    const results: HitResult[] = [];
     const x1 = toX(d.points[0].time), y1 = toY(d.points[0].price);
     const x2 = toX(d.points[1].time), y2 = toY(d.points[1].price);
-    if (x1 == null || y1 == null || x2 == null || y2 == null) return results;
-    if (pointDist(px, py, x1, y1) <= HANDLE_RADIUS) results.push({ drawing: d, target: "p1", anchorIndex: 0, distance: pointDist(px, py, x1, y1) });
-    if (pointDist(px, py, x2, y2) <= HANDLE_RADIUS) results.push({ drawing: d, target: "p2", anchorIndex: 1, distance: pointDist(px, py, x2, y2) });
+    if (x1 == null || y1 == null || x2 == null || y2 == null) return [];
+    const results = boxSelectionAnchorHits(d, px, py, toX, toY);
     const { left, right } = projectedHorizontalBounds(d, x1, x2);
     const bodyDist = distToRect(px, py, left, y1, right, y2);
     if (bodyDist < TOL) results.push({ drawing: d, target: "body", distance: bodyDist });
     return results;
   },
   movePoints: defaultMovePoints,
+  moveAnchor: moveBoxSelectionAnchor,
+  getAnchors: boxSelectionAnchors,
   boundingBox(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) {
     const x1 = toX(d.points[0].time), y1 = toY(d.points[0].price);
     const x2 = toX(d.points[1].time), y2 = toY(d.points[1].price);

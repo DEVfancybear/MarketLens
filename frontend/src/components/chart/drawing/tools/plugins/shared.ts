@@ -196,6 +196,26 @@ export function handle(
   g.restore();
 }
 
+/** TradingView-style edge-center resize handle used by box geometries. */
+export function squareHandle(
+  g: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  color: string,
+) {
+  const size = 8;
+  g.save();
+  g.fillStyle = "#fff";
+  g.strokeStyle = color;
+  g.lineWidth = 1.5;
+  g.setLineDash([]);
+  g.beginPath();
+  g.rect(x - size / 2, y - size / 2, size, size);
+  g.fill();
+  g.stroke();
+  g.restore();
+}
+
 /**
  * Visual screen angle (degrees) of the segment p1→p2, measured from the
  * horizontal axis. Positive = upward (TradingView convention, where the

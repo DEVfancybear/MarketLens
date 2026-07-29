@@ -90,7 +90,7 @@ test("emoji hit testing and bounds scale with the rendered font size", () => {
   const bounds = emoji.boundingBox(fixture, projector.toX, projector.toY);
   assert.ok(bounds);
   assert.equal(bounds.w, 72);
-  assert.equal(bounds.h, 72);
+  assert.equal(bounds.h, 78);
   assert.ok(
     emoji
       .hitTest(fixture, 50, 40, projector.toX, projector.toY)
@@ -246,10 +246,25 @@ test("line-family endpoint price labels render on the right price axis", () => {
   );
 });
 
-test("rectangle renders attached text through its real adapter", () => {
+test("rectangle renders attached text and eight TradingView-style resize handles", () => {
   const rectangle = getTool("rectangle");
   assert.ok(rectangle);
   const { context, calls } = recordingContext();
-  rectangle.render(context, drawing("rectangle", 2), projector, false);
+  const fixture = drawing("rectangle", 2);
+  rectangle.render(context, fixture, projector, true);
   assert.ok(calls.includes("fillText"));
+  assert.equal(
+    rectangle.getAnchors(fixture, projector.toX, projector.toY).length,
+    8,
+  );
+  assert.equal(
+    calls.filter((call) => call === "arc").length,
+    4,
+    "corner resize handles are circular",
+  );
+  assert.equal(
+    calls.filter((call) => call === "rect").length,
+    4,
+    "edge-center resize handles are square",
+  );
 });

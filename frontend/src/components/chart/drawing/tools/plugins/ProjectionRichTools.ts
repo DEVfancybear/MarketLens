@@ -4,6 +4,12 @@ import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
 import { HANDLE_RADIUS, TOL, defaultMovePoints, distToSegment, registerTool, type DrawingToolPlugin } from "../ToolRegistry";
 import { canvasFont, handle } from "./shared";
 import type { Anchor } from "../ToolRegistry";
+import {
+  BOX_CORNER_HANDLE_IDS,
+  boxSelectionAnchorHits,
+  boxSelectionAnchors,
+  moveBoxSelectionAnchor,
+} from "../boxSelectionHandles";
 
 type XY={x:number;y:number};
 function projected(d:Drawing,toX:HitTestProjector,toY:HitTestProjector){return d.points.flatMap(p=>{const x=toX(p.time),y=toY(p.price);return x==null||y==null?[]:[{x,y}];});}
@@ -236,7 +242,102 @@ function sectorBodyHits(
 const forecast:DrawingToolPlugin={tool:"forecast",minPoints:3,maxPoints:3,render(g,d,proj,selected){const geometry=projectForecastGeometry(d,proj.toX,proj.toY);if(!geometry.body)return;const [origin,upper,lower]=geometry.body.triangle;g.save();g.fillStyle=d.fillColor||d.color;g.globalAlpha=d.opacity??.14;g.beginPath();g.moveTo(origin.x,origin.y);g.lineTo(upper.x,upper.y);g.lineTo(lower.x,lower.y);g.closePath();g.fill();g.globalAlpha=1;g.strokeStyle=d.color;g.lineWidth=d.lineWidth;g.setLineDash([6,4]);g.beginPath();g.moveTo(geometry.body.centerLine[0].x,geometry.body.centerLine[0].y);g.lineTo(geometry.body.centerLine[1].x,geometry.body.centerLine[1].y);g.stroke();selectedHandles(g,d,nonNullPoints(geometry.anchors),selected);g.restore();},hitTest(d,px,py,toX,toY){const geometry=projectForecastGeometry(d,toX,toY);return[...shapeAnchorHits(d,px,py,geometry.anchors),...forecastBodyHits(d,px,py,geometry.body)];},getAnchors(d,toX,toY){return shapeAnchors(projectForecastGeometry(d,toX,toY).anchors);},movePoints:defaultMovePoints,boundingBox(d,toX,toY){const geometry=projectForecastGeometry(d,toX,toY),visibleBody=d.fillColor!=="transparent"&&(d.opacity??.14)>0?geometry.body?.triangle:geometry.body?.centerLine;return bounds([...(visibleBody??[]),...nonNullPoints(geometry.anchors)]);}};
 const sector:DrawingToolPlugin={tool:"sector",minPoints:3,maxPoints:3,render(g,d,proj,selected){const geometry=projectSectorGeometry(d,proj.toX,proj.toY);if(!geometry.body)return;g.save();g.fillStyle=d.fillColor||d.color;g.strokeStyle=d.color;g.lineWidth=d.lineWidth;g.globalAlpha=d.opacity??.15;g.beginPath();g.moveTo(geometry.body.center.x,geometry.body.center.y);g.arc(geometry.body.center.x,geometry.body.center.y,geometry.body.radius,geometry.body.startAngle,geometry.body.endAngle,geometry.body.counterclockwise);g.closePath();g.fill();g.globalAlpha=1;g.stroke();selectedHandles(g,d,nonNullPoints(geometry.anchors),selected);g.restore();},hitTest(d,px,py,toX,toY){const geometry=projectSectorGeometry(d,toX,toY);return[...shapeAnchorHits(d,px,py,geometry.anchors),...sectorBodyHits(d,px,py,geometry.body)];},getAnchors(d,toX,toY){return shapeAnchors(projectSectorGeometry(d,toX,toY).anchors);},movePoints:defaultMovePoints,boundingBox(d,toX,toY){const geometry=projectSectorGeometry(d,toX,toY);return bounds([...(geometry.body?.extrema??[]),...nonNullPoints(geometry.anchors)]);}};
 
-function rectTool(tool:"table"|"image"):DrawingToolPlugin{return{tool,minPoints:2,render(g,d,proj,selected){const p=projected(d,proj.toX,proj.toY);if(p.length<2)return;const x=Math.min(p[0].x,p[1].x),y=Math.min(p[0].y,p[1].y),w=Math.abs(p[1].x-p[0].x),h=Math.abs(p[1].y-p[0].y);g.save();g.fillStyle=d.fillColor||"#131722";g.globalAlpha=d.opacity??.92;g.fillRect(x,y,w,h);g.globalAlpha=1;g.strokeStyle=d.color;g.lineWidth=d.lineWidth;g.strokeRect(x,y,w,h);g.font=canvasFont(d.fontSize??12);g.fillStyle=d.textColor||d.color;if(tool==="table"){const cells=d.content?.kind==="table"&&d.content.cells?.length?d.content.cells:[["Header","Value"],["Row","—"]],rows=cells.length,cols=Math.max(1,...cells.map(r=>r.length));for(let row=1;row<rows;row++){const yy=y+h*row/rows;g.beginPath();g.moveTo(x,yy);g.lineTo(x+w,yy);g.stroke();}for(let col=1;col<cols;col++){const xx=x+w*col/cols;g.beginPath();g.moveTo(xx,y);g.lineTo(xx,y+h);g.stroke();}g.textAlign="center";g.textBaseline="middle";cells.forEach((row,ri)=>row.forEach((cell,ci)=>g.fillText(cell,x+w*(ci+.5)/cols,y+h*(ri+.5)/rows,Math.max(1,w/cols-8))));}else{const alt=d.content?.kind==="image"?(d.content.alt||"Image"):"Image";g.textAlign="center";g.textBaseline="middle";g.fillText(`▧ ${alt}`,x+w/2,y+h/2,Math.max(1,w-12));}selectedHandles(g,d,p,selected);g.restore();},hitTest(d,px,py,toX,toY){return[...richAnchorHits(d,px,py,toX,toY),...inside(d,px,py,projected(d,toX,toY))];},movePoints:defaultMovePoints,boundingBox(d,toX,toY){return bounds(projected(d,toX,toY));}};}
+function rectTool(tool: "table" | "image"): DrawingToolPlugin {
+  const cornerAnchors = (
+    drawing: Drawing,
+    toX: HitTestProjector,
+    toY: HitTestProjector,
+  ) => boxSelectionAnchors(drawing, toX, toY)
+    .filter((anchor) => BOX_CORNER_HANDLE_IDS.has(anchor.index));
+
+  return {
+    tool,
+    minPoints: 2,
+    render(g, d, proj, selected) {
+      const p = projected(d, proj.toX, proj.toY);
+      if (p.length < 2) return;
+      const x = Math.min(p[0].x, p[1].x);
+      const y = Math.min(p[0].y, p[1].y);
+      const w = Math.abs(p[1].x - p[0].x);
+      const h = Math.abs(p[1].y - p[0].y);
+      g.save();
+      g.fillStyle = d.fillColor || "#131722";
+      g.globalAlpha = d.opacity ?? .92;
+      g.fillRect(x, y, w, h);
+      g.globalAlpha = 1;
+      g.strokeStyle = d.color;
+      g.lineWidth = d.lineWidth;
+      g.strokeRect(x, y, w, h);
+      g.font = canvasFont(d.fontSize ?? 12);
+      g.fillStyle = d.textColor || d.color;
+      if (tool === "table") {
+        const cells = d.content?.kind === "table" && d.content.cells?.length
+          ? d.content.cells
+          : [["Header", "Value"], ["Row", "—"]];
+        const rows = cells.length;
+        const cols = Math.max(1, ...cells.map((row) => row.length));
+        for (let row = 1; row < rows; row++) {
+          const yy = y + h * row / rows;
+          g.beginPath();
+          g.moveTo(x, yy);
+          g.lineTo(x + w, yy);
+          g.stroke();
+        }
+        for (let col = 1; col < cols; col++) {
+          const xx = x + w * col / cols;
+          g.beginPath();
+          g.moveTo(xx, y);
+          g.lineTo(xx, y + h);
+          g.stroke();
+        }
+        g.textAlign = "center";
+        g.textBaseline = "middle";
+        cells.forEach((row, ri) => row.forEach((cell, ci) =>
+          g.fillText(
+            cell,
+            x + w * (ci + .5) / cols,
+            y + h * (ri + .5) / rows,
+            Math.max(1, w / cols - 8),
+          )
+        ));
+      } else {
+        const alt = d.content?.kind === "image"
+          ? (d.content.alt || "Image")
+          : "Image";
+        g.textAlign = "center";
+        g.textBaseline = "middle";
+        g.fillText(`▧ ${alt}`, x + w / 2, y + h / 2, Math.max(1, w - 12));
+      }
+      if (selected) {
+        cornerAnchors(d, proj.toX, proj.toY).forEach((anchor) => {
+          if (anchor.x != null && anchor.y != null) {
+            handle(g, anchor.x, anchor.y, d.color);
+          }
+        });
+      }
+      g.restore();
+    },
+    hitTest(d, px, py, toX, toY) {
+      return [
+        ...boxSelectionAnchorHits(
+          d,
+          px,
+          py,
+          toX,
+          toY,
+          BOX_CORNER_HANDLE_IDS,
+        ),
+        ...inside(d, px, py, projected(d, toX, toY)),
+      ];
+    },
+    getAnchors: cornerAnchors,
+    moveAnchor: moveBoxSelectionAnchor,
+    movePoints: defaultMovePoints,
+    boundingBox(d, toX, toY) {
+      return bounds(projected(d, toX, toY));
+    },
+  };
+}
 
 function socialCardGeometry(d:Drawing,toX:HitTestProjector,toY:HitTestProjector){const anchor=projected(d,toX,toY)[0];if(!anchor)return null;const text=(d.text||d.content?.alt||"Paste an X post or TradingView idea URL").slice(0,160),w=Math.min(340,Math.max(180,text.length*6+28)),h=62;return{anchor,text,box:{x:anchor.x+8,y:anchor.y-h/2,w,h}};}
 const social:DrawingToolPlugin={tool:"socialEmbed",minPoints:1,render(g,d,proj,selected){const geometry=socialCardGeometry(d,proj.toX,proj.toY);if(!geometry)return;const {anchor,text,box}=geometry;g.save();g.fillStyle=d.fillColor||"#131722";g.globalAlpha=d.opacity??.95;g.fillRect(box.x,box.y,box.w,box.h);g.globalAlpha=1;g.strokeStyle=d.color;g.strokeRect(box.x,box.y,box.w,box.h);g.font=canvasFont(d.fontSize??12);g.fillStyle=d.textColor||"#fff";g.textAlign="left";g.textBaseline="middle";g.fillText("X / TradingView",anchor.x+20,anchor.y-14,box.w-24);g.fillText(text,anchor.x+20,anchor.y+12,box.w-24);selectedHandles(g,d,[anchor],selected);g.restore();},hitTest(d,px,py,toX,toY){const geometry=socialCardGeometry(d,toX,toY),body=geometry&&px>=geometry.box.x-TOL&&px<=geometry.box.x+geometry.box.w+TOL&&py>=geometry.box.y-TOL&&py<=geometry.box.y+geometry.box.h+TOL?[{drawing:d,target:"body" as const,distance:1}]:[];return[...richAnchorHits(d,px,py,toX,toY),...body];},movePoints:defaultMovePoints,boundingBox(d,toX,toY){const geometry=socialCardGeometry(d,toX,toY);if(!geometry)return null;const left=Math.min(geometry.anchor.x,geometry.box.x)-TOL,right=Math.max(geometry.anchor.x,geometry.box.x+geometry.box.w)+TOL,top=Math.min(geometry.anchor.y,geometry.box.y)-TOL,bottom=Math.max(geometry.anchor.y,geometry.box.y+geometry.box.h)+TOL;return{x:left,y:top,w:right-left,h:bottom-top};}};

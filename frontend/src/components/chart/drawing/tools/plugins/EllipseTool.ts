@@ -6,10 +6,14 @@ import type { HitResult, HitTestProjector } from "../../hittest/HitTestEngine";
 import type { Projector } from "../../drawingRenderer";
 import {
   type DrawingToolPlugin, registerTool, defaultMovePoints,
-  HANDLE_RADIUS, pointDist,
 } from "../ToolRegistry";
 import { handle, renderShapeText } from "./shared";
 import { ellipseBodyHit } from "./shapeGeometry";
+import {
+  ellipseSelectionAnchorHits,
+  ellipseSelectionAnchors,
+  moveEllipseSelectionAnchor,
+} from "../ellipseSelectionHandles";
 
 const plugin: DrawingToolPlugin = {
   tool: "ellipse",
@@ -32,21 +36,28 @@ const plugin: DrawingToolPlugin = {
     }
     g.stroke();
     renderShapeText(g, d, cx - rx, cy - ry, rx * 2, ry * 2);
-    if (selected) { handle(g, x1, y1, d.color); handle(g, x2, y2, d.color); }
+    if (selected) {
+      ellipseSelectionAnchors(d, proj.toX, proj.toY).forEach((anchor) => {
+        if (anchor.x != null && anchor.y != null) {
+          handle(g, anchor.x, anchor.y, d.color);
+        }
+      });
+    }
   },
   hitTest(d: Drawing, px: number, py: number, toX: HitTestProjector, toY: HitTestProjector): HitResult[] {
     const results: HitResult[] = [];
     const x1 = toX(d.points[0].time), y1 = toY(d.points[0].price);
     const x2 = toX(d.points[1].time), y2 = toY(d.points[1].price);
     if (x1 == null || y1 == null || x2 == null || y2 == null) return results;
-    if (pointDist(px, py, x1, y1) <= HANDLE_RADIUS) results.push({ drawing: d, target: "p1", anchorIndex: 0, distance: pointDist(px, py, x1, y1) });
-    if (pointDist(px, py, x2, y2) <= HANDLE_RADIUS) results.push({ drawing: d, target: "p2", anchorIndex: 1, distance: pointDist(px, py, x2, y2) });
+    results.push(...ellipseSelectionAnchorHits(d, px, py, toX, toY));
     const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
     const rx = Math.abs(x2 - x1) / 2, ry = Math.abs(y2 - y1) / 2;
     results.push(...ellipseBodyHit(d, px, py, cx, cy, rx, ry));
     return results;
   },
   movePoints: defaultMovePoints,
+  moveAnchor: moveEllipseSelectionAnchor,
+  getAnchors: ellipseSelectionAnchors,
   boundingBox(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) {
     const x1 = toX(d.points[0].time), y1 = toY(d.points[0].price);
     const x2 = toX(d.points[1].time), y2 = toY(d.points[1].price);

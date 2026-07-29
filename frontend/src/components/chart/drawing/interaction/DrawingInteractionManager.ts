@@ -47,6 +47,11 @@ import {
   type CreationSessionOutcome,
 } from "./CreationSession";
 import { TransformSession } from "./TransformSession";
+import { constrainMovePointerToAxis } from "./transformConstraints";
+import {
+  nudgeDrawingPoints,
+  type DrawingNudgeDirection,
+} from "./drawingNudge";
 import { EraseSession } from "./EraseSession";
 import { SelectionSession } from "./SelectionSession";
 import { simplifyProjectedPoints } from "./FreeformSimplification";
@@ -248,6 +253,7 @@ export function useDrawingInteractionManager(
     ),
   );
   const selectionSessionRef = useRef(new SelectionSession());
+  const suppressNativeDoubleClickUntilRef = useRef(0);
   const drawingIdRef = useRef<string | null>(null);
   const hoveredIdRef = useRef<string | null>(null);
   const clipboardRef = useRef<Drawing | null>(null);
@@ -798,7 +804,7 @@ export function useDrawingInteractionManager(
         clientY: e.clientY,
         timeStamp: e.timeStamp,
         button: e.button,
-        shiftKey: e.shiftKey,
+        toggleSelection: e.ctrlKey || e.metaKey,
         drawingsLocked: cur.drawingsLocked,
         selectedDrawingIds: cur.selectedDrawingIds,
         drawings: cur.drawings,
@@ -815,7 +821,9 @@ export function useDrawingInteractionManager(
         }
         if (outcome.kind === "open-settings") {
           e.preventDefault();
+          e.stopImmediatePropagation();
           e.stopPropagation();
+          suppressNativeDoubleClickUntilRef.current = e.timeStamp + 500;
           openDrawingSettingsRef.current?.(outcome.drawingId);
           return;
         }
@@ -886,6 +894,9 @@ export function useDrawingInteractionManager(
           snapPointRef.current!(point, session.tool, e),
         )
         : rawPoint;
+      if (e.shiftKey && session.mode === "move") {
+        p = constrainMovePointerToAxis(session.dragStart, p, toX, toY);
+      }
       if (
         definition.gannScaleConstraint === "price-bar-ratio" &&
         definition.gannFamily &&
@@ -919,6 +930,7 @@ export function useDrawingInteractionManager(
       if (
         e.shiftKey &&
         definition.angleConstraint === "45-degree" &&
+        definition.handleProfile === "raw-points" &&
         session.mode === "resize" &&
         session.primaryOriginal.length === 2
       ) {
@@ -1089,6 +1101,7 @@ export function useDrawingInteractionManager(
     const handleCtx = (e: MouseEvent) => {
       const m = machineRef.current;
       const cur = getState();
+      if (isOverDrawingUI(e)) return;
       if (!canvas || !isOverCanvas(e, canvas)) return;
       if (m.state === "Drawing") {
         e.preventDefault();
@@ -1111,6 +1124,18 @@ export function useDrawingInteractionManager(
       }
     };
 
+    // Settings open on the second pointerdown so the interaction manager can
+    // arbitrate before a drag begins. Consume the matching native dblclick too,
+    // otherwise lightweight-charts can also reset/zoom the viewport afterward.
+    const handleNativeDoubleClick = (e: MouseEvent) => {
+      const suppressUntil = suppressNativeDoubleClickUntilRef.current;
+      if (suppressUntil <= 0 || e.timeStamp > suppressUntil) return;
+      suppressNativeDoubleClickUntilRef.current = 0;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      e.stopPropagation();
+    };
+
     // While a body-move / handle-resize drag is in progress, swallow the raw
     // mouse / touch / wheel events in the capture phase so they never reach
     // lightweight-charts' own listeners (which pan & scale the view). This is
@@ -1130,6 +1155,7 @@ export function useDrawingInteractionManager(
     document.addEventListener("pointercancel", handlePointerCancel, true);
     document.addEventListener("pointerleave", handleUp, true);
     document.addEventListener("contextmenu", handleCtx, true);
+    document.addEventListener("dblclick", handleNativeDoubleClick, true);
     document.addEventListener("mousedown", blockChartEvent, true);
     document.addEventListener("mousemove", blockChartEvent, true);
     document.addEventListener("wheel", blockChartEvent, true);
@@ -1148,6 +1174,7 @@ export function useDrawingInteractionManager(
       document.removeEventListener("pointercancel", handlePointerCancel, true);
       document.removeEventListener("pointerleave", handleUp, true);
       document.removeEventListener("contextmenu", handleCtx, true);
+      document.removeEventListener("dblclick", handleNativeDoubleClick, true);
       document.removeEventListener("mousedown", blockChartEvent, true);
       document.removeEventListener("mousemove", blockChartEvent, true);
       document.removeEventListener("wheel", blockChartEvent, true);
@@ -1216,6 +1243,59 @@ export function useDrawingInteractionManager(
         return;
       }
 
+      const nudgeDirection: DrawingNudgeDirection | undefined = {
+        ArrowLeft: "left",
+        ArrowRight: "right",
+        ArrowUp: "up",
+        ArrowDown: "down",
+      }[e.key] as DrawingNudgeDirection | undefined;
+      if (
+        nudgeDirection &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        machineRef.current.state === "Idle" &&
+        tag !== "BUTTON" &&
+        !(e.target as HTMLElement)?.isContentEditable
+      ) {
+        const current = getState();
+        const selectedIds = current.selectedDrawingIds.size > 0
+          ? current.selectedDrawingIds
+          : current.selectedDrawingId
+            ? new Set([current.selectedDrawingId])
+            : new Set<string>();
+        const changes: DrawingMoveChange[] = current.drawings
+          .filter((drawing) =>
+            selectedIds.has(drawing.id) &&
+            !current.drawingsLocked &&
+            !drawing.locked
+          )
+          .flatMap((drawing) => {
+            const points = nudgeDrawingPoints(
+              drawing.points,
+              nudgeDirection,
+              current.adapterContext,
+            );
+            const changed = drawing.points.some((point, index) =>
+              point.time !== points[index]?.time ||
+              point.price !== points[index]?.price
+            );
+            return changed
+              ? [{
+                  id: drawing.id,
+                  oldPatch: { points: drawing.points },
+                  newPatch: { points },
+                }]
+              : [];
+          });
+        if (changes.length > 0) {
+          e.preventDefault();
+          commitMoves(changes);
+          scheduleRedrawRef.current();
+        }
+        return;
+      }
+
       // Multi-delete
       if ((e.key === "Delete" || e.key === "Backspace") && executeCommand) {
         const selIds = getState().selectedDrawingIds;
@@ -1262,6 +1342,7 @@ export function useDrawingInteractionManager(
     addDrawing,
     removeDrawing,
     executeCommand,
+    commitMoves,
     selectDrawing,
     getState,
     applyCreationOutcome,

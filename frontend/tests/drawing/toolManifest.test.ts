@@ -40,6 +40,31 @@ test("toolbar groups and defaults reference manifest entries", () => {
   assert.equal(getDrawingToolManifestEntry("fibRetracement").preferredForCreation, true);
 });
 
+test("every drawing declares one shared editing-handle topology", () => {
+  const specialProfiles = new Map<string, string>([
+    ["vertical", "none"],
+    ["text", "none"],
+    ["brush", "endpoints"],
+    ["highlighter", "endpoints"],
+    ["long", "position-6"],
+    ["short", "position-6"],
+    ["rectangle", "rect-8"],
+    ["ellipse", "ellipse-axes-4"],
+    ["table", "table-grid"],
+    ["image", "corner-box-4"],
+  ]);
+
+  for (const definition of DRAWING_TOOL_MANIFEST) {
+    const expected = specialProfiles.get(definition.id) ??
+      (definition.persistent ? "raw-points" : "none");
+    assert.equal(
+      definition.handleProfile,
+      expected,
+      `${definition.id} handle profile`,
+    );
+  }
+});
+
 test("creation and style families are derived from the manifest", () => {
   assert.equal(getDrawingToolManifestEntry("brush").creationMode, "pointer-continuous");
   assert.equal(getDrawingToolManifestEntry("path").creationMode, "click-freeform");

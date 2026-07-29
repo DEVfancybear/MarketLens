@@ -162,7 +162,7 @@ test("Phase 8 Wave C harmonic, Elliott, and cycle gestures use fixed manifest to
 test("Phase 8 Wave D data, projection, and rich-content gestures persist their contracts", async ({ page }) => {
   const chart=await page.evaluate(()=>window.__chartInteractionTest!.snapshot());const pane=chart.paneBoxes[0];
   const a={x:pane.x+pane.width*.24,y:pane.y+pane.height*.62},b={x:pane.x+pane.width*.62,y:pane.y+pane.height*.36},c={x:pane.x+pane.width*.74,y:pane.y+pane.height*.54};
-  await page.getByRole("button",{name:"Magnet mode menu",exact:true}).click();await page.getByRole("button",{name:"Strong magnet",exact:true}).click();
+  await page.getByRole("button",{name:"Magnet mode",exact:true}).click();await page.getByRole("button",{name:"Strong magnet",exact:true}).click();
   const create=async(group:"Trend line"|"Ranges"|"Text",name:RegExp,points:(typeof a)[])=>{await page.getByRole("button",{name:group,exact:true}).click();await page.getByRole("button",{name}).click();for(const point of points)await page.mouse.click(point.x,point.y);};
   await create("Trend line",/^Anchored VWAP\b/,[a]);
   await create("Trend line",/^Regression Trend\b/,[a,b]);
@@ -210,6 +210,114 @@ test("settings dialog exposes keyboard semantics and returns focus on Escape", a
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   await expect(settingsButton).toBeFocused();
+});
+
+test("rectangle resize and generic double-click settings preserve chart state", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const first = {
+    x: pane.x + pane.width * 0.28,
+    y: pane.y + pane.height * 0.68,
+  };
+  const second = {
+    x: pane.x + pane.width * 0.62,
+    y: pane.y + pane.height * 0.38,
+  };
+
+  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await page.getByRole("button", { name: /^Rectangle\b/ }).last().click();
+  await page.mouse.click(first.x, first.y);
+  await page.mouse.click(second.x, second.y);
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(1);
+
+  let snapshot = await drawingSnapshot(page);
+  const drawingId = snapshot.drawings[0].id;
+  const originalPoints = snapshot.drawings[0].points;
+  if (snapshot.activeTool !== "crosshair") {
+    await page.getByRole("button", { name: "Cursor", exact: true }).click();
+    await page.getByRole("button", { name: /^Cross\b/ }).last().click();
+  }
+  const projected = await page.evaluate(
+    (id) => window.__drawingInteractionTest!.projectDrawing(id),
+    drawingId,
+  );
+  expect(projected).toHaveLength(2);
+
+  // Select the drawing, then resize through one of the virtual corner handles.
+  await page.mouse.click(
+    projected![0].x + (projected![1].x - projected![0].x) * 0.25,
+    projected![0].y + (projected![1].y - projected![0].y) * 0.25,
+  );
+  await expect.poll(async () =>
+    (await drawingSnapshot(page)).selectedDrawingId
+  ).toBe(drawingId);
+  const handleHit = await page.evaluate(
+    ({ x, y }) => window.__drawingInteractionTest!.inspectClientPoint(x, y),
+    projected![0],
+  );
+  expect(handleHit.overDrawingUi).toBe(false);
+  expect(
+    handleHit.hits.some((hit) =>
+      hit.id === drawingId && hit.anchorIndex != null && hit.anchorIndex >= 0
+    ),
+  ).toBe(true);
+  await page.mouse.move(projected![0].x, projected![0].y);
+  await page.mouse.down();
+  await expect.poll(async () =>
+    (await drawingSnapshot(page)).machineState
+  ).toBe("ResizingHandle");
+  await page.mouse.move(projected![0].x - 30, projected![0].y + 24, {
+    steps: 4,
+  });
+  await page.mouse.up();
+  await expect.poll(async () =>
+    (await drawingSnapshot(page)).history.lastUndoLabel
+  ).toBe("Move Drawing");
+  snapshot = await drawingSnapshot(page);
+  expect(snapshot.drawings).toHaveLength(1);
+  expect(snapshot.drawings[0].points).not.toEqual(originalPoints);
+
+  const resized = await page.evaluate(
+    (id) => window.__drawingInteractionTest!.projectDrawing(id),
+    drawingId,
+  );
+  const body = {
+    x: resized![0].x + (resized![1].x - resized![0].x) * 0.25,
+    y: resized![0].y + (resized![1].y - resized![0].y) * 0.25,
+  };
+  const drawingBeforeDoubleClick = await drawingSnapshot(page);
+  const chartBeforeDoubleClick = await page.evaluate(() =>
+    window.__chartInteractionTest!.snapshot()
+  );
+  await page.mouse.dblclick(body.x, body.y);
+
+  await expect(
+    page.getByRole("dialog", { name: "Rectangle settings" }),
+  ).toBeVisible();
+  const drawingAfterDoubleClick = await drawingSnapshot(page);
+  const chartAfterDoubleClick = await page.evaluate(() =>
+    window.__chartInteractionTest!.snapshot()
+  );
+  expect(drawingAfterDoubleClick.drawings).toEqual(
+    drawingBeforeDoubleClick.drawings,
+  );
+  expect(drawingAfterDoubleClick.history).toEqual(
+    drawingBeforeDoubleClick.history,
+  );
+  expect(drawingAfterDoubleClick.machineState).toBe("Idle");
+  expect(chartAfterDoubleClick.visibleTimeRange).toEqual(
+    chartBeforeDoubleClick.visibleTimeRange,
+  );
+  expect(chartAfterDoubleClick.barSpacing).toBe(
+    chartBeforeDoubleClick.barSpacing,
+  );
+  expect(chartAfterDoubleClick.priceScaleRanges).toEqual(
+    chartBeforeDoubleClick.priceScaleRanges,
+  );
+  await page.keyboard.press("Escape");
+  await expect(
+    page.getByRole("dialog", { name: "Rectangle settings" }),
+  ).toHaveCount(0);
 });
 
 test("save-template dialog validates, saves, reselects, and deletes a preset", async ({ page }) => {
@@ -264,6 +372,9 @@ test("save-template dialog validates, saves, reselects, and deletes a preset", a
 });
 
 test("fixed drawing targets create independent price-alert snapshots", async ({ page }) => {
+  await page.evaluate(() =>
+    window.__drawingInteractionTest!.changeSymbol("EURUSD")
+  );
   const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
   const pane = chart.paneBoxes[0];
   const anchor = { x: pane.x + pane.width * 0.42, y: pane.y + pane.height * 0.46 };
@@ -359,9 +470,6 @@ test("object tree groups, renames, locks, hides, and undo-redoes as one group ac
 });
 
 test("drawing sync defaults persist and a group changes scope in one undoable action", async ({ page }) => {
-  const syncDefault = page.getByRole("button", { name: "New drawings: Sync globally", exact: true });
-  await syncDefault.click();
-  await page.getByRole("button", { name: "No sync", exact: true }).click();
   await expect(page.getByRole("button", { name: "New drawings: No sync", exact: true })).toBeVisible();
 
   const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
@@ -647,9 +755,9 @@ test("strong OHLC magnet snaps creation and Ctrl temporarily disables it", async
   const first = { x: pane.x + pane.width * 0.37, y: pane.y + pane.height * 0.43 };
   const second = { x: pane.x + pane.width * 0.61, y: pane.y + pane.height * 0.57 };
 
-  await page.getByRole("button", { name: "Magnet mode menu", exact: true }).click();
+  await page.getByRole("button", { name: "Magnet mode", exact: true }).click();
   await page.getByRole("button", { name: "Strong magnet", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Magnet: strong", exact: true }))
+  await expect(page.getByRole("button", { name: "Magnet: Strong", exact: true }))
     .toHaveClass(/text-brand/);
 
   const chooseHorizontal = async () => {
@@ -687,7 +795,7 @@ test("strong OHLC magnet snaps creation and Ctrl temporarily disables it", async
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => Boolean(window.__drawingInteractionTest));
-  await expect(page.getByRole("button", { name: "Magnet: strong", exact: true }))
+  await expect(page.getByRole("button", { name: "Magnet: Strong", exact: true }))
     .toHaveClass(/text-brand/);
 });
 

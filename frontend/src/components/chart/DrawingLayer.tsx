@@ -632,12 +632,7 @@ export function DrawingLayer() {
     duplicateDrawing,
     openDrawingSettings: (id) => {
       const drawing = stateRef.current.drawings.find((d) => d.id === id);
-      if (
-        drawing &&
-        getDrawingToolManifestEntry(drawing.tool).settingsOverlay === "position-dialog"
-      ) {
-        setEditingDrawing(id);
-      }
+      if (drawing) setEditingDrawing(id);
     },
     onTextPlace: handleTextPlace,
     snapPoint,

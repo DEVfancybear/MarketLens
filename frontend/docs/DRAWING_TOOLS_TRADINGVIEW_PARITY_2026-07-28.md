@@ -127,6 +127,56 @@ Individual references include
 The Price Note and Pin/Note distinction was cross-checked against TradingView's
 official product-update articles.
 
+## 2026-07-29 common interaction and handle follow-up
+
+The interaction fixes now live in shared drawing-engine layers instead of a
+Rectangle-only event path:
+
+- Primary-button double-click opens the correct settings surface for every
+  persistent drawing. The second pointerdown and matching native `dblclick` are
+  consumed so the chart cannot also pan, zoom, or reset its viewport.
+- `Ctrl`/`Cmd` click is the additive-selection gesture. Starting a drag on a
+  member of an existing multi-selection preserves and moves the group.
+- `Shift` body drag locks every drawing to the dominant horizontal or vertical
+  screen axis.
+- Arrow keys nudge every selected, unlocked drawing by one logical market bar
+  horizontally or one symbol tick vertically, using one undo transaction.
+- Context menus and double-clicks originating in drawing UI overlays do not
+  leak into the chart interaction layer.
+
+Handle topology is now declared for every manifest entry:
+
+| Profile | Tools | Resolved edit handles |
+| --- | --- | ---: |
+| `none` | `vertical`, `text`, non-persistent modes | 0 |
+| `endpoints` | `brush`, `highlighter` | 2 sampled-stroke endpoints |
+| `position-6` | `long`, `short` | 6 virtual Position handles |
+| `rect-8` | `rectangle` | 4 circular corners + 4 square edge midpoints |
+| `ellipse-axes-4` | `ellipse` | 4 semantic radius/axis handles |
+| `table-grid` | `table` | 4 virtual corner resize handles |
+| `corner-box-4` | `image` | 4 virtual corner resize handles |
+| `raw-points` | remaining persistent tools | one handle per semantic anchor |
+
+Virtual handles do not expand the persisted coordinate payload. Rectangle,
+Ellipse, Table, and Image remain backward-compatible two-point drawings; their
+extra handles are resolved for rendering, hit testing, and transforms at
+runtime.
+
+The behavior and topology checks use TradingView's official
+[drawing-tool catalog](https://www.tradingview.com/support/solutions/43000703396-drawing-tools-available-on-tradingview/),
+[Rectangle documentation](https://www.tradingview.com/support/solutions/43000516984-rectangle-drawing-tool/),
+[Rectangle node announcement](https://www.tradingview.com/blog/en/alerts-on-rectangle-drawings-55208/),
+[Ellipse documentation](https://www.tradingview.com/support/solutions/43000516988-ellipse-drawing-tool/),
+[Table documentation](https://www.tradingview.com/support/solutions/43000744162-table-drawing-tool/),
+[Image documentation](https://www.tradingview.com/support/solutions/43000632957-how-to-insert-images-on-the-chart/),
+[Note double-click documentation](https://www.tradingview.com/support/solutions/43000737571-note-drawing-tool/),
+[axis-drag documentation](https://www.tradingview.com/support/solutions/43000538248-how-to-drag-drawings-horizontally-vertically/),
+and [multi-select documentation](https://www.tradingview.com/support/solutions/43000537219-how-to-select-several-objects/).
+
+Table row/column-divider persistence and rotated Ellipse geometry require
+additional saved-model fields and remain separate geometry work; they are not
+represented as generic point handles.
+
 ## Compatibility and regression gates
 
 - Legacy `fib`, `arrowMarkLeft`, and `arrowMarkRight` remain decodable and
@@ -143,18 +193,12 @@ official product-update articles.
 
 ## Verification
 
-Verified on 2026-07-28:
+Verified on 2026-07-29:
 
 - `npm run typecheck`: pass;
-- `npm run test:drawing`: 249/249 pass;
-- `npm run check:i18n`: 4/4 pass;
-- browser gates for all six Cursor modes, the 87-adapter registry,
-  Fibonacci/Pitchfork group interaction, and Eraser lifecycle: pass;
+- `npm run test:drawing`: 272/272 pass;
+- `npm run test:position`: 54/54 pass;
+- `playwright test drawingInteractions.spec.ts`: 33/33 pass, including the
+  create → select → virtual-corner resize → double-click settings → unchanged
+  history/viewport → close-dialog Rectangle flow;
 - `git diff --check`: pass.
-
-The repository lint command is currently blocked before source analysis because
-the installed dependency tree cannot resolve
-`eslint-config-next/core-web-vitals`. The full browser file also retains four
-unrelated environment/stale-contract failures around the Alert API, Magnet
-button locator, and persisted sync default; all browser cases directly changed
-by this parity work pass independently.

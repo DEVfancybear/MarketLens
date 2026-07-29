@@ -44,6 +44,17 @@ export type DrawingCreationMode =
   | "click-freeform"
   | "pointer-continuous";
 
+/** Declarative editing-handle topology shared by rendering, hit testing, and transforms. */
+export type DrawingHandleProfile =
+  | "none"
+  | "raw-points"
+  | "endpoints"
+  | "position-6"
+  | "rect-8"
+  | "ellipse-axes-4"
+  | "table-grid"
+  | "corner-box-4";
+
 export type DrawingIconKey =
   | "cursor" | "target" | "eraser" | "ruler" | "trend" | "ray"
   | "branch" | "triangle" | "horizontal" | "vertical" | "crosshair"
@@ -99,6 +110,7 @@ export interface DrawingToolManifestEntry<TProps = Record<string, unknown>> {
   readonly preferredForCreation: boolean;
   readonly rollout?: "phase8-wave-a" | "phase8-wave-b" | "phase8-wave-c" | "phase8-wave-d";
   readonly creationMode: DrawingCreationMode;
+  readonly handleProfile: DrawingHandleProfile;
   readonly minPoints: number;
   readonly maxPoints?: number;
   readonly styleFamily: StyleFamily;
@@ -191,6 +203,7 @@ function tool(
     persistent,
     favoriteEligible: persistent,
     preferredForCreation: persistent,
+    handleProfile: persistent ? "raw-points" : "none",
     magnetEligible: persistent && creationMode !== "pointer-continuous",
     shortcuts: [],
     viewportCulling: "spatial",
@@ -224,25 +237,25 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("trendAngle", "Trend angle", "lines", "triangle", "two-point", 2, { dynamicAlertProjection: "dynamic-line" }),
   tool("horizontal", "Horizontal line", "lines", "horizontal", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518124-horizontal-line-drawing-tool/"], shortcuts: [{ key: "3", shiftKey: true }, { key: "h", altKey: true }], defaultProperties: { lineWidth: 1.5, showPriceLabels: true }, selectionTextEditor: "axis-price", settingsFeatures: ["line", "text", "price-label", "coordinates", "visibility", "templates"], alertProjection: "point-price" }),
   tool("horizRay", "Horizontal ray", "lines", "horizontal", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518121-horizontal-ray-drawing-tool/"], shortcuts: [{ key: "j", altKey: true }], defaultProperties: { lineWidth: 1.5, showPriceLabels: true }, settingsFeatures: ["line", "text", "price-label", "coordinates", "visibility", "templates"], alertProjection: "point-price" }),
-  tool("vertical", "Vertical line", "lines", "vertical", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518093-vertical-line-drawing-tool/"], shortcuts: [{ key: "v", altKey: true }], defaultProperties: { lineWidth: 1.5, showTimeLabel: true }, selectionTextEditor: "axis-time", settingsFeatures: ["line", "text", "time-label", "coordinates", "visibility", "templates"] }),
+  tool("vertical", "Vertical line", "lines", "vertical", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518093-vertical-line-drawing-tool/"], shortcuts: [{ key: "v", altKey: true }], defaultProperties: { lineWidth: 1.5, showTimeLabel: true }, handleProfile: "none", selectionTextEditor: "axis-time", settingsFeatures: ["line", "text", "time-label", "coordinates", "visibility", "templates"] }),
   tool("crossLine", "Crossline", "lines", "crosshair", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000477747-crossline-drawing-tool/"], shortcuts: [{ key: "c", altKey: true }], defaultProperties: { lineWidth: 1.5, showPriceLabels: true, showTimeLabel: true }, settingsFeatures: ["line", "price-label", "time-label", "coordinates", "visibility", "templates"], alertProjection: "point-price" }),
   tool("channel", "Parallel channel", "lines", "trend", "fixed-multi-point", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518117-parallel-channel-drawing-tool/"], maxPoints: 3, selectionTextEditor: "line-midpoint", dynamicAlertProjection: "dynamic-channel", settingsFeatures: ["line", "fill", "text", "channel-levels", "coordinates", "visibility", "templates"] }),
   tool("flatTopBottom", "Flat top/bottom", "lines", "trend", "fixed-multi-point", 3, { maxPoints: 3, rollout: "phase8-wave-a", selectionTextEditor: "line-midpoint", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
   tool("disjointChannel", "Disjoint channel", "lines", "trend", "fixed-multi-point", 4, { maxPoints: 4, rollout: "phase8-wave-a", selectionTextEditor: "line-midpoint", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
 
-  tool("brush", "Brush", "shapes", "brush", "pointer-continuous", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000516987-brush-drawing-tool/"], section: "BRUSHES", pointSimplificationTolerance: 0.75 }),
-  tool("highlighter", "Highlighter", "shapes", "highlighter", "pointer-continuous", 2, { pointSimplificationTolerance: 0.75, defaultProperties: { lineWidth: 8, opacity: 0.35 } }),
+  tool("brush", "Brush", "shapes", "brush", "pointer-continuous", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000516987-brush-drawing-tool/"], section: "BRUSHES", handleProfile: "endpoints", pointSimplificationTolerance: 0.75 }),
+  tool("highlighter", "Highlighter", "shapes", "highlighter", "pointer-continuous", 2, { handleProfile: "endpoints", pointSimplificationTolerance: 0.75, defaultProperties: { lineWidth: 8, opacity: 0.35 } }),
   tool("arrow", "Arrow", "shapes", "arrowUpRight", "two-point", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518134-arrow-drawing-tool/"], section: "ARROWS" }),
   tool("arrowMarker", "Arrow marker", "shapes", "arrowUpRight", "two-point", 2, { angleConstraint: "45-degree" }),
   tool("arrowMarkUp", "Arrow mark up", "shapes", "arrowUp", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518087-arrow-marks-drawing-tools/"] }),
   tool("arrowMarkDown", "Arrow mark down", "shapes", "arrowDown", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518087-arrow-marks-drawing-tools/"] }),
   tool("arrowMarkLeft", "Arrow mark left", "shapes", "arrowLeft", "one-point", 1, { preferredForCreation: false }),
   tool("arrowMarkRight", "Arrow mark right", "shapes", "arrowRight", "one-point", 1, { preferredForCreation: false }),
-  tool("rectangle", "Rectangle", "shapes", "square", "two-point", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000516984-rectangle-drawing-tool/"], shortcuts: [{ key: "4", shiftKey: true }, { key: "r", altKey: true, shiftKey: true }], section: "SHAPES", styleFamily: "shape", selectionTextEditor: "shape-center", angleConstraint: "45-degree", settingsFeatures: ["line", "fill", "text", "middle-line", "coordinates", "visibility", "templates"], alertProjection: "range-boundaries" }),
+  tool("rectangle", "Rectangle", "shapes", "square", "two-point", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000516984-rectangle-drawing-tool/"], shortcuts: [{ key: "4", shiftKey: true }, { key: "r", altKey: true, shiftKey: true }], section: "SHAPES", styleFamily: "shape", handleProfile: "rect-8", selectionTextEditor: "shape-center", angleConstraint: "45-degree", settingsFeatures: ["line", "fill", "text", "middle-line", "coordinates", "visibility", "templates"], alertProjection: "range-boundaries" }),
   tool("rotatedRect", "Rotated rectangle", "shapes", "square", "fixed-multi-point", 2, { maxPoints: 3, styleFamily: "shape", selectionTextEditor: "shape-center", angleConstraint: "45-degree" }),
   tool("path", "Path", "shapes", "path", "click-freeform", 2),
   tool("circle", "Circle", "shapes", "circle", "two-point", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000662172-circle-drawing-tool/"], styleFamily: "shape", selectionTextEditor: "shape-center", angleConstraint: "45-degree" }),
-  tool("ellipse", "Ellipse", "shapes", "circle", "two-point", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000516988-ellipse-drawing-tool/"], styleFamily: "shape", selectionTextEditor: "shape-center", angleConstraint: "45-degree" }),
+  tool("ellipse", "Ellipse", "shapes", "circle", "two-point", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000516988-ellipse-drawing-tool/"], styleFamily: "shape", handleProfile: "ellipse-axes-4", selectionTextEditor: "shape-center", angleConstraint: "45-degree" }),
   tool("polyline", "Polyline", "shapes", "pen", "click-freeform", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000516986-polyline-drawing-tool/"], shortcuts: [{ key: "5", shiftKey: true }], styleFamily: "shape", freeformCloseOnFirstPoint: true, settingsFeatures: ["line", "fill", "coordinates", "visibility", "templates"] }),
   tool("triangle", "Triangle", "shapes", "triangle", "fixed-multi-point", 3, { officialDocs: ["https://www.tradingview.com/support/solutions/43000516814-triangle-drawing-tool/"], maxPoints: 3, styleFamily: "shape", selectionTextEditor: "shape-center" }),
   tool("arc", "Arc", "shapes", "spline", "fixed-multi-point", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000516989-arc-drawing-tool/"], maxPoints: 3, styleFamily: "shape" }),
@@ -363,9 +376,9 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("priceRange", "Price range", "measurements", "ruler", "two-point", 2, { rollout: "phase8-wave-a", styleFamily: "shape", selectionTextEditor: "shape-center", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
   tool("dateRange", "Date range", "measurements", "ruler", "two-point", 2, { rollout: "phase8-wave-a", styleFamily: "shape", selectionTextEditor: "shape-center", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
   tool("datePriceRange", "Date and price range", "measurements", "ruler", "two-point", 2, { rollout: "phase8-wave-a", styleFamily: "shape", selectionTextEditor: "shape-center", settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
-  tool("long", "Long position", "positions", "long", "one-point", 1, { shortcuts: [{ key: "8", shiftKey: true }], settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution", settingsProfile: "position", positionSide: "long", viewportCulling: "always-render", coordinateLabels: ["Entry", "Target", "Stop"], alertProjection: "position-levels" }),
-  tool("short", "Short position", "positions", "short", "one-point", 1, { shortcuts: [{ key: "9", shiftKey: true }], settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution", settingsProfile: "position", positionSide: "short", viewportCulling: "always-render", coordinateLabels: ["Entry", "Target", "Stop"], alertProjection: "position-levels" }),
-  tool("text", "Text", "annotations", "text", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000516983-text-drawing-tool/"], shortcuts: [{ key: "6", shiftKey: true }], styleFamily: "text", overlayExtension: "text-editor" }),
+  tool("long", "Long position", "positions", "long", "one-point", 1, { shortcuts: [{ key: "8", shiftKey: true }], handleProfile: "position-6", settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution", settingsProfile: "position", positionSide: "long", viewportCulling: "always-render", coordinateLabels: ["Entry", "Target", "Stop"], alertProjection: "position-levels" }),
+  tool("short", "Short position", "positions", "short", "one-point", 1, { shortcuts: [{ key: "9", shiftKey: true }], handleProfile: "position-6", settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution", settingsProfile: "position", positionSide: "short", viewportCulling: "always-render", coordinateLabels: ["Entry", "Target", "Stop"], alertProjection: "position-levels" }),
+  tool("text", "Text", "annotations", "text", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000516983-text-drawing-tool/"], shortcuts: [{ key: "6", shiftKey: true }], styleFamily: "text", handleProfile: "none", overlayExtension: "text-editor" }),
   tool("emoji", "Emoji", "icons", "emoji", "one-point", 1, {
     officialDocs: ["https://www.tradingview.com/support/solutions/43000662396-how-to-chart-with-emojis/"],
     styleFamily: "text",
@@ -374,13 +387,13 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("note", "Note", "annotations", "text", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000737571-note-drawing-tool/"], rollout: "phase8-wave-a", styleFamily: "text", overlayExtension: "text-editor" }),
   tool("priceNote", "Price note", "annotations", "text", "two-point", 2, { rollout: "phase8-wave-a", styleFamily: "text", selectionTextEditor: "line-midpoint", angleConstraint: "45-degree", settingsFeatures: ["line", "text", "coordinates", "visibility", "templates"], alertProjection: "point-price" }),
   tool("pin", "Pin", "annotations", "pin", "one-point", 1, { rollout: "phase8-wave-a", styleFamily: "text", overlayExtension: "text-editor" }),
-  tool("table", "Table", "annotations", "square", "two-point", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000744162-table-drawing-tool/"], rollout: "phase8-wave-d", contentKind: "table", styleFamily: "shape", defaultProperties: { lineWidth: 1.5, content: { kind: "table", cells: [["Header", "Value"], ["Row", "—"]] } }, settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
+  tool("table", "Table", "annotations", "square", "two-point", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000744162-table-drawing-tool/"], rollout: "phase8-wave-d", contentKind: "table", styleFamily: "shape", handleProfile: "table-grid", defaultProperties: { lineWidth: 1.5, content: { kind: "table", cells: [["Header", "Value"], ["Row", "—"]] } }, settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
   tool("callout", "Callout", "annotations", "text", "two-point", 2, { officialDocs: ["https://www.tradingview.com/support/solutions/43000516978-callout-drawing-tool/"], rollout: "phase8-wave-a", styleFamily: "shape", selectionTextEditor: "shape-center" }),
   tool("comment", "Comment", "annotations", "text", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000516981-comment-drawing-tool/"], rollout: "phase8-wave-a", styleFamily: "text", overlayExtension: "text-editor" }),
   tool("priceLabel", "Price label", "annotations", "text", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518083-price-label/"], rollout: "phase8-wave-a", styleFamily: "text", overlayExtension: "text-editor", alertProjection: "point-price" }),
   tool("signpost", "Signpost", "annotations", "text", "one-point", 1, { rollout: "phase8-wave-a", styleFamily: "text", overlayExtension: "text-editor" }),
   tool("flag", "Flag mark", "annotations", "text", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000518085-flag-mark-drawing-tool/"], rollout: "phase8-wave-a", styleFamily: "text", overlayExtension: "text-editor" }),
-  tool("image", "Image", "annotations", "square", "two-point", 2, { rollout: "phase8-wave-d", contentKind: "image", styleFamily: "shape", defaultProperties: { lineWidth: 1.5, content: { kind: "image", alt: "Image" } }, settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
+  tool("image", "Image", "annotations", "square", "two-point", 2, { rollout: "phase8-wave-d", contentKind: "image", styleFamily: "shape", handleProfile: "corner-box-4", defaultProperties: { lineWidth: 1.5, content: { kind: "image", alt: "Image" } }, settingsFeatures: ["line", "fill", "text", "coordinates", "visibility", "templates"] }),
   tool("socialEmbed", "X post / idea", "annotations", "text", "one-point", 1, { rollout: "phase8-wave-d", contentKind: "social", styleFamily: "text", overlayExtension: "text-editor" }),
 ] satisfies readonly DrawingToolManifestEntry[]);
 
