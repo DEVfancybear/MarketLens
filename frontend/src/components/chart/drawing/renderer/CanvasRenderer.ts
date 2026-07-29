@@ -108,7 +108,26 @@ function paintDrawing(
   g.strokeStyle = drawing.color;
   g.fillStyle = drawing.color;
   g.lineWidth = (drawing.lineWidth || 1.5) * (selected ? 1.6 : 1);
-  renderDrawing(g, drawing, projector, selected);
+  if (!drawing._textEditing) {
+    renderDrawing(g, drawing, projector, selected);
+    return;
+  }
+
+  // The shared DOM editor is deliberately transparent, like TradingView's.
+  // Suppress canvas glyphs for only the drawing being edited while preserving
+  // its non-text geometry and selection handles. Intercepting the two canvas
+  // text primitives keeps this behavior common to every current and future
+  // text-capable drawing adapter.
+  const fillText = g.fillText;
+  const strokeText = g.strokeText;
+  g.fillText = () => undefined;
+  g.strokeText = () => undefined;
+  try {
+    renderDrawing(g, drawing, projector, selected);
+  } finally {
+    g.fillText = fillText;
+    g.strokeText = strokeText;
+  }
 }
 
 function paintDrawingRange(
@@ -445,6 +464,7 @@ export function createRenderLoop(deps: RenderLoopDeps): RenderLoop {
       // Include text/fontSize so text-only updates invalidate the memo.
       if (d.text != null) h += ":text=" + d.text;
       if (d.fontSize != null) h += ":fs=" + d.fontSize;
+      if (d._textEditing) h += ":text-editing";
       // Include style fields so colour / width / line-style / fill / opacity /
       // label / visibility edits (toolbar + settings dialog + templates) repaint
       // immediately instead of waiting for the next pan/zoom.

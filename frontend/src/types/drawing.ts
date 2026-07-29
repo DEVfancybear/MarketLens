@@ -295,6 +295,12 @@ export interface BaseDrawing
    * box width while the user is still dragging). Never persisted to the store.
    */
   _dragging?: boolean;
+  /**
+   * Transient render-only flag used by the shared DOM text editor. The canvas
+   * keeps drawing the object's geometry and selection handles while suppressing
+   * its text, so a transparent inline editor never produces doubled glyphs.
+   */
+  _textEditing?: boolean;
 }
 
 export type Drawing = BaseDrawing;

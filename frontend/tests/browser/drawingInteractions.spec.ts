@@ -102,7 +102,7 @@ test("Phase 8 Wave A range, cycle, and inline-note gestures commit transactional
   await page.getByRole("button", { name: "Text", exact: true }).click();
   await page.getByRole("button", { name: /^Note\b/ }).click();
   await page.mouse.click(a.x, b.y);
-  const editor = page.getByPlaceholder("Enter text...");
+  const editor = page.locator("[data-inline-text-editor]");
   await editor.fill("Wave A note"); await editor.press("Enter");
 
   await expect.poll(async () => (await drawingSnapshot(page)).drawings.map((drawing) => drawing.tool))
@@ -170,7 +170,7 @@ test("Phase 8 Wave D data, projection, and rich-content gestures persist their c
   await create("Ranges",/^Forecast\b/,[a,b,c]);
   await create("Text",/^Table\b/,[a,b]);
   await create("Text",/^X post \/ idea\b/,[c]);
-  const editor=page.getByPlaceholder("Enter text...");await editor.fill("https://x.com/openai/status/1");await editor.press("Enter");
+  const editor=page.locator("[data-inline-text-editor]");await editor.fill("https://x.com/openai/status/1");await editor.press("Enter");
   await expect.poll(async()=>{const drawings=(await drawingSnapshot(page)).drawings;return drawings.map(d=>({tool:d.tool,samples:d.dataSnapshot?.samples.length??0,text:d.text??""}));}).toEqual([
     {tool:"anchoredVWAP",samples:expect.any(Number),text:""},{tool:"regressionTrend",samples:expect.any(Number),text:""},{tool:"fixedVolumeProfile",samples:expect.any(Number),text:""},{tool:"forecast",samples:0,text:""},{tool:"table",samples:0,text:""},{tool:"socialEmbed",samples:0,text:"https://x.com/openai/status/1"},
   ]);
@@ -1476,7 +1476,7 @@ test("standalone and attached text edits each produce one undoable command", asy
   await page.getByRole("button", { name: "Text", exact: true }).click();
   await page.getByRole("button", { name: /^Text\b/ }).last().click();
   await page.mouse.click(start.x, start.y);
-  const editor = page.getByPlaceholder("Enter text...");
+  const editor = page.locator("[data-inline-text-editor]");
   await editor.fill("Standalone note");
   await editor.press("Enter");
   await expect.poll(async () => (await drawingSnapshot(page)).drawings[0]?.text).toBe("Standalone note");
@@ -1493,8 +1493,30 @@ test("standalone and attached text edits each produce one undoable command", asy
   await page.getByRole("button", { name: "Cursor", exact: true }).click();
   await page.getByRole("button", { name: /^Cross\b/ }).last().click();
   await page.mouse.click((start.x + end.x) / 2, (start.y + end.y) / 2);
-  await page.getByPlaceholder("Enter text...").fill("Attached label");
-  await page.getByPlaceholder("Enter text...").press("Enter");
+  const attachedEditor = page.locator("[data-inline-text-editor]");
+  await expect(attachedEditor).toHaveAttribute("placeholder", "Add text");
+  await expect(attachedEditor).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(attachedEditor).toHaveCSS("border-top-width", "0px");
+  await expect(attachedEditor).toHaveCSS("box-shadow", "none");
+  await expect(attachedEditor).toHaveCSS("text-align", "center");
+  const attachedEditorBox = await attachedEditor.boundingBox();
+  expect(attachedEditorBox).not.toBeNull();
+  expect(
+    Math.abs(
+      attachedEditorBox!.x +
+        attachedEditorBox!.width / 2 -
+        (start.x + end.x) / 2,
+    ),
+  ).toBeLessThan(2);
+  expect(
+    Math.abs(
+      attachedEditorBox!.y +
+        attachedEditorBox!.height / 2 -
+        (start.y + end.y) / 2,
+    ),
+  ).toBeLessThan(2);
+  await attachedEditor.fill("Attached label");
+  await attachedEditor.press("Enter");
   await expect.poll(async () => (await drawingSnapshot(page)).drawings[0]?.text).toBe("Attached label");
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await drawingSnapshot(page)).drawings[0]?.text ?? "").toBe("");

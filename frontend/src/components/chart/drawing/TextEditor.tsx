@@ -6,12 +6,20 @@ import {
   useRef,
   useState,
 } from "react";
-import { clampTextEditorPosition } from "./textEditorGeometry";
+import { resolveCenteredTextEditorPosition } from "./textEditorGeometry";
 
 interface TextEditorProps {
   initialText: string;
   x: number;
   y: number;
+  width?: number;
+  angle?: number;
+  offsetY?: number;
+  fontSize?: number;
+  fontWeight?: number;
+  italic?: boolean;
+  color?: string;
+  textAlign?: "left" | "center" | "right";
   onSaveAction: (text: string) => void;
   onCancelAction: () => void;
   onDraftChangeAction?: (text: string) => void;
@@ -25,6 +33,14 @@ export function TextEditor({
   initialText,
   x,
   y,
+  width = 160,
+  angle = 0,
+  offsetY = 0,
+  fontSize = 13,
+  fontWeight = 400,
+  italic = false,
+  color,
+  textAlign = "center",
   onSaveAction,
   onCancelAction,
   onDraftChangeAction,
@@ -32,27 +48,29 @@ export function TextEditor({
   const inputRef = useRef<HTMLInputElement>(null);
   const doneRef = useRef(false);
   const [text, setText] = useState(initialText);
-  const [position, setPosition] = useState({ left: x, top: y - 10 });
+  const [position, setPosition] = useState({ x, y });
 
   const updatePosition = useCallback(() => {
     const editor = inputRef.current;
     const viewport = editor?.offsetParent as HTMLElement | null;
     if (!editor || !viewport) {
-      setPosition({ left: x, top: y - 10 });
+      setPosition({ x, y });
       return;
     }
-    const next = clampTextEditorPosition({
-      left: x,
-      top: y - 10,
+    const next = resolveCenteredTextEditorPosition({
+      x,
+      y,
       editorWidth: editor.offsetWidth,
       editorHeight: editor.offsetHeight,
       viewportWidth: viewport.clientWidth,
       viewportHeight: viewport.clientHeight,
+      angleDegrees: angle,
+      offsetY,
     });
     setPosition((current) =>
-      current.left === next.left && current.top === next.top ? current : next,
+      current.x === next.x && current.y === next.y ? current : next,
     );
-  }, [x, y]);
+  }, [angle, offsetY, x, y]);
 
   useLayoutEffect(() => {
     updatePosition();
@@ -118,6 +136,7 @@ export function TextEditor({
       data-chart-ui
       data-inline-text-editor
       type="text"
+      aria-label="Edit drawing text"
       value={text}
       onChange={(e) => {
         const next = e.target.value;
@@ -136,15 +155,32 @@ export function TextEditor({
         e.stopPropagation();
       }}
       onBlur={commit}
-      className="absolute z-[100] rounded border border-brand bg-terminal-panel px-2 py-0.5 text-xs text-ink outline-none"
+      className="absolute z-[100] appearance-none border-0 bg-transparent p-0 text-ink outline-none shadow-none ring-0 placeholder:text-current placeholder:opacity-70 focus:border-transparent focus:bg-transparent focus:outline-none focus:ring-0"
       style={{
-        left: position.left,
-        top: position.top,
-        minWidth: 80,
+        left: position.x,
+        top: position.y,
+        width,
+        height: Math.max(20, Math.ceil(fontSize * 1.4)),
         maxWidth: "calc(100% - 8px)",
+        transform: `translate(-50%, -50%) rotate(${angle}deg)`,
+        transformOrigin: "center",
         pointerEvents: "auto",
+        border: 0,
+        borderRadius: 0,
+        background: "transparent",
+        boxShadow: "none",
+        color,
+        caretColor: color ?? "currentColor",
+        fontFamily: "var(--font-sans)",
+        fontSize,
+        fontStyle: italic ? "italic" : "normal",
+        fontWeight,
+        lineHeight: 1.25,
+        padding: 0,
+        textAlign,
+        WebkitAppearance: "none",
       }}
-      placeholder="Enter text..."
+      placeholder="Add text"
       spellCheck={false}
     />
   );

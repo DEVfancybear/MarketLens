@@ -48,6 +48,7 @@ export function resolveSelectionTextOverlay(
           x: box.x + box.w / 2,
           y: box.y + box.h / 2,
           width: box.w,
+          height: box.h,
           angle: 0,
         }
       : null;

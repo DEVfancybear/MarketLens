@@ -66,7 +66,10 @@ import { uid } from "@/utils/id";
 import { runDrawingAdapterContractAudit } from "./drawing/testing/adapterContractAudit";
 import type { DrawingInteractionTestHarness } from "./drawing/testing/testHarnessTypes";
 import { reconcileDrawingLifecycle } from "./drawing/lifecycle/drawingLifecycle";
-import { resolveSelectionTextOverlay } from "./drawing/overlays/drawingOverlayTargets";
+import {
+  resolveSelectionTextOverlay,
+  type SelectionTextOverlayTarget,
+} from "./drawing/overlays/drawingOverlayTargets";
 import { isDrawingVisibleAtTimeframe } from "./drawing/visibility/drawingIntervalVisibility";
 import {
   drawingTimeToCoordinate,
@@ -95,6 +98,31 @@ declare global {
   interface Window {
     __drawingInteractionTest?: DrawingInteractionTestHarness;
   }
+}
+
+const MAX_INLINE_TEXT_EDITOR_WIDTH = 320;
+const STANDALONE_TEXT_EDITOR_WIDTH = 160;
+
+function boundedTextEditorWidth(width: number, minimum: number): number {
+  return Math.min(
+    MAX_INLINE_TEXT_EDITOR_WIDTH,
+    Math.max(minimum, width),
+  );
+}
+
+function shapeTextEditorY(target: SelectionTextOverlayTarget): number {
+  const height = target.height ?? 20;
+  const drawing = target.drawing;
+  const fontSize = drawing.fontSize ?? 14;
+  const editorHeight = Math.max(20, Math.ceil(fontSize * 1.4));
+  const verticalAlign = drawing.textVAlign ?? "middle";
+  if (verticalAlign === "top") {
+    return target.y - height / 2 + 6 + editorHeight / 2;
+  }
+  if (verticalAlign === "bottom") {
+    return target.y + height / 2 - 6 - editorHeight / 2;
+  }
+  return target.y;
 }
 
 export function DrawingLayer() {
@@ -498,6 +526,7 @@ export function DrawingLayer() {
     symbol,
     timeframe,
     marketContext,
+    textEditSession?.drawingId,
   ]);
 
   useEffect(() => {
@@ -848,21 +877,31 @@ export function DrawingLayer() {
       canvasRef,
       toX,
       toY,
-      getData: () => ({
-        drawings: stateRef.current.visibleDrawings,
-        drawingsHidden: stateRef.current.drawingsHidden,
-        selectedDrawingId: stateRef.current.selectedDrawingId,
-        selectedDrawingIds: stateRef.current.selectedDrawingIds,
-        drawColor: stateRef.current.drawColor,
-        activeTool: stateRef.current.activeTool,
-        machine: machineRef.current,
-        chartReady: !!ctxRef.current,
-        livePoints: livePointsRef.current,
-        draggingId: drawingIdRef.current,
-        hoveredId: hoveredIdRef.current,
-        barIntervalSeconds: stateRef.current.barIntervalSeconds,
-        marketContext: stateRef.current.marketContext,
-      }),
+      getData: () => {
+        const editingDrawingId = textEditSessionRef.current?.drawingId;
+        const renderDrawings = editingDrawingId
+          ? stateRef.current.visibleDrawings.map((drawing) =>
+              drawing.id === editingDrawingId
+                ? { ...drawing, _textEditing: true }
+                : drawing,
+            )
+          : stateRef.current.visibleDrawings;
+        return {
+          drawings: renderDrawings,
+          drawingsHidden: stateRef.current.drawingsHidden,
+          selectedDrawingId: stateRef.current.selectedDrawingId,
+          selectedDrawingIds: stateRef.current.selectedDrawingIds,
+          drawColor: stateRef.current.drawColor,
+          activeTool: stateRef.current.activeTool,
+          machine: machineRef.current,
+          chartReady: !!ctxRef.current,
+          livePoints: livePointsRef.current,
+          draggingId: drawingIdRef.current,
+          hoveredId: hoveredIdRef.current,
+          barIntervalSeconds: stateRef.current.barIntervalSeconds,
+          marketContext: stateRef.current.marketContext,
+        };
+      },
       onVersionChange: (cb) => {
         const c = ctxRef.current?.chart;
         if (!c) return () => {};
@@ -1134,7 +1173,16 @@ export function DrawingLayer() {
           key={textEditSession.drawingId}
           initialText={textEditSession.initialText}
           x={shapeTextEditorTarget.x}
-          y={shapeTextEditorTarget.y}
+          y={shapeTextEditorY(shapeTextEditorTarget)}
+          width={boundedTextEditorWidth(shapeTextEditorTarget.width - 12, 72)}
+          fontSize={shapeTextEditorTarget.drawing.fontSize ?? 14}
+          fontWeight={shapeTextEditorTarget.drawing.bold ? 700 : 400}
+          italic={shapeTextEditorTarget.drawing.italic}
+          color={
+            shapeTextEditorTarget.drawing.textColor ||
+            shapeTextEditorTarget.drawing.color
+          }
+          textAlign={shapeTextEditorTarget.drawing.textHAlign ?? "center"}
           onDraftChangeAction={(text) => {
             setTextEditSession((current) => current?.withDraft(text) ?? null);
           }}
@@ -1152,6 +1200,19 @@ export function DrawingLayer() {
           initialText={textEditSession.initialText}
           x={trendLineTextEditorTarget.x}
           y={trendLineTextEditorTarget.y}
+          width={boundedTextEditorWidth(trendLineTextEditorTarget.width, 104)}
+          angle={trendLineTextEditorTarget.angle}
+          offsetY={-7}
+          fontSize={trendLineTextEditorTarget.drawing.fontSize ?? 12}
+          fontWeight={trendLineTextEditorTarget.drawing.bold ? 700 : 400}
+          italic={
+            trendLineTextEditorTarget.drawing.italic ||
+            !textEditSession.initialText.trim()
+          }
+          color={
+            trendLineTextEditorTarget.drawing.textColor ||
+            trendLineTextEditorTarget.drawing.color
+          }
           onDraftChangeAction={(text) => {
             setTextEditSession((current) => current?.withDraft(text) ?? null);
           }}
@@ -1169,6 +1230,10 @@ export function DrawingLayer() {
           initialText={textEditSession.initialText}
           x={axisPriceTextEditorTarget.x}
           y={axisPriceTextEditorTarget.y}
+          width={boundedTextEditorWidth(axisPriceTextEditorTarget.width, 36)}
+          fontSize={11}
+          fontWeight={600}
+          color="#fff"
           onDraftChangeAction={(text) => {
             setTextEditSession((current) => current?.withDraft(text) ?? null);
           }}
@@ -1186,6 +1251,10 @@ export function DrawingLayer() {
           initialText={textEditSession.initialText}
           x={axisTimeTextEditorTarget.x}
           y={axisTimeTextEditorTarget.y}
+          width={boundedTextEditorWidth(axisTimeTextEditorTarget.width, 36)}
+          fontSize={11}
+          fontWeight={600}
+          color="#fff"
           onDraftChangeAction={(text) => {
             setTextEditSession((current) => current?.withDraft(text) ?? null);
           }}
@@ -1201,8 +1270,20 @@ export function DrawingLayer() {
         <TextEditor
           key={textEditSession.drawingId}
           initialText=""
-          x={textEditSession.screenPoint.x}
+          x={
+            textEditSession.screenPoint.x +
+            STANDALONE_TEXT_EDITOR_WIDTH / 2
+          }
           y={textEditSession.screenPoint.y}
+          width={STANDALONE_TEXT_EDITOR_WIDTH}
+          fontSize={textEditSession.drawing.fontSize ?? 13}
+          fontWeight={textEditSession.drawing.bold ? 700 : 400}
+          italic={textEditSession.drawing.italic}
+          color={
+            textEditSession.drawing.textColor ||
+            textEditSession.drawing.color
+          }
+          textAlign="left"
           onSaveAction={(text) => {
             applyTextEditOutcome(textEditSession.finish(text));
           }}

@@ -105,7 +105,7 @@ async function createTool(page: Page, item: DrawingVisualSnapshotCase) {
 
   // Text-capable one-point tools open the shared inline editor. Commit a
   // deterministic value so screenshots contain the same visible state.
-  const editor = page.getByPlaceholder("Enter text...");
+  const editor = page.locator("[data-inline-text-editor]");
   if (await editor.count()) {
     await editor.fill(`matrix:${item.id}`);
     await editor.press("Enter");
