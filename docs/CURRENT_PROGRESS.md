@@ -42,8 +42,9 @@ Last updated: 2026-07-30
   loading policy. A follow-up hotfix keeps the Alert Center's live quote and
   candle hooks unconditional, preventing the first quote update from changing
   React hook order and crashing the page. The regression suite covers the
-  drag → switch → drag flow's main races; production browser stress
-  verification follows the hotfix push.
+  drag → switch → drag flow's main races. Post-deploy Chrome verification
+  repeatedly dragged the chart while switching seven Forex symbols; the chart
+  stayed responsive and produced no new console errors.
 
 ## Current Milestone
 

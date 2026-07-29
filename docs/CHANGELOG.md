@@ -11,6 +11,9 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   order and crash the whole production page.
 - Verified the hotfix with a focused hook-rule check, typecheck, chart tests,
   and the optimized production build.
+- Repeated chart drags while rapidly switching seven Forex symbols on the
+  deployed Chrome production session; the chart remained responsive and the
+  post-deploy console recorded no new errors.
 
 ### Fixed - Stable chart viewport during rapid market switches (2026-07-29)
 
