@@ -16,7 +16,7 @@ import {
   type IndicatorRuntimeContext,
 } from "@/services/indicatorRuntimePolicy";
 
-type Listener = () => void;
+type Listener = (scope?: string) => void;
 
 const MAX_RUNTIME_CANDLES = 5_000;
 const MAX_ENTRIES = 64;
@@ -49,18 +49,20 @@ interface PendingRuntimeRequest {
 
 const scheduledKeys = new Set<string>();
 const abortControllers = new Map<string, AbortController>();
+const runtimeScopeByKey = new Map<string, string>();
+const retainedScopeRefs = new Map<string, number>();
 const listeners = new Set<Listener>();
 let generation = 0;
 const runtimeScheduler = new LatestPerScopeScheduler<PendingRuntimeRequest>({
   maxConcurrent: MAX_CONCURRENT_RUNTIME_REQUESTS,
   run: executeRuntimeRequest,
-  onSettled: notify,
+  onSettled: (task) => notify(task.scope),
 });
 
 export type { IndicatorRuntimeContext } from "@/services/indicatorRuntimePolicy";
 
-function notify() {
-  for (const listener of listeners) listener();
+function notify(scope?: string) {
+  for (const listener of listeners) listener(scope);
 }
 
 function rememberFailure(scope: string, requestGeneration: number) {
@@ -75,7 +77,7 @@ function rememberFailure(scope: string, requestGeneration: number) {
   globalThis.setTimeout(() => {
     if (requestGeneration !== generation || failedAt.get(scope) !== timestamp) return;
     failedAt.delete(scope);
-    notify();
+    notify(scope);
   }, FAILURE_RETRY_MS);
 }
 
@@ -186,6 +188,7 @@ async function loadHistoryContext(
   context: IndicatorRuntimeContext,
   limit: number,
   replayBefore?: number,
+  signal?: AbortSignal,
 ): Promise<Candle[]> {
   if (!context.symbol || !context.timeframe) return [];
   const replaySessionId = normalizeReplaySessionId(context.replaySessionId);
@@ -207,7 +210,7 @@ async function loadHistoryContext(
         timeframe: context.timeframe,
         limit,
         ...(replayBefore != null ? { before: replayBefore } : {}),
-      })
+      }, { signal })
       .catch((error) => {
         if (historyContextCache.get(key) === promise) historyContextCache.delete(key);
         throw error;
@@ -242,6 +245,7 @@ async function resolveRuntimeCandles(
   config: IndicatorConfig,
   candles: readonly Candle[],
   context?: IndicatorRuntimeContext,
+  signal?: AbortSignal,
 ): Promise<Candle[]> {
   const replayCutoff = normalizeReplayCutoff(context?.replayCutoff);
   const replaySessionId = normalizeReplaySessionId(context?.replaySessionId);
@@ -269,13 +273,14 @@ async function resolveRuntimeCandles(
     const replayBefore = isReplay ? boundedCandles.at(-1)?.time : undefined;
     if (isReplay && replayBefore == null) return boundedCandles;
     const merged = mergeCandles(
-      await loadHistoryContext(context, targetBars, replayBefore),
+      await loadHistoryContext(context, targetBars, replayBefore, signal),
       boundedCandles,
     );
     return replayCutoff == null
       ? merged
       : merged.filter((candle) => candle.time <= replayCutoff);
   } catch {
+    if (signal?.aborted) throw new DOMException("Indicator history request aborted", "AbortError");
     return boundedCandles;
   }
 }
@@ -283,6 +288,50 @@ async function resolveRuntimeCandles(
 export function subscribeIndicatorRuntimeCache(listener: Listener): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+function isAbortError(error: unknown): boolean {
+  if (!error) return false;
+  if (error instanceof DOMException) return error.name === "AbortError";
+  return (error as { name?: string }).name === "AbortError";
+}
+
+function cancelRuntimeScope(scope: string): void {
+  const pending = runtimeScheduler.cancel(scope);
+  if (pending) scheduledKeys.delete(pending.runtimeKey);
+  for (const [runtimeKey, runtimeScope] of runtimeScopeByKey) {
+    if (runtimeScope !== scope) continue;
+    abortControllers.get(runtimeKey)?.abort();
+  }
+  failedAt.delete(scope);
+}
+
+/**
+ * Keep runtime work alive only while at least one mounted chart is using a
+ * scope. The reference count matters for multi-pane layouts where the same
+ * symbol/indicator can be visible in more than one pane.
+ */
+export function retainIndicatorRuntimeScopes(
+  scopes: Iterable<string>,
+): () => void {
+  const retained = [...new Set(scopes)];
+  for (const scope of retained) {
+    retainedScopeRefs.set(scope, (retainedScopeRefs.get(scope) ?? 0) + 1);
+  }
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    for (const scope of retained) {
+      const next = (retainedScopeRefs.get(scope) ?? 1) - 1;
+      if (next > 0) {
+        retainedScopeRefs.set(scope, next);
+      } else {
+        retainedScopeRefs.delete(scope);
+        cancelRuntimeScope(scope);
+      }
+    }
+  };
 }
 
 /** Drop only live warm-up history affected by an authoritative MT5 refresh. */
@@ -378,8 +427,9 @@ function executeRuntimeRequest(request: PendingRuntimeRequest): Promise<void> {
 
   const controller = new AbortController();
   abortControllers.set(runtimeKey, controller);
+  runtimeScopeByKey.set(runtimeKey, scope);
   let promise: Promise<void>;
-  promise = resolveRuntimeCandles(config, candles, context)
+  promise = resolveRuntimeCandles(config, candles, context, controller.signal)
     .then((resolved) =>
       computeIndicatorRuntime(
         config,
@@ -407,18 +457,27 @@ function executeRuntimeRequest(request: PendingRuntimeRequest): Promise<void> {
           replaySessionId: normalizeReplaySessionId(context?.replaySessionId),
           replayCutoff: normalizeReplayCutoff(context?.replayCutoff),
         });
-      } else {
+      } else if (!controller.signal.aborted) {
         rememberFailure(scope, requestGeneration);
       }
     })
-    .catch(() => {
-      if (requestGeneration === generation) rememberFailure(scope, requestGeneration);
+    .catch((error) => {
+      if (
+        requestGeneration === generation &&
+        !controller.signal.aborted &&
+        !isAbortError(error)
+      ) {
+        rememberFailure(scope, requestGeneration);
+      }
     })
     .finally(() => {
       scheduledKeys.delete(runtimeKey);
       if (inflight.get(runtimeKey) === promise) inflight.delete(runtimeKey);
       if (abortControllers.get(runtimeKey) === controller) {
         abortControllers.delete(runtimeKey);
+      }
+      if (runtimeScopeByKey.get(runtimeKey) === scope) {
+        runtimeScopeByKey.delete(runtimeKey);
       }
     });
   inflight.set(runtimeKey, promise);
@@ -430,6 +489,8 @@ export function clearIndicatorRuntimeCache() {
   runtimeScheduler.clear();
   for (const controller of abortControllers.values()) controller.abort();
   abortControllers.clear();
+  runtimeScopeByKey.clear();
+  retainedScopeRefs.clear();
   scheduledKeys.clear();
   cache.clear();
   inflight.clear();

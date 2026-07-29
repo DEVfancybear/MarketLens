@@ -27,20 +27,21 @@ export function TradeLevels() {
   const replayTrading = useReplayTrading();
   const linesRef = useRef<IPriceLine[]>([]);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const candleSeries = ctx?.candleSeries;
 
   useEffect(() => {
-    if (!ctx) return;
-    const markers = createSeriesMarkers(ctx.candleSeries, []);
+    if (!candleSeries) return;
+    const markers = createSeriesMarkers(candleSeries, []);
     markersRef.current = markers;
     return () => {
       markers.detach();
       if (markersRef.current === markers) markersRef.current = null;
     };
-  }, [ctx]);
+  }, [candleSeries]);
 
   useEffect(() => {
-    if (!ctx) return;
-    const series = ctx.candleSeries;
+    if (!candleSeries) return;
+    const series = candleSeries;
     const seriesMarkers = markersRef.current;
     if (!seriesMarkers) return;
     // Clear previous lines.
@@ -178,7 +179,7 @@ export function TradeLevels() {
       linesRef.current.forEach((l) => series.removePriceLine(l));
       linesRef.current = [];
     };
-  }, [ctx, executionMode, mt5Positions, positions, replayTrading.active, replayTrading.fills, replayTrading.orders, replayTrading.positions, symbol]);
+  }, [candleSeries, executionMode, mt5Positions, positions, replayTrading.active, replayTrading.fills, replayTrading.orders, replayTrading.positions, symbol]);
 
   return null;
 }

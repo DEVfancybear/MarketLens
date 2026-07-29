@@ -71,6 +71,8 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
   const olderHistoryGenerationRef = useRef(0);
   const exhaustedOlderHistoryRef = useRef<Set<string>>(new Set());
   const activeKey = `${symbol}:${timeframe}`;
+  const activeSelectionRef = useRef(activeKey);
+  activeSelectionRef.current = activeKey;
   const [historyReadyKey, setHistoryReadyKey] = useState<string | null>(null);
 
   // Realtime candle series from the store for the active symbol+timeframe.
@@ -82,6 +84,7 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
 
   useEffect(() => {
     olderHistoryGenerationRef.current += 1;
+    backfilledGapsRef.current.clear();
     olderHistoryControllerRef.current?.abort();
     olderHistoryControllerRef.current = null;
     olderHistoryInFlightRef.current = false;
@@ -179,7 +182,7 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
           },
         )
         .then((page) => {
-          if (cancelled) return;
+          if (cancelled || activeSelectionRef.current !== key) return;
           const hist = page.candles;
           if (meta.provider === "mt5") {
             // An ordinary cold read may intentionally paint a stale/unknown
@@ -204,7 +207,7 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
         })
         .catch((err) => {
           if (isAbortError(err)) return;
-          if (cancelled) return;
+          if (cancelled || activeSelectionRef.current !== key) return;
           if (!hasCachedHistory) {
             getMarketDataState().setCandles(symbol, timeframe, []);
             setCandles([]);
@@ -394,24 +397,35 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
     backfilledGapsRef.current.add(gapKey);
 
     const limit = Math.min(Math.max(gap.missingBars + 4, 20), 200);
+    const controller = new AbortController();
     getHistoricalDataService()
       .loadHistory({
         symbol,
         timeframe,
         limit,
         before: gap.beforeTime,
-      })
+      }, { signal: controller.signal })
       .then((hist) => {
+        if (
+          controller.signal.aborted ||
+          activeSelectionRef.current !== activeKey
+        ) return;
         getMarketDataState().setCandles(symbol, timeframe, hist);
       })
       .catch((err) => {
+        if (
+          controller.signal.aborted ||
+          activeSelectionRef.current !== activeKey ||
+          isAbortError(err)
+        ) return;
         getDefaultStore().set(
           logAtom,
           "error",
           `Gap backfill failed for ${symbol} ${timeframe}: ${String(err?.message ?? err)}`,
         );
       });
-  }, [enabled, liveCandles, symbol, timeframe]);
+    return () => controller.abort();
+  }, [activeKey, enabled, liveCandles, symbol, timeframe]);
 
   const loadOlderCandles = useCallback(async (): Promise<LoadMoreHistoryResult> => {
     const retry = (): LoadMoreHistoryResult => ({ status: "retry" });

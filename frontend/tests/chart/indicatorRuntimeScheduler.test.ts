@@ -78,3 +78,28 @@ test("scoped runtime cache evicts superseded live snapshots", () => {
   assert.equal(cache.get("replay-3"), "replay-result-3");
   assert.equal(cache.size, 3);
 });
+
+test("runtime scheduler cancels a queued scope without affecting other scopes", async () => {
+  const started: string[] = [];
+  let releaseActive: (() => void) | undefined;
+  const scheduler = new LatestPerScopeScheduler<ScheduledTask>({
+    maxConcurrent: 1,
+    run: async (task) => {
+      started.push(task.id);
+      if (task.id === "active") {
+        await new Promise<void>((resolve) => {
+          releaseActive = resolve;
+        });
+      }
+    },
+  });
+
+  scheduler.enqueue("active-scope", { id: "active" });
+  await flushMicrotasks();
+  scheduler.enqueue("queued-scope", { id: "queued" });
+  assert.deepEqual(scheduler.cancel("queued-scope"), { id: "queued" });
+  releaseActive?.();
+  await flushMicrotasks();
+
+  assert.deepEqual(started, ["active"]);
+});

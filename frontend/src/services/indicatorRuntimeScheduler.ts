@@ -34,6 +34,13 @@ export class LatestPerScopeScheduler<T> {
     return replaced;
   }
 
+  /** Remove the newest queued task for a scope without disturbing other scopes. */
+  cancel(scope: string): T | undefined {
+    const task = this.pendingByScope.get(scope);
+    this.pendingByScope.delete(scope);
+    return task;
+  }
+
   clear(): void {
     this.generation += 1;
     this.pendingByScope.clear();

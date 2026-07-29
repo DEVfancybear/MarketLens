@@ -23,7 +23,12 @@ import {
 import { useAtomValue, useSetAtom } from "jotai";
 import { alertCenterOpenAtom, setAlertCenterAtom } from "@/store/uiStore";
 import { symbolAtom } from "@/store/chartStore";
-import { getMarketDataState, useMarketDataStore } from "@/store/marketDataStore";
+import {
+  getMarketDataState,
+  marketCandleSeriesAtom,
+  marketQuoteAtom,
+  selectedTimeframeAtom,
+} from "@/store/marketDataStore";
 import { useReplayClientProjection } from "@/store/replayClientStore";
 import {
   useAlertStore,
@@ -34,7 +39,6 @@ import {
 } from "@/store/alertStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { symbolAliasCandidates } from "@/services/market-data/symbolAliases";
-import { resolveObservedSymbol } from "@/services/alertSymbols";
 import { useMarketSymbols } from "@/store/marketSymbolStore";
 import {
   getBrowserPermission,
@@ -47,7 +51,6 @@ import {
   getExternalNotificationCapabilities,
   type ExternalNotificationCapabilities,
 } from "@/services/notifications/external";
-import { subscriptionKey } from "@/types";
 import { fmtPrice } from "@/utils/format";
 import { fmtDateTime } from "@/utils/time";
 import { cn } from "@/utils/cn";
@@ -76,23 +79,16 @@ function alertTargetText(alert: Alert): string {
 }
 
 function useLivePrice(symbol: string): number | undefined {
-  return useMarketDataStore((s) => {
-    const observed = resolveObservedSymbol(symbol, Object.keys(s.quotes));
-    const quote = observed ? s.quotes[observed]?.last : undefined;
-    if (quote != null && Number.isFinite(quote) && quote > 0) return quote;
-
-    const candidateKeys = Object.keys(s.candles)
-      .filter((key) => key.endsWith(`:${s.selectedTimeframe}`))
-      .map((key) => key.slice(0, -(`:${s.selectedTimeframe}`).length));
-    const candleSymbol = resolveObservedSymbol(symbol, candidateKeys);
-    if (candleSymbol) {
-      const series =
-        s.candles[subscriptionKey(candleSymbol, s.selectedTimeframe)];
-      const close = series?.[series.length - 1]?.close;
-      if (close != null && Number.isFinite(close) && close > 0) return close;
-    }
-    return undefined;
-  });
+  const timeframe = useAtomValue(selectedTimeframeAtom);
+  const quote = useAtomValue(marketQuoteAtom(symbol));
+  if (quote?.last != null && Number.isFinite(quote.last) && quote.last > 0) {
+    return quote.last;
+  }
+  const candles = useAtomValue(marketCandleSeriesAtom(symbol, timeframe));
+  const close = candles.at(-1)?.close;
+  return close != null && Number.isFinite(close) && close > 0
+    ? close
+    : undefined;
 }
 
 function Toggle({

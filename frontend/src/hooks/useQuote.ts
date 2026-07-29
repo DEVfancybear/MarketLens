@@ -6,27 +6,21 @@
  * watchlist row (atomic selectors) so a tick on one symbol never re-renders the
  * others. Never opens a socket.
  */
-import { useMarketDataStore } from '@/store/marketDataStore';
+import { useAtomValue } from 'jotai';
+import {
+  marketLastPriceAtom,
+  marketQuoteAtom,
+} from '@/store/marketDataStore';
 import type { MarketQuote } from '@/types';
-import { resolveObservedSymbol } from '@/services/alertSymbols';
 
 export function useQuote(symbol: string): MarketQuote | undefined {
-  return useMarketDataStore((s) => {
-    const resolved = resolveObservedSymbol(symbol, Object.keys(s.quotes));
-    const quote = resolved ? s.quotes[resolved] : undefined;
-    return quote && Number.isFinite(quote.last) && quote.last > 0
-      ? quote
-      : undefined;
-  });
+  const quote = useAtomValue(marketQuoteAtom(symbol));
+  return quote && Number.isFinite(quote.last) && quote.last > 0
+    ? quote
+    : undefined;
 }
 
 /** Convenience: the last price for a symbol (or undefined). */
 export function useLastPrice(symbol: string): number | undefined {
-  return useMarketDataStore((s) => {
-    const resolved = resolveObservedSymbol(symbol, Object.keys(s.quotes));
-    const price = resolved ? s.quotes[resolved]?.last : undefined;
-    return price !== undefined && Number.isFinite(price) && price > 0
-      ? price
-      : undefined;
-  });
+  return useAtomValue(marketLastPriceAtom(symbol));
 }

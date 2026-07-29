@@ -634,6 +634,22 @@ export const keepDrawingModeAtom = atom((get) =>
 export const selectedDrawingIdAtom = atom<string | null>(null);
 export const selectedDrawingIdsAtom = atom<Set<string>>(new Set<string>());
 export const editingIndicatorIdAtom = atom<string | null>(null);
+function crosshairValuesEqual(
+  a: { time: number; candle: Candle | null } | null,
+  b: { time: number; candle: Candle | null } | null,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.time !== b.time) return false;
+  if (a.candle === b.candle) return true;
+  if (!a.candle || !b.candle) return false;
+  return a.candle.time === b.candle.time &&
+    a.candle.open === b.candle.open &&
+    a.candle.high === b.candle.high &&
+    a.candle.low === b.candle.low &&
+    a.candle.close === b.candle.close &&
+    a.candle.volume === b.candle.volume;
+}
+
 export const crosshairAtom = atom<{
   time: number;
   candle: Candle | null;
@@ -946,6 +962,7 @@ export const setSymbolAtom = atom(null, (_get, set, symbol: string) => {
     localStore.set(CURRENT_SYMBOL_PENDING_KEY, true);
   }
   queueChartSettings(_get, set, { symbol });
+  set(crosshairAtom, null);
   set(candlesAtom, []);
   set(loadingAtom, true);
   const registry = decodeDrawingsAtBoundary(
@@ -964,6 +981,7 @@ export const setTimeframeAtom = atom(
   (_get, set, timeframe: Timeframe) => {
     if (timeframe === _get(timeframeAtom)) return;
     set(timeframeAtom, timeframe);
+    set(crosshairAtom, null);
     set(candlesAtom, []);
     set(loadingAtom, true);
   },
@@ -1666,6 +1684,7 @@ export const setCrosshairAtom = atom(
       candle: Candle | null;
     } | null,
   ) => {
+    if (crosshairValuesEqual(_get(crosshairAtom), c)) return;
     set(crosshairAtom, c);
   },
 );

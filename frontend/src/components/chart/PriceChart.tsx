@@ -66,13 +66,20 @@ import { getChartOptimizationDecision } from "@/services/chartOptimizationRollou
 import {
   computeIndicator,
   ensureIndicatorRuntimeResult,
+  retainIndicatorRuntimeScopes,
   subscribeIndicatorRuntimeCache,
 } from "@/services/indicatorRuntimeCache";
 import type { IndicatorRuntimeContext } from "@/services/indicatorRuntimePolicy";
-import { replayCutoffFromVisibleThrough } from "@/services/indicatorRuntimePolicy";
+import {
+  indicatorRuntimeScopeKey,
+  replayCutoffFromVisibleThrough,
+} from "@/services/indicatorRuntimePolicy";
 import { resolveRealtimeSeriesUpdatePlan, type RealtimeSeriesUpdatePlan } from "@/services/market-data/candleSeries";
 import { useCountdown } from "@/hooks/useCountdown";
-import { useMarketDataStore } from "@/store/marketDataStore";
+import {
+  marketQuoteAtom,
+  marketSessionAtom,
+} from "@/store/marketDataStore";
 import { fmtPrice } from "@/utils/format";
 import { ChartContextObj, type ChartCtx } from "./ChartContext";
 import { setMainChart, setMainChartDefaultViewport } from "./chartRegistry";
@@ -96,6 +103,7 @@ import {
 } from "./replayCandlePresentation";
 import {
   incrementChartPerformanceCounter,
+  isChartPerformanceProbeEnabled,
   measureChartPerformance,
   measureChartSeriesWrite,
 } from "@/services/chartPerformanceProbe";
@@ -152,6 +160,7 @@ function initializeReplaySessionViewport(viewport: ChartViewportController, data
 }
 
 const LEFT_HISTORY_PREFETCH_BARS = 120;
+const HISTORY_PREFETCH_DEBOUNCE_MS = 160;
 
 type IndicatorSeriesApi = ISeriesApi<"Line"> | ISeriesApi<"Histogram"> | ISeriesApi<"Baseline">;
 type ProjectedIndicatorLabel = {
@@ -304,6 +313,7 @@ export function PriceChart({
   const autoFitRafRef = useRef<number | null>(null);
   const replayViewportInitRafRef = useRef<number | null>(null);
   const historyPrependViewportRafRef = useRef<number | null>(null);
+  const historyPrefetchTimerRef = useRef<number | null>(null);
   const renderedLatestCandleRef = useRef<Candle | null>(null);
   const renderedCandleCountRef = useRef(0);
   const prevMarkerPriceRef = useRef<number | null>(null);
@@ -317,6 +327,10 @@ export function PriceChart({
   const visibleLogicalRangeRef = useRef<LogicalRange | null>(null);
   const derivedDataEnabledRef = useRef(true);
   const lastCrosshairTimeRef = useRef<number | null>(null);
+  const crosshairRafRef = useRef<number | null>(null);
+  const pendingCrosshairRef = useRef<{
+    value: { time: number; candle: Candle | null } | null;
+  } | null>(null);
   const [paneLegendLayout, setPaneLegendLayout] = useState<{
     signature: string;
     tops: Record<string, number>;
@@ -385,9 +399,7 @@ export function PriceChart({
   const [indicatorLabels, setIndicatorLabels] = useState<ProjectedIndicatorLabel[]>([]);
   const [indicatorDashboards, setIndicatorDashboards] = useState<IndicatorDashboard[]>([]);
   const [pineRuntimeVersion, setPineRuntimeVersion] = useState(0);
-  const sessionStatus = useMarketDataStore(
-    (s) => s.marketSessions[symbol.trim().toUpperCase()],
-  );
+  const sessionStatus = useAtomValue(marketSessionAtom(symbol));
   const countdown = useCountdown(
     timeframe,
     candles[candles.length - 1]?.time,
@@ -396,7 +408,7 @@ export function PriceChart({
     // countdown. An explicit closed/unknown status still suppresses it.
     marketSymbol?.provider === "mt5" ? sessionStatus : undefined,
   );
-  const lastQuote = useMarketDataStore((s) => s.quotes[symbol]);
+  const lastQuote = useAtomValue(marketQuoteAtom(symbol));
   const precision = marketSymbol?.pricePrecision ?? 2;
   const optimizationDecision = getChartOptimizationDecision(candles.length);
   derivedDataEnabledRef.current = optimizationDecision.derivedData;
@@ -407,13 +419,15 @@ export function PriceChart({
       incrementChartPerformanceCounter("viewport.coalesced");
       return;
     }
+    const expectedMarketSeriesKey = activeMarketSeriesKeyRef.current;
     bumpRafRef.current = requestAnimationFrame(() => {
       incrementChartPerformanceCounter("viewport.frames");
       bumpRafRef.current = null;
+      if (activeMarketSeriesKeyRef.current !== expectedMarketSeriesKey) return;
       const range = chartRef.current?.timeScale().getVisibleLogicalRange() ?? null;
       visibleLogicalRangeRef.current = range;
       const activeChart = chartRef.current;
-      if (activeChart) {
+      if (activeChart && isChartPerformanceProbeEnabled()) {
         const paneMetrics = measureChartPaneMetrics(activeChart);
         incrementChartPerformanceCounter("pane.width.samples");
         if (paneMetrics.widthDrift > 1) {
@@ -446,6 +460,16 @@ export function PriceChart({
     fittedRef.current = false;
     lastAutoFitLengthRef.current = 0;
     pendingMarketViewportResetRef.current = true;
+    if (bumpRafRef.current !== null) {
+      cancelAnimationFrame(bumpRafRef.current);
+      bumpRafRef.current = null;
+    }
+    if (crosshairRafRef.current !== null) {
+      cancelAnimationFrame(crosshairRafRef.current);
+      crosshairRafRef.current = null;
+    }
+    pendingCrosshairRef.current = null;
+    setCrosshair(null);
     const chart = chartRef.current;
     if (chart) resetPriceScalePan(chart);
     if (autoFitRafRef.current !== null) {
@@ -456,8 +480,12 @@ export function PriceChart({
       cancelAnimationFrame(historyPrependViewportRafRef.current);
       historyPrependViewportRafRef.current = null;
     }
+    if (historyPrefetchTimerRef.current !== null) {
+      window.clearTimeout(historyPrefetchTimerRef.current);
+      historyPrefetchTimerRef.current = null;
+    }
     setIndicatorViewport(null);
-  }, [symbol, timeframe]);
+  }, [setCrosshair, symbol, timeframe]);
 
   useEffect(() => {
     candlesRef.current = candles;
@@ -564,22 +592,32 @@ export function PriceChart({
       if (disposed) return;
       const timestamp = crosshairTimeToTimestamp(param.time);
       lastCrosshairTimeRef.current = timestamp;
-      if (timestamp == null) {
-        setCrosshair(null);
-        return;
-      }
-      const data = param.seriesData.get(candleSeries) as Candle | undefined;
-      const sourceCandle = candleByTimeRef.current.get(timestamp);
-      setCrosshair({
-        time: timestamp,
-        candle: data
-          ? {
-              ...(sourceCandle ?? data),
-              ...data,
-              volume: sourceCandle?.volume ?? 0,
-            }
-          : null,
+      const value = timestamp == null
+        ? null
+        : (() => {
+            const data = param.seriesData.get(candleSeries) as Candle | undefined;
+            const sourceCandle = candleByTimeRef.current.get(timestamp);
+            return {
+              time: timestamp,
+              candle: data
+                ? {
+                    ...(sourceCandle ?? data),
+                    ...data,
+                    volume: sourceCandle?.volume ?? 0,
+                  }
+                : null,
+            };
+          })();
+      pendingCrosshairRef.current = { value };
+      if (crosshairRafRef.current !== null) return;
+      const frame = requestAnimationFrame(() => {
+        if (crosshairRafRef.current !== frame) return;
+        crosshairRafRef.current = null;
+        const pending = pendingCrosshairRef.current;
+        pendingCrosshairRef.current = null;
+        if (pending) setCrosshair(pending.value);
       });
+      crosshairRafRef.current = frame;
     };
 
     const ro = new ResizeObserver((entries) => {
@@ -614,6 +652,11 @@ export function PriceChart({
         cancelAnimationFrame(bumpRafRef.current);
         bumpRafRef.current = null;
       }
+      if (crosshairRafRef.current !== null) {
+        cancelAnimationFrame(crosshairRafRef.current);
+        crosshairRafRef.current = null;
+      }
+      pendingCrosshairRef.current = null;
       if (candleAnimationRafRef.current !== null) {
         cancelAnimationFrame(candleAnimationRafRef.current);
         candleAnimationRafRef.current = null;
@@ -652,48 +695,66 @@ export function PriceChart({
     if (!chart || !ready) return;
 
     const maybeLoadOlderHistory = () => {
+      if (pendingMarketViewportResetRef.current) return;
       const loadMore = loadMoreHistoryRef.current;
       if (!loadMore || loadMoreInFlightRef.current) return;
+      if (historyPrefetchTimerRef.current !== null) {
+        window.clearTimeout(historyPrefetchTimerRef.current);
+      }
+      historyPrefetchTimerRef.current = window.setTimeout(() => {
+        historyPrefetchTimerRef.current = null;
+        if (
+          pendingMarketViewportResetRef.current ||
+          loadMoreInFlightRef.current
+        ) {
+          return;
+        }
+        const range = chart.timeScale().getVisibleLogicalRange();
+        const first = candlesRef.current[0];
+        if (!range || !first) return;
+        const candleSeries = candleSeriesRef.current;
+        const barsInfo = candleSeries?.barsInLogicalRange(range);
+        const barsBefore = barsInfo?.barsBefore ?? range.from;
+        if (barsBefore > LEFT_HISTORY_PREFETCH_BARS) return;
+        if (lastLoadMoreFirstTimeRef.current === first.time) return;
 
-      const range = chart.timeScale().getVisibleLogicalRange();
-      const first = candlesRef.current[0];
-      if (!range || !first) return;
-      const candleSeries = candleSeriesRef.current;
-      const barsInfo = candleSeries?.barsInLogicalRange(range);
-      const barsBefore = barsInfo?.barsBefore ?? range.from;
-      if (barsBefore > LEFT_HISTORY_PREFETCH_BARS) return;
-      if (lastLoadMoreFirstTimeRef.current === first.time) return;
-
-      const generation = loadMoreGenerationRef.current;
-      lastLoadMoreFirstTimeRef.current = first.time;
-      loadMoreInFlightRef.current = true;
-      // Start in a microtask so synchronous callback throws are also handled.
-      Promise.resolve()
-        .then(() => loadMore())
-        .then((result) => {
-          if (generation !== loadMoreGenerationRef.current) return;
-          if (result?.status !== "exhausted") {
-            // `retry` (including a not-ready/no-op response) must allow the
-            // same cursor to be attempted again on the next range notification.
-            lastLoadMoreFirstTimeRef.current = null;
-          }
-        })
-        .catch(() => {
-          if (generation === loadMoreGenerationRef.current) {
-            lastLoadMoreFirstTimeRef.current = null;
-          }
-        })
-        .finally(() => {
-          if (generation === loadMoreGenerationRef.current) {
-            loadMoreInFlightRef.current = false;
-          }
-        });
+        const generation = loadMoreGenerationRef.current;
+        lastLoadMoreFirstTimeRef.current = first.time;
+        loadMoreInFlightRef.current = true;
+        // Start in a microtask so synchronous callback throws are also handled.
+        Promise.resolve()
+          .then(() => loadMore())
+          .then((result) => {
+            if (generation !== loadMoreGenerationRef.current) return;
+            if (result?.status !== "exhausted") {
+              // `retry` (including a not-ready/no-op response) must allow the
+              // same cursor to be attempted again on the next range notification.
+              lastLoadMoreFirstTimeRef.current = null;
+            }
+          })
+          .catch(() => {
+            if (generation === loadMoreGenerationRef.current) {
+              lastLoadMoreFirstTimeRef.current = null;
+            }
+          })
+          .finally(() => {
+            if (generation === loadMoreGenerationRef.current) {
+              loadMoreInFlightRef.current = false;
+            }
+          });
+      }, HISTORY_PREFETCH_DEBOUNCE_MS);
     };
 
     const timeScale = chart.timeScale();
     timeScale.subscribeVisibleLogicalRangeChange(maybeLoadOlderHistory);
     maybeLoadOlderHistory();
-    return () => timeScale.unsubscribeVisibleLogicalRangeChange(maybeLoadOlderHistory);
+    return () => {
+      timeScale.unsubscribeVisibleLogicalRangeChange(maybeLoadOlderHistory);
+      if (historyPrefetchTimerRef.current !== null) {
+        window.clearTimeout(historyPrefetchTimerRef.current);
+        historyPrefetchTimerRef.current = null;
+      }
+    };
   }, [candles.length, onLoadMoreHistory, ready, symbol, timeframe]);
 
   // ---- Re-theme / grid toggle / timeframe-aware time format ----
@@ -974,6 +1035,7 @@ export function PriceChart({
           cancelAnimationFrame(autoFitRafRef.current);
         }
         const expectedMarketSeriesKey = marketSeriesKey;
+        const expectedViewportRevision = viewport.snapshot().revision;
         const frame = requestAnimationFrame(() => {
           if (autoFitRafRef.current !== frame) return;
           autoFitRafRef.current = null;
@@ -983,7 +1045,11 @@ export function PriceChart({
           ) {
             return;
           }
-          viewport.reset(timeScaleDefaults(timeframe), "market-change");
+          viewport.resetIfRevision(
+            timeScaleDefaults(timeframe),
+            "market-change",
+            expectedViewportRevision,
+          );
         });
         autoFitRafRef.current = frame;
       } else {
@@ -997,10 +1063,15 @@ export function PriceChart({
       if (replayViewportInitRafRef.current !== null) {
         cancelAnimationFrame(replayViewportInitRafRef.current);
       }
+      const expectedReplayMarketSeriesKey = marketSeriesKey;
       const frame = requestAnimationFrame(() => {
         if (replayViewportInitRafRef.current !== frame) return;
         replayViewportInitRafRef.current = null;
-        if (activeReplaySessionRef.current !== replaySessionId || viewportControllerRef.current !== viewport) return;
+        if (
+          activeReplaySessionRef.current !== replaySessionId ||
+          activeMarketSeriesKeyRef.current !== expectedReplayMarketSeriesKey ||
+          viewportControllerRef.current !== viewport
+        ) return;
         if (viewport) {
           initializeReplaySessionViewport(viewport, candlesRef.current.length);
         }
@@ -1087,8 +1158,34 @@ export function PriceChart({
     [paneIndicators],
   );
   const overlayLegendIndicators = useMemo(() => indicators.filter((i) => !i.separatePane), [indicators]);
+  const activeIndicatorRuntimeScopes = useMemo(
+    () =>
+      new Set(
+        [...overlayIndicators, ...visiblePaneIndicators].map((cfg) =>
+          indicatorRuntimeScopeKey(cfg, indicatorRuntimeContext),
+        ),
+      ),
+    [
+      indicatorRuntimeContext,
+      overlayIndicators,
+      visiblePaneIndicators,
+    ],
+  );
+  const activeIndicatorRuntimeScopesRef = useRef<ReadonlySet<string>>(new Set());
+  activeIndicatorRuntimeScopesRef.current = activeIndicatorRuntimeScopes;
+  useEffect(
+    () => retainIndicatorRuntimeScopes(activeIndicatorRuntimeScopes),
+    [activeIndicatorRuntimeScopes],
+  );
   useEffect(() => {
-    const onRuntimeUpdate = () => setPineRuntimeVersion((value) => value + 1);
+    const onRuntimeUpdate = (scope?: string) => {
+      if (
+        scope == null ||
+        activeIndicatorRuntimeScopesRef.current.has(scope)
+      ) {
+        setPineRuntimeVersion((value) => value + 1);
+      }
+    };
     return subscribeIndicatorRuntimeCache(onRuntimeUpdate);
   }, []);
   useEffect(() => {

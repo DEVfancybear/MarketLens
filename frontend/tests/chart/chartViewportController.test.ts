@@ -101,7 +101,7 @@ test("viewport controller attributes programmatic and user mutations", () => {
   fake.emitUserRange({ from: 21, to: 61 } as LogicalRange);
   assert.equal(controller.snapshot().cause, "user");
   assert.equal(controller.snapshot().programmaticWrites, 1);
-  assert.equal(controller.snapshot().revision, 2);
+  assert.equal(controller.snapshot().revision, 3);
   controller.destroy();
 });
 
@@ -152,6 +152,27 @@ test("viewport reset is one controller transaction", () => {
   assert.equal(controller.snapshot().programmaticWrites, 1);
   assert.equal(fake.resetCalls(), 2);
   assert.equal(fake.priceScaleResetCalls(), 1);
+  controller.destroy();
+});
+
+test("starting user input invalidates a deferred market reset before range notification", () => {
+  const fake = fakeChart();
+  const controller = new ChartViewportController(fake.chart);
+  const expectedRevision = controller.snapshot().revision;
+
+  controller.beginUserInteraction();
+
+  assert.equal(
+    controller.resetIfRevision(
+      { rightOffset: 8, barSpacing: 8, minBarSpacing: 1.5 },
+      "market-change",
+      expectedRevision,
+    ),
+    false,
+  );
+  assert.equal(fake.resetCalls(), 0);
+  assert.equal(controller.snapshot().cause, "user");
+  assert.equal(controller.snapshot().revision, expectedRevision + 1);
   controller.destroy();
 });
 

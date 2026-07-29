@@ -199,8 +199,12 @@ export function ChartLayoutWorkspace({
   useEffect(() => {
     if (typeof window === "undefined") return;
     let restored = false;
+    const marketData = getMarketDataState();
     for (const pane of panes) {
       if (!pane.initialized || !pane.symbol) continue;
+      if (marketData.getCandles(pane.symbol, pane.timeframe).length > 0) {
+        continue;
+      }
       const current = renderedSeriesByPane.current.get(pane.id);
       if (
         current?.source === "live" &&
@@ -236,11 +240,12 @@ export function ChartLayoutWorkspace({
         snapshot.candles.length,
         last?.time ?? "",
       ].join(":");
+      const markerKey = `${pane.id}:${snapshot.symbol}:${snapshot.timeframe}`;
       if (
         typeof window !== "undefined" &&
-        persistedSeriesMarkerByPane.current.get(pane.id) !== marker
+        persistedSeriesMarkerByPane.current.get(markerKey) !== marker
       ) {
-        persistedSeriesMarkerByPane.current.set(pane.id, marker);
+        persistedSeriesMarkerByPane.current.set(markerKey, marker);
         persistPaneLiveSeries(
           window.sessionStorage,
           drawingLayoutId,

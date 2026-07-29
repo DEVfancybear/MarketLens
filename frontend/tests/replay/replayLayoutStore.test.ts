@@ -14,6 +14,7 @@ import {
   replayTracksForBackend,
   replayTracksForLayout,
   setChartLayoutPresetAtom,
+  syncActiveChartPaneAtom,
   updatePaneSelection,
   visibleChartSlots,
   type ChartLayoutPreset,
@@ -136,6 +137,22 @@ test("expanding to multi-chart keeps Current chart Replay until All charts is ex
   assert.equal(store.get(chartPanesAtom)[0]?.symbol, "EURUSD");
   assert.equal(store.get(chartPanesAtom)[2]?.symbol, "XAUUSD");
   assert.equal(store.get(chartPanesAtom)[2]?.timeframe, "1H");
+});
+
+test("syncing an unchanged active pane preserves pane identity", () => {
+  const store = createStore();
+  store.set(chartPanesAtom, updatePaneSelection(createInitialChartPanes(), 0, {
+    symbol: "EURUSD",
+    timeframe: "15m",
+  }));
+  const before = store.get(chartPanesAtom);
+
+  store.set(syncActiveChartPaneAtom, {
+    symbol: " EURUSD ",
+    timeframe: "15m",
+  });
+
+  assert.strictEqual(store.get(chartPanesAtom), before);
 });
 
 test("persisted workspace restores four panes, Replay scope, active slot, and alert owners", () => {

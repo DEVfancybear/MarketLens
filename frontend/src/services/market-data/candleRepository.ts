@@ -268,7 +268,18 @@ export function mergeHistoryIntoCandleRepository(
   for (const candle of current) {
     const outside = candle.time < historyFirst || candle.time > historyLast;
     const formingAtTail = candle.closed === false && candle.time >= historyLast;
-    if (outside || formingAtTail) byTime.set(candle.time, candle);
+    const refreshed = byTime.get(candle.time);
+    // Preserve structural sharing for unchanged overlap. Active MT5 refreshes
+    // replace a small tail repeatedly; retaining value-equal candle objects lets
+    // the chart keep its O(1) latest-bar update path instead of replacing the
+    // complete series every time the forming candle changes.
+    if (
+      outside ||
+      formingAtTail ||
+      (refreshed !== undefined && candlesEqual(candle, refreshed))
+    ) {
+      byTime.set(candle.time, candle);
+    }
   }
   let merged = [...byTime.values()].sort((a, b) => a.time - b.time);
   if (maxCandles && merged.length > maxCandles) {

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { MarketCandle } from "../../src/types";
-import { mergeHistoryWithLiveCandles } from "../../src/services/market-data/candleSeries";
+import {
+  mergeHistoryWithLiveCandles,
+  resolveRealtimeSeriesUpdatePlan,
+} from "../../src/services/market-data/candleSeries";
 import {
   candleAtRepositoryIndex,
   createCandleRepository,
@@ -96,6 +99,41 @@ test("overlapping history keeps live forming tail and matches legacy semantics",
   );
   assert.equal(materializeCandleRepository(merged).at(-1)?.close, 999);
   assert.equal(merged.chunks[0], repository.chunks[0]);
+});
+
+test("value-equal history tail preserves the existing repository and candle references", () => {
+  const repository = createCandleRepository(candles(600));
+  const current = materializeCandleRepository(repository);
+  const refresh = current.slice(-20).map((candle) => ({ ...candle }));
+
+  const merged = mergeHistoryIntoCandleRepository(repository, refresh, 5_000);
+  const next = materializeCandleRepository(merged);
+
+  assert.equal(merged, repository);
+  assert.equal(next, current);
+  for (let index = current.length - refresh.length; index < current.length; index += 1) {
+    assert.equal(next[index], current[index]);
+  }
+});
+
+test("single forming-bar change after a history refresh keeps the realtime update path", () => {
+  const repository = createCandleRepository(candles(600));
+  const current = materializeCandleRepository(repository);
+  const refresh = current.slice(-20).map((candle) => ({ ...candle }));
+  refresh[refresh.length - 1] = {
+    ...refresh[refresh.length - 1],
+    close: refresh[refresh.length - 1].close + 0.05,
+  };
+
+  const next = materializeCandleRepository(
+    mergeHistoryIntoCandleRepository(repository, refresh, 5_000),
+  );
+
+  for (let index = 0; index < current.length - 1; index += 1) {
+    assert.equal(next[index], current[index]);
+  }
+  assert.notEqual(next.at(-1), current.at(-1));
+  assert.equal(resolveRealtimeSeriesUpdatePlan(current, next, true), "update-latest");
 });
 
 test("max-candle trim drops old chunks while retaining the newest range", () => {

@@ -16,6 +16,28 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - Added chart regression coverage for overlapping-timestamp market changes,
   same-market history prepends, and disjoint same-market replacements.
 
+### Fixed - Drag and switch chart responsiveness (2026-07-30)
+
+- Replaced broad market-data subscriptions with per-symbol, per-session, and
+  per-series atoms so an unrelated watchlist tick no longer re-renders every
+  chart pane or scans every quote row.
+- Coalesced crosshair writes, isolated the OHLC HUD, and kept cached candles
+  interactive instead of showing a blocking blur overlay during a warm switch.
+- Invalidated queued viewport RAFs at market boundaries and made deferred
+  market resets revision-safe, so a drag started immediately after a symbol
+  change cannot be overwritten by the previous market's reset.
+- Debounced left-edge history prefetch until the viewport settles, suppressed
+  it during a market reset, and added authoritative key guards plus aborts to
+  superseded history/gap requests.
+- Reused value-equal candle objects during MT5 tail refreshes to preserve the
+  realtime latest-bar update path, cancelled unretained indicator scopes, and
+  filtered runtime notifications to active charts.
+- Prevented same-key subscription reference leaks, redundant pane sync writes,
+  repeated retained-series persistence, and per-tick trade marker recreation.
+- Added regression coverage for selector isolation, idempotent subscriptions,
+  viewport invalidation, warm/cold loading policy, candle structural sharing,
+  and runtime-scope cancellation.
+
 ### Fixed - Desktop top toolbar clipping at narrow widths and browser zoom (2026-07-29)
 
 - Reworked the shared desktop `TopToolbar` density rules so Chart and Trade

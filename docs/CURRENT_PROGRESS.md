@@ -33,7 +33,14 @@
 > milestones below are historical. Current implementation and remaining native
 > venue work are tracked in `TRADE_EXECUTION_ARCHITECTURE.md`.
 
-Last updated: 2026-07-28
+Last updated: 2026-07-30
+
+- Chart drag/symbol-switch stability (2026-07-30): the production chart path
+  now uses granular market-data subscriptions, revision-safe deferred viewport
+  writes, debounced history prefetch, cancellable stale history/indicator work,
+  structural candle sharing for MT5 refreshes, and a non-blocking warm-cache
+  loading policy. The regression suite covers the drag → switch → drag flow's
+  main races; deploy and browser stress verification follow the push.
 
 ## Current Milestone
 

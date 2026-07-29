@@ -11,7 +11,12 @@
  * subscribe / history priming) is driven by MarketDataService from a single
  * bootstrap point added in Steps 10–13.
  */
-import { useMarketDataStore } from '@/store/marketDataStore';
+import { useAtomValue } from 'jotai';
+import {
+  connectionStatusAtom,
+  selectedSymbolAtom,
+  selectedTimeframeAtom,
+} from '@/store/marketDataStore';
 import { useCandles } from './useCandles';
 import { useQuote } from './useQuote';
 import type { ConnectionStatus, MarketCandle, MarketQuote, Timeframe } from '@/types';
@@ -25,9 +30,9 @@ export interface MarketDataFeed {
 }
 
 export function useMarketDataFeed(): MarketDataFeed {
-  const symbol = useMarketDataStore((s) => s.selectedSymbol);
-  const timeframe = useMarketDataStore((s) => s.selectedTimeframe);
-  const status = useMarketDataStore((s) => s.connectionStatus);
+  const symbol = useAtomValue(selectedSymbolAtom);
+  const timeframe = useAtomValue(selectedTimeframeAtom);
+  const status = useAtomValue(connectionStatusAtom);
   const candles = useCandles(symbol, timeframe);
   const quote = useQuote(symbol);
   return { symbol, timeframe, status, candles, quote };

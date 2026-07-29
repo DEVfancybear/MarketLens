@@ -8,7 +8,7 @@
  * atom; each action is a write atom. A compatibility `useMarketDataStore`
  * hook and `getMarketDataState()` for non-React code keep the existing API.
  */
-import { atom, useAtomValue } from "jotai";
+import { atom, useAtomValue, type Atom } from "jotai";
 import { getDefaultStore } from "jotai";
 import {
   subscriptionKey,
@@ -51,6 +51,7 @@ import {
   clearMarketSessionsByProvider,
   mergeMarketSessionStatuses,
 } from "@/services/market-data/mt5SessionStatus";
+import { resolveObservedSymbol } from "@/services/alertSymbols";
 
 /** Keep realtime candle arrays bounded for memory/perf (Step 16). */
 export const MAX_CANDLES_PER_SERIES = 5000;
@@ -167,6 +168,77 @@ export const lastUpdateAtom = atom<number>(0);
 /** Incremented on every data mutation so external subscribers can react. */
 export const marketDataTickAtom = atom<number>(0);
 
+/**
+ * Granular read atoms.
+ *
+ * The compatibility store below intentionally exposes one aggregate object,
+ * but chart/watchlist consumers must not subscribe to that object: every quote
+ * or candle write changes it. These cached derived atoms keep a stable atom
+ * identity per market/symbol and let Jotai suppress notifications when the
+ * selected value keeps the same reference.
+ */
+const marketCandleSeriesAtoms = new Map<string, Atom<MarketCandle[]>>();
+const marketQuoteAtoms = new Map<string, Atom<MarketQuote | undefined>>();
+const marketLastPriceAtoms = new Map<string, Atom<number | undefined>>();
+const marketSessionAtoms = new Map<string, Atom<MarketSessionStatus | undefined>>();
+
+export function marketCandleSeriesAtom(
+  symbol?: string,
+  timeframe?: Timeframe,
+): Atom<MarketCandle[]> {
+  const cacheKey = JSON.stringify([symbol ?? null, timeframe ?? null]);
+  const cached = marketCandleSeriesAtoms.get(cacheKey);
+  if (cached) return cached;
+  const selected = atom((get) => {
+    const selectedSymbol = symbol ?? get(selectedSymbolAtom);
+    const selectedTimeframe = timeframe ?? get(selectedTimeframeAtom);
+    return get(candlesAtom)[subscriptionKey(selectedSymbol, selectedTimeframe)] ?? EMPTY;
+  });
+  marketCandleSeriesAtoms.set(cacheKey, selected);
+  return selected;
+}
+
+export function marketQuoteAtom(symbol: string): Atom<MarketQuote | undefined> {
+  const normalizedSymbol = symbol.trim().toUpperCase();
+  const cached = marketQuoteAtoms.get(normalizedSymbol);
+  if (cached) return cached;
+  const selected = atom((get) => {
+    const quotes = get(quotesAtom);
+    const direct = quotes[normalizedSymbol];
+    if (direct) return direct;
+    const resolved = resolveObservedSymbol(normalizedSymbol, Object.keys(quotes));
+    return resolved ? quotes[resolved] : undefined;
+  });
+  marketQuoteAtoms.set(normalizedSymbol, selected);
+  return selected;
+}
+
+export function marketLastPriceAtom(symbol: string): Atom<number | undefined> {
+  const normalizedSymbol = symbol.trim().toUpperCase();
+  const cached = marketLastPriceAtoms.get(normalizedSymbol);
+  if (cached) return cached;
+  const quoteAtom = marketQuoteAtom(normalizedSymbol);
+  const selected = atom((get) => {
+    const price = get(quoteAtom)?.last;
+    return price !== undefined && Number.isFinite(price) && price > 0
+      ? price
+      : undefined;
+  });
+  marketLastPriceAtoms.set(normalizedSymbol, selected);
+  return selected;
+}
+
+export function marketSessionAtom(
+  symbol: string,
+): Atom<MarketSessionStatus | undefined> {
+  const normalizedSymbol = symbol.trim().toUpperCase();
+  const cached = marketSessionAtoms.get(normalizedSymbol);
+  if (cached) return cached;
+  const selected = atom((get) => get(marketSessionsAtom)[normalizedSymbol]);
+  marketSessionAtoms.set(normalizedSymbol, selected);
+  return selected;
+}
+
 function countSharedChunks(
   previous: CandleRepository | undefined,
   next: CandleRepository,
@@ -276,15 +348,18 @@ export const changeTimeframeAtom = atom(
 export const selectMarketAtom = atom(
   null,
   (get, set, symbol: string, timeframe: Timeframe) => {
-    const store = getDefaultStore();
     const selectedSymbol = get(selectedSymbolAtom);
     const selectedTimeframe = get(selectedTimeframeAtom);
-    if (symbol !== selectedSymbol || timeframe !== selectedTimeframe) {
-      store.set(unsubscribeAtom, selectedSymbol, selectedTimeframe);
+    const sameSelection =
+      symbol === selectedSymbol && timeframe === selectedTimeframe;
+    const key = subscriptionKey(symbol, timeframe);
+    if (sameSelection && (get(subRefsAtom)[key] ?? 0) > 0) return;
+    if (!sameSelection) {
+      set(unsubscribeAtom, selectedSymbol, selectedTimeframe);
       set(selectedSymbolAtom, symbol);
       set(selectedTimeframeAtom, timeframe);
     }
-    store.set(subscribeAtom, { symbol, channels: DEFAULT_CHANNELS, timeframe });
+    set(subscribeAtom, { symbol, channels: DEFAULT_CHANNELS, timeframe });
   },
 );
 

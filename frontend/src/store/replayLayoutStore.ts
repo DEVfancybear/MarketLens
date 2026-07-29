@@ -264,17 +264,29 @@ export const setActiveChartSlotAtom = atom(
 export const syncActiveChartPaneAtom = atom(
   null,
   (get, set, selection: ActiveChartSelection) => {
+    const current = get(chartPanesAtom);
+    const activeSlot = get(activeChartSlotAtom);
+    const activePane = current.find((pane) => pane.slot === activeSlot);
+    const symbol = selection.symbol.trim();
+    if (
+      activePane &&
+      activePane.symbol === symbol &&
+      activePane.timeframe === selection.timeframe &&
+      activePane.initialized === Boolean(symbol)
+    ) {
+      return;
+    }
     const updated = updatePaneSelection(
-      get(chartPanesAtom),
-      get(activeChartSlotAtom),
-      selection,
+      current,
+      activeSlot,
+      { ...selection, symbol },
     );
     set(
       chartPanesAtom,
       initializePanesForPreset(
         updated,
         get(chartLayoutPresetAtom),
-        get(activeChartSlotAtom),
+        activeSlot,
       ),
     );
   },

@@ -99,6 +99,17 @@ export class ChartViewportController {
   beginUserInteraction(): void {
     this.settlingCause = null;
     this.settlingUntil = 0;
+    // Pointer-down can happen before Lightweight Charts emits its first range
+    // notification. Advance the revision immediately so a reset/restore queued
+    // by the previous market cannot overwrite the newly started gesture.
+    this.snapshotValue = {
+      ...this.snapshotValue,
+      revision: this.snapshotValue.revision + 1,
+      cause: "user",
+      logicalRange: cloneRange(
+        this.chart.timeScale().getVisibleLogicalRange(),
+      ),
+    };
   }
 
   setLogicalRange(range: LogicalRangeInput, cause: ChartViewportCause): boolean {
@@ -149,6 +160,16 @@ export class ChartViewportController {
       timeScale.scrollToRealTime();
       resetPriceScalePan(this.chart);
     });
+  }
+
+  /** Apply a deferred reset only while the scheduling viewport is still current. */
+  resetIfRevision(
+    defaults: ChartViewportDefaults,
+    cause: "reset" | "market-change",
+    expectedRevision: number,
+  ): boolean {
+    if (this.snapshotValue.revision !== expectedRevision) return false;
+    return this.reset(defaults, cause);
   }
 
   destroy(): void {

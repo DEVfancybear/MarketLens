@@ -5,11 +5,12 @@
  * Read-only selectors over `marketDataStore.connectionStatus`. Never opens a
  * socket.
  */
-import { useMarketDataStore } from '@/store/marketDataStore';
+import { useAtomValue } from 'jotai';
+import { connectionStatusAtom } from '@/store/marketDataStore';
 import { CONNECTION_STATUS_META, type ConnectionStatus } from '@/types';
 
 export function useConnectionStatus(): ConnectionStatus {
-  return useMarketDataStore((s) => s.connectionStatus);
+  return useAtomValue(connectionStatusAtom);
 }
 
 /** Status + UI metadata (label / colour / emoji dot) for the connection badge. */

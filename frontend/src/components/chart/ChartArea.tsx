@@ -29,6 +29,7 @@ import { RiskPanel } from "@/components/trade/RiskPanel";
 import { Loader2 } from "lucide-react";
 import { fmtPrice } from "@/utils/format";
 import { ChartPerformanceOverlay } from "./ChartPerformanceOverlay";
+import { shouldShowChartLoading } from "./chartLoadingPolicy";
 import {
   createChartBenchmarkCandles,
   createPhase2BenchmarkIndicators,
@@ -43,6 +44,51 @@ import {
 } from "./paneSeriesRetention";
 
 const EMPTY_CANDLES: Candle[] = [];
+
+function ChartHud({
+  symbol,
+  exchange,
+  timeframe,
+  precision,
+  last,
+}: {
+  symbol: string;
+  exchange: string;
+  timeframe: string;
+  precision: number;
+  last?: Candle;
+}) {
+  const crosshair = useAtomValue(crosshairAtom);
+  const legend = crosshair?.candle ?? last;
+  const up = legend ? legend.close >= legend.open : true;
+
+  return (
+    <div className="chart-hud pointer-events-none absolute left-3 top-3 z-10 flex flex-col gap-1.5 rounded-xl border border-terminal-border bg-terminal-panel/82 px-3 py-2 shadow-[0_8px_26px_rgba(0,0,0,.16)] backdrop-blur-md">
+      <div className="flex items-center gap-1.5 text-[10px] leading-none text-ink-muted">
+        <span className="text-[13px] font-bold tracking-[-0.02em] text-ink">{symbol}</span>
+        {exchange && <span>·</span>}
+        {exchange && <span>{exchange}</span>}
+        <span>·</span>
+        <span>{timeframe}</span>
+      </div>
+      {legend && (
+        <div
+          className="flex items-center gap-2 text-[10px] font-medium leading-none"
+          style={{ color: up ? "var(--bull)" : "var(--bear)" }}
+        >
+          <span className="font-medium">O</span>
+          <span className="tabular">{fmtPrice(legend.open, precision)}</span>
+          <span className="font-medium">H</span>
+          <span className="tabular">{fmtPrice(legend.high, precision)}</span>
+          <span className="font-medium">L</span>
+          <span className="tabular">{fmtPrice(legend.low, precision)}</span>
+          <span className="font-medium">C</span>
+          <span className="tabular">{fmtPrice(legend.close, precision)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** Center chart region: price chart, SMC + drawing overlays, indicator panes. */
 export function ChartArea({
@@ -80,7 +126,6 @@ export function ChartArea({
   );
   const loading = useAtomValue(loadingAtom);
   const indicators = useAtomValue(activeIndicatorsAtom);
-  const crosshair = useAtomValue(crosshairAtom);
   const [mainChart, setMainChart] = useState<IChartApi | null>(null);
   const [chartTimeZone, setChartTimeZone] = useState<string | undefined>();
   const [benchmarkCandles, setBenchmarkCandles] = useState<Candle[] | null>(null);
@@ -209,44 +254,27 @@ export function ChartArea({
         : indicators,
     [benchmarkIndicators, benchmarkProfile, indicators],
   );
-  const showLoading = benchmarkCandles
-    ? false
-    : replayOwnsChart
-      ? replay.connection === "connecting" && candles.length === 0
-      : loading;
+  const showLoading = shouldShowChartLoading({
+    benchmark: Boolean(benchmarkCandles),
+    replayOwnsChart,
+    replayConnecting: replay.connection === "connecting",
+    loading,
+    candleCount: displayedCandles.length,
+  });
 
   const last = displayedCandles[displayedCandles.length - 1];
-  const legend = crosshair?.candle ?? last;
-  const up = legend ? legend.close >= legend.open : true;
 
   return (
     <div className="chart-workspace relative isolate flex h-full min-w-0 w-full flex-col overflow-hidden bg-[var(--chart-bg)]">
       <ChartPerformanceOverlay />
       {/* Chart header: symbol · exchange · TF + OHLC row */}
-      <div className="chart-hud pointer-events-none absolute left-3 top-3 z-10 flex flex-col gap-1.5 rounded-xl border border-terminal-border bg-terminal-panel/82 px-3 py-2 shadow-[0_8px_26px_rgba(0,0,0,.16)] backdrop-blur-md">
-        <div className="flex items-center gap-1.5 text-[10px] leading-none text-ink-muted">
-          <span className="text-[13px] font-bold tracking-[-0.02em] text-ink">{symbol}</span>
-          {exchange && <span>·</span>}
-          {exchange && <span>{exchange}</span>}
-          <span>·</span>
-          <span>{timeframe}</span>
-        </div>
-        {legend && (
-          <div
-            className="flex items-center gap-2 text-[10px] font-medium leading-none"
-            style={{ color: up ? "var(--bull)" : "var(--bear)" }}
-          >
-            <span className="font-medium">O</span>
-            <span className="tabular">{fmtPrice(legend.open, precision)}</span>
-            <span className="font-medium">H</span>
-            <span className="tabular">{fmtPrice(legend.high, precision)}</span>
-            <span className="font-medium">L</span>
-            <span className="tabular">{fmtPrice(legend.low, precision)}</span>
-            <span className="font-medium">C</span>
-            <span className="tabular">{fmtPrice(legend.close, precision)}</span>
-          </div>
-        )}
-      </div>
+      <ChartHud
+        symbol={symbol}
+        exchange={exchange}
+        timeframe={timeframe}
+        precision={precision}
+        last={last}
+      />
 
       {/* Current-price marker is rendered inside PriceChart so it can track the price scale. */}
 
