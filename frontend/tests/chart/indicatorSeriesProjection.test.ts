@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  finiteIndicatorSeriesData,
   indicatorSeriesDataForCandles,
   indicatorSeriesDataThroughCutoff,
 } from "../../src/services/indicatorSeriesProjection";
-import type { Candle, IndicatorSeries } from "../../src/types";
+import type { Candle, IndicatorSeries, LinePoint } from "../../src/types";
 
 const candles: Candle[] = [
   { time: 100, open: 1, high: 2, low: 0.5, close: 1.5, volume: 1 },
@@ -13,6 +14,49 @@ const candles: Candle[] = [
 ];
 
 describe("indicator series viewport projection", () => {
+  it("drops null and non-finite runtime points before native chart writes", () => {
+    const valid = { time: 100, value: 70 };
+    const runtimePoints = [
+      valid,
+      { time: 200, value: null },
+      { time: 300, value: Number.NaN },
+      { time: Number.POSITIVE_INFINITY, value: 71 },
+      { time: 400, value: 72 },
+    ] as unknown as LinePoint[];
+
+    assert.deepEqual(finiteIndicatorSeriesData(runtimePoints), [
+      valid,
+      { time: 400, value: 72 },
+    ]);
+  });
+
+  it("preserves valid indicator data by reference", () => {
+    const points: LinePoint[] = [
+      { time: 100, value: 70 },
+      { time: 200, value: 72 },
+    ];
+
+    assert.equal(finiteIndicatorSeriesData(points), points);
+  });
+
+  it("sanitizes dynamic baseline data on the common projection path", () => {
+    const series: IndicatorSeries = {
+      key: "Warm-up fill",
+      color: "rgba(255,0,255,0.1)",
+      type: "baselineFill",
+      data: [
+        { time: 100, value: 70 },
+        { time: 200, value: null },
+        { time: 300, value: 72 },
+      ] as unknown as LinePoint[],
+    };
+
+    assert.deepEqual(indicatorSeriesDataForCandles(series, candles), [
+      { time: 100, value: 70 },
+      { time: 300, value: 72 },
+    ]);
+  });
+
   it("extends marked reference lines to the current candle range", () => {
     const series: IndicatorSeries = {
       key: "High",

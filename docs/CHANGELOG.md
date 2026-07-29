@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Baseline indicator crash during rapid symbol switches (2026-07-30)
+
+- Sanitized indicator runtime points at the common projection boundary before
+  any Lightweight Charts Line, Histogram, or Baseline series write.
+- Pine warm-up samples with `null`, `NaN`, infinite values, or invalid times are
+  now dropped instead of reaching `BaselineSeries.setData()` and crashing the
+  production page during a hot symbol switch.
+- Preserved valid arrays by reference for the normal realtime path and added
+  regression coverage for malformed runtime payloads and dynamic baseline fills.
+
 ### Fixed - Shared current-price marker tone on desktop and mobile (2026-07-30)
 
 - Changed the shared `PriceChart` marker tone to follow the live price relative

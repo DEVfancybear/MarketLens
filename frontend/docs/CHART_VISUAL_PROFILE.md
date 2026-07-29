@@ -205,6 +205,14 @@ Do not solve pane gaps by adding fake market candles, changing the main chart
 right offset, or stretching dynamic plots; only series marked
 `extendToVisibleRange` should receive this projection.
 
+Indicator runtime payloads cross a JSON boundary. Pine warm-up values may
+therefore arrive as `null` even though `LinePoint.value` is statically typed as a
+number. `finiteIndicatorSeriesData()` is the common native-chart boundary: it
+drops points with non-finite time/value before Line, Histogram, or Baseline
+writes. Keep this guard ahead of viewport and Replay-cutoff projection so rapid
+symbol changes cannot feed a transient null into Lightweight Charts. The helper
+must preserve the original array reference when every point is valid.
+
 ## 8. Verification
 
 Run:

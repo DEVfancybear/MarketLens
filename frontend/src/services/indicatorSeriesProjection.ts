@@ -6,6 +6,30 @@ export interface IndicatorLogicalRange {
 }
 
 /**
+ * Runtime indicator payloads cross a JSON boundary, where Pine warm-up values
+ * can arrive as `null` even though the frontend type is numeric. Lightweight
+ * Charts throws synchronously when any native series receives a non-finite
+ * time/value, so sanitize once before viewport/cutoff projection.
+ *
+ * Preserve the original array when every point is valid; realtime indicators
+ * depend on referential stability to avoid unnecessary projection work.
+ */
+export function finiteIndicatorSeriesData(
+  points: readonly LinePoint[],
+): LinePoint[] {
+  let finite: LinePoint[] | null = null;
+  for (let index = 0; index < points.length; index++) {
+    const point = points[index];
+    if (Number.isFinite(point.time) && Number.isFinite(point.value)) {
+      finite?.push(point);
+      continue;
+    }
+    finite ??= points.slice(0, index);
+  }
+  return finite ?? (points as LinePoint[]);
+}
+
+/**
  * Keep indicator geometry inside a Replay data boundary. Object indicators
  * commonly encode a right extension as a future point; when that happens we
  * carry the last known value to the cutoff rather than allowing the extension
@@ -70,10 +94,11 @@ export function indicatorSeriesDataForCandles(
   candles: readonly Candle[],
   visibleRange?: IndicatorLogicalRange | null,
 ): LinePoint[] {
-  if (!series.extendToVisibleRange) return series.data;
+  const data = finiteIndicatorSeriesData(series.data);
+  if (!series.extendToVisibleRange) return data;
   if (candles.length === 0) return [];
 
-  const point = lastFinitePoint(series.data);
+  const point = lastFinitePoint(data);
   if (!point) return [];
 
   const fromIndex = Math.max(0, Math.floor(visibleRange?.from ?? 0));
