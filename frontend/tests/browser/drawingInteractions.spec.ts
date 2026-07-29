@@ -819,6 +819,36 @@ test("compact one-click Long position moves from the overlapping entry handles w
   expect(after[2].price - after[0].price).toBeCloseTo(beforeGeometry.stopOffset, 10);
 });
 
+test("placing Long and Short positions keeps Chart open and explains the prepared Trade ticket", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const plans = [
+    { name: "Long position", tool: "long", title: "Long ticket prepared", x: 0.32 },
+    { name: "Short position", tool: "short", title: "Short ticket prepared", x: 0.62 },
+  ] as const;
+
+  for (const [index, plan] of plans.entries()) {
+    await page.getByRole("button", { name: "Long position", exact: true }).first().click();
+    await page.getByRole("button", { name: new RegExp(`^${plan.name}\\b`) }).last().click();
+    await page.mouse.click(
+      pane.x + pane.width * plan.x,
+      pane.y + pane.height * 0.5,
+    );
+
+    await expect.poll(async () => (await drawingSnapshot(page)).drawings[index]?.tool)
+      .toBe(plan.tool);
+    await expect(page.getByRole("button", { name: "Chart", exact: true }))
+      .toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("button", { name: "Trade", exact: true }))
+      .not.toHaveAttribute("aria-current", "page");
+
+    const toast = page.locator("[data-toast]").filter({ hasText: plan.title });
+    await expect(toast).toBeVisible();
+    await expect(toast).toContainText("No order was submitted.");
+    await expect(toast).toContainText("open Trade when you’re ready");
+  }
+});
+
 test("one-click Long position stays visible near the pane right and top edges", async ({ page }) => {
   await page.evaluate(() => window.__chartInteractionTest!.setBarSpacing(1.5));
   await expect.poll(async () =>

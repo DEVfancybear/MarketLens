@@ -4,6 +4,16 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Position drawings keep the Chart workspace open (2026-07-29)
+
+- Long/Short Position placement still prepares the Trade ticket but no longer
+  switches the desktop workspace away from Chart.
+- Added a localized informational toast that identifies the prepared side,
+  confirms that no order was submitted, and directs the user to open Trade
+  when ready.
+- Added browser coverage for retained Chart navigation, position creation, and
+  the prepared-ticket notification.
+
 ### Added - Shared codebase knowledge graph for coding agents (2026-07-29)
 
 - Added a mandatory graph-first startup gate for coding agents: resolve the

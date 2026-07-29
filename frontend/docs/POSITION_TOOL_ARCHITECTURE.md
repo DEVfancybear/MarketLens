@@ -1,6 +1,6 @@
 # Long / Short Position Tool Architecture
 
-Last updated: 2026-07-11
+Last updated: 2026-07-29
 
 This document defines the shared contract for the TradingView-style Long and
 Short Position drawing tools.
@@ -114,17 +114,18 @@ immediate order. After the one-click drawing is expanded into entry, target, and
 stop points, `addDrawingAtom` also builds an `OrderPrefill` through
 `positionTradePrefill.ts` and writes it to `setOrderPrefillAtom`.
 
-The Trade tab reads `orderPrefillAtom`, so the ticket is filled even when the
-Trade panel was not mounted at placement time. Do not depend on a transient
-event bus message for this path; switching the bottom panel to `Trade` happens
-after the atom is written, and the newly mounted ticket consumes the latest
-versioned prefill.
+The Trade workspace reads `orderPrefillAtom`, so the ticket is filled even when
+Trade was not mounted at placement time. Placing a visual position must keep the
+user on Chart; it must not mutate `desktopWorkspaceAtom`. A localized
+informational toast confirms that the ticket was prepared, explicitly says no
+order was submitted, and tells the user to open Trade when ready. The newly
+mounted ticket then consumes the latest versioned prefill.
 
 The prefill payload includes the source `drawingId`. This matters when multiple
 Long/Short Positions are on the chart:
 
-- Creating a new position makes that new drawing the ticket source and opens the
-  `Trade` tab.
+- Creating a new position makes that new drawing the ticket source, keeps Chart
+  visible, and shows the prepared-ticket notification.
 - Selecting a different Long/Short Position refreshes the ticket from that
   selected drawing without creating an order.
 - Dragging or editing entry, target, stop, or risk refreshes the ticket only for

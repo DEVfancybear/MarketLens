@@ -70,7 +70,10 @@ import {
 import { resolveCandleBarIntervalSeconds } from "@/components/chart/drawing/coordinates/drawingCoordinates";
 import { orderPrefillAtom, setOrderPrefillAtom } from "./tradeStore";
 import { mt5SymbolInfoAtom } from "./mt5Store";
-import { logAtom, setDesktopWorkspaceAtom } from "./uiStore";
+import { logAtom } from "./uiStore";
+import { pushToastAtom } from "./toastStore";
+import { appLanguageAtom } from "./localeStore";
+import { translate } from "@/i18n/localization";
 import { backendSessionAtom } from "./authStore";
 import {
   decodeDrawingList,
@@ -1136,7 +1139,17 @@ export const addDrawingAtom = atom(
     });
     if (prefill) {
       set(setOrderPrefillAtom, prefill);
-      set(setDesktopWorkspaceAtom, "trade");
+      const language = _get(appLanguageAtom);
+      const sideLabel = translate(
+        language,
+        positionSide === "long" ? "position.side.long" : "position.side.short",
+      );
+      set(pushToastAtom, {
+        title: translate(language, "position.prefill.title", { side: sideLabel }),
+        message: translate(language, "position.prefill.message"),
+        variant: "info",
+        duration: 7000,
+      });
       set(
         logAtom,
         "info",
