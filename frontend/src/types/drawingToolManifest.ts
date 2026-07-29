@@ -366,7 +366,11 @@ export const DRAWING_TOOL_MANIFEST = Object.freeze([
   tool("long", "Long position", "positions", "long", "one-point", 1, { shortcuts: [{ key: "8", shiftKey: true }], settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution", settingsProfile: "position", positionSide: "long", viewportCulling: "always-render", coordinateLabels: ["Entry", "Target", "Stop"], alertProjection: "position-levels" }),
   tool("short", "Short position", "positions", "short", "one-point", 1, { shortcuts: [{ key: "9", shiftKey: true }], settingsOverlay: "position-dialog", lifecycleExtension: "position-resolution", settingsProfile: "position", positionSide: "short", viewportCulling: "always-render", coordinateLabels: ["Entry", "Target", "Stop"], alertProjection: "position-levels" }),
   tool("text", "Text", "annotations", "text", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000516983-text-drawing-tool/"], shortcuts: [{ key: "6", shiftKey: true }], styleFamily: "text", overlayExtension: "text-editor" }),
-  tool("emoji", "Emoji", "icons", "emoji", "one-point", 1, { styleFamily: "text" }),
+  tool("emoji", "Emoji", "icons", "emoji", "one-point", 1, {
+    officialDocs: ["https://www.tradingview.com/support/solutions/43000662396-how-to-chart-with-emojis/"],
+    styleFamily: "text",
+    defaultProperties: { lineWidth: 1.5, text: "😊", fontSize: 32 },
+  }),
   tool("note", "Note", "annotations", "text", "one-point", 1, { officialDocs: ["https://www.tradingview.com/support/solutions/43000737571-note-drawing-tool/"], rollout: "phase8-wave-a", styleFamily: "text", overlayExtension: "text-editor" }),
   tool("priceNote", "Price note", "annotations", "text", "two-point", 2, { rollout: "phase8-wave-a", styleFamily: "text", selectionTextEditor: "line-midpoint", angleConstraint: "45-degree", settingsFeatures: ["line", "text", "coordinates", "visibility", "templates"], alertProjection: "point-price" }),
   tool("pin", "Pin", "annotations", "pin", "one-point", 1, { rollout: "phase8-wave-a", styleFamily: "text", overlayExtension: "text-editor" }),

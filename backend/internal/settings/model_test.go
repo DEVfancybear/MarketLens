@@ -47,6 +47,48 @@ func TestApplyPatchRejectsNonObjectSections(t *testing.T) {
 	}
 }
 
+func TestApplyPatchStoresEmojiPickerStateInChartSettings(t *testing.T) {
+	base := EmptyDocument()
+	patchChart := raw(`{
+		"drawingToolPreferences": {
+			"version": 1,
+			"toolDefaults": {"emoji": {"text": "🐂📈", "fontSize": 36}},
+			"emojiSelection": {"kind": "sticker", "value": "🐂📈"},
+			"emojiRecents": [
+				{"kind": "sticker", "value": "🐂📈"},
+				{"kind": "emoji", "value": "😊"}
+			]
+		}
+	}`)
+
+	got, err := ApplyPatch(base, Patch{Chart: &patchChart})
+	if err != nil {
+		t.Fatalf("ApplyPatch: %v", err)
+	}
+
+	chart := object(t, got.Chart)
+	preferences, ok := chart["drawingToolPreferences"].(map[string]any)
+	if !ok {
+		t.Fatalf("drawingToolPreferences should be an object, got %T", chart["drawingToolPreferences"])
+	}
+	selection, ok := preferences["emojiSelection"].(map[string]any)
+	if !ok || selection["kind"] != "sticker" || selection["value"] != "🐂📈" {
+		t.Fatalf("emoji selection should survive backend merge, got %#v", preferences["emojiSelection"])
+	}
+	recents, ok := preferences["emojiRecents"].([]any)
+	if !ok || len(recents) != 2 {
+		t.Fatalf("emoji recents should survive backend merge, got %#v", preferences["emojiRecents"])
+	}
+	defaults, ok := preferences["toolDefaults"].(map[string]any)
+	if !ok {
+		t.Fatalf("toolDefaults should be an object, got %T", preferences["toolDefaults"])
+	}
+	emoji, ok := defaults["emoji"].(map[string]any)
+	if !ok || emoji["text"] != "🐂📈" || emoji["fontSize"] != float64(36) {
+		t.Fatalf("emoji defaults should survive backend merge, got %#v", defaults["emoji"])
+	}
+}
+
 func TestEmptyDocumentUsesCollapsedBottomAndDisabledSMC(t *testing.T) {
 	doc := EmptyDocument()
 
@@ -72,6 +114,22 @@ func TestEmptyDocumentUsesCollapsedBottomAndDisabledSMC(t *testing.T) {
 	drawing, ok := chart["drawingToolPreferences"].(map[string]any)
 	if !ok || drawing["magnetEnabled"] != false || drawing["magnetMode"] != "weak" {
 		t.Fatalf("drawing preferences should have stable defaults, got %#v", chart)
+	}
+	selection, ok := drawing["emojiSelection"].(map[string]any)
+	if !ok || selection["kind"] != "emoji" || selection["value"] != "😊" {
+		t.Fatalf("drawing preferences should include a stable emoji selection, got %#v", drawing)
+	}
+	recents, ok := drawing["emojiRecents"].([]any)
+	if !ok || len(recents) != 0 {
+		t.Fatalf("drawing preferences should start with no emoji recents, got %#v", drawing)
+	}
+	defaults, ok := drawing["toolDefaults"].(map[string]any)
+	if !ok {
+		t.Fatalf("drawing preferences should include tool defaults, got %#v", drawing)
+	}
+	emoji, ok := defaults["emoji"].(map[string]any)
+	if !ok || emoji["text"] != "😊" || emoji["fontSize"] != float64(32) {
+		t.Fatalf("drawing preferences should include emoji creation defaults, got %#v", drawing)
 	}
 }
 

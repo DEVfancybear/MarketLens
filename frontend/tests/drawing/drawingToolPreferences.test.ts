@@ -7,6 +7,7 @@ import {
   pickDrawingToolDefaults,
   resolveDrawingCreationDefaults,
 } from "../../src/components/chart/drawing/settings/drawingToolPreferences";
+import { DEFAULT_EMOJI_SELECTION } from "../../src/types/emojiCatalog";
 
 test("tool defaults retain configurable fields but never object state or geometry", () => {
   const drawing: Drawing = {
@@ -138,6 +139,8 @@ test("preference decoder rejects unknown versions, tools, and unsafe fields", ()
     magnetMode: "weak",
     snapToIndicators: false,
     toolDefaults: {},
+    emojiSelection: DEFAULT_EMOJI_SELECTION,
+    emojiRecents: [],
   });
 
   const decoded = decodeDrawingToolPreferences({
@@ -165,6 +168,69 @@ test("preference decoder rejects unknown versions, tools, and unsafe fields", ()
     lineWidth: 2,
   });
   assert.equal((decoded.toolDefaults as Record<string, unknown>).unknownTool, undefined);
+});
+
+test("emoji selection is a safe synced default while ordinary drawing text stays object-specific", () => {
+  const emoji: Drawing = {
+    id: "emoji-1",
+    tool: "emoji",
+    color: "#2962ff",
+    lineWidth: 1.5,
+    text: "🐂📈",
+    fontSize: 34,
+    points: [{ time: 10, price: 20 }],
+  };
+  const emojiDefaults = pickDrawingToolDefaults(emoji);
+  assert.equal(emojiDefaults.text, "🐂📈");
+  assert.equal(emojiDefaults.fontSize, 34);
+  assert.equal(emojiDefaults.points, undefined);
+
+  const resolved = resolveDrawingCreationDefaults(
+    "emoji",
+    { text: "◆︎", fontSize: 28 },
+    "#089981",
+  );
+  assert.equal(resolved.text, "◆︎");
+  assert.equal(resolved.fontSize, 28);
+  assert.equal(resolved.color, "#089981");
+
+  const rectangle = resolveDrawingCreationDefaults(
+    "rectangle",
+    { text: "must not become a default" },
+    "#2962ff",
+  );
+  assert.equal(rectangle.text, undefined);
+});
+
+test("preference decoder validates backend-synced emoji selection and recent history", () => {
+  const decoded = decodeDrawingToolPreferences({
+    version: 1,
+    keepDrawing: false,
+    magnetEnabled: false,
+    magnetMode: "weak",
+    snapToIndicators: false,
+    toolDefaults: {
+      emoji: { text: "🐂📈", fontSize: 36 },
+    },
+    emojiSelection: { kind: "sticker", value: "🐂📈" },
+    emojiRecents: [
+      { kind: "sticker", value: "🐂📈" },
+      { kind: "sticker", value: "🐂📈" },
+      { kind: "icon", value: "not-in-catalog" },
+      { kind: "emoji", value: "😊" },
+    ],
+  });
+
+  assert.deepEqual(decoded.emojiSelection, {
+    kind: "sticker",
+    value: "🐂📈",
+  });
+  assert.deepEqual(decoded.emojiRecents, [
+    { kind: "sticker", value: "🐂📈" },
+    { kind: "emoji", value: "😊" },
+  ]);
+  assert.equal(decoded.toolDefaults.emoji?.text, "🐂📈");
+  assert.equal(decoded.toolDefaults.emoji?.fontSize, 36);
 });
 
 test("legacy indicator magnet preference migrates to an independent source toggle", () => {

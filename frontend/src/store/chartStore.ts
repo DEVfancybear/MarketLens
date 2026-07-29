@@ -98,6 +98,11 @@ import {
   type DrawingMagnetMode,
 } from "@/components/chart/drawing/settings/drawingToolPreferences";
 import {
+  normalizeEmojiRecents,
+  pushEmojiRecent,
+  type EmojiPickerSelection,
+} from "@/types/emojiCatalog";
+import {
   CHART_TIME_ZONE_STORAGE_KEY,
   EXCHANGE_TIME_ZONE_ID,
   isSupportedChartTimeZone,
@@ -1025,6 +1030,28 @@ export const setDrawingSnapToIndicatorsAtom = atom(null, (_get, set, enabled: bo
   };
   commitDrawingToolPreferences(_get, set, next);
 });
+
+export const selectEmojiPickerItemAtom = atom(
+  null,
+  (_get, set, requested: EmojiPickerSelection) => {
+    const selection = normalizeEmojiRecents([requested])[0];
+    if (!selection) return;
+    const current = _get(drawingToolPreferencesAtom);
+    const next: DrawingToolPreferences = {
+      ...current,
+      toolDefaults: {
+        ...current.toolDefaults,
+        emoji: {
+          ...current.toolDefaults.emoji,
+          text: selection.value,
+        },
+      },
+      emojiSelection: selection,
+      emojiRecents: pushEmojiRecent(current.emojiRecents, selection),
+    };
+    commitDrawingToolPreferences(_get, set, next);
+  },
+);
 
 export const saveDrawingToolDefaultsAtom = atom(null, (_get, set, drawing: Drawing) => {
   const definition = getDrawingToolManifestEntry(drawing.tool);

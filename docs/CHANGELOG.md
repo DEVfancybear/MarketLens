@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - TradingView-style emoji, sticker, and icon picker (2026-07-29)
+
+- Replaced the single empty Icons action with a TradingView-style picker:
+  categorized emojis, trading stickers, monochrome symbols, recently used
+  items, and bottom tabs for **Emojis**, **Stickers**, and **Icons**.
+- The selected item now becomes the next Emoji drawing default, including
+  centered rendering and hit-testing for multi-glyph trading stickers.
+- Stored the active selection, bounded recent history, and Emoji tool defaults
+  in backend-synced chart settings, with backend defaults and deep-merge
+  regression coverage for cross-device persistence.
+
 ### Added - Clear all active alerts (2026-07-29)
 
 - Added a localized **Clear all** action to the active Alert Center section.

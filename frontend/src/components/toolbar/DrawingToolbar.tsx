@@ -25,6 +25,7 @@ import {
   keepDrawingModeAtom,
   setKeepDrawingModeAtom,
   drawingToolPreferencesAtom,
+  selectEmojiPickerItemAtom,
   setDrawingMagnetEnabledAtom,
   setDrawingMagnetModeAtom,
   setDrawingSnapToIndicatorsAtom,
@@ -45,6 +46,7 @@ import {
 } from "@/types/drawingToolManifest";
 import { ColorPickerPopover } from "@/components/ui/ColorPicker";
 import { useI18n } from "@/hooks/useI18n";
+import { EmojiPickerPopover } from "@/components/toolbar/EmojiPickerPopover";
 
 // ---- Tool groups (TradingView pattern) ----
 
@@ -122,6 +124,7 @@ function useLastUsed(): Record<string, DrawingTool> {
 
 export function DrawingToolbar() {
   const {
+    language,
     t: tr,
     drawingToolName,
     drawingGroupName,
@@ -137,6 +140,7 @@ export function DrawingToolbar() {
   const keepDrawing = useAtomValue(keepDrawingModeAtom);
   const setKeepDrawing = useSetAtom(setKeepDrawingModeAtom);
   const drawingPreferences = useAtomValue(drawingToolPreferencesAtom);
+  const selectEmojiItem = useSetAtom(selectEmojiPickerItemAtom);
   const setMagnetEnabled = useSetAtom(setDrawingMagnetEnabledAtom);
   const setMagnetMode = useSetAtom(setDrawingMagnetModeAtom);
   const setSnapToIndicators = useSetAtom(setDrawingSnapToIndicatorsAtom);
@@ -242,6 +246,11 @@ export function DrawingToolbar() {
                   Math.min(rect.top, window.innerHeight - 248),
                 );
                 const maxHeight = Math.max(240, window.innerHeight - top - 8);
+                const isIconPicker = group.id === "icons";
+                const pickerWidth = Math.max(
+                  300,
+                  Math.min(360, window.innerWidth - rect.right - 12),
+                );
                 return createPortal(
                   <>
                     <div
@@ -255,10 +264,36 @@ export function DrawingToolbar() {
                     />
                     <div
                       data-chart-ui
-                       className="fixed z-50 w-52 overflow-y-auto rounded-xl border border-terminal-border-strong bg-terminal-raised py-1.5 shadow-terminal backdrop-blur-xl"
-                      style={{ left: rect.right + 4, top, maxHeight }}
+                      className={cn(
+                        "fixed z-50 rounded-xl border border-terminal-border-strong bg-terminal-raised shadow-terminal backdrop-blur-xl",
+                        isIconPicker
+                          ? "overflow-hidden"
+                          : "w-52 overflow-y-auto py-1.5",
+                      )}
+                      style={{
+                        left: rect.right + 4,
+                        top,
+                        maxHeight,
+                        ...(isIconPicker
+                          ? {
+                              width: pickerWidth,
+                              height: Math.min(680, maxHeight),
+                            }
+                          : {}),
+                      }}
                     >
-                      {group.tools.map((t, ti) => {
+                      {isIconPicker ? (
+                        <EmojiPickerPopover
+                          language={language}
+                          selection={drawingPreferences.emojiSelection}
+                          recents={drawingPreferences.emojiRecents}
+                          onSelect={(selection) => {
+                            selectEmojiItem(selection);
+                            setActiveTool("emoji");
+                            setOpenGroup(null);
+                          }}
+                        />
+                      ) : group.tools.map((t, ti) => {
                         const showHeader =
                           t.section &&
                           t.section !== group.tools[ti - 1]?.section;
