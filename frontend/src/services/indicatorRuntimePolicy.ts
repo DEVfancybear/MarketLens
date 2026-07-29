@@ -16,6 +16,7 @@ export interface IndicatorRuntimeContext {
 }
 
 const liveHistoryVersions = new Map<string, number>();
+const candleSignatureCache = new WeakMap<readonly Candle[], string>();
 
 function liveHistoryKey(symbol: string, timeframe: Timeframe): string {
   return `${symbol.trim().toUpperCase()}:${timeframe}`;
@@ -85,9 +86,14 @@ export function indicatorRuntimeHash(input: string): string {
 }
 
 export function indicatorCandleSignature(candles: readonly Candle[]): string {
+  const cached = candleSignatureCache.get(candles);
+  if (cached) return cached;
   const first = candles[0];
   const last = candles[candles.length - 1];
-  if (!first || !last) return "empty";
+  if (!first || !last) {
+    candleSignatureCache.set(candles, "empty");
+    return "empty";
+  }
   let contentHash = 2166136261;
   for (const candle of candles) {
     for (const value of [
@@ -105,12 +111,14 @@ export function indicatorCandleSignature(candles: readonly Candle[]): string {
       }
     }
   }
-  return [
+  const signature = [
     candles.length,
     first.time,
     last.time,
     (contentHash >>> 0).toString(36),
   ].join(":");
+  candleSignatureCache.set(candles, signature);
+  return signature;
 }
 
 export function indicatorRuntimeScopeKey(

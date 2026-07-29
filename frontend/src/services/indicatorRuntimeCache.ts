@@ -3,6 +3,10 @@ import { computeIndicatorRuntime } from "@/services/api/resources/indicatorRunti
 import { loadIndicatorDefinition } from "@/services/indicatorDefinitions";
 import { getHistoricalDataService } from "@/services/market-data/HistoricalDataService";
 import {
+  LatestPerScopeScheduler,
+  ScopedLruCache,
+} from "@/services/indicatorRuntimeScheduler";
+import {
   indicatorRuntimeCacheKey,
   indicatorRuntimeScopeKey,
   canUseLatestIndicatorRuntimeResult,
@@ -17,10 +21,13 @@ type Listener = () => void;
 const MAX_RUNTIME_CANDLES = 5_000;
 const MAX_ENTRIES = 64;
 const MAX_HISTORY_CONTEXT_ENTRIES = 24;
+const MAX_CONCURRENT_RUNTIME_REQUESTS = 4;
+const MAX_LIVE_RESULTS_PER_SCOPE = 1;
+const MAX_REPLAY_RESULTS_PER_SCOPE = 4;
 const FAILURE_RETRY_MS = 15_000;
 const MAX_OBJECT_SEGMENTS_PER_HANDLE = 3;
 
-const cache = new Map<string, IndicatorResult>();
+const cache = new ScopedLruCache<IndicatorResult>(MAX_ENTRIES);
 const inflight = new Map<string, Promise<void>>();
 const failedAt = new Map<string, number>();
 const historyContextCache = new Map<string, Promise<Candle[]>>();
@@ -31,9 +38,24 @@ interface LatestRuntimeResult {
 }
 
 const latestByScope = new Map<string, LatestRuntimeResult>();
-const latestRequestByScope = new Map<string, string>();
+interface PendingRuntimeRequest {
+  config: IndicatorConfig;
+  candles: readonly Candle[];
+  context?: IndicatorRuntimeContext;
+  runtimeKey: string;
+  scope: string;
+  requestGeneration: number;
+}
+
+const scheduledKeys = new Set<string>();
+const abortControllers = new Map<string, AbortController>();
 const listeners = new Set<Listener>();
 let generation = 0;
+const runtimeScheduler = new LatestPerScopeScheduler<PendingRuntimeRequest>({
+  maxConcurrent: MAX_CONCURRENT_RUNTIME_REQUESTS,
+  run: executeRuntimeRequest,
+  onSettled: notify,
+});
 
 export type { IndicatorRuntimeContext } from "@/services/indicatorRuntimePolicy";
 
@@ -41,18 +63,18 @@ function notify() {
   for (const listener of listeners) listener();
 }
 
-function rememberFailure(cacheKey: string, requestGeneration: number) {
+function rememberFailure(scope: string, requestGeneration: number) {
   const timestamp = Date.now();
-  failedAt.delete(cacheKey);
-  failedAt.set(cacheKey, timestamp);
+  failedAt.delete(scope);
+  failedAt.set(scope, timestamp);
   while (failedAt.size > MAX_ENTRIES) {
     const oldest = failedAt.keys().next().value as string | undefined;
     if (!oldest) break;
     failedAt.delete(oldest);
   }
   globalThis.setTimeout(() => {
-    if (requestGeneration !== generation || failedAt.get(cacheKey) !== timestamp) return;
-    failedAt.delete(cacheKey);
+    if (requestGeneration !== generation || failedAt.get(scope) !== timestamp) return;
+    failedAt.delete(scope);
     notify();
   }, FAILURE_RETRY_MS);
 }
@@ -64,7 +86,6 @@ function touchResult<T>(target: Map<string, T>, key: string, result: T) {
     const oldest = target.keys().next().value as string | undefined;
     if (!oldest) break;
     target.delete(oldest);
-    if (target === latestByScope) latestRequestByScope.delete(oldest);
   }
 }
 
@@ -80,6 +101,15 @@ function runtimeCandles(candles: readonly Candle[]): Candle[] {
   return candles.length > MAX_RUNTIME_CANDLES
     ? [...candles.slice(-MAX_RUNTIME_CANDLES)]
     : [...candles];
+}
+
+function resultEntriesForScope(context?: IndicatorRuntimeContext): number {
+  const isReplay =
+    normalizeReplaySessionId(context?.replaySessionId) != null ||
+    normalizeReplayCutoff(context?.replayCutoff) != null;
+  return isReplay
+    ? MAX_REPLAY_RESULTS_PER_SCOPE
+    : MAX_LIVE_RESULTS_PER_SCOPE;
 }
 
 function historyBarsForTimeframe(timeframe: Timeframe | undefined): number {
@@ -278,7 +308,7 @@ export function getCachedIndicatorRuntimeResult(
   candles: readonly Candle[],
   context?: IndicatorRuntimeContext,
 ): IndicatorResult | null {
-  const exact = readResult(cache, indicatorRuntimeCacheKey(config, candles, context));
+  const exact = cache.get(indicatorRuntimeCacheKey(config, candles, context));
   if (exact) return exact;
   const latest = readResult(latestByScope, indicatorRuntimeScopeKey(config, context));
   if (!latest || !canUseLatestIndicatorRuntimeResult(context, latest)) return null;
@@ -311,52 +341,100 @@ export function ensureIndicatorRuntimeResult(
   ) {
     return;
   }
-  const runtimeKey = indicatorRuntimeCacheKey(config, candles, context);
-  if (cache.has(runtimeKey) || inflight.has(runtimeKey)) return;
-  const lastFailure = failedAt.get(runtimeKey);
-  if (lastFailure != null && Date.now() - lastFailure < FAILURE_RETRY_MS) return;
-  failedAt.delete(runtimeKey);
-
   const scope = indicatorRuntimeScopeKey(config, context);
+  const lastFailure = failedAt.get(scope);
+  if (lastFailure != null && Date.now() - lastFailure < FAILURE_RETRY_MS) return;
+  failedAt.delete(scope);
+
+  const runtimeKey = indicatorRuntimeCacheKey(config, candles, context);
+  if (cache.has(runtimeKey) || scheduledKeys.has(runtimeKey) || inflight.has(runtimeKey)) return;
   const requestGeneration = generation;
-  latestRequestByScope.set(scope, runtimeKey);
+  const request: PendingRuntimeRequest = {
+    config,
+    candles,
+    context,
+    runtimeKey,
+    scope,
+    requestGeneration,
+  };
+  scheduledKeys.add(runtimeKey);
+  const replaced = runtimeScheduler.enqueue(scope, request);
+  if (replaced) scheduledKeys.delete(replaced.runtimeKey);
+}
+
+function executeRuntimeRequest(request: PendingRuntimeRequest): Promise<void> {
+  const {
+    config,
+    candles,
+    context,
+    runtimeKey,
+    scope,
+    requestGeneration,
+  } = request;
+  if (requestGeneration !== generation) {
+    scheduledKeys.delete(runtimeKey);
+    return Promise.resolve();
+  }
+
+  const controller = new AbortController();
+  abortControllers.set(runtimeKey, controller);
   let promise: Promise<void>;
   promise = resolveRuntimeCandles(config, candles, context)
-    .then((resolved) => computeIndicatorRuntime(config, runtimeCandles(resolved), context))
+    .then((resolved) =>
+      computeIndicatorRuntime(
+        config,
+        runtimeCandles(resolved),
+        context,
+        controller.signal,
+      ),
+    )
     .then((response) => {
       if (requestGeneration !== generation) return;
       if (response.errors.length === 0) {
         const result = limitObjectSegments(response.result);
-        failedAt.delete(runtimeKey);
-        touchResult(cache, runtimeKey, result);
-        if (latestRequestByScope.get(scope) === runtimeKey) {
-          touchResult(latestByScope, scope, {
-            result,
-            replaySessionId: normalizeReplaySessionId(context?.replaySessionId),
-            replayCutoff: normalizeReplayCutoff(context?.replayCutoff),
-          });
-        }
+        failedAt.delete(scope);
+        cache.set(
+          runtimeKey,
+          scope,
+          result,
+          resultEntriesForScope(context),
+        );
+        // Requests for a scope are serialized. An older live result is a safe
+        // temporary fallback while the newest pending candle snapshot runs;
+        // Replay reads still pass through the causal cutoff guard below.
+        touchResult(latestByScope, scope, {
+          result,
+          replaySessionId: normalizeReplaySessionId(context?.replaySessionId),
+          replayCutoff: normalizeReplayCutoff(context?.replayCutoff),
+        });
       } else {
-        rememberFailure(runtimeKey, requestGeneration);
+        rememberFailure(scope, requestGeneration);
       }
     })
     .catch(() => {
-      if (requestGeneration === generation) rememberFailure(runtimeKey, requestGeneration);
+      if (requestGeneration === generation) rememberFailure(scope, requestGeneration);
     })
     .finally(() => {
+      scheduledKeys.delete(runtimeKey);
       if (inflight.get(runtimeKey) === promise) inflight.delete(runtimeKey);
-      if (requestGeneration === generation) notify();
+      if (abortControllers.get(runtimeKey) === controller) {
+        abortControllers.delete(runtimeKey);
+      }
     });
   inflight.set(runtimeKey, promise);
+  return promise;
 }
 
 export function clearIndicatorRuntimeCache() {
   generation += 1;
+  runtimeScheduler.clear();
+  for (const controller of abortControllers.values()) controller.abort();
+  abortControllers.clear();
+  scheduledKeys.clear();
   cache.clear();
   inflight.clear();
   failedAt.clear();
   historyContextCache.clear();
   latestByScope.clear();
-  latestRequestByScope.clear();
   notify();
 }

@@ -1082,7 +1082,13 @@ export function PriceChart({
     [...overlayIndicators, ...visiblePaneIndicators].forEach((cfg) => {
       ensureIndicatorRuntimeResult(cfg, candles, indicatorRuntimeContext);
     });
-  }, [overlayIndicators, visiblePaneIndicators, candles, indicatorRuntimeContext]);
+  }, [
+    overlayIndicators,
+    visiblePaneIndicators,
+    candles,
+    indicatorRuntimeContext,
+    pineRuntimeVersion,
+  ]);
   const overlayResults = useMemo(() => {
     void pineRuntimeVersion;
     return overlayIndicators.map((cfg) => ({

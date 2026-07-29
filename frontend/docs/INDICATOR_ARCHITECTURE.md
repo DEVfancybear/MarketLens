@@ -1,6 +1,6 @@
 # Indicator architecture
 
-_Updated: 2026-07-26._
+_Updated: 2026-07-29._
 
 Indicators are backend-defined and backend-executed. The browser does not own
 an indicator catalog, formulas, defaults, input schemas, style schemas, or
@@ -94,6 +94,7 @@ chart; the browser must not substitute a local clock or a viewport edge.
 | Cached backend catalog/definitions | `src/services/indicatorDefinitions.ts` |
 | Pure definition-to-config defaults/legacy hydration | `src/services/indicatorDefinitionModel.ts` |
 | One result/history/LRU cache | `src/services/indicatorRuntimeCache.ts` |
+| Latest-only request scheduler and scoped LRU primitive | `src/services/indicatorRuntimeScheduler.ts` |
 | Stable cache-key policy | `src/services/indicatorRuntimePolicy.ts` |
 | Dynamic catalog browser | `src/components/toolbar/IndicatorMenu.tsx` |
 | Dynamic settings renderer | `src/components/toolbar/IndicatorSettingsDialog.tsx` |
@@ -167,6 +168,13 @@ under forex point semantics cannot be reused for a crypto or index symbol.
 - Cache keys include the complete dynamic config, symbol metadata, timeframe,
   and OHLCV content, so forming-bar corrections or market-context changes
   invalidate every indicator consistently.
+- Live tick bursts are latest-only per indicator scope: one request may run,
+  one newest snapshot may wait, and superseded waiting snapshots are discarded.
+  The browser runs at most four indicator requests globally to match the backend
+  worker pool.
+- Live exact-result caching retains only the newest snapshot per scope. Replay
+  retains a small bounded history for cursor reuse. This prevents full 5,000-bar
+  results from accumulating as the forming candle changes.
 - Replay cache keys also include the session identity and cutoff. A cached
   result is a valid temporary fallback only when its cutoff is less than or
   equal to the requested cutoff in the same Replay session. Live and Replay

@@ -51,6 +51,7 @@
     "src/services/chartBenchmarkFixtures.ts",
     "src/services/chartOptimizationRollout.ts",
     "src/services/indicatorRuntimePolicy.ts",
+    "src/services/indicatorRuntimeScheduler.ts",
     "src/components/chart/drawing/tools/plugins/lineGeometry.ts",
     "src/components/chart/drawing/tools/plugins/shapeGeometry.ts",
     "src/components/chart/drawing/tools/positionGeometry.ts",

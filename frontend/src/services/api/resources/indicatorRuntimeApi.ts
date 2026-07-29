@@ -71,6 +71,7 @@ export async function computeIndicatorRuntime(
   config: IndicatorConfig,
   candles: Candle[],
   ctx?: IndicatorRuntimeContext,
+  signal?: AbortSignal,
 ): Promise<IndicatorRuntimeResponse> {
   return postJson<IndicatorRuntimeResponse>(
     "indicator-runtime/compute",
@@ -87,6 +88,6 @@ export async function computeIndicatorRuntime(
       config,
       candles,
     },
-    { timeout: 8_000 },
+    { timeout: 8_000, signal },
   );
 }
