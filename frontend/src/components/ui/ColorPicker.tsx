@@ -195,6 +195,7 @@ export function ColorPickerPopover({
   return createPortal(
     <div
       ref={surfaceRef}
+      data-chart-ui
       data-color-popover
       data-color-picker-view={view}
       data-drawing-toolbar-popover={

@@ -1,6 +1,6 @@
 # RECTANGLE TOOL GUIDE — Phase 4.3
 
-_Date: 2026-06-25. Updated 2026-07-17 for shared two-point creation semantics._
+_Date: 2026-06-25. Updated 2026-07-29 for shared color editing._
 
 ## Creation
 
@@ -21,8 +21,8 @@ not create another Rectangle.
 | Resize | Drag corner handles (visible when selected) |
 | Delete | Select, press Delete key |
 | Duplicate | Select, press Ctrl+D |
-| Change color | Select, use color picker before creation (future: edit dialog for existing) |
-| Change fill | Use `fillColor` on drawing object (set via future settings dialog) |
+| Change border color | Select, then use the pencil color control in the floating object toolbar or the Style tab |
+| Change fill and opacity | Select, then use the background color control; `fillColor` and `opacity` update independently |
 | Lock | Right-click → Lock |
 
 ## Supply / demand zone workflow
@@ -32,6 +32,10 @@ not create another Rectangle.
 3. Draw rectangle over the zone
 4. The zone renders with semi-transparent fill + solid border
 5. Persists across page reloads and symbol switches
+
+The shared color picker is portalled above the chart and marked as chart UI,
+so preset swatches, the custom `+` view, and opacity controls never leak
+pointer input into rectangle creation or selection.
 
 ## Persistence
 

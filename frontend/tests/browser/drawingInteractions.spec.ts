@@ -379,9 +379,9 @@ test("selected and all drawing bulk actions are single undoable transactions", a
   const floatingToolbar = page.locator("[data-drawing-toolbar][data-chart-popup]");
   await expect(floatingToolbar.locator("[data-drawing-selection-count]")).toHaveText("2 selected");
   await floatingToolbar.getByRole("button", { name: "Selected drawing color", exact: true }).click();
-  const colorPopover = floatingToolbar.locator("[data-drawing-toolbar-popover]");
+  const colorPopover = page.locator("[data-color-popover][data-drawing-toolbar-popover]");
   await expect(colorPopover).toBeVisible();
-  await colorPopover.locator("[data-color-option]").nth(2).click();
+  await colorPopover.getByRole("button", { name: "Use #ef5350", exact: true }).click();
   await expect.poll(async () => (await drawingSnapshot(page)).drawings.map((item) => item.color))
     .toEqual(["#ef5350", "#ef5350"]);
   await expect.poll(async () => (await drawingSnapshot(page)).history.lastUndoLabel)
@@ -394,9 +394,9 @@ test("selected and all drawing bulk actions are single undoable transactions", a
     .toEqual(["#ef5350", "#ef5350"]);
 
   await floatingToolbar.getByRole("button", { name: "Background color", exact: true }).click();
-  const fillPopover = floatingToolbar.locator("[data-drawing-toolbar-popover]");
+  const fillPopover = page.locator("[data-color-popover][data-drawing-toolbar-popover]");
   await expect(fillPopover).toBeVisible();
-  await fillPopover.locator("[data-color-option]").nth(3).click();
+  await fillPopover.getByRole("button", { name: "Use #ff9800", exact: true }).click();
   await expect.poll(async () => (await drawingSnapshot(page)).drawings.map((item) => item.fillColor))
     .toEqual(["#ff9800", "#ff9800"]);
   await expect.poll(async () => (await drawingSnapshot(page)).history.lastUndoLabel)
@@ -434,6 +434,48 @@ test("selected and all drawing bulk actions are single undoable transactions", a
   await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(0);
   await page.keyboard.press("Control+z");
   await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(2);
+});
+
+test("shared color picker shields canvas input and repaints a selected shape", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const start = { x: pane.x + pane.width * 0.28, y: pane.y + pane.height * 0.68 };
+  const end = { x: pane.x + pane.width * 0.56, y: pane.y + pane.height * 0.48 };
+
+  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await page.getByRole("button", { name: /^Rectangle\b/ }).last().click();
+  await page.mouse.click(start.x, start.y);
+  await page.mouse.click(end.x, end.y);
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(1);
+
+  const before = await page.locator("[data-drawing-canvas]").evaluate(
+    (canvas: HTMLCanvasElement) => canvas.toDataURL(),
+  );
+  const toolbar = page.locator("[data-drawing-toolbar][data-chart-popup]");
+  await toolbar.getByRole("button", { name: "Line color", exact: true }).click();
+  const colorPopover = page.locator("[data-color-popover][data-drawing-toolbar-popover]");
+  await expect(colorPopover).toHaveAttribute("data-chart-ui", "true");
+  await colorPopover.getByRole("button", { name: "Add custom color", exact: true }).click();
+  await expect(colorPopover).toHaveAttribute("data-color-picker-view", "custom");
+  await colorPopover.getByRole("textbox", { name: "Custom color hex", exact: true }).fill("#123abc");
+  await colorPopover.getByRole("button", { name: "Add", exact: true }).click();
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings[0]?.color).toBe("#123abc");
+
+  const selectedAfterCustomColor = await drawingSnapshot(page);
+  expect(selectedAfterCustomColor.selectedDrawingId).toBe(selectedAfterCustomColor.drawings[0].id);
+  expect(selectedAfterCustomColor.drawings).toHaveLength(1);
+
+  await toolbar.getByRole("button", { name: "Background color", exact: true }).click();
+  const fillPopover = page.locator("[data-color-popover][data-drawing-toolbar-popover]");
+  await fillPopover.getByRole("button", { name: "Use #ff9800", exact: true }).click();
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings[0]?.fillColor).toBe("#ff9800");
+
+  await toolbar.getByRole("button", { name: "Background color", exact: true }).click();
+  await page.locator("[data-color-popover] input[aria-label='Opacity percent']").fill("45");
+  await expect.poll(async () => (await drawingSnapshot(page)).drawings[0]?.opacity).toBe(0.45);
+  await expect.poll(async () => page.locator("[data-drawing-canvas]").evaluate(
+    (canvas: HTMLCanvasElement) => canvas.toDataURL(),
+  )).not.toBe(before);
 });
 
 test("shared coordinate editor updates anchors in one undoable transaction", async ({ page }) => {

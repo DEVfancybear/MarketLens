@@ -46,6 +46,21 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - Added palette, color normalization, HSV conversion, and alpha regression
   coverage, plus mobile browser assertions for the common picker contract.
 
+### Fixed - Shared color picker input isolation and drawing repaint (2026-07-29)
+
+- Marked every portalled color-picker surface as chart UI so the drawing
+  engine's document capture listeners never interpret palette, custom `+`, or
+  opacity interactions as canvas creation, selection, or transform input.
+- Fixed selected-object color controls intermittently closing before their
+  click handler ran, which prevented custom color entry or left drawings
+  visually unchanged depending on popup position and active drawing mode.
+- Routed fill color and fill opacity through separate drawing properties for
+  every manifest tool with the `fill` capability, avoiding alpha being applied
+  once in the color value and again by the canvas renderer.
+- Added browser regression coverage for custom HEX entry, retained selection,
+  single- and multi-object stroke/fill updates, opacity updates, undo/redo, and
+  immediate drawing-canvas repaint.
+
 ### Fixed - Deterministic MT5 coalesced-waiter CI coverage (2026-07-29)
 
 - Removed a scheduler-dependent race from the canceled coalesced history

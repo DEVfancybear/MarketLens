@@ -160,6 +160,21 @@ property independently. Otherwise it preserves alpha in standard
 `#RRGGBBAA` form, which both CSS and Canvas 2D consume directly. This avoids
 inventing tool-specific opacity storage while keeping the UI identical.
 
+`ColorPickerPopover` is portalled to `document.body` for viewport-safe
+placement and must keep `data-chart-ui` on its root surface. The drawing
+interaction manager owns capture-phase document listeners, so React bubbling
+handlers such as `stopPropagation()` are too late to protect a portalled
+palette. The chart-UI marker makes preset swatches, the custom `+` view, HSV
+controls, and opacity inputs invisible to drawing creation, selection, and
+transform handling regardless of where the floating surface overlaps the
+canvas.
+
+Selected-object fill controls are capability driven: every target whose
+manifest settings schema exposes `fill` receives `fillColor` and `opacity` as
+separate patches. Do not encode opacity into `fillColor` for these drawings;
+their canvas adapters already apply `Drawing.opacity` while rendering the
+fill, so an alpha-bearing fill color would compound transparency.
+
 Creation defaults in `DrawingToolbar` and `MobileDrawingPalette`, selected
 object controls in `DrawingSettingsToolbar`, the full drawing and position
 dialogs, and indicator input/style fields all compose this same primitive.

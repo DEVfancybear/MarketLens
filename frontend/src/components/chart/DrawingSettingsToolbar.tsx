@@ -116,6 +116,8 @@ export function DrawingSettingsToolbar() {
   const sharedFillColor = commonValue(fillColors);
   const mixedFillColors = fillColors.some((value) =>
     !Object.is(value, fillColors[0]));
+  const fillOpacities = fillTargets.map((item) => item.opacity ?? 0.3);
+  const sharedFillOpacity = commonValue(fillOpacities);
   const allLocked = actionTargets.every((item) => item.locked === true);
   const applyPrimaryColor = (color: string) => bulk.applyPatch(
     actionScope,
@@ -130,6 +132,13 @@ export function DrawingSettingsToolbar() {
       ? { fillColor: color ?? undefined }
       : null,
     fillTargets.length > 1 ? "Change Fill Colors" : "Change Fill Color",
+  );
+  const applyFillOpacity = (opacity: number) => bulk.applyPatch(
+    actionScope,
+    (item) => getDrawingSettingsSchema(item.tool).hasFeature("fill")
+      ? { opacity }
+      : null,
+    fillTargets.length > 1 ? "Change Fill Opacities" : "Change Fill Opacity",
   );
   // Templates are scoped to the selected object's style family (TradingView
   // won't offer a text preset for a trendline).
@@ -251,9 +260,11 @@ export function DrawingSettingsToolbar() {
           {menu === "fill" && (
             <ColorPickerPopover
               value={sharedFillColor}
+              opacity={sharedFillOpacity}
               allowNone
               noneLabel="No fill"
               onChange={applyFillColor}
+              onOpacityChange={applyFillOpacity}
               onClear={() => applyFillColor(null)}
               onClose={() => setMenu(null)}
               dataDrawingToolbarPopover
