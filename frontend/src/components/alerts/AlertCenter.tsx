@@ -81,10 +81,13 @@ function alertTargetText(alert: Alert): string {
 function useLivePrice(symbol: string): number | undefined {
   const timeframe = useAtomValue(selectedTimeframeAtom);
   const quote = useAtomValue(marketQuoteAtom(symbol));
+  // Keep every atom hook unconditional: the quote normally arrives after the
+  // first candle render, so returning before this subscription changes the
+  // hook order exactly when the live feed becomes ready.
+  const candles = useAtomValue(marketCandleSeriesAtom(symbol, timeframe));
   if (quote?.last != null && Number.isFinite(quote.last) && quote.last > 0) {
     return quote.last;
   }
-  const candles = useAtomValue(marketCandleSeriesAtom(symbol, timeframe));
   const close = candles.at(-1)?.close;
   return close != null && Number.isFinite(close) && close > 0
     ? close

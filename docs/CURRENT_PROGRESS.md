@@ -39,8 +39,11 @@ Last updated: 2026-07-30
   now uses granular market-data subscriptions, revision-safe deferred viewport
   writes, debounced history prefetch, cancellable stale history/indicator work,
   structural candle sharing for MT5 refreshes, and a non-blocking warm-cache
-  loading policy. The regression suite covers the drag → switch → drag flow's
-  main races; deploy and browser stress verification follow the push.
+  loading policy. A follow-up hotfix keeps the Alert Center's live quote and
+  candle hooks unconditional, preventing the first quote update from changing
+  React hook order and crashing the page. The regression suite covers the
+  drag → switch → drag flow's main races; production browser stress
+  verification follows the hotfix push.
 
 ## Current Milestone
 

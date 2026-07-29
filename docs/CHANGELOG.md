@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Production crash when the first live quote arrives (2026-07-30)
+
+- Kept the Alert Center's quote and candle atom hooks unconditional so the
+  transition from cached candles to a live quote cannot change React's hook
+  order and crash the whole production page.
+- Verified the hotfix with a focused hook-rule check, typecheck, chart tests,
+  and the optimized production build.
+
 ### Fixed - Stable chart viewport during rapid market switches (2026-07-29)
 
 - Treated every symbol or timeframe identity change as a fresh candle data
