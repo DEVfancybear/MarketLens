@@ -53,6 +53,8 @@ import { fmtDateTime } from "@/utils/time";
 import { cn } from "@/utils/cn";
 import { targetAt } from "@/services/dynamicAlertTargets";
 import { reportFrontendError } from "@/services/feedback/errorReporter";
+import { usePlatformDialog } from "@/components/ui/PlatformDialog";
+import { useI18n } from "@/hooks/useI18n";
 
 const CONDITIONS: AlertCondition[] = ["above", "below", "crossUp", "crossDown"];
 
@@ -140,6 +142,7 @@ export function AlertCenter() {
   const createAlert = useAlertStore((s) => s.createAlert);
   const updateAlert = useAlertStore((s) => s.updateAlert);
   const deleteAlert = useAlertStore((s) => s.deleteAlert);
+  const clearAlerts = useAlertStore((s) => s.clear);
   const resetAlert = useAlertStore((s) => s.resetAlert);
   const clearHistory = useAlertStore((s) => s.clearHistory);
   const clearTriggered = useAlertStore((s) => s.clearTriggered);
@@ -148,6 +151,8 @@ export function AlertCenter() {
   const push = usePushNotifications();
   const { refresh: refreshPush } = push;
   const marketSymbols = useMarketSymbols();
+  const { requestConfirm, dialog } = usePlatformDialog();
+  const { t } = useI18n();
 
   // ---- create form ----
   const [symbol, setSymbol] = useState(chartSymbol);
@@ -312,6 +317,19 @@ export function AlertCenter() {
           : push.status === "denied"
             ? "Push blocked"
             : "Push";
+
+  const clearAllActiveAlerts = () => {
+    const count = alerts.length;
+    if (!count) return;
+    void requestConfirm({
+      title: t("alerts.clearConfirm", { count }),
+      description: t("alerts.clearWarning"),
+      confirmLabel: t("alerts.deleteAll"),
+      tone: "danger",
+    }).then((accepted) => {
+      if (accepted) clearAlerts();
+    });
+  };
 
   if (!open) return null;
 
@@ -512,7 +530,11 @@ export function AlertCenter() {
           </div>
 
           {/* Active alerts */}
-          <Section title={`Active (${alerts.length})`}>
+          <Section
+            title={`Active (${alerts.length})`}
+            onClear={alerts.length > 0 ? clearAllActiveAlerts : undefined}
+            clearLabel={t("alerts.clearAll")}
+          >
             {alerts.length === 0 && <Empty>No active alerts.</Empty>}
             {alerts.map((a) => (
               <div
@@ -672,6 +694,7 @@ export function AlertCenter() {
           )}
         </div>
       </aside>
+      {dialog}
     </>
   );
 }
@@ -680,10 +703,12 @@ function Section({
   title,
   children,
   onClear,
+  clearLabel = "Clear",
 }: {
   title: string;
   children: React.ReactNode;
   onClear?: () => void;
+  clearLabel?: string;
 }) {
   return (
     <div>
@@ -696,7 +721,7 @@ function Section({
             onClick={onClear}
             className="text-[10px] text-ink-faint hover:text-bear"
           >
-            Clear
+            {clearLabel}
           </button>
         )}
       </div>

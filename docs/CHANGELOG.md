@@ -4,6 +4,12 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Clear all active alerts (2026-07-29)
+
+- Added a localized **Clear all** action to the active Alert Center section.
+- Added a danger confirmation showing the number of affected alerts before
+  clearing local/chart state and queuing every deletion to PostgreSQL.
+
 ### Changed - Position drawings keep the Chart workspace open (2026-07-29)
 
 - Long/Short Position placement still prepares the Trade ticket but no longer

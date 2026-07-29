@@ -39,6 +39,11 @@ test("typed UI keys are complete in English and Vietnamese", () => {
     translate("vi", "drawing.removeConfirm", { count: 3 }),
     "Xóa tất cả 3 hình vẽ?",
   );
+  assert.equal(translate("en", "alerts.clearAll"), "Clear all");
+  assert.equal(
+    translate("vi", "alerts.clearConfirm", { count: 4 }),
+    "Xóa toàn bộ 4 cảnh báo đang hoạt động?",
+  );
 });
 
 test("legacy UI boundary translates exact copy and count patterns", () => {

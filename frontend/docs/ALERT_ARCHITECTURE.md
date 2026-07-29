@@ -153,6 +153,12 @@ coexist without clobbering each other.
 | UI | `src/components/alerts/AlertCenter.tsx`, `src/components/alerts/AlertEditDialog.tsx` | Alert list, create/edit/settings UI. |
 | Chart | `src/components/chart/AlertLines.tsx`, `src/components/chart/AlertOverlay.tsx`, `src/components/chart/AlertContextMenu.tsx` | Native price lines plus interactive overlay. |
 
+Alert Center exposes a danger-confirmed **Clear all** action for the active
+section. It reuses the store's canonical bulk clear path, so every active alert
+is removed locally, detached from chart ownership, and queued for deletion from
+PostgreSQL. Triggered, expired, and history sections retain their independent
+clear actions.
+
 ## Alert Model
 
 Core fields:
