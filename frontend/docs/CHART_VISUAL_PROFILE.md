@@ -1,6 +1,6 @@
 # Chart Visual Profile
 
-_Last updated: 2026-07-15_
+_Last updated: 2026-07-30_
 
 This document is the maintenance guide for the TradingView-like chart visual
 baseline. Read this before changing chart colors, grid density, price scale
@@ -102,31 +102,34 @@ profile first.
 
 ## 6. Current Price Marker
 
-The current price marker is a compact DOM overlay constrained to the live right
-price scale. The symbol remains in the chart HUD and in the marker's accessible
-metadata; it is intentionally not repeated inside the visible marker. This
-prevents the label from expanding left across the plot or right into the market
-sidebar.
+The current price marker is a compact DOM overlay shared by desktop and mobile.
+The price/countdown column is constrained to the live right price scale, while
+the symbol chip extends left from the scale into the plot. The chart HUD also
+retains the symbol and OHLC values.
 
 ```text
-right price scale
-┌──────────────┐
-│        PRICE │  <- centered on the series price coordinate
-│    COUNTDOWN │
-└──────────────┘
+plot                    right price scale
+[ SYMBOL ]              [ PRICE     ]  <- centered on the series price
+                        [ COUNTDOWN ]
 ```
 
 - Read `chart.priceScale("right").width()` from Lightweight Charts and use that
   exact live width for the DOM marker. Do not duplicate a guessed CSS width.
 - If the scale width is unavailable or non-positive, do not render the marker.
 - Price and countdown form one right-aligned column contained by the chart root.
-- The countdown row uses the same bull/bear marker color with a 20% dark inset.
+- Symbol, price, countdown, pointer, and the built-in series price line use one
+  bull/bear tone. Resolve it from the live marker price relative to the active
+  candle open. Do not derive it from the previous tick: a downtick above the
+  candle open remains bullish, and an uptick below the open remains bearish.
+- Publish the tone once through `--current-price-marker-color`; every visible
+  marker segment consumes that shared CSS custom property. Do not write separate
+  dynamic colors to the child segments because mobile Safari may display a
+  split-color frame while the quote is repainting.
+- The countdown row uses the shared marker tone with a 20% dark inset.
 - The price line aligns to the vertical center of the 19px price row. Adding the
   15px countdown row must not shift that alignment.
 - Clamp the marker's price coordinate to leave 25px below it near the bottom of
   the chart; otherwise the countdown is clipped by the chart container.
-- Keep the built-in series price line color synchronized with the marker's last
-  movement direction.
 - Keep `price-chart-root` overflow-contained so chart overlays cannot bleed into
   the market sidebar. This is a containment guard, not a replacement for portal
   positioning of interactive menus.
@@ -222,8 +225,10 @@ Manual checks:
 - adding a Volume/VSA indicator still renders volume through the indicator path,
 - every separate-pane indicator legend starts inside its owning pane and stays
   aligned after resizing the chart or changing pane heights,
-- current price marker contains only price and countdown, matches the live right
-  price-scale width and never overlaps the market sidebar,
+- current price marker keeps symbol, price, countdown, pointer, and horizontal
+  line on one candle-direction tone on both desktop and mobile,
+- marker price/countdown matches the live right price-scale width and never
+  overlaps the market sidebar,
 - countdown visibly changes once per second and is not clipped near the bottom
   chart boundary,
 - W1 follows the latest broker candle open and retains the remaining day count,
@@ -242,4 +247,5 @@ Data-continuity checks:
 Rendered geometry is locked by
 `tests/browser/desktopOverlayRegression.spec.ts`. The test compares the marker
 rectangle with Lightweight Charts' live plot and price-scale cells at 1366px,
-then repeats the assertion after resizing to 1100px.
+asserts that all visible marker segments resolve the same background color, then
+repeats the geometry assertion after resizing to 1100px.

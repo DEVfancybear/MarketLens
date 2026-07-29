@@ -238,6 +238,15 @@ test.describe("desktop overlay boundaries", () => {
     await expect(page.getByTestId("current-price-countdown")).not.toBeEmpty();
     await expect(priceMarker).toHaveAttribute("data-symbol", "EURUSD");
 
+    const markerPartColors = await Promise.all(
+      [
+        page.getByTestId("current-price-symbol"),
+        page.getByTestId("current-price-value"),
+        page.getByTestId("current-price-countdown"),
+      ].map((part) => part.evaluate((element) => getComputedStyle(element).backgroundColor)),
+    );
+    expect(new Set(markerPartColors).size).toBe(1);
+
     await expectMarkerInsidePriceScale(page);
 
     await page.setViewportSize({ width: 1100, height: 768 });

@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Shared current-price marker tone on desktop and mobile (2026-07-30)
+
+- Changed the shared `PriceChart` marker tone to follow the live price relative
+  to the active candle open instead of the previous tick, so a small retrace no
+  longer flips only the price chip against the candle direction.
+- Routed symbol, price, countdown, and pointer fills through one CSS custom
+  property to prevent split red/green repaint frames on mobile Safari while
+  retaining the same implementation on desktop and mobile.
+- Added model coverage for bullish/bearish retraces and browser regression
+  coverage requiring every visible marker segment to resolve the same color.
+
 ### Fixed - Production crash when the first live quote arrives (2026-07-30)
 
 - Kept the Alert Center's quote and candle atom hooks unconditional so the

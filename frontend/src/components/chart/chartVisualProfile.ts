@@ -214,3 +214,15 @@ export function candlestickOptions(theme: Theme, precision: number) {
     lastValueVisible: false,
   };
 }
+
+/**
+ * Keep the live-price marker aligned with the candle body instead of the most
+ * recent tick direction. A downtick above the candle open is still bullish,
+ * and an uptick below the candle open is still bearish.
+ */
+export function currentPriceMarkerIsUp(
+  price: number,
+  candleOpen: number | null | undefined,
+): boolean {
+  return candleOpen == null ? true : price >= candleOpen;
+}

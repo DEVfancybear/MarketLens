@@ -1,5 +1,12 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import {
   BaselineSeries,
   CandlestickSeries,
@@ -50,6 +57,7 @@ import {
   INDICATOR_PANE_HEIGHT,
   RIGHT_OFFSET_BARS,
   candlestickOptions,
+  currentPriceMarkerIsUp,
   crosshairOptions,
   gridOptions,
   indicatorSeriesPriceFormatOptions,
@@ -316,8 +324,6 @@ export function PriceChart({
   const historyPrefetchTimerRef = useRef<number | null>(null);
   const renderedLatestCandleRef = useRef<Candle | null>(null);
   const renderedCandleCountRef = useRef(0);
-  const prevMarkerPriceRef = useRef<number | null>(null);
-  const markerUpRef = useRef(true);
   const candlesRef = useRef<Candle[]>(candles);
   const loadMoreHistoryRef = useRef(onLoadMoreHistory);
   const loadMoreInFlightRef = useRef(false);
@@ -450,8 +456,6 @@ export function PriceChart({
   }, []);
 
   useEffect(() => {
-    prevMarkerPriceRef.current = null;
-    markerUpRef.current = true;
     loadMoreGenerationRef.current += 1;
     loadMoreInFlightRef.current = false;
     lastLoadMoreFirstTimeRef.current = null;
@@ -1637,17 +1641,7 @@ export function PriceChart({
       return;
     }
     const last = renderedReplayCandle ?? candles[candles.length - 1];
-    const previousPrice = prevMarkerPriceRef.current;
-    let up = markerUpRef.current;
-    if (previousPrice == null) {
-      up = last ? price >= last.open : true;
-    } else if (price > previousPrice) {
-      up = true;
-    } else if (price < previousPrice) {
-      up = false;
-    }
-    prevMarkerPriceRef.current = price;
-    markerUpRef.current = up;
+    const up = currentPriceMarkerIsUp(price, last?.open);
     const colors = chartColors(theme);
     const markerColor = up ? colors.bull : colors.bear;
     series.applyOptions({ priceLineColor: markerColor });
@@ -1869,7 +1863,8 @@ function CurrentPriceMarker({
         top: marker.y,
         transform: "translateY(-9.5px)",
         width: marker.priceScaleWidth,
-      }}
+        "--current-price-marker-color": marker.color,
+      } as CSSProperties}
       title={marker.countdown
         ? `${symbol} · ${formattedPrice} · Next bar: ${marker.countdown}`
         : `${symbol} · ${formattedPrice}`}
@@ -1877,18 +1872,18 @@ function CurrentPriceMarker({
       <div
         data-testid="current-price-symbol"
         className="absolute right-full top-0 flex h-[19px] items-center whitespace-nowrap rounded-l-[3px] pl-1.5 pr-1 text-[10px]"
-        style={{ backgroundColor: marker.color }}
+        style={{ backgroundColor: "var(--current-price-marker-color)" }}
       >
         {symbol}
         <span
           className="absolute -left-[5px] top-1/2 h-0 w-0 -translate-y-1/2 border-y-[5px] border-r-[5px] border-y-transparent"
-          style={{ borderRightColor: marker.color }}
+          style={{ borderRightColor: "var(--current-price-marker-color)" }}
         />
       </div>
       <div
         data-testid="current-price-value"
         className="flex h-[19px] items-center justify-end whitespace-nowrap px-1.5 text-[11px] tabular-nums"
-        style={{ backgroundColor: marker.color }}
+        style={{ backgroundColor: "var(--current-price-marker-color)" }}
       >
         {formattedPrice}
       </div>
@@ -1900,7 +1895,7 @@ function CurrentPriceMarker({
             marker.countdown.includes("d ") ? "px-1 text-[9px] tracking-[-0.02em]" : "px-1.5 text-[10px]"
           }`}
           style={{
-            backgroundColor: marker.color,
+            backgroundColor: "var(--current-price-marker-color)",
             boxShadow: "inset 0 0 0 999px rgba(0, 0, 0, 0.2)",
           }}
         >

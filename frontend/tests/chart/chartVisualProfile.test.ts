@@ -6,6 +6,7 @@ import {
   PRICE_SCALE_MIN_WIDTH,
   RIGHT_OFFSET_BARS,
   VOLUME_TYPICAL_BAR_FRACTION,
+  currentPriceMarkerIsUp,
   indicatorSeriesPriceFormatOptions,
   timeScaleDefaults,
   timeScaleOptions,
@@ -24,6 +25,15 @@ test("main chart keeps TradingView-like right offset and price scale width", () 
 test("main chart does not reserve a default volume overlay band", () => {
   assert.equal(MAIN_PRICE_SCALE_MARGINS.bottom <= 0.1, true);
   assert.equal(MAIN_PRICE_SCALE_MARGINS.top <= 0.1, true);
+});
+
+test("current price marker follows the active candle body, not the latest tick", () => {
+  // A downtick that remains above the candle open is still bullish.
+  assert.equal(currentPriceMarkerIsUp(101, 100), true);
+  // An uptick that remains below the candle open is still bearish.
+  assert.equal(currentPriceMarkerIsUp(99, 100), false);
+  assert.equal(currentPriceMarkerIsUp(100, 100), true);
+  assert.equal(currentPriceMarkerIsUp(100, undefined), true);
 });
 
 test("whitespace replacement does not auto-shift a user-panned viewport", () => {
