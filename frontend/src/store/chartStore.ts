@@ -618,7 +618,7 @@ export const pineScriptsAtom = atom<CustomIndicatorScript[]>([]);
 export const pineEditorScriptIdAtom = atom<string | null>(null);
 export const pineEditorTitleAtom = atom<string>("Untitled script");
 export const pineEditorSourceAtom = atom<string>(DEFAULT_PINE_SOURCE);
-export const activeToolAtom = atom<DrawingTool>("cursor");
+export const activeToolAtom = atom<DrawingTool>("crosshair");
 export const drawColorAtom = atom<string>("#2962ff");
 export const drawingToolPreferencesAtom = atom<DrawingToolPreferences>(
   EMPTY_DRAWING_TOOL_PREFERENCES,
@@ -1161,7 +1161,7 @@ export const addDrawingAtom = atom(
   set(drawingsAtom, drawings);
   // Keep Drawing is a global creation preference. When disabled, retain the
   // established one-shot behavior and return to Cursor after placement.
-  if (!_get(drawingToolPreferencesAtom).keepDrawing) set(activeToolAtom, "cursor");
+  if (!_get(drawingToolPreferencesAtom).keepDrawing) set(activeToolAtom, "crosshair");
   set(selectedDrawingIdAtom, drawing.id);
   set(selectedDrawingIdsAtom, new Set([drawing.id]));
   const symbol = _get(symbolAtom);
@@ -1818,7 +1818,7 @@ export const resetChartWorkspaceToDefaultsAtom = atom(
     set(pineEditorScriptIdAtom, null);
     set(pineEditorTitleAtom, "Untitled script");
     set(pineEditorSourceAtom, DEFAULT_PINE_SOURCE);
-    set(activeToolAtom, "cursor");
+    set(activeToolAtom, "crosshair");
     set(drawColorAtom, "#2962ff");
     set(chartTimeZoneAtom, EXCHANGE_TIME_ZONE_ID);
     set(resolvedChartTimeZoneAtom, "UTC");

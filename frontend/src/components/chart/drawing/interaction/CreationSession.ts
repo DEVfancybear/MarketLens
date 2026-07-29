@@ -33,6 +33,7 @@ export class CreationSession {
   readonly definition: DrawingToolManifestEntry;
   private confirmed: Point[] = [];
   private lastDown: Omit<CreationPointerSample, "point"> | null = null;
+  private firstDown: Omit<CreationPointerSample, "point"> | null = null;
 
   constructor(tool: DrawingTool) {
     this.tool = tool;
@@ -67,7 +68,24 @@ export class CreationSession {
         : { kind: "cancel" };
     }
 
+    if (
+      creationMode === "click-freeform" &&
+      this.definition.freeformCloseOnFirstPoint &&
+      this.confirmed.length >= Math.max(3, minPoints) &&
+      this.isFirstPointClick(sample)
+    ) {
+      return {
+        kind: "commit",
+        points: [...clonePoints(this.confirmed), { ...this.confirmed[0] }],
+      };
+    }
+
     this.lastDown = {
+      clientX: sample.clientX,
+      clientY: sample.clientY,
+      timeStamp: sample.timeStamp,
+    };
+    this.firstDown ??= {
       clientX: sample.clientX,
       clientY: sample.clientY,
       timeStamp: sample.timeStamp,
@@ -140,5 +158,13 @@ export class CreationSession {
     return !!this.lastDown &&
       sample.timeStamp - this.lastDown.timeStamp < DOUBLE_CLICK_MS &&
       Math.hypot(sample.clientX - this.lastDown.clientX, sample.clientY - this.lastDown.clientY) < DOUBLE_CLICK_DISTANCE;
+  }
+
+  private isFirstPointClick(sample: CreationPointerSample): boolean {
+    return !!this.firstDown &&
+      Math.hypot(
+        sample.clientX - this.firstDown.clientX,
+        sample.clientY - this.firstDown.clientY,
+      ) < DOUBLE_CLICK_DISTANCE;
   }
 }

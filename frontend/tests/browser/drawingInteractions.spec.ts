@@ -34,11 +34,55 @@ test("all persistent tools register and satisfy the executable adapter contract"
     const audit = await page.evaluate(() =>
       window.__drawingInteractionTest!.auditAdapters(),
     );
-    expect(audit.expectedToolIds).toHaveLength(84);
+    expect(audit.expectedToolIds).toHaveLength(87);
     expect(audit.registeredToolIds).toEqual(audit.expectedToolIds);
     expect(audit.fixtureToolIds).toEqual(audit.expectedToolIds);
     expect(audit.errors).toEqual([]);
   }
+});
+
+test("all six cursor tools activate and own their distinct chart behavior", async ({ page }) => {
+  const chart = await page.evaluate(() => window.__chartInteractionTest!.snapshot());
+  const pane = chart.paneBoxes[0];
+  const point = {
+    x: pane.x + pane.width * 0.48,
+    y: pane.y + pane.height * 0.48,
+  };
+  const cursors = [
+    ["Cross", "crosshair"],
+    ["Dot", "dotCursor"],
+    ["Arrow", "cursor"],
+    ["Demonstration", "demonstrationCursor"],
+    ["Magic", "magicCursor"],
+    ["Eraser", "eraser"],
+  ] as const;
+
+  for (const [label, id] of cursors) {
+    await page.getByRole("button", { name: "Cursor", exact: true }).click();
+    await page.getByRole("button", { name: new RegExp(`^${label}\\b`) }).last().click();
+    await expect.poll(async () => (await drawingSnapshot(page)).activeTool).toBe(id);
+  }
+
+  await page.getByRole("button", { name: "Cursor", exact: true }).click();
+  await page.getByRole("button", { name: /^Dot\b/ }).last().click();
+  await page.mouse.move(point.x, point.y);
+  await expect(page.locator("[data-cursor-mode-overlay] circle")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Cursor", exact: true }).click();
+  await page.getByRole("button", { name: /^Magic\b/ }).last().click();
+  await page.mouse.move(point.x, point.y);
+  await expect(page.locator("[data-cursor-mode-overlay] text")).toHaveText("✦");
+
+  await page.getByRole("button", { name: "Cursor", exact: true }).click();
+  await page.getByRole("button", { name: /^Demonstration\b/ }).last().click();
+  await page.keyboard.down("Alt");
+  await page.mouse.move(point.x - 30, point.y - 20);
+  await page.mouse.down();
+  await page.mouse.move(point.x + 30, point.y + 20, { steps: 4 });
+  await page.mouse.up();
+  await page.keyboard.up("Alt");
+  await expect(page.locator("[data-cursor-mode-overlay] polyline")).toHaveCount(1);
+  expect((await drawingSnapshot(page)).drawings).toHaveLength(0);
 });
 
 test("Phase 8 Wave A range, cycle, and inline-note gestures commit transactionally", async ({ page }) => {
@@ -76,16 +120,20 @@ test("Phase 8 Wave B level, radial, grid, and pitchfork gestures use manifest co
   const a = { x: pane.x + pane.width * 0.24, y: pane.y + pane.height * 0.66 };
   const b = { x: pane.x + pane.width * 0.48, y: pane.y + pane.height * 0.36 };
   const c = { x: pane.x + pane.width * 0.64, y: pane.y + pane.height * 0.56 };
-  const create = async (name: RegExp, points: typeof a[]) => {
-    await page.getByRole("button", { name: "Fib Retracement", exact: true }).click();
+  const create = async (
+    group: "Fib Retracement" | "Trend line",
+    name: RegExp,
+    points: typeof a[],
+  ) => {
+    await page.getByRole("button", { name: group, exact: true }).click();
     await page.getByRole("button", { name }).click();
     for (const point of points) await page.mouse.click(point.x, point.y);
   };
-  await create(/^Fib Channel\b/, [a,b,c]);
-  await create(/^Fib Speed Resistance Fan\b/, [a,b]);
-  await create(/^Fib Circles\b/, [a,b]);
-  await create(/^Gann Square\b/, [a,b]);
-  await create(/^Pitchfork\b/, [a,b,c]);
+  await create("Fib Retracement", /^Fib Channel\b/, [a,b,c]);
+  await create("Fib Retracement", /^Fib Speed Resistance Fan\b/, [a,b]);
+  await create("Fib Retracement", /^Fib Circles\b/, [a,b]);
+  await create("Fib Retracement", /^Gann Square\b/, [a,b]);
+  await create("Trend line", /^Pitchfork\b/, [a,b,c]);
   await expect.poll(async () => (await drawingSnapshot(page)).drawings.map((drawing) => drawing.tool))
     .toEqual(["fibChannel","fibSpeedFan","fibCircles","gannSquare","pitchfork"]);
   await page.keyboard.press("Control+z");
@@ -104,7 +152,7 @@ test("Phase 8 Wave C harmonic, Elliott, and cycle gestures use fixed manifest to
   await create(/^Time Cycles\b/,2);
   await expect.poll(async()=>(await drawingSnapshot(page)).drawings.map((drawing)=>drawing.tool)).toEqual(["abcdPattern","headShouldersPattern","elliottImpulse","timeCycles"]);
   await expect.poll(async()=>(await drawingSnapshot(page)).machineState).toBe("Idle");
-  await expect.poll(async()=>(await drawingSnapshot(page)).activeTool).toBe("cursor");
+  await expect.poll(async()=>(await drawingSnapshot(page)).activeTool).toBe("crosshair");
   await expect.poll(async()=>(await drawingSnapshot(page)).history.lastUndoLabel).toBe("Create Drawing");
   await page.keyboard.press("Control+z");
   await expect.poll(async()=>(await drawingSnapshot(page)).drawings.length).toBe(3);
@@ -145,7 +193,7 @@ test("settings dialog exposes keyboard semantics and returns focus on Escape", a
     created.drawings[0].id,
   );
   await page.getByRole("button", { name: "Cursor", exact: true }).click();
-  await page.getByRole("button", { name: /^Cursor\b/ }).last().click();
+  await page.getByRole("button", { name: /^Cross\b/ }).last().click();
   await page.mouse.click(
     projected![0].x + (projected![1].x - projected![0].x) * 0.75,
     projected![0].y + (projected![1].y - projected![0].y) * 0.75,
@@ -181,7 +229,7 @@ test("save-template dialog validates, saves, reselects, and deletes a preset", a
     created.drawings[0].id,
   );
   await page.getByRole("button", { name: "Cursor", exact: true }).click();
-  await page.getByRole("button", { name: /^Cursor\b/ }).last().click();
+  await page.getByRole("button", { name: /^Cross\b/ }).last().click();
   await page.mouse.click(
     projected![0].x + (projected![1].x - projected![0].x) * 0.75,
     projected![0].y + (projected![1].y - projected![0].y) * 0.75,
@@ -231,7 +279,7 @@ test("fixed drawing targets create independent price-alert snapshots", async ({ 
   );
 
   await page.getByRole("button", { name: "Cursor", exact: true }).click();
-  await page.getByRole("button", { name: /^Cursor\b/ }).last().click();
+  await page.getByRole("button", { name: /^Cross\b/ }).last().click();
   await page.mouse.click(pane.x + pane.width * 0.64, projected![0].y);
   await page.getByTestId("price-chart-root").getByRole("button", { name: "More", exact: true }).click();
   await page.getByRole("button", { name: "Add alert", exact: true }).click();
@@ -494,7 +542,7 @@ test("shared coordinate editor updates anchors in one undoable transaction", asy
     created.drawings[0].id,
   );
   await page.getByRole("button", { name: "Cursor", exact: true }).click();
-  await page.getByRole("button", { name: /^Cursor\b/ }).last().click();
+  await page.getByRole("button", { name: /^Cross\b/ }).last().click();
   await page.mouse.click(
     projected![0].x + (projected![1].x - projected![0].x) * 0.75,
     projected![0].y + (projected![1].y - projected![0].y) * 0.75,
@@ -566,7 +614,7 @@ test("confirmed settings become the persisted default for the same tool", async 
     created.drawings[0].id,
   );
   await page.getByRole("button", { name: "Cursor", exact: true }).click();
-  await page.getByRole("button", { name: /^Cursor\b/ }).last().click();
+  await page.getByRole("button", { name: /^Cross\b/ }).last().click();
   await page.mouse.click(
     projected![0].x + (projected![1].x - projected![0].x) * 0.75,
     projected![0].y + (projected![1].y - projected![0].y) * 0.75,
@@ -665,7 +713,7 @@ test("interval visibility settings filter drawings and quick presets update the 
   };
 
   await page.getByRole("button", { name: "Cursor", exact: true }).click();
-  await page.getByRole("button", { name: /^Cursor\b/ }).last().click();
+  await page.getByRole("button", { name: /^Cross\b/ }).last().click();
   await page.mouse.click(body.x, body.y);
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Trendline settings" });
@@ -735,9 +783,9 @@ test("compact one-click Long position moves from the overlapping entry handles w
   expect(projected![2].y).toBeGreaterThan(pane.y);
   expect(projected![2].y).toBeLessThan(pane.y + pane.height);
 
-  if (created.activeTool !== "cursor") {
+  if (created.activeTool !== "crosshair") {
     await page.getByRole("button", { name: "Cursor", exact: true }).click();
-    await page.getByRole("button", { name: /^Cursor\b/ }).last().click();
+    await page.getByRole("button", { name: /^Cross\b/ }).last().click();
   }
 
   // First use the exact right-entry handle to create a deterministic 40px
@@ -909,9 +957,9 @@ async function exerciseTrendlineTransaction(page: Page) {
     y: projectedStart.y + (projectedEnd.y - projectedStart.y) * 0.75,
   };
 
-  if (created.activeTool !== "cursor") {
+  if (created.activeTool !== "crosshair") {
     await page.getByRole("button", { name: "Cursor", exact: true }).click();
-    await page.getByRole("button", { name: /^Cursor\b/ }).last().click();
+    await page.getByRole("button", { name: /^Cross\b/ }).last().click();
   }
   // The midpoint owns inline text editing, so selection and drag deliberately
   // use body points away from that overlay.
@@ -987,7 +1035,7 @@ test("creation cancellation and explicit freeform completion are transactional",
   await page.keyboard.press("Escape");
   await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Idle");
   expect((await drawingSnapshot(page)).drawings).toHaveLength(0);
-  expect((await drawingSnapshot(page)).activeTool).toBe("cursor");
+  expect((await drawingSnapshot(page)).activeTool).toBe("crosshair");
 
   await page.getByRole("button", { name: "Rectangle", exact: true }).click();
   await page.getByRole("button", { name: /^Path\b/ }).click();
@@ -1009,7 +1057,7 @@ test("creation cancellation and explicit freeform completion are transactional",
   await page.mouse.click(first.x, first.y);
   await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Drawing");
   await page.getByRole("button", { name: "Cursor", exact: true }).click();
-  await page.getByRole("button", { name: /^Cursor\b/ }).last().click();
+  await page.getByRole("button", { name: /^Cross\b/ }).last().click();
   await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Idle");
   expect((await drawingSnapshot(page)).drawings).toHaveLength(0);
 });
@@ -1033,7 +1081,7 @@ test("rectangle completion releases one-shot creation before hover movement", as
 
   await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(1);
   await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Idle");
-  await expect.poll(async () => (await drawingSnapshot(page)).activeTool).toBe("cursor");
+  await expect.poll(async () => (await drawingSnapshot(page)).activeTool).toBe("crosshair");
   const committed = (await drawingSnapshot(page)).drawings[0].points;
 
   await page.mouse.move(hover.x, hover.y, { steps: 8 });
@@ -1042,7 +1090,7 @@ test("rectangle completion releases one-shot creation before hover movement", as
   ));
   const afterHover = await drawingSnapshot(page);
   expect(afterHover.machineState).toBe("Idle");
-  expect(afterHover.activeTool).toBe("cursor");
+  expect(afterHover.activeTool).toBe("crosshair");
   expect(afterHover.drawings).toHaveLength(1);
   expect(afterHover.drawings[0].points).toEqual(committed);
 });
@@ -1155,7 +1203,7 @@ test("rectangle drag-release commits and exits creation mode", async ({ page }) 
 
   await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(1);
   await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Idle");
-  await expect.poll(async () => (await drawingSnapshot(page)).activeTool).toBe("cursor");
+  await expect.poll(async () => (await drawingSnapshot(page)).activeTool).toBe("crosshair");
   const committed = (await drawingSnapshot(page)).drawings[0].points;
 
   await page.mouse.move(hover.x, hover.y, { steps: 8 });
@@ -1209,7 +1257,7 @@ test("two-point drag follows owned pointer when buttons telemetry is zero", asyn
 
   await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(1);
   await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Idle");
-  await expect.poll(async () => (await drawingSnapshot(page)).activeTool).toBe("cursor");
+  await expect.poll(async () => (await drawingSnapshot(page)).activeTool).toBe("crosshair");
 });
 
 test("eraser is undoable and pass-through modes never start creation", async ({ page }) => {
@@ -1235,7 +1283,7 @@ test("eraser is undoable and pass-through modes never start creation", async ({ 
   await expect.poll(async () => (await drawingSnapshot(page)).drawings.length).toBe(1);
 
   await page.getByRole("button", { name: "Cursor", exact: true }).click();
-  await page.getByRole("button", { name: /^Crosshair\b/ }).click();
+  await page.getByRole("button", { name: /^Cross\b/ }).click();
   await page.mouse.click(start.x, start.y);
   const snapshot = await drawingSnapshot(page);
   expect(snapshot.machineState).toBe("Idle");
@@ -1262,7 +1310,7 @@ test("resize, pointer cancellation, and symbol cancellation preserve transaction
   expect(projected).not.toBeNull();
 
   await page.getByRole("button", { name: "Cursor", exact: true }).click();
-  await page.getByRole("button", { name: /^Cursor\b/ }).last().click();
+  await page.getByRole("button", { name: /^Cross\b/ }).last().click();
   await page.mouse.move(projected![1].x, projected![1].y);
   await page.mouse.down();
   await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("ResizingHandle");
@@ -1307,7 +1355,7 @@ test("resize, pointer cancellation, and symbol cancellation preserve transaction
   await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Drawing");
   await page.evaluate(() => window.__drawingInteractionTest!.changeSymbol("PHASE2_CANCEL_TEST"));
   await expect.poll(async () => (await drawingSnapshot(page)).machineState).toBe("Idle");
-  expect((await drawingSnapshot(page)).activeTool).toBe("cursor");
+  expect((await drawingSnapshot(page)).activeTool).toBe("crosshair");
   expect((await drawingSnapshot(page)).drawings).toHaveLength(0);
 });
 
@@ -1335,7 +1383,7 @@ test("standalone and attached text edits each produce one undoable command", asy
   await page.mouse.click(start.x, start.y);
   await page.mouse.click(end.x, end.y);
   await page.getByRole("button", { name: "Cursor", exact: true }).click();
-  await page.getByRole("button", { name: /^Cursor\b/ }).last().click();
+  await page.getByRole("button", { name: /^Cross\b/ }).last().click();
   await page.mouse.click((start.x + end.x) / 2, (start.y + end.y) / 2);
   await page.getByPlaceholder("Enter text...").fill("Attached label");
   await page.getByPlaceholder("Enter text...").press("Enter");

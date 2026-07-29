@@ -20,6 +20,7 @@ import {
   anchorsFromProjected,
   boundsFromPoints,
   curveBodyHits,
+  polygonBodyHits,
   projectPoints,
   quadControlThroughPoint,
   sampleQuadratic,
@@ -60,6 +61,23 @@ const plugin: DrawingToolPlugin = {
       g.quadraticCurveTo(control.x, control.y, b.x, b.y);
     }
     else g.lineTo(b.x, b.y);
+    if (d.fillColor && d.fillColor !== "none") {
+      g.lineTo(a.x, a.y);
+      g.closePath();
+      g.save();
+      g.fillStyle = d.fillColor;
+      g.globalAlpha = d.opacity ?? 0.2;
+      g.fill();
+      g.restore();
+      g.beginPath();
+      g.moveTo(a.x, a.y);
+      if (peak) {
+        const control = quadControlThroughPoint(a, b, peak);
+        g.quadraticCurveTo(control.x, control.y, b.x, b.y);
+      } else {
+        g.lineTo(b.x, b.y);
+      }
+    }
     g.stroke();
     g.restore();
     if (selected) {
@@ -80,6 +98,9 @@ const plugin: DrawingToolPlugin = {
     return [
       ...anchorHits(d, projected, px, py),
       ...curveBodyHits(d, samples, px, py, strokeHitTolerance(d.lineWidth)),
+      ...(d.fillColor && d.fillColor !== "none" && (d.opacity ?? 0.2) > 0
+        ? polygonBodyHits(d, samples, px, py)
+        : []),
     ];
   },
   movePoints: defaultMovePoints,

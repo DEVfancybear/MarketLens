@@ -80,6 +80,7 @@ import {
   getRecentMarketTicks,
 } from "@/store/marketDataStore";
 import { loadCompleteVolumeProfileHistory } from "./drawing/data/volumeProfileHistory";
+import { CursorModeOverlay } from "./drawing/CursorModeOverlay";
 import { workspaceReadyAtom } from "@/store/authStore";
 import {
   POSITION_DEFAULT_RISK_HEIGHT_PX,
@@ -278,7 +279,7 @@ export function DrawingLayer() {
   const stateRef = useRef({
     drawings: [] as Drawing[],
     visibleDrawings: [] as Drawing[],
-    activeTool: "cursor" as Drawing["tool"],
+    activeTool: "crosshair" as Drawing["tool"],
     drawColor: "#2962ff",
     drawingToolPreferences,
     candles,
@@ -758,7 +759,7 @@ export function DrawingLayer() {
         }
         selectDrawing(null);
         reset();
-        setActiveTool("cursor");
+        setActiveTool("crosshair");
         // The harness is a transactional test boundary. Its globals can mount
         // before fixture candles have reached the chart/time scale; clicks in
         // that window project to null and snapshot tools capture empty data.
@@ -1007,6 +1008,11 @@ export function DrawingLayer() {
         data-drawing-canvas
         className="absolute inset-0 h-full w-full"
         style={{ cursor: cursorStyle, pointerEvents: "none", zIndex: 5 }}
+      />
+      <CursorModeOverlay
+        activeTool={activeTool}
+        color={drawColor}
+        canvasRef={canvasRef}
       />
       <DrawingSettingsToolbar />
       {ctxMenu && (

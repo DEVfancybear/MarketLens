@@ -5,11 +5,12 @@ import type { Drawing } from "../../src/types/drawing";
 import { getTool } from "../../src/components/chart/drawing/tools/ToolRegistry";
 import "../../src/components/chart/drawing/tools/plugins/LevelFanTools";
 import "../../src/components/chart/drawing/tools/plugins/RadialLevelTools";
+import "../../src/components/chart/drawing/tools/plugins/FibSpiralTool";
 import "../../src/components/chart/drawing/tools/plugins/GannGridTools";
 import "../../src/components/chart/drawing/tools/plugins/PitchforkTools";
 
 const WAVE_B = [
-  "fibChannel", "fibSpeedFan", "fibSpeedArcs", "fibCircles", "fibWedge",
+  "fibChannel", "fibSpeedFan", "fibSpeedArcs", "fibCircles", "fibSpiral", "fibWedge",
   "trendFibTime", "pitchfan", "gannFan", "gannSquare", "gannBox",
   "pitchfork", "insidePitchfork", "schiffPitchfork", "modifiedSchiffPitchfork",
 ] as const;
@@ -45,22 +46,21 @@ test("Fib Channel bounds include enabled external ratios",()=>{
   assert.ok(bounds.h>100,"external level must expand beyond the base channel");
 });
 
-test("Fib Wedge hit-testing and bounds follow the point-3 angular sector",()=>{
+test("Fib Wedge uses the official two-point symmetric angular sector",()=>{
   const adapter=getTool("fibWedge")!;
   const drawing=fixture("fibWedge");
   drawing.points=[
     {time:300,price:300},
     {time:400,price:300},
-    {time:280,price:320},
   ];
   drawing.fibLevels=[{value:1,enabled:true,color:"#fff"}];
 
-  const visibleArc={x:300,y:400};
-  const oppositeArc={x:300,y:200};
+  const visibleArc={x:300+Math.SQRT1_2*100,y:300+Math.SQRT1_2*100};
+  const oppositeArc={x:200,y:300};
   assert.ok(
     adapter.hitTest(drawing,visibleArc.x,visibleArc.y,projector.toX,projector.toY)
       .some((hit)=>hit.target==="body"),
-    "the rendered 90-degree point on the outer arc must be selectable",
+    "the rendered +45-degree point on the outer arc must be selectable",
   );
   assert.equal(
     adapter.hitTest(drawing,oppositeArc.x,oppositeArc.y,projector.toX,projector.toY).length,
@@ -72,8 +72,8 @@ test("Fib Wedge hit-testing and bounds follow the point-3 angular sector",()=>{
   const renderedExtrema=[
     {x:400,y:300},
     visibleArc,
-    {x:300-Math.SQRT1_2*100,y:300+Math.SQRT1_2*100},
-    {x:280,y:320},
+    {x:300+Math.SQRT1_2*100,y:300-Math.SQRT1_2*100},
+    {x:300,y:300},
   ];
   for(const point of renderedExtrema){
     assert.ok(
@@ -83,11 +83,11 @@ test("Fib Wedge hit-testing and bounds follow the point-3 angular sector",()=>{
     );
   }
   assert.ok(
-    oppositeArc.y<bounds.y,
-    "angular bounds must not retain the discarded opposite semicircle",
+    oppositeArc.x<bounds.x,
+    "angular bounds must not retain the discarded opposite sector",
   );
   assert.deepEqual(
-    adapter.getAnchors(drawing,projector.toX,projector.toY)[2],
-    {index:2,x:280,y:320,target:"p3"},
+    adapter.getAnchors(drawing,projector.toX,projector.toY)[1],
+    {index:1,x:400,y:300,target:"p2"},
   );
 });

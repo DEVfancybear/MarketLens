@@ -469,7 +469,7 @@ export function Watchlist() {
         const timeframe = pane.initialized
           ? pane.timeframe
           : activeTimeframe;
-        setActiveTool("cursor");
+        setActiveTool("crosshair");
         setEditingDrawing(null);
         setEditingIndicator(null);
         setDrawingContext({ layoutId: drawingLayoutId, chartId: pane.id });

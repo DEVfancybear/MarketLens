@@ -462,7 +462,7 @@ export function useDrawingInteractionManager(
       previousCancellationKeyRef.current !== cancellationKey
     ) {
       reset();
-      setActiveTool("cursor");
+      setActiveTool("crosshair");
     }
     previousCancellationKeyRef.current = cancellationKey;
   }, [cancellationKey, reset, setActiveTool]);
@@ -522,7 +522,7 @@ export function useDrawingInteractionManager(
       if (definition.overlayExtension === "text-editor") {
         onTextPlace?.(current.activeTool, point, current.drawColor);
         reset();
-        if (!current.drawingToolPreferences.keepDrawing) setActiveTool("cursor");
+        if (!current.drawingToolPreferences.keepDrawing) setActiveTool("crosshair");
         return;
       }
 
@@ -1207,7 +1207,7 @@ export function useDrawingInteractionManager(
         } else {
           reset();
         }
-        setActiveTool("cursor");
+        setActiveTool("crosshair");
         return;
       }
       if (e.key === "a" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {

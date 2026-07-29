@@ -78,11 +78,11 @@ export function useHotkeys() {
           return;
         if (
           store.get(selectedDrawingIdAtom) ||
-          store.get(activeToolAtom) !== "cursor"
+          store.get(activeToolAtom) !== "crosshair"
         ) {
           e.preventDefault();
           store.set(selectDrawingAtom, null);
-          store.set(setActiveToolAtom, "cursor");
+          store.set(setActiveToolAtom, "crosshair");
         }
         return;
       }

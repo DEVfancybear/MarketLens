@@ -14,10 +14,19 @@ import {
   anchorHits,
   anchorsFromProjected,
   boundsFromPoints,
+  polygonBodyHits,
   projectPoints,
   segmentBodyHits,
   visiblePoints,
 } from "./shapeGeometry";
+
+function isClosed(drawing: Drawing): boolean {
+  const first = drawing.points[0];
+  const last = drawing.points.at(-1);
+  return !!first && !!last &&
+    first.time === last.time &&
+    first.price === last.price;
+}
 
 const plugin: DrawingToolPlugin = {
   tool: "polyline",
@@ -38,6 +47,15 @@ const plugin: DrawingToolPlugin = {
     for (let i = 1; i < projPts.length; i++) {
       if (projPts[i]) g.lineTo(projPts[i]!.x, projPts[i]!.y);
     }
+    const closed = isClosed(d);
+    if (closed) g.closePath();
+    if (closed && d.fillColor && d.fillColor !== "none") {
+      g.save();
+      g.fillStyle = d.fillColor;
+      g.globalAlpha = d.opacity ?? 0.2;
+      g.fill();
+      g.restore();
+    }
     g.stroke();
     if (selected)
       projPts.forEach((p) => {
@@ -55,6 +73,12 @@ const plugin: DrawingToolPlugin = {
     return [
       ...anchorHits(d, projected, px, py),
       ...segmentBodyHits(d, projected, px, py),
+      ...(isClosed(d) &&
+      d.fillColor &&
+      d.fillColor !== "none" &&
+      (d.opacity ?? 0.2) > 0
+        ? polygonBodyHits(d, visiblePoints(projected), px, py)
+        : []),
     ];
   },
   getAnchors(d: Drawing, toX: HitTestProjector, toY: HitTestProjector) {

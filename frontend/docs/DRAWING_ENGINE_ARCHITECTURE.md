@@ -1,11 +1,11 @@
 # DRAWING ENGINE ARCHITECTURE
 
-_Date: 2026-06-25. Updated 2026-07-13 for the 88-entry manifest/84-adapter catalog,
+_Date: 2026-06-25. Updated 2026-07-28 for the 94-entry manifest/87-adapter catalog,
 2026-07-17 for capability-driven parity, shared creation gestures, atomic transforms, and
 interaction-frame rendering, and 2026-07-19 for exact-precision render signatures._
 
-The current post-Phase 8 maintenance record is
-`DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md`. Older dated counts in
+The current requested-group parity record is
+`DRAWING_TOOLS_TRADINGVIEW_PARITY_2026-07-28.md`. Older dated counts in
 feature-specific sections below are historical implementation notes, not the
 current registry size or test total.
 
@@ -25,11 +25,16 @@ still work, not just the one you were fixing.
 
 ## Overview
 
-The Drawing Engine is a canvas-based overlay system that renders 84 persistent
+The Drawing Engine is a canvas-based overlay system that renders 87 persistent
 drawing tools on top of the Lightweight Charts price chart. All geometry is
 stored in `(time, price)` data space and projected to pixel coordinates each
-frame, so drawings remain pinned to data through zoom, pan, and resize. Four
+frame, so drawings remain pinned to data through zoom, pan, and resize. Seven
 additional manifest entries describe non-persistent interaction modes.
+
+`CursorModeOverlay.tsx` owns the chart-local Dot/Magic visuals and the temporary
+Demonstration strokes. Demonstration marks never enter drawing state, history,
+or persistence. Cross is the neutral/default mode after creation; native
+crosshair lines are enabled only for Cross, Dot, and persistent creation tools.
 
 For the shared chart zoom/pan/viewport invalidation contract, see
 `ZOOM_VIEWPORT_SYNC_ARCHITECTURE.md`.
@@ -110,8 +115,8 @@ For the shared chart zoom/pan/viewport invalidation contract, see
    → CanvasRenderer re-projects every drawing's (time,price) → pixels and repaints
      (forceNext bypasses the memo guard; CoordinateCache is cleared for the frame)
 
-5. User picks 'cursor' tool and clicks near a drawing
-   → DrawingInteractionManager (cursor pointerdown) → hitTest(drawings, point, toX, toY)
+5. User picks a selection cursor (Cross, Dot, Arrow, or Magic) and clicks near a drawing
+   → DrawingInteractionManager (selection pointerdown) → hitTest(drawings, point, toX, toY)
    → selectDrawing(hit.id); if hit a handle → ResizingHandle, else → MovingDrawing
    → store-change effect / scheduleRedraw → repaint in "selected" state (handles visible)
 ```
@@ -463,9 +468,9 @@ Charts logical coordinate, not an assumed zero-based candle-array index. Positio
 the same context to preserve logical span across gaps, and crossed resize handles retain a 12 CSS-pixel
 minimum. Rendering, pointer inversion, and transforms must all consume the same active chart context.
 
-Creation and cursor listeners share the document capture phase. The completing creation
+Creation and selection listeners share the document capture phase. The completing creation
 `pointerdown` must call `stopImmediatePropagation()` after committing: tool commit can
-synchronously switch back to cursor mode, and without this event boundary the cursor listener can
+synchronously switch back to Cross mode, and without this event boundary the selection listener can
 interpret the same physical press as a new Move/Resize gesture. Browser history assertions keep
 the last command at `Create Drawing` after a completed click-sequence tool.
 
@@ -732,8 +737,8 @@ exactly 2; Ctrl+D then Ctrl+C/Ctrl+V → exactly 3.
   guarantee this can never reject a drawing a full hitTest would have hit. Purely additive (same
   results, less wasted work); verified via Playwright that miss/hit selection, body drag, and
   endpoint drag are all unaffected.
-- **Dual listener overhead — accepted, not fixed.** Both the cursor-mode (permanent) and
-  drawing-mode (conditional, `activeTool !== "cursor"`) document capture-phase listeners run their
+- **Dual listener overhead — accepted, not fixed.** Both the selection-mode and
+  persistent drawing-mode document capture-phase listeners run their
   own early-return checks on every pointer event while a drawing tool is active. Looked at fixing
   this by gating listener attachment on `activeTool`, but `getState()` here is `() =>
   stateRef.current` (a ref read, not a reconstruction) — the actual cost is negligible — while

@@ -96,8 +96,11 @@ test("creation and style families are derived from the manifest", () => {
   assert.equal(getDrawingToolManifestEntry("long").settingsOverlay, "position-dialog");
   assert.equal(getDrawingToolManifestEntry("short").lifecycleExtension, "position-resolution");
   assert.equal(getDrawingToolManifestEntry("cursor").modeInteraction, "selection");
+  assert.equal(getDrawingToolManifestEntry("dotCursor").modeInteraction, "selection");
+  assert.equal(getDrawingToolManifestEntry("demonstrationCursor").modeInteraction, "demonstration");
+  assert.equal(getDrawingToolManifestEntry("magicCursor").modeInteraction, "selection");
   assert.equal(getDrawingToolManifestEntry("eraser").modeInteraction, "erase");
-  assert.equal(getDrawingToolManifestEntry("crosshair").modeInteraction, "pass-through");
+  assert.equal(getDrawingToolManifestEntry("crosshair").modeInteraction, "selection");
   assert.equal(getDrawingToolManifestEntry("long").viewportCulling, "always-render");
   assert.equal(getDrawingToolManifestEntry("short").viewportCulling, "always-render");
   assert.equal(getDrawingToolManifestEntry("trendline").viewportCulling, "spatial");
@@ -119,7 +122,7 @@ test("creation and style families are derived from the manifest", () => {
 });
 
 test("shift-number and modifier drawing shortcuts are derived from manifest chords", () => {
-  assert.equal(getDrawingToolForShortcut({ key: "1", shiftKey: true }), "cursor");
+  assert.equal(getDrawingToolForShortcut({ key: "1", shiftKey: true }), "crosshair");
   assert.equal(getDrawingToolForShortcut({ key: "7", shiftKey: true }), "fibRetracement");
   assert.equal(getDrawingToolForShortcut({ key: "T", altKey: true }), "trendline");
   assert.equal(getDrawingToolForShortcut({ key: "h", altKey: true }), "horizontal");

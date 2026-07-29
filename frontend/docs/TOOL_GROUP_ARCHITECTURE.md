@@ -1,6 +1,6 @@
 # TOOL GROUP ARCHITECTURE — Phase 4.2.2
 
-_Date: 2026-06-26._
+_Date: 2026-06-26. Updated 2026-07-28 for current TradingView group parity._
 
 ## TradingView pattern
 
@@ -26,10 +26,12 @@ Sidebar:           Flyout (on click):
 
 | Group | Default Tool | Tools |
 |---|---|---|
-| Cursor | cursor | (no flyout — direct) |
+| Cursor | crosshair | crosshair, dotCursor, cursor, demonstrationCursor, magicCursor, eraser |
 | Lines | trendline | trendline, ray, infoLine, extendedLine, trendAngle, horizontal, horizRay, vertical, crossLine |
-| Geometry | rectangle | brush, highlighter, arrowMarker, arrow, arrowMarkUp, arrowMarkDown, arrowMarkLeft, arrowMarkRight, rectangle, rotatedRect, path, circle, ellipse, polyline, triangle, arc, curve, doubleCurve |
-| Text | text | text |
+| Geometry | rectangle | brush, highlighter, arrow, arrowMarker, arrowMarkUp, arrowMarkDown, rectangle, rotatedRect, path, circle, ellipse, polyline, triangle, arc, curve, doubleCurve |
+| Fibonacci/Gann | fibRetracement | fibRetracement, fibExtension, fibChannel, fibTimeZone, fibSpeedFan, trendFibTime, fibCircles, fibSpiral, fibSpeedArcs, fibWedge, pitchfan, gannFan, gannSquare, gannBox |
+| Annotations | text | text, note, priceNote, pin, table, callout, comment, priceLabel, signpost, flag, image, socialEmbed |
+| Icons | emoji | emoji |
 
 ## Geometry flyout parity update
 
@@ -43,8 +45,9 @@ references plus comparable TradingView-like chart tool menus:
   Highlighter renders with a wider semi-transparent stroke by default.
 - `Arrow marker` and `Arrow` are two-point tools. The first click sets the tail;
   the second click sets the arrow tip and direction.
-- `Arrow mark up/down/left/right` are one-point marker tools anchored to a
-  single `(time, price)` location with fixed screen-space size.
+- `Arrow mark up/down` are the current one-point marker tools anchored to a
+  single `(time, price)` location with fixed screen-space size. Historical
+  left/right IDs remain loadable but are hidden from new-creation menus.
 - `SHAPES` follows the observed TradingView order: Rectangle, Rotated
   rectangle, Path, Circle, Ellipse, Polyline, Triangle, Arc, Curve, Double
   curve.

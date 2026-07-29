@@ -1,15 +1,16 @@
 # Tool Registry
 
-_Date: 2026-06-25. Updated 2026-07-13 after the post-Phase 8 adapter audit and
-2026-07-17 after the parity/visual-matrix follow-up._
+_Date: 2026-06-25. Updated 2026-07-28 after the requested TradingView catalog
+parity follow-up._
 
 ## Current catalog
 
 The drawing engine is manifest- and adapter-based. There is no renderer or
-hit-test `switch(d.tool)`. The current manifest contains 88 stable ids:
+hit-test `switch(d.tool)`. The current manifest contains 94 stable ids:
 
-- four non-persistent modes: Cursor, Crosshair, Eraser, and Measure; and
-- 84 persistent drawing ids, each backed by exactly one registered adapter.
+- seven non-persistent modes: Cross, Dot, Arrow, Demonstration, Magic, Eraser,
+  and Measure; and
+- 87 persistent drawing ids, each backed by exactly one registered adapter.
 
 A plugin file may register one tool or a cohesive family. “One adapter per id”
 is the runtime invariant; “one source file per id” is not.

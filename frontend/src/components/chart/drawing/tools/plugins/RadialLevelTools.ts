@@ -46,8 +46,9 @@ type XY = { x: number; y: number };
 type FibWedgeArc = { radius: number; value: number; color?: string };
 type FibWedgeBody = {
   center: XY;
-  radiusAnchor: XY;
-  angleAnchor: XY;
+  directionAnchor: XY;
+  startBoundary: XY;
+  endBoundary: XY;
   startAngle: number;
   endAngle: number;
   arcs: readonly FibWedgeArc[];
@@ -98,43 +99,47 @@ function projectFibWedgeGeometry(
   toX: HitTestProjector,
   toY: HitTestProjector,
 ): FibWedgeGeometry {
-  const anchors = d.points.map((point) => projectPoint(point, toX, toY));
+  const anchors = d.points.slice(0, 2).map((point) => projectPoint(point, toX, toY));
   const center = anchors[0];
-  const radiusAnchor = anchors[1];
-  const angleAnchor = anchors[2];
-  if (!center || !radiusAnchor || !angleAnchor) return { anchors, body: null };
+  const directionAnchor = anchors[1];
+  if (!center || !directionAnchor) return { anchors, body: null };
 
   const baseRadius = Math.hypot(
-    radiusAnchor.x - center.x,
-    radiusAnchor.y - center.y,
+    directionAnchor.x - center.x,
+    directionAnchor.y - center.y,
   );
-  const startAngle = Math.atan2(
-    radiusAnchor.y - center.y,
-    radiusAnchor.x - center.x,
+  const directionAngle = Math.atan2(
+    directionAnchor.y - center.y,
+    directionAnchor.x - center.x,
   );
-  let endAngle = Math.atan2(
-    angleAnchor.y - center.y,
-    angleAnchor.x - center.x,
-  );
-  if (endAngle < startAngle) endAngle += TAU;
   const arcs = ratios(d).map((level) => ({
     radius: baseRadius * level.value,
     value: level.value,
     color: level.color,
   }));
+  const outerRadius = Math.max(
+    baseRadius,
+    ...arcs.map((arc) => Math.abs(arc.radius)),
+  );
+  const startAngle = directionAngle - Math.PI / 4;
+  const endAngle = directionAngle + Math.PI / 4;
+  const startBoundary = circlePoint(center, outerRadius, startAngle);
+  const endBoundary = circlePoint(center, outerRadius, endAngle);
   return {
     anchors,
     body: {
       center,
-      radiusAnchor,
-      angleAnchor,
+      directionAnchor,
+      startBoundary,
+      endBoundary,
       startAngle,
       endAngle,
       arcs,
       extrema: [
         center,
-        radiusAnchor,
-        angleAnchor,
+        directionAnchor,
+        startBoundary,
+        endBoundary,
         ...arcs.flatMap((arc) =>
           wedgeArcExtrema(center, arc.radius, startAngle, endAngle),
         ),
@@ -192,16 +197,16 @@ function fibWedgeBodyHits(
       py,
       body.center.x,
       body.center.y,
-      body.radiusAnchor.x,
-      body.radiusAnchor.y,
+      body.startBoundary.x,
+      body.startBoundary.y,
     ),
     distToSegment(
       px,
       py,
       body.center.x,
       body.center.y,
-      body.angleAnchor.x,
-      body.angleAnchor.y,
+      body.endBoundary.x,
+      body.endBoundary.y,
     ),
   );
   if (angleInWedge) {
@@ -229,8 +234,8 @@ function fibWedgeBounds(geometry: FibWedgeGeometry) {
   };
 }
 
-const fibWedge:DrawingToolPlugin={tool:"fibWedge",minPoints:3,maxPoints:3,
-  render(g,d,proj,selected){const geometry=projectFibWedgeGeometry(d,proj.toX,proj.toY);if(!geometry.body)return;g.save();g.font=canvasFont(d.fontSize??10);for(const arc of geometry.body.arcs){g.strokeStyle=d.fibUseOneColor?d.fibLevelLineColor||d.color:arc.color||d.color;g.beginPath();g.arc(geometry.body.center.x,geometry.body.center.y,arc.radius,geometry.body.startAngle,geometry.body.endAngle);g.stroke();}line(g,geometry.body.center.x,geometry.body.center.y,geometry.body.radiusAnchor.x,geometry.body.radiusAnchor.y);line(g,geometry.body.center.x,geometry.body.center.y,geometry.body.angleAnchor.x,geometry.body.angleAnchor.y);if(selected)geometry.anchors.forEach((point)=>{if(point)handle(g,point.x,point.y,d.color);});g.restore();},
+const fibWedge:DrawingToolPlugin={tool:"fibWedge",minPoints:2,
+  render(g,d,proj,selected){const geometry=projectFibWedgeGeometry(d,proj.toX,proj.toY);if(!geometry.body)return;g.save();g.font=canvasFont(d.fontSize??10);if(d.fibBackground!==false){g.globalAlpha=d.opacity??0.08;g.fillStyle=d.fillColor||d.color;g.beginPath();g.moveTo(geometry.body.center.x,geometry.body.center.y);g.arc(geometry.body.center.x,geometry.body.center.y,geometry.body.arcs.at(-1)?.radius??0,geometry.body.startAngle,geometry.body.endAngle);g.closePath();g.fill();g.globalAlpha=1;}for(const arc of geometry.body.arcs){g.strokeStyle=d.fibUseOneColor?d.fibLevelLineColor||d.color:arc.color||d.color;g.beginPath();g.arc(geometry.body.center.x,geometry.body.center.y,arc.radius,geometry.body.startAngle,geometry.body.endAngle);g.stroke();if(d.fibShowLevels!==false)g.fillText(String(arc.value),geometry.body.center.x+Math.cos(geometry.body.endAngle)*arc.radius+3,geometry.body.center.y+Math.sin(geometry.body.endAngle)*arc.radius-3);}if(d.fibTrendLine!==false){g.strokeStyle=d.fibTrendLineColor||d.color;line(g,geometry.body.center.x,geometry.body.center.y,geometry.body.startBoundary.x,geometry.body.startBoundary.y);line(g,geometry.body.center.x,geometry.body.center.y,geometry.body.endBoundary.x,geometry.body.endBoundary.y);}if(selected)geometry.anchors.forEach((point)=>{if(point)handle(g,point.x,point.y,d.color);});g.restore();},
   hitTest(d,px,py,toX,toY){const geometry=projectFibWedgeGeometry(d,toX,toY);return[...fibWedgeAnchorHits(d,px,py,geometry),...fibWedgeBodyHits(d,px,py,geometry.body)];},getAnchors(d,toX,toY){return fibWedgeAnchors(projectFibWedgeGeometry(d,toX,toY));},movePoints:defaultMovePoints,boundingBox(d,toX,toY){return fibWedgeBounds(projectFibWedgeGeometry(d,toX,toY));}};
 
 registerTool(createRadial("fibSpeedArcs",false));

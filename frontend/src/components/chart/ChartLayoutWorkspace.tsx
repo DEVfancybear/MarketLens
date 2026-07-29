@@ -136,7 +136,7 @@ export function ChartLayoutWorkspace({
     const switchedPane = previousActiveSlot.current !== activeSlot;
     previousActiveSlot.current = activeSlot;
     if (switchedPane && activePane?.initialized) {
-      setActiveTool("cursor");
+      setActiveTool("crosshair");
       setEditingDrawing(null);
       setEditingIndicator(null);
       setDrawingContext({ layoutId: drawingLayoutId, chartId: activePane.id });
@@ -171,7 +171,7 @@ export function ChartLayoutWorkspace({
     if (pane.slot === activeSlot) return;
     // A drawing/indicator gesture belongs to the pane where it started. Close
     // transient editor/tool state before changing the active store projection.
-    setActiveTool("cursor");
+    setActiveTool("crosshair");
     setEditingDrawing(null);
     setEditingIndicator(null);
     setDrawingContext({ layoutId: drawingLayoutId, chartId: pane.id });

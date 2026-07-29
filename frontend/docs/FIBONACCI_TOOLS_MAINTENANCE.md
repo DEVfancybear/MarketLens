@@ -1,6 +1,25 @@
 # Fibonacci Tools Maintenance
 
-Last updated: 2026-07-03.
+Last updated: 2026-07-28.
+
+## Catalog parity update
+
+The complete current Fibonacci/Gann menu is:
+
+`fibRetracement`, `fibExtension`, `fibChannel`, `fibTimeZone`,
+`fibSpeedFan`, `trendFibTime`, `fibCircles`, `fibSpiral`,
+`fibSpeedArcs`, `fibWedge`, `pitchfan`, `gannFan`, `gannSquare`, and
+`gannBox`.
+
+All 14 entries are manifest-backed and adapter-backed. `fibSpiral` is a
+two-anchor golden-ratio logarithmic spiral with reversible chirality.
+`fibWedge` is a two-anchor symmetric wedge; the former third-point topology was
+removed because it disagreed with TradingView's current drawing contract.
+Pitchfork variants are now grouped under Trend Lines. The legacy `fib` id
+remains renderable but hidden from new-creation menus.
+
+See `DRAWING_TOOLS_TRADINGVIEW_PARITY_2026-07-28.md` for the individual-tool
+source and regression matrix.
 
 ## TradingView Reference
 

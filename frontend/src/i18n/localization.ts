@@ -235,8 +235,11 @@ export type Translate = (
 ) => string;
 
 export const VI_DRAWING_TOOL_NAMES: Record<DrawingTool, string> = {
-  cursor: "Con trỏ",
+  cursor: "Mũi tên",
   crosshair: "Chữ thập",
+  dotCursor: "Dấu chấm",
+  demonstrationCursor: "Trình diễn",
+  magicCursor: "Ma thuật",
   eraser: "Tẩy",
   measure: "Đo lường",
   trendline: "Đường xu hướng",
@@ -280,9 +283,11 @@ export const VI_DRAWING_TOOL_NAMES: Record<DrawingTool, string> = {
   flatTopBottom: "Đỉnh/Đáy Phẳng",
   disjointChannel: "Kênh Đứt gãy",
   note: "Ghi chú",
+  priceNote: "Ghi chú giá",
+  pin: "Ghim",
   callout: "Chú thích",
   comment: "Bình luận",
-  priceLabel: "Ghi chú giá",
+  priceLabel: "Nhãn giá",
   signpost: "Biển báo",
   flag: "Cờ đánh dấu",
   cyclicLines: "Đường chu kỳ",
@@ -291,6 +296,7 @@ export const VI_DRAWING_TOOL_NAMES: Record<DrawingTool, string> = {
   fibSpeedFan: "Quạt Kháng cự Tốc độ Fib",
   fibSpeedArcs: "Vòng cung Kháng cự Tốc độ Fib",
   fibCircles: "Vòng Fib",
+  fibSpiral: "Xoắn ốc Fib",
   fibWedge: "Cái nêm Fib",
   trendFibTime: "Fib Vùng Thời Gian Dựa Trên Xu Hướng",
   pitchfan: "Pitchfan",
@@ -334,6 +340,7 @@ const VI_DRAWING_GROUP_NAMES: Record<DrawingToolGroupId, string> = {
   measurements: "Công cụ dự báo và đo lường",
   positions: "Vị thế mua/bán",
   annotations: "Công cụ chú thích",
+  icons: "Biểu tượng",
 };
 
 export function drawingToolName(

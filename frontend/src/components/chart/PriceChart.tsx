@@ -35,6 +35,7 @@ import {
   pineEditorScriptIdAtom,
   pineEditorSourceAtom,
   pineEditorTitleAtom,
+  activeToolAtom,
 } from "@/store/chartStore";
 import { setBottomTabAtom, themeAtom, gridVisibleAtom } from "@/store/uiStore";
 import { useReplayClientProjection } from "@/store/replayClientStore";
@@ -120,6 +121,23 @@ import {
 } from "@/services/indicatorSeriesWritePlan";
 import { indicatorPointsInViewport, resolveCandleViewport, type CandleViewport } from "@/services/candleViewport";
 import type { IndicatorMagnetPoint } from "./drawing/interaction/OhlcMagnetSnap";
+import { getDrawingToolManifestEntry } from "@/types/drawingToolManifest";
+
+function drawingCursorCrosshairOptions(
+  theme: Parameters<typeof crosshairOptions>[0],
+  tool: ReturnType<typeof getDrawingToolManifestEntry>["id"],
+) {
+  const base = crosshairOptions(theme);
+  const showLines =
+    getDrawingToolManifestEntry(tool).persistent ||
+    tool === "crosshair" ||
+    tool === "dotCursor";
+  return {
+    ...base,
+    vertLine: { ...base.vertLine, visible: showLines },
+    horzLine: { ...base.horzLine, visible: showLines },
+  };
+}
 
 function keepLatestBarInView(chart: IChartApi, viewport: ChartViewportController, dataLength: number) {
   const timeScale = chart.timeScale();
@@ -278,6 +296,7 @@ export function PriceChart({
   registerAsMain?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const activeDrawingTool = useAtomValue(activeToolAtom);
   const chartRef = useRef<IChartApi | null>(null);
   const viewportControllerRef = useRef<ChartViewportController | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -490,7 +509,7 @@ export function PriceChart({
         // Floating crosshair time tooltip — HH:mm intraday, date for daily.
         timeFormatter: makeTimeFormatter(timeframe, timeZone),
       },
-      crosshair: crosshairOptions(theme),
+      crosshair: drawingCursorCrosshairOptions(theme, activeDrawingTool),
       handleScroll: {
         mouseWheel: interactive,
         pressedMouseMove: interactive,
@@ -726,10 +745,10 @@ export function PriceChart({
         allowShiftVisibleRangeOnWhitespaceReplacement: false,
       },
       localization: { timeFormatter: makeTimeFormatter(timeframe, timeZone) },
-      crosshair: crosshairOptions(theme),
+      crosshair: drawingCursorCrosshairOptions(theme, activeDrawingTool),
     });
     candleSeriesRef.current?.applyOptions(candlestickOptions(theme, precision));
-  }, [gridVisible, precision, registerAsMain, theme, timeZone, timeframe]);
+  }, [activeDrawingTool, gridVisible, precision, registerAsMain, theme, timeZone, timeframe]);
 
   // ---- Push candle data ----
   useEffect(() => {

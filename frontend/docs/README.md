@@ -40,8 +40,9 @@ Architecture and maintenance documentation for the TradingView-style frontend.
 | --- | --- |
 | `DRAWING_ENGINE_ARCHITECTURE.md` | Drawing engine overview |
 | `DRAWING_TOOLS_MAINTENANCE_REFACTOR_PLAN.md` | Implemented multi-phase drawing refactor plan and current completion state |
-| `DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md` | Current 88-manifest/84-adapter audit, invariants, fixes, and test gates (verified 2026-07-17) |
+| `DRAWING_TOOLS_POST_PHASE8_MAINTENANCE_2026-07-13.md` | Historical 88-manifest/84-adapter audit, invariants, fixes, and test gates |
 | `DRAWING_TOOLS_TRADINGVIEW_PARITY_AUDIT_2026-07-15.md` | Official-source parity contracts and the 2026-07-16/17 follow-up evidence |
+| `DRAWING_TOOLS_TRADINGVIEW_PARITY_2026-07-28.md` | Current per-tool official-source inventory and implementation matrix for Cursor, Fibonacci/Gann, Geometric Shape, and Annotation groups |
 | `DRAWING_TOOLS_VISUAL_SNAPSHOT_MATRIX.md` | Manifest-derived semantic/browser visual matrix and committed baselines |
 | `DRAWING_OBJECT_MODEL.md` | Drawing object data model |
 | `DRAWING_STATE_MACHINE.md` | Drawing interaction state machine |

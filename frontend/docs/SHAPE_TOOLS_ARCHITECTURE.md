@@ -1,6 +1,6 @@
 # Shape Tools Architecture
 
-_Date: 2026-06-25. Updated 2026-07-13 for the plugin/family geometry contract._
+_Date: 2026-06-25. Updated 2026-07-28 for official catalog parity._
 
 ## Scope
 
@@ -18,8 +18,8 @@ type list.
 | Circle | center plus radius | Circular stroke/fill and center/radius handles |
 | Ellipse | opposite box corners | Ellipse-specific body selection, not box-interior selection |
 | Triangle | three fixed points | Closed edges/fill and three indexed handles |
-| Polyline/Path | click-freeform | Open segments; Path adds a terminal arrowhead |
-| Arc/Curve/Double Curve | fixed/freeform control points | Sampled curves share render/hit/bounds geometry |
+| Polyline/Path | click-freeform | Path stays open; Polyline closes/fills when its first anchor is clicked and otherwise finishes open |
+| Arc/Curve/Double Curve | fixed/freeform control points | Sampled curves share render/hit/bounds geometry; Arc supports fill between curve and chord |
 
 ## Plugin architecture
 
@@ -58,6 +58,11 @@ rendered outline/fill <-> hit-test outline/fill <-> spatial bounds <-> handles
   determine culling bounds.
 - Polyline and Path keep every vertex identity even when later vertices share
   the visual `p0` target label.
+- Polyline duplicates its first data anchor only when close-on-first-anchor
+  commits. Rendering, fill, hit testing, and persistence therefore agree on
+  whether it is open or closed.
+- Arc fill and interior hit testing use the same sampled curve plus chord
+  polygon; the outline remains the curved arc rather than a stroked chord.
 - Rectangle extensions must be included in hit-test and bounds, not only paint.
 - Every visible shape handle returns an explicit `anchorIndex`; Circle, Ellipse,
   Rectangle, and Rotated Rectangle are covered by the full adapter contract.

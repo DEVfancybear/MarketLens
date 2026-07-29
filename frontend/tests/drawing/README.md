@@ -1,7 +1,7 @@
 # Drawing Tests
 
 This folder contains TypeScript tests for shared drawing-tool behavior. The
-current production catalog has 84 persistent adapters (plus four non-persistent
+current production catalog has 87 persistent adapters (plus seven non-persistent
 manifest modes).
 
 The current suite covers shared geometry plus Phase 0 characterization contracts:
@@ -36,7 +36,10 @@ The current suite covers shared geometry plus Phase 0 characterization contracts
 - `allToolAdapterContract.test.ts` imports the production registry in Node and
   audits registration, capability-aware fixtures, selected rendering, finite
   bounds, body movement, anchor movement, selectable geometry, and exact
-  `anchorIndex` identity for all 84 persistent tool ids.
+  `anchorIndex` identity for all 87 persistent tool ids.
+- `tradingViewRequestedCatalogParity.test.ts` locks the exact per-tool inventory
+  for all requested Cursor, Fibonacci/Gann, Geometric Shape, and Annotation
+  groups, including compatibility-only exclusions.
 - Browser tests retain registration/gesture integration coverage while the Node
   contract is the fast catalog-wide geometry oracle.
 - Browser gesture smoke tests cover create, select, move, undo, redo, delete,

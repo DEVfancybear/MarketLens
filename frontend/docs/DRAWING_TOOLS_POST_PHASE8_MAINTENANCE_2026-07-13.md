@@ -1,5 +1,9 @@
 # Drawing Tools Post-Phase 8 Maintenance
 
+> Historical 2026-07-13 snapshot. The current 94-manifest/87-adapter catalog
+> and requested-group inventory are documented in
+> `DRAWING_TOOLS_TRADINGVIEW_PARITY_2026-07-28.md`.
+
 _Date: 2026-07-13; parity/Gann follow-up updated 2026-07-17_
 _Status: implemented; Node, build, and browser integration gates verified_
 _Scope: drawing manifest, adapters, shared geometry contracts, interaction context, and executable tests_

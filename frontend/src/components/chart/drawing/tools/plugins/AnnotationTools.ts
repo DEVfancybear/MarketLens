@@ -6,7 +6,7 @@ import { TOL, defaultMovePoints, distToSegment, registerTool, type DrawingToolPl
 import { canvasFont, handle, line } from "./shared";
 import { projectOnePoint, projectTwoPoints, twoPointAnchorHits } from "./lineGeometry";
 
-type OnePointAnnotation = "note" | "comment" | "priceLabel" | "signpost" | "flag";
+type OnePointAnnotation = "note" | "pin" | "comment" | "priceLabel" | "signpost" | "flag";
 
 function label(d: Drawing, fallback: string) {
   return d.text?.trim() || fallback;
@@ -17,12 +17,12 @@ function textWidth(d: Drawing, text: string) {
 }
 
 function onePointBox(d: Drawing, x: number, y: number, kind: OnePointAnnotation) {
-  const text = label(d, kind === "priceLabel" ? d.points[0].price.toFixed(2) : kind === "flag" ? "Flag" : kind === "signpost" ? "1" : kind === "comment" ? "Comment" : "Note");
+  const text = label(d, kind === "priceLabel" ? d.points[0].price.toFixed(2) : kind === "flag" ? "Flag" : kind === "signpost" ? "1" : kind === "comment" ? "Comment" : kind === "pin" ? "Pin" : "Note");
   const w = textWidth(d, text);
   const h = Math.max(22, (d.fontSize ?? 13) + 10);
   if (kind === "priceLabel") return { x: x + 8, y: y - h / 2, w, h, text };
   if (kind === "signpost") return { x: x - w / 2, y: y - h - 14, w, h, text };
-  if (kind === "flag") return { x: x + 2, y: y - h - 22, w, h, text };
+  if (kind === "flag" || kind === "pin") return { x: x + 2, y: y - h - 22, w, h, text };
   return { x: x + 10, y: y - h - 10, w, h, text };
 }
 
@@ -31,7 +31,7 @@ function onePointConnectorEnd(
   anchor: { x: number; y: number },
   kind: OnePointAnnotation,
 ) {
-  if (kind === "flag") return { x: anchor.x, y: box.y };
+  if (kind === "flag" || kind === "pin") return { x: anchor.x, y: box.y };
   if (kind === "signpost") return { x: anchor.x, y: box.y + box.h };
   if (kind === "priceLabel") return { x: box.x, y: anchor.y };
   return { x: box.x, y: box.y + box.h };
@@ -52,10 +52,17 @@ function createOnePointAnnotation(tool: DrawingTool, kind: OnePointAnnotation): 
       const box = onePointBox(d, p.x, p.y, kind);
       g.save(); g.font = canvasFont(d.fontSize ?? 13, { bold: d.bold, italic: d.italic });
       g.lineWidth = d.lineWidth; g.strokeStyle = d.color;
-      if (kind === "flag") {
-        line(g, p.x, p.y, p.x, box.y);
-        g.fillStyle = d.fillColor || d.color; g.globalAlpha = d.opacity ?? 0.9;
-        g.beginPath(); g.moveTo(p.x, box.y); g.lineTo(box.x + box.w, box.y + 5); g.lineTo(p.x, box.y + box.h); g.closePath(); g.fill();
+       if (kind === "flag") {
+         line(g, p.x, p.y, p.x, box.y);
+         g.fillStyle = d.fillColor || d.color; g.globalAlpha = d.opacity ?? 0.9;
+         g.beginPath(); g.moveTo(p.x, box.y); g.lineTo(box.x + box.w, box.y + 5); g.lineTo(p.x, box.y + box.h); g.closePath(); g.fill();
+       } else if (kind === "pin") {
+         line(g, p.x, p.y, p.x, box.y + box.h);
+         g.fillStyle = d.fillColor || d.color; g.globalAlpha = d.opacity ?? 0.95;
+         g.beginPath(); g.arc(p.x, p.y - 7, 7, 0, Math.PI * 2); g.fill();
+         g.beginPath(); g.moveTo(p.x - 5, p.y - 3); g.lineTo(p.x, p.y + 5); g.lineTo(p.x + 5, p.y - 3); g.closePath(); g.fill();
+         roundedBox(g,box.x,box.y,box.w,box.h,6);
+         g.fillStyle=d.fillColor||"#2a2e39";g.fill();g.globalAlpha=1;g.stroke();
       } else {
         if (kind === "priceLabel") { g.fillStyle = d.fillColor || d.color; g.beginPath(); g.moveTo(p.x,p.y); g.lineTo(box.x,box.y); g.lineTo(box.x,box.y+box.h); g.closePath(); g.fill(); }
         else if (kind === "signpost") { line(g,p.x,p.y,p.x,box.y+box.h); g.beginPath(); g.arc(p.x,p.y,4,0,Math.PI*2); g.fillStyle=d.color; g.fill(); }
@@ -80,7 +87,40 @@ const callout: DrawingToolPlugin = {
   boundingBox(d,toX,toY){const s=projectTwoPoints(d,toX,toY);if(!s)return null;const w=textWidth(d,label(d,"Callout")),h=Math.max(26,(d.fontSize??13)+12);const left=Math.min(s.a.x,s.b.x-w/2),right=Math.max(s.a.x,s.b.x+w/2),top=Math.min(s.a.y,s.b.y-h/2),bottom=Math.max(s.a.y,s.b.y+h/2);return{x:left-TOL,y:top-TOL,w:right-left+TOL*2,h:bottom-top+TOL*2};},
 };
 
+const priceNote: DrawingToolPlugin = {
+  tool: "priceNote",
+  minPoints: 2,
+  render(g,d,proj,selected){
+    const s=projectTwoPoints(d,proj.toX,proj.toY);if(!s)return;
+    const text=[d.points[0].price.toFixed(2),d.text?.trim()].filter(Boolean).join(" · ");
+    const w=textWidth(d,text),h=Math.max(24,(d.fontSize??13)+10),x=s.b.x-w/2,y=s.b.y-h/2;
+    g.save();g.strokeStyle=d.color;g.lineWidth=d.lineWidth;line(g,s.a.x,s.a.y,s.b.x,s.b.y);
+    roundedBox(g,x,y,w,h,5);g.fillStyle=d.fillColor||d.color;g.globalAlpha=d.opacity??0.95;g.fill();g.globalAlpha=1;g.stroke();
+    g.font=canvasFont(d.fontSize??13,{bold:d.bold,italic:d.italic});g.fillStyle=d.textColor||"#fff";g.textAlign="center";g.textBaseline="middle";g.fillText(text,s.b.x,s.b.y,w-8);
+    if(selected){handle(g,s.a.x,s.a.y,d.color);handle(g,s.b.x,s.b.y,d.color);}g.restore();
+  },
+  hitTest(d,px,py,toX,toY){
+    const s=projectTwoPoints(d,toX,toY);if(!s)return[];
+    const hits=twoPointAnchorHits(d,s,px,py);
+    const text=[d.points[0].price.toFixed(2),d.text?.trim()].filter(Boolean).join(" · ");
+    const w=textWidth(d,text),h=Math.max(24,(d.fontSize??13)+10);
+    if(px>=s.b.x-w/2-TOL&&px<=s.b.x+w/2+TOL&&py>=s.b.y-h/2-TOL&&py<=s.b.y+h/2+TOL)return[...hits,{drawing:d,target:"body",distance:1}];
+    const distance=distToSegment(px,py,s.a.x,s.a.y,s.b.x,s.b.y);
+    return distance<=TOL?[...hits,{drawing:d,target:"body",distance}]:hits;
+  },
+  movePoints:defaultMovePoints,
+  boundingBox(d,toX,toY){
+    const s=projectTwoPoints(d,toX,toY);if(!s)return null;
+    const text=[d.points[0].price.toFixed(2),d.text?.trim()].filter(Boolean).join(" · ");
+    const w=textWidth(d,text),h=Math.max(24,(d.fontSize??13)+10);
+    const left=Math.min(s.a.x,s.b.x-w/2),right=Math.max(s.a.x,s.b.x+w/2),top=Math.min(s.a.y,s.b.y-h/2),bottom=Math.max(s.a.y,s.b.y+h/2);
+    return{x:left-TOL,y:top-TOL,w:right-left+TOL*2,h:bottom-top+TOL*2};
+  },
+};
+
 registerTool(createOnePointAnnotation("note","note"));
+registerTool(createOnePointAnnotation("pin","pin"));
+registerTool(priceNote);
 registerTool(callout);
 registerTool(createOnePointAnnotation("comment","comment"));
 registerTool(createOnePointAnnotation("priceLabel","priceLabel"));

@@ -70,7 +70,7 @@ const GROUPS: ToolGroup[] = DRAWING_TOOL_GROUPS.map((group) => ({
   icon: <DrawingToolIcon iconKey={group.iconKey} size={18} />,
   tools: DRAWING_TOOL_MANIFEST.filter(
     (entry) =>
-      // Mode tools (Cursor/Crosshair/Eraser) are intentionally non-persistent
+      // Cursor variants and Eraser are intentionally non-persistent
       // but still belong in the toolbar so users can leave a drawing mode.
       (entry.preferredForCreation || entry.group === "cursor") &&
       entry.group === group.id &&

@@ -253,7 +253,7 @@ export function ReplaySelectionLayer({ candidates }: { candidates: Candle[] }) {
   ]);
 
   useLayoutEffect(() => {
-    if (active) setActiveTool("cursor");
+    if (active) setActiveTool("crosshair");
   }, [active, setActiveTool]);
 
   useEffect(() => {

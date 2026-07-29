@@ -78,6 +78,26 @@ test("freeform supports explicit finish and double-click completion without dupl
   });
 });
 
+test("Polyline closes on its first anchor while Path remains open", () => {
+  const polyline = new CreationSession("polyline");
+  polyline.pointerDown(sample(1, 10, 100));
+  polyline.pointerDown(sample(2, 30, 500));
+  polyline.pointerDown(sample(3, 50, 900));
+  assert.deepEqual(polyline.pointerDown(sample(9, 12, 1_300)), {
+    kind: "commit",
+    points: [point(1), point(2), point(3), point(1)],
+  });
+
+  const path = new CreationSession("path");
+  path.pointerDown(sample(1, 10, 100));
+  path.pointerDown(sample(2, 30, 500));
+  path.pointerDown(sample(3, 50, 900));
+  assert.deepEqual(path.pointerDown(sample(9, 12, 1_300)), {
+    kind: "preview",
+    points: [point(1), point(2), point(3), point(9)],
+  });
+});
+
 test("continuous sessions own sampling and cancel when below minimum", () => {
   const brush = new CreationSession("brush");
   brush.pointerDown(sample(1));
