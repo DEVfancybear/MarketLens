@@ -11,8 +11,11 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - Pine warm-up samples with `null`, `NaN`, infinite values, or invalid times are
   now dropped instead of reaching `BaselineSeries.setData()` and crashing the
   production page during a hot symbol switch.
-- Preserved valid arrays by reference for the normal realtime path and added
-  regression coverage for malformed runtime payloads and dynamic baseline fills.
+- Cached the sanitized projection by immutable runtime snapshot, preserving
+  reference stability for valid and malformed data so live/Replay renders do not
+  repeatedly scan and allocate the same series or visibly jitter the chart.
+- Added regression coverage for malformed runtime payloads, projection reuse,
+  and dynamic baseline fills.
 
 ### Fixed - Shared current-price marker tone on desktop and mobile (2026-07-30)
 

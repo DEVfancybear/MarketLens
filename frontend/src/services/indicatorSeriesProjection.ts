@@ -5,18 +5,28 @@ export interface IndicatorLogicalRange {
   to: number;
 }
 
+const finiteIndicatorSeriesCache = new WeakMap<
+  readonly LinePoint[],
+  LinePoint[]
+>();
+
 /**
  * Runtime indicator payloads cross a JSON boundary, where Pine warm-up values
  * can arrive as `null` even though the frontend type is numeric. Lightweight
  * Charts throws synchronously when any native series receives a non-finite
  * time/value, so sanitize once before viewport/cutoff projection.
  *
- * Preserve the original array when every point is valid; realtime indicators
- * depend on referential stability to avoid unnecessary projection work.
+ * Runtime results are immutable cache snapshots. Cache the projection by input
+ * identity so every mounted chart sanitizes a snapshot once, preserving the
+ * original array when valid and the same filtered array when invalid. This
+ * avoids repeated full-series scans and projection churn on live/Replay ticks.
  */
 export function finiteIndicatorSeriesData(
   points: readonly LinePoint[],
 ): LinePoint[] {
+  const cached = finiteIndicatorSeriesCache.get(points);
+  if (cached) return cached;
+
   let finite: LinePoint[] | null = null;
   for (let index = 0; index < points.length; index++) {
     const point = points[index];
@@ -26,7 +36,9 @@ export function finiteIndicatorSeriesData(
     }
     finite ??= points.slice(0, index);
   }
-  return finite ?? (points as LinePoint[]);
+  const result = finite ?? (points as LinePoint[]);
+  finiteIndicatorSeriesCache.set(points, result);
+  return result;
 }
 
 /**

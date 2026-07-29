@@ -211,7 +211,10 @@ number. `finiteIndicatorSeriesData()` is the common native-chart boundary: it
 drops points with non-finite time/value before Line, Histogram, or Baseline
 writes. Keep this guard ahead of viewport and Replay-cutoff projection so rapid
 symbol changes cannot feed a transient null into Lightweight Charts. The helper
-must preserve the original array reference when every point is valid.
+must preserve the original array reference when every point is valid and reuse
+one filtered projection per immutable runtime snapshot. Re-scanning or
+re-allocating the same malformed series on every live/Replay render can cause
+visible chart jitter.
 
 ## 8. Verification
 

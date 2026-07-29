@@ -24,10 +24,16 @@ describe("indicator series viewport projection", () => {
       { time: 400, value: 72 },
     ] as unknown as LinePoint[];
 
-    assert.deepEqual(finiteIndicatorSeriesData(runtimePoints), [
+    const finite = finiteIndicatorSeriesData(runtimePoints);
+    assert.deepEqual(finite, [
       valid,
       { time: 400, value: 72 },
     ]);
+    assert.equal(
+      finiteIndicatorSeriesData(runtimePoints),
+      finite,
+      "invalid immutable snapshots should reuse one sanitized projection",
+    );
   });
 
   it("preserves valid indicator data by reference", () => {
