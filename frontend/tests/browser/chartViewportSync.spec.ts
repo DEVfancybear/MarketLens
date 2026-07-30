@@ -237,6 +237,7 @@ test("crosshair, zoom, resize, and prepend stay synchronized", async ({ page }) 
 
   await test.step("plot widths remain equal after autoscale and resize", async () => {
     const before = await snapshot(page);
+    const beforeMaxBarSpacing = before.maxBarSpacing;
     const main = before.paneBoxes[0];
     await page.mouse.dblclick(main.x + main.width - 4, main.y + main.height * 0.5);
     await page.setViewportSize({ width: 1120, height: 760 });
@@ -246,6 +247,7 @@ test("crosshair, zoom, resize, and prepend stay synchronized", async ({ page }) 
     expect(after.paneMetrics.plotAreaWidths).toHaveLength(3);
     expect(after.paneMetrics.widthDrift).toBeLessThanOrEqual(1);
     expect(new Set(after.paneMetrics.plotAreaWidths).size).toBe(1);
+    expect(after.maxBarSpacing).not.toBe(beforeMaxBarSpacing);
     await expectPaneLegendsAligned(page);
   });
 
@@ -296,5 +298,16 @@ test("crosshair, zoom, resize, and prepend stay synchronized", async ({ page }) 
       reset.candleCount - 1,
     );
     expect(reset.priceScaleAutoScale[0]).toBe(true);
+  });
+
+  await test.step("deep zoom clamps responsively on the live plot width", async () => {
+    await page.evaluate(() => window.__chartInteractionTest?.setBarSpacing(1_000));
+    await expect.poll(async () => {
+      const current = await snapshot(page);
+      return Math.abs(current.barSpacing - current.maxBarSpacing);
+    }).toBeLessThan(0.05);
+    const after = await snapshot(page);
+    expect(after.maxBarSpacing).toBeGreaterThan(0);
+    expect(after.barSpacing).toBeLessThanOrEqual(after.maxBarSpacing);
   });
 });

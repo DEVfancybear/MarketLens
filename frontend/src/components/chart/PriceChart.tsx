@@ -130,6 +130,7 @@ import {
   endPriceScalePan,
   resetPriceScalePan,
 } from "./chartPriceScalePan";
+import { applyResponsiveMaxBarSpacing } from "./chartZoomLimits";
 import {
   resolveIndicatorSeriesWritePlan,
   shouldInitializeIndicatorPaneAutoScale,
@@ -552,6 +553,7 @@ export function PriceChart({
         touch: true,
       },
     });
+    applyResponsiveMaxBarSpacing(chart);
 
     const candleSeries = chart.addSeries(CandlestickSeries, candlestickOptions(theme, precision));
 
@@ -651,6 +653,7 @@ export function PriceChart({
       const bounds = entries[0]?.contentRect;
       if (!bounds || bounds.width <= 0 || bounds.height <= 0) return;
       chart.resize(Math.floor(bounds.width), Math.floor(bounds.height));
+      applyResponsiveMaxBarSpacing(chart);
       scheduleVersionBump();
     });
     if (interactive) chart.subscribeCrosshairMove(handleCrosshairMove);

@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Responsive TradingView-style deep chart zoom (2026-07-31)
+
+- Replaced Lightweight Charts' implicit half-plot-width deep-zoom limit with a
+  shared responsive policy derived from the live pane and price-scale widths.
+- Compact mobile charts retain a minimum candle count, while desktop and split
+  layouts increase visible context instead of stretching a few candles into
+  oversized blocks.
+- Recompute the zoom limit through the existing chart `ResizeObserver`, so
+  browser zoom, side panels, pane layouts, and device rotation use the same
+  implementation without mobile/desktop branches.
+- Added pure mobile/desktop width coverage and a browser regression that forces
+  extreme bar spacing and verifies clamping after resize.
+
 ### Fixed - Price-axis zoom remains responsive after interrupted drags (2026-07-30)
 
 - Replaced Lightweight Charts' private price-axis press-scaling lifecycle with

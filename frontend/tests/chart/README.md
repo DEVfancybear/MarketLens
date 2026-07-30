@@ -28,6 +28,8 @@ Current coverage:
 - viewport-controller write attribution and no-op dedupe,
 - price-scale gesture activation, public visible-range scaling, missed-release
   recovery, repeated drag cleanup, and multi-pane auto-scale reset,
+- responsive deep-zoom limits derived from the live plot width across compact
+  mobile and wide desktop layouts,
 - crosshair time normalization to UTC timestamps.
 - Replay cutoff normalization, session-isolated runtime cache keys, and causal
   fallback behavior during forward navigation and rewind,

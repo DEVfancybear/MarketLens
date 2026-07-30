@@ -151,6 +151,20 @@ Programmatic viewport behavior:
 - Keep all range/date math in `chartTimeNavigation.ts`; the toolbar is only an
   adapter from UI events to the controller.
 
+Horizontal deep-zoom behavior:
+
+- `chartZoomLimits.ts` owns one responsive policy for desktop, split layouts,
+  browser zoom, and mobile. Do not add viewport-specific zoom branches.
+- The maximum spacing is derived from the live pane width minus the rendered
+  price-scale width. Compact charts retain a minimum bar count; wider charts
+  increase that count rather than stretching candles into giant blocks.
+- Apply the policy immediately after chart creation and again after every
+  `ResizeObserver` chart resize. Lightweight Charts clamps an already-deep
+  viewport when the responsive maximum changes.
+- Do not leave Lightweight Charts' `maxBarSpacing` at `0`: in v5.2 that falls
+  back to half of the current plot width and can reduce a desktop chart to only
+  a handful of oversized candles.
+
 Desktop pan behavior:
 
 - `handleScroll.pressedMouseMove` must stay enabled so users can drag the chart
@@ -384,19 +398,23 @@ Do not call `fitContent()` from individual replay controls.
 3. Draw a rectangle around several candles.
 4. Draw a fib retracement.
 5. Mouse-wheel zoom in/out quickly over the chart body.
-6. Drag the chart horizontally.
-7. Drag the price axis vertically to scale price.
-8. Repeat the price-axis drag at least 20 times, alternating up and down.
-9. During one price-axis drag, move outside the pane or switch window focus,
+6. Keep zooming in until the limit is reached, then resize between compact and
+   wide layouts. Candle spacing must reflow from the actual plot width.
+7. Drag the chart horizontally.
+8. Drag the price axis vertically to scale price.
+9. Repeat the price-axis drag at least 20 times, alternating up and down.
+10. During one price-axis drag, move outside the pane or switch window focus,
    then return and start another drag.
-10. Drag the time axis horizontally to scale time.
-11. Double-click axes to reset scale.
-12. Start replay and jump to a date in the past.
+11. Drag the time axis horizontally to scale time.
+12. Double-click axes to reset scale.
+13. Start replay and jump to a date in the past.
 
 Expected:
 
 - candles, grid, drawings, SMC overlays, and custom labels remain visually pinned;
 - no drawing waits for a later repaint before snapping into place;
+- deepest horizontal zoom retains neighboring candle context on both mobile
+  and desktop instead of rendering only a handful of giant bars;
 - every price-axis drag changes the visible range without requiring a refresh;
 - an interrupted drag never blocks the next drag, and double-click restores auto-scale;
 - replay jump does not show an empty chart;
