@@ -1,6 +1,6 @@
 # Zoom And Viewport Sync Architecture
 
-_Last updated: 2026-07-24_
+_Last updated: 2026-07-30_
 
 This document is the maintenance guide for TradingView-style zoom/pan behavior
 and overlay synchronization. Read this before changing `PriceChart`,
@@ -46,6 +46,7 @@ candles/grid move first and drawings/labels follow later.
 | Area | File | Responsibility |
 |---|---|---|
 | Main chart setup | `src/components/chart/PriceChart.tsx` | Creates Lightweight Chart, owns `ChartContext.version`, projects Pine labels/dashboards |
+| Price-axis interaction | `src/components/chart/chartPriceScalePan.ts` | Owns plot-pan activation and resilient price-axis scaling through public LWC APIs |
 | Viewport controller | `src/components/chart/chartViewportController.ts` | Single programmatic viewport writer with cause/revision attribution |
 | Shared viewport events | `src/components/chart/chartViewportEvents.ts` | Single invalidation contract for chart zoom/pan/scale/resize input |
 | Crosshair normalization | `src/components/chart/crosshairSynchronization.ts` | Converts LWC time values to UTC timestamps before store publication |
@@ -154,14 +155,29 @@ Desktop pan behavior:
 
 - `handleScroll.pressedMouseMove` must stay enabled so users can drag the chart
   horizontally with the mouse.
+- `handleScale.axisPressedMouseMove.time` follows the chart's interactive mode,
+  but `handleScale.axisPressedMouseMove.price` must stay `false`.
+  `chartPriceScalePan.ts` owns price-axis scaling so an interrupted release
+  cannot strand Lightweight Charts' private `startScale()` snapshot and reject
+  later drags.
+- A primary pointer gesture is classified from the native pane rectangle and
+  right price-scale width. Price-axis movement starts from
+  `getVisibleRange()`, follows the Lightweight Charts scaling curve, and writes
+  through `setVisibleRange()`. Do not call or emulate private
+  `startScale()`/`endScale()` state.
 - Lightweight Charts does not vertically pan a pane while its price scale is
   in auto-scale mode. `chartPriceScalePan.ts` arms a possible gesture on primary
   `pointerdown`, then calls `setAutoScale(false)` for that pane on the first
   real capture-phase `pointermove`. A click without movement must leave
   auto-scale enabled.
-- Pointer up/cancel and window blur end the armed gesture. A later move with no
-  primary button also clears stale ownership, which prevents a missed release
-  from leaving plot interaction stuck after repeated drags.
+- Pointer movement is observed on `window` during an active gesture so scaling
+  continues when the cursor leaves the pane. Pointer up/cancel,
+  `lostpointercapture`, window blur, a hidden document, chart teardown, and a
+  later move with no primary button all clear ownership. Every cleanup path is
+  idempotent.
+- Keep native axis double-click reset enabled. It restores auto-scale after a
+  manual price-axis range, while `resetPriceScalePan()` remains the
+  application-driven reset for all panes.
 - Symbol/timeframe changes and the chart Reset action must call
   `resetPriceScalePan()` to restore auto-scale on every pane. This preserves
   initial fitting for new data while retaining manual vertical position after
@@ -370,14 +386,19 @@ Do not call `fitContent()` from individual replay controls.
 5. Mouse-wheel zoom in/out quickly over the chart body.
 6. Drag the chart horizontally.
 7. Drag the price axis vertically to scale price.
-8. Drag the time axis horizontally to scale time.
-9. Double-click axes to reset scale.
-10. Start replay and jump to a date in the past.
+8. Repeat the price-axis drag at least 20 times, alternating up and down.
+9. During one price-axis drag, move outside the pane or switch window focus,
+   then return and start another drag.
+10. Drag the time axis horizontally to scale time.
+11. Double-click axes to reset scale.
+12. Start replay and jump to a date in the past.
 
 Expected:
 
 - candles, grid, drawings, SMC overlays, and custom labels remain visually pinned;
 - no drawing waits for a later repaint before snapping into place;
+- every price-axis drag changes the visible range without requiring a refresh;
+- an interrupted drag never blocks the next drag, and double-click restores auto-scale;
 - replay jump does not show an empty chart;
 - drawing selection handles remain aligned after zoom/pan.
 
@@ -439,6 +460,10 @@ calendars. Index `100` is only meaningful inside the timeline that created it.
 
 - Lightweight Charts 5 time scale:
   <https://tradingview.github.io/lightweight-charts/docs/5.1/time-scale>
+- Lightweight Charts scale options:
+  <https://tradingview.github.io/lightweight-charts/docs/api/interfaces/HandleScaleOptions>
+- Lightweight Charts 5.2 price-scale lifecycle source:
+  <https://github.com/tradingview/lightweight-charts/blob/v5.2.0/src/model/price-scale.ts>
 - Lightweight Charts native panes:
   <https://tradingview.github.io/lightweight-charts/tutorials/how_to/panes>
 - Lightweight Charts v4 to v5 migration:

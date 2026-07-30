@@ -537,7 +537,12 @@ export function PriceChart({
       handleScale: {
         mouseWheel: interactive,
         pinch: interactive,
-        axisPressedMouseMove: interactive,
+        // Own price-axis scaling in Pointer Events so a release lost during
+        // blur/cancel cannot strand Lightweight Charts' private scale snapshot.
+        axisPressedMouseMove: {
+          time: interactive,
+          price: false,
+        },
         axisDoubleClickReset: interactive,
       },
       kineticScroll: {
@@ -568,17 +573,34 @@ export function PriceChart({
       if (interactive) beginPriceScalePan(chart, event);
     };
     const handlePriceScalePanMove = (event: PointerEvent) => {
-      if (interactive) continuePriceScalePan(chart, event);
+      if (
+        interactive &&
+        continuePriceScalePan(chart, event) !== null
+      ) {
+        scheduleVersionBump();
+      }
     };
     const handlePriceScalePanEnd = (event: PointerEvent) => {
       if (interactive) endPriceScalePan(chart, event);
     };
     const handlePriceScalePanBlur = () => endPriceScalePan(chart);
+    const handlePriceScalePanVisibilityChange = () => {
+      if (document.visibilityState !== "visible") endPriceScalePan(chart);
+    };
     chartContainer.addEventListener("pointerdown", handlePriceScalePanStart, true);
-    chartContainer.addEventListener("pointermove", handlePriceScalePanMove, true);
+    window.addEventListener("pointermove", handlePriceScalePanMove, true);
     window.addEventListener("pointerup", handlePriceScalePanEnd, true);
     window.addEventListener("pointercancel", handlePriceScalePanEnd, true);
+    chartContainer.addEventListener(
+      "lostpointercapture",
+      handlePriceScalePanEnd,
+      true,
+    );
     window.addEventListener("blur", handlePriceScalePanBlur);
+    document.addEventListener(
+      "visibilitychange",
+      handlePriceScalePanVisibilityChange,
+    );
     const uninstallBenchmarkHarness = interactive
       ? installChartBenchmarkHarness(chart, () => candlesRef.current.length)
       : () => undefined;
@@ -646,10 +668,19 @@ export function PriceChart({
       uninstallBenchmarkHarness();
       unsubscribeViewportEvents();
       chartContainer.removeEventListener("pointerdown", handlePriceScalePanStart, true);
-      chartContainer.removeEventListener("pointermove", handlePriceScalePanMove, true);
+      window.removeEventListener("pointermove", handlePriceScalePanMove, true);
       window.removeEventListener("pointerup", handlePriceScalePanEnd, true);
       window.removeEventListener("pointercancel", handlePriceScalePanEnd, true);
+      chartContainer.removeEventListener(
+        "lostpointercapture",
+        handlePriceScalePanEnd,
+        true,
+      );
       window.removeEventListener("blur", handlePriceScalePanBlur);
+      document.removeEventListener(
+        "visibilitychange",
+        handlePriceScalePanVisibilityChange,
+      );
       endPriceScalePan(chart);
       if (interactive) chart.unsubscribeCrosshairMove(handleCrosshairMove);
       if (bumpRafRef.current !== null) {

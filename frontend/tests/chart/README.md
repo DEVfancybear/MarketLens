@@ -26,6 +26,8 @@ Current coverage:
 - local date/time draft parsing,
 - fixed Monday-first calendar grid generation.
 - viewport-controller write attribution and no-op dedupe,
+- price-scale gesture activation, public visible-range scaling, missed-release
+  recovery, repeated drag cleanup, and multi-pane auto-scale reset,
 - crosshair time normalization to UTC timestamps.
 - Replay cutoff normalization, session-isolated runtime cache keys, and causal
   fallback behavior during forward navigation and rewind,
@@ -41,6 +43,7 @@ The browser suite is `tests/browser/chartViewportSync.spec.ts`:
 npm run test:chart-browser
 ```
 
-It runs one deterministic chart fixture through four interaction steps:
-crosshair movement across native panes, wheel zoom, autoscale plus viewport
-resize, and history prepend with visible timestamp-range preservation.
+It runs one deterministic chart fixture through crosshair movement across
+native panes, wheel zoom, repeated plot pan, cancelled and repeated price-axis
+scaling, double-click auto-scale reset, pane resize, and history prepend with
+visible timestamp-range preservation.

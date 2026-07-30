@@ -175,6 +175,66 @@ test("crosshair, zoom, resize, and prepend stay synchronized", async ({ page }) 
     }
   });
 
+  await test.step("repeated price-axis drags survive cancellation and reset", async () => {
+    const initial = await snapshot(page);
+    const main = initial.paneBoxes[0];
+    const x = main.x + main.width - 4;
+    const y = main.y + main.height * 0.5;
+    const beforeCancel = initial.priceScaleRanges[0];
+    expect(beforeCancel).not.toBeNull();
+
+    await page.evaluate(({ x, y }) => {
+      const target = document.elementFromPoint(x, y);
+      if (!target) throw new Error("Price-axis target unavailable");
+      const pointer = {
+        bubbles: true,
+        button: 0,
+        buttons: 1,
+        clientX: x,
+        clientY: y,
+        isPrimary: true,
+        pointerId: 777,
+        pointerType: "mouse",
+      };
+      target.dispatchEvent(new PointerEvent("pointerdown", pointer));
+      window.dispatchEvent(new PointerEvent("pointermove", {
+        ...pointer,
+        clientY: y - 28,
+      }));
+      window.dispatchEvent(new PointerEvent("pointercancel", {
+        ...pointer,
+        buttons: 0,
+        clientY: y - 28,
+      }));
+    }, { x, y });
+    await expect.poll(async () => {
+      const current = (await snapshot(page)).priceScaleRanges[0];
+      return current &&
+        beforeCancel &&
+        (current.from !== beforeCancel.from || current.to !== beforeCancel.to);
+    }).toBe(true);
+
+    let previous = (await snapshot(page)).priceScaleRanges[0];
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const delta = attempt % 2 === 0 ? -24 : 24;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x, y + delta, { steps: 5 });
+      await page.mouse.up();
+      await expect.poll(async () => {
+        const current = (await snapshot(page)).priceScaleRanges[0];
+        return current &&
+          previous &&
+          (current.from !== previous.from || current.to !== previous.to);
+      }).toBe(true);
+      previous = (await snapshot(page)).priceScaleRanges[0];
+    }
+
+    await page.mouse.dblclick(x, y);
+    await expect.poll(async () => (await snapshot(page)).priceScaleAutoScale[0])
+      .toBe(true);
+  });
+
   await test.step("plot widths remain equal after autoscale and resize", async () => {
     const before = await snapshot(page);
     const main = before.paneBoxes[0];

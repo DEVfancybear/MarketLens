@@ -4,6 +4,20 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Price-axis zoom remains responsive after interrupted drags (2026-07-30)
+
+- Replaced Lightweight Charts' private price-axis press-scaling lifecycle with
+  an application-owned pointer gesture that uses the public visible-range API
+  and preserves the native TradingView-style scaling curve.
+- Added idempotent cleanup for pointer release, cancellation, lost capture,
+  window blur, document visibility changes, missing mouse buttons, and chart
+  teardown so one interrupted drag cannot block later price-axis zoom.
+- Preserved wheel, pinch, time-axis scaling, plot pan, and native double-click
+  auto-scale reset behavior.
+- Added pure regression coverage for repeated and cancelled gestures plus a
+  browser scenario with cancellation, twelve alternating price-axis drags, and
+  double-click reset.
+
 ### Fixed - Live MT5 order editing and durable chart identity (2026-07-30)
 
 - Added a shared responsive editor for desktop and mobile: open positions can
