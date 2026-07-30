@@ -6,7 +6,9 @@ import {
   PRICE_SCALE_MIN_WIDTH,
   RIGHT_OFFSET_BARS,
   VOLUME_TYPICAL_BAR_FRACTION,
+  candlestickOptions,
   currentPriceMarkerIsUp,
+  getDefaultBarSpacing,
   indicatorSeriesPriceFormatOptions,
   timeScaleDefaults,
   timeScaleOptions,
@@ -25,6 +27,19 @@ test("main chart keeps TradingView-like right offset and price scale width", () 
 test("main chart does not reserve a default volume overlay band", () => {
   assert.equal(MAIN_PRICE_SCALE_MARGINS.bottom <= 0.1, true);
   assert.equal(MAIN_PRICE_SCALE_MARGINS.top <= 0.1, true);
+});
+
+test("all timeframes start with TradingView candle density and palette", () => {
+  for (const timeframe of ["1m", "5m", "1H", "1D", "1M"] as const) {
+    assert.equal(getDefaultBarSpacing(timeframe), 16);
+  }
+
+  const candles = candlestickOptions("dark", 5);
+  assert.equal(candles.upColor, "#089981");
+  assert.equal(candles.downColor, "#f23645");
+  assert.equal(candles.wickUpColor, candles.upColor);
+  assert.equal(candles.wickDownColor, candles.downColor);
+  assert.equal(candles.borderVisible, false);
 });
 
 test("current price marker follows the active candle body, not the latest tick", () => {

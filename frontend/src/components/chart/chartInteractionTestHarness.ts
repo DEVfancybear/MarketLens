@@ -12,6 +12,7 @@ export interface ChartInteractionSnapshot {
   viewport: ReturnType<ChartViewportController["snapshot"]>;
   barSpacing: number;
   maxBarSpacing: number;
+  rightPriceScaleWidths: number[];
   priceScaleRanges: Array<IRange<number> | null>;
   priceScaleAutoScale: boolean[];
 }
@@ -57,6 +58,9 @@ export function installChartInteractionTestHarness({
       viewport: viewport.snapshot(),
       barSpacing: chart.timeScale().options().barSpacing,
       maxBarSpacing: chart.timeScale().options().maxBarSpacing,
+      rightPriceScaleWidths: chart.panes().map((_pane, index) =>
+        chart.priceScale("right", index).width()
+      ),
       priceScaleRanges: chart.panes().map((_pane, index) =>
         chart.priceScale("right", index).getVisibleRange()
       ),

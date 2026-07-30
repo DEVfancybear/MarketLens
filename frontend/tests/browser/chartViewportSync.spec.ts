@@ -119,6 +119,10 @@ test("crosshair, zoom, resize, and prepend stay synchronized", async ({ page }) 
   expect(hydrationErrors).toEqual([]);
   await expectPaneLegendsAligned(page);
 
+  await test.step("initial candle density matches the TradingView visual profile", async () => {
+    await expect.poll(async () => (await snapshot(page)).barSpacing).toBeCloseTo(16, 1);
+  });
+
   await test.step("crosshair keeps one UTC timestamp across native panes", async () => {
     const initial = await snapshot(page);
     const [main, rsi] = initial.paneBoxes;
@@ -309,5 +313,11 @@ test("crosshair, zoom, resize, and prepend stay synchronized", async ({ page }) 
     const after = await snapshot(page);
     expect(after.maxBarSpacing).toBeGreaterThan(0);
     expect(after.barSpacing).toBeLessThanOrEqual(after.maxBarSpacing);
+    const expectedMaxBarSpacing = (
+        after.paneMetrics.plotAreaWidths[0] -
+        after.rightPriceScaleWidths[0]
+      ) / 2;
+    expect(Math.abs(after.maxBarSpacing - expectedMaxBarSpacing))
+      .toBeLessThanOrEqual(1);
   });
 });

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { IChartApi } from "lightweight-charts";
 
 import {
-  DEEP_ZOOM_MIN_VISIBLE_BARS,
+  DEEP_ZOOM_MIN_VISIBLE_SLOTS,
   applyResponsiveMaxBarSpacing,
   responsiveMaxBarSpacing,
 } from "../../src/components/chart/chartZoomLimits";
@@ -11,9 +11,7 @@ import {
 test("deep zoom derives one responsive limit for mobile and desktop widths", () => {
   for (const plotWidth of [246, 606, 1_026, 1_846]) {
     const spacing = responsiveMaxBarSpacing(plotWidth);
-    assert.notEqual(spacing, null);
-    assert.equal(spacing! > 0, true);
-    assert.equal(plotWidth / spacing! >= DEEP_ZOOM_MIN_VISIBLE_BARS, true);
+    assert.equal(spacing, plotWidth / DEEP_ZOOM_MIN_VISIBLE_SLOTS);
   }
 
   assert.notEqual(

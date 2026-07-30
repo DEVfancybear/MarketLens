@@ -10,7 +10,7 @@ import {
 } from "lightweight-charts";
 import type { Theme } from "@/store/uiStore";
 import type { IndicatorSeries, Timeframe } from "@/types";
-import { BAR_SPACING, chartColors, makeTickMarkFormatter } from "./chartTheme";
+import { DEFAULT_BAR_SPACING, chartColors, makeTickMarkFormatter } from "./chartTheme";
 
 // Keep this policy module runtime-independent from Lightweight Charts. Version
 // 5 is ESM-only, while the pure Node regression suite compiles these helpers to
@@ -83,8 +83,8 @@ export function volumeAutoscaleInfo(
   };
 }
 
-export function getDefaultBarSpacing(timeframe: Timeframe): number {
-  return BAR_SPACING[timeframe] ?? 8;
+export function getDefaultBarSpacing(_timeframe: Timeframe): number {
+  return DEFAULT_BAR_SPACING;
 }
 
 export function timeScaleDefaults(timeframe: Timeframe) {

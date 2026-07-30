@@ -22,10 +22,10 @@ export function chartColors(theme: Theme) {
     crosshairLabelBg: dark ? "#34405a" : "#56637a",
     // Candles — TradingView's current palette uses the same bull/bear pair
     // in both themes (#089981 / #f23645)
-    bull: dark ? "#24c99a" : "#067a65",
-    bear: dark ? "#ff5d7d" : "#d9365a",
-    volumeBull: dark ? "rgba(36,201,154,0.38)" : "rgba(6,122,101,0.30)",
-    volumeBear: dark ? "rgba(255,93,125,0.38)" : "rgba(217,54,90,0.30)",
+    bull: "#089981",
+    bear: "#f23645",
+    volumeBull: dark ? "rgba(8,153,129,0.38)" : "rgba(8,153,129,0.30)",
+    volumeBear: dark ? "rgba(242,54,69,0.38)" : "rgba(242,54,69,0.30)",
   };
 }
 
@@ -66,20 +66,8 @@ function zonedTimeParts(
   };
 }
 
-/** TradingView-style bar spacing per timeframe — tighter on low TFs. */
-export const BAR_SPACING: Record<Timeframe, number> = {
-  "1m": 4,
-  "3m": 5,
-  "5m": 6,
-  "15m": 8,
-  "30m": 10,
-  "1H": 10,
-  "2H": 11,
-  "4H": 12,
-  "1D": 14,
-  "1W": 16,
-  "1M": 18,
-};
+/** TradingView-style initial candle density, shared by every timeframe. */
+export const DEFAULT_BAR_SPACING = 16;
 
 /**
  * Crosshair time-tooltip formatter: HH:mm for intraday, "d MMM 'yy" for daily+,

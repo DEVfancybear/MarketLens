@@ -1037,8 +1037,9 @@ export function PriceChart({
       });
     }
 
-    // Fit the time scale once on the first non-empty load; afterwards leave the
-    // user's pan/zoom intact for realtime ticks and one-by-one replay playback.
+    // Establish the latest-bar viewport once on the first non-empty load;
+    // afterwards leave the user's pan/zoom intact for realtime ticks and
+    // one-by-one replay playback.
     const autoFit = decideAutoFitCandleWindow({
       previousLength: prev.length,
       nextLength: candles.length,
@@ -1151,11 +1152,11 @@ export function PriceChart({
           ) {
             return;
           }
-          viewport.fitContent("initial-fit");
+          viewport.reset(timeScaleDefaults(timeframe), "market-change");
         });
         autoFitRafRef.current = frame;
       } else {
-        viewport?.fitContent("initial-fit");
+        viewport?.reset(timeScaleDefaults(timeframe), "market-change");
       }
     } else if (
       replayActive &&

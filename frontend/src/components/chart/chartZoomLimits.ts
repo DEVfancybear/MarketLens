@@ -1,23 +1,17 @@
 import type { IChartApi } from "lightweight-charts";
 
 /**
- * Preserve pattern context at the deepest horizontal zoom on every viewport.
+ * Match TradingView's deepest horizontal zoom on every viewport.
  *
- * The density target controls visual size, while the minimum count protects
- * compact mobile charts. The returned spacing is always derived from the live
- * plot width, so desktop, split layouts, browser zoom, and mobile all use the
- * same policy without viewport-specific branches.
+ * TradingView allows a bar slot to grow to about half the live plot width.
+ * Deriving the limit from that width preserves the same two-slot extreme on
+ * desktop, split layouts, browser zoom, and mobile without breakpoint branches.
  */
-const DEEP_ZOOM_DENSITY_PX = 30;
-export const DEEP_ZOOM_MIN_VISIBLE_BARS = 12;
+export const DEEP_ZOOM_MIN_VISIBLE_SLOTS = 2;
 
 export function responsiveMaxBarSpacing(plotWidth: number): number | null {
   if (!Number.isFinite(plotWidth) || plotWidth <= 0) return null;
-  const visibleBarFloor = Math.max(
-    DEEP_ZOOM_MIN_VISIBLE_BARS,
-    Math.ceil(plotWidth / DEEP_ZOOM_DENSITY_PX),
-  );
-  return plotWidth / visibleBarFloor;
+  return plotWidth / DEEP_ZOOM_MIN_VISIBLE_SLOTS;
 }
 
 export function applyResponsiveMaxBarSpacing(chart: IChartApi): number | null {

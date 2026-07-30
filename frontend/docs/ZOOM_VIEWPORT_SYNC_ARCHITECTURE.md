@@ -1,6 +1,6 @@
 # Zoom And Viewport Sync Architecture
 
-_Last updated: 2026-07-30_
+_Last updated: 2026-07-31_
 
 This document is the maintenance guide for TradingView-style zoom/pan behavior
 and overlay synchronization. Read this before changing `PriceChart`,
@@ -156,14 +156,19 @@ Horizontal deep-zoom behavior:
 - `chartZoomLimits.ts` owns one responsive policy for desktop, split layouts,
   browser zoom, and mobile. Do not add viewport-specific zoom branches.
 - The maximum spacing is derived from the live pane width minus the rendered
-  price-scale width. Compact charts retain a minimum bar count; wider charts
-  increase that count rather than stretching candles into giant blocks.
+  price-scale width. Match TradingView's native extreme of two visible bar
+  slots, so `maxBarSpacing` is one half of the current plot width.
 - Apply the policy immediately after chart creation and again after every
   `ResizeObserver` chart resize. Lightweight Charts clamps an already-deep
   viewport when the responsive maximum changes.
-- Do not leave Lightweight Charts' `maxBarSpacing` at `0`: in v5.2 that falls
-  back to half of the current plot width and can reduce a desktop chart to only
-  a handful of oversized candles.
+- Keep the explicit responsive maximum rather than relying on `0`; it documents
+  the TradingView parity contract and makes resize behavior directly testable.
+- Use the shared 16-pixel initial spacing for every timeframe. A fresh
+  live-market window resets to that latest-bar viewport instead of calling
+  `fitContent()` and shrinking all downloaded history into tiny candles.
+- Candle bodies, borders, and wicks remain rendered by the native
+  Lightweight Charts candlestick series. At equivalent spacing its body width
+  is approximately 78% of the slot, matching the measured TradingView geometry.
 
 Desktop pan behavior:
 
@@ -399,7 +404,7 @@ Do not call `fitContent()` from individual replay controls.
 4. Draw a fib retracement.
 5. Mouse-wheel zoom in/out quickly over the chart body.
 6. Keep zooming in until the limit is reached, then resize between compact and
-   wide layouts. Candle spacing must reflow from the actual plot width.
+   wide layouts. The extreme slot must remain half the actual plot width.
 7. Drag the chart horizontally.
 8. Drag the price axis vertically to scale price.
 9. Repeat the price-axis drag at least 20 times, alternating up and down.
@@ -413,8 +418,9 @@ Expected:
 
 - candles, grid, drawings, SMC overlays, and custom labels remain visually pinned;
 - no drawing waits for a later repaint before snapping into place;
-- deepest horizontal zoom retains neighboring candle context on both mobile
-  and desktop instead of rendering only a handful of giant bars;
+- a fresh market opens at the shared TradingView-like candle density;
+- deepest horizontal zoom reaches TradingView's two-slot extreme on both
+  mobile and desktop without a fixed screenshot or viewport dimension;
 - every price-axis drag changes the visible range without requiring a refresh;
 - an interrupted drag never blocks the next drag, and double-click restores auto-scale;
 - replay jump does not show an empty chart;
