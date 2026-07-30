@@ -271,21 +271,20 @@ backend retains `/auth/google`, `/auth/refresh`, and `/auth/me`.
 For the runner contract, exceptional switches, manual recovery, Cloudflare Tunnel configuration,
 and troubleshooting, follow `backend/docs/PRODUCTION_BUILD.md`.
 
-### MT5 EA portfolio synchronization release
+### MT5 EA 1.24 lifecycle release
 
 Roll out the portfolio synchronization path backend-first:
 
 1. From the repository root, run `.\run-backend-production.ps1`.
 2. Deploy the frontend.
-3. Upgrade each MT5 terminal to the published EA 1.23 artifact, one account at a
+3. Upgrade each MT5 terminal to the published EA 1.24 artifact, one account at a
    time, and verify its downloaded SHA-256 checksum.
 
-EA 1.22 is supported during the rolling upgrade by the gateway's server-side
-portfolio isolation. EA 1.23 adds independent client-side retry lanes for
-portfolio snapshots, command outcomes, and instrument discovery. Existing
-broker positions and pending orders do not need to be closed during the
-upgrade. Avoid sending commands to the terminal while replacing the EA, keep
-`GatewayUrl` unchanged, and wait about ten seconds after `READY` for the
+EA 1.24 is required before the account becomes `READY`; older releases do not
+support in-place pending-order mutation and are blocked from command routing.
+Existing broker positions and pending orders do not need to be closed during
+the upgrade. Avoid sending commands to the terminal while replacing the EA,
+keep `GatewayUrl` unchanged, and wait about ten seconds after `READY` for the
 portfolio snapshot to reach the web.
 
 ### User setup: FTMO to Exness copy

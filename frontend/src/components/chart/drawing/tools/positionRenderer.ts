@@ -321,7 +321,7 @@ function render(
   } | null = null;
   // While the user is actively dragging this position, skip fresh TP/SL detection
   // so the preview cannot flicker or change hit labels mid-drag.
-  if (!d._dragging) {
+  if (!d._dragging && !d.execution) {
     const candles = proj.market?.candles ?? [];
     const fresh = resolvePositionHit(d, candles);
     if (fresh) {
@@ -626,6 +626,23 @@ function render(
     const entryParts = [
       entryStatsTxt || `${compact ? "E:" : "Entry:"} ${fmtPrice(entry, proj)}`,
     ];
+    if (d.execution) {
+      const ticket =
+        d.execution.brokerPositionId ?? d.execution.brokerOrderId;
+      const executionLabel =
+        d.execution.status === "running"
+          ? "LIVE"
+          : d.execution.status === "pending"
+            ? "PENDING"
+            : d.execution.status === "submitting"
+              ? "SUBMITTING"
+              : d.execution.status === "rejected"
+                ? "REJECTED"
+                : "CLOSED";
+      entryParts.push(
+        `${executionLabel}${ticket ? ` #${ticket}` : ""}`,
+      );
+    }
     if (showStats && stats.has("rr")) {
       entryParts.push(
         compact ? `RR ${rr.toFixed(2)}` : `Risk/Reward Ratio: ${rr.toFixed(2)}`,

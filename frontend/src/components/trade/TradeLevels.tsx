@@ -9,7 +9,11 @@ import {
 } from "lightweight-charts";
 import { useChartCtx } from "@/components/chart/ChartContext";
 import { positionsAtom } from "@/store/tradeStore";
-import { executionModeAtom, mt5PositionsAtom } from "@/store/mt5Store";
+import {
+  executionModeAtom,
+  mt5PendingOrdersAtom,
+  mt5PositionsAtom,
+} from "@/store/mt5Store";
 import { useAtomValue } from "jotai";
 import { symbolAtom } from "@/store/chartStore";
 import { useReplayTrading } from "@/store/replayTradingClientStore";
@@ -22,6 +26,7 @@ export function TradeLevels() {
   const ctx = useChartCtx();
   const positions = useAtomValue(positionsAtom);
   const mt5Positions = useAtomValue(mt5PositionsAtom);
+  const mt5PendingOrders = useAtomValue(mt5PendingOrdersAtom);
   const executionMode = useAtomValue(executionModeAtom);
   const symbol = useAtomValue(symbolAtom);
   const replayTrading = useReplayTrading();
@@ -60,7 +65,7 @@ export function TradeLevels() {
             lineWidth: 1,
             lineStyle: 0,
             axisLabelVisible: true,
-            title: `MT5 ${tag} entry`,
+            title: `LIVE #${p.ticket} ${tag} entry`,
           }),
         );
         if (p.sl) {
@@ -71,7 +76,7 @@ export function TradeLevels() {
               lineWidth: 1,
               lineStyle: 2,
               axisLabelVisible: true,
-              title: "MT5 SL",
+              title: `LIVE #${p.ticket} SL`,
             }),
           );
         }
@@ -83,7 +88,46 @@ export function TradeLevels() {
               lineWidth: 1,
               lineStyle: 2,
               axisLabelVisible: true,
-              title: "MT5 TP",
+              title: `LIVE #${p.ticket} TP`,
+            }),
+          );
+        }
+      }
+      for (const order of mt5PendingOrders.filter(
+        (candidate) => candidate.symbol === symbol,
+      )) {
+        const tag = order.side === "buy" ? "L" : "S";
+        linesRef.current.push(
+          series.createPriceLine({
+            price: order.price,
+            color: "#868993",
+            lineWidth: 1,
+            lineStyle: 2,
+            axisLabelVisible: true,
+            title: `PENDING #${order.ticket} ${tag} entry`,
+          }),
+        );
+        if (order.sl) {
+          linesRef.current.push(
+            series.createPriceLine({
+              price: order.sl,
+              color: "#ef5350",
+              lineWidth: 1,
+              lineStyle: 2,
+              axisLabelVisible: true,
+              title: `PENDING #${order.ticket} SL`,
+            }),
+          );
+        }
+        if (order.tp) {
+          linesRef.current.push(
+            series.createPriceLine({
+              price: order.tp,
+              color: "#26a69a",
+              lineWidth: 1,
+              lineStyle: 2,
+              axisLabelVisible: true,
+              title: `PENDING #${order.ticket} TP`,
             }),
           );
         }
@@ -179,7 +223,7 @@ export function TradeLevels() {
       linesRef.current.forEach((l) => series.removePriceLine(l));
       linesRef.current = [];
     };
-  }, [candleSeries, executionMode, mt5Positions, positions, replayTrading.active, replayTrading.fills, replayTrading.orders, replayTrading.positions, symbol]);
+  }, [candleSeries, executionMode, mt5PendingOrders, mt5Positions, positions, replayTrading.active, replayTrading.fills, replayTrading.orders, replayTrading.positions, symbol]);
 
   return null;
 }

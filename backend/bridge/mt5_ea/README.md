@@ -45,10 +45,11 @@ available:
    snapshots run at most ten seconds apart, so positions and pending orders
    should appear within about ten seconds after a healthy reconnect.
 
-Version 1.22 remains supported during a rolling deployment because the current
-Rust gateway commits portfolio state independently before processing metadata
-or command events. Version 1.23 is recommended: it also separates these lanes
-inside the EA, providing independent retries and lane-specific diagnostics.
+Version 1.24 is required by the current gateway. It adds in-place pending-order
+entry/SL/TP modification and retains independent retries and lane-specific
+diagnostics for portfolio, command-outcome, and instrument uploads. Older
+releases are blocked before command creation so unsupported lifecycle commands
+cannot be silently ignored by a terminal.
 
 ## Safety and current boundary
 
@@ -58,9 +59,11 @@ inside the EA, providing independent retries and lane-specific diagnostics.
 - Pairing tokens are single-use. The resulting revocable session is cached in
   the MT5 terminal sandbox, is bound to `login + server + GatewayUrl`, and is
   restored after a terminal restart.
-- EA 1.23 sends portfolio, command outcomes, and instrument discovery through
+- EA 1.24 sends portfolio, command outcomes, and instrument discovery through
   independent retry lanes. A rejected symbol metadata record or command event
   cannot roll back valid open positions and pending orders.
+- `modifyPendingOrder` uses `TRADE_ACTION_MODIFY` on the existing MT5 ticket;
+  entry, SL, and TP are changed atomically, while zero SL/TP clears that level.
 - HTTP is never called from `OnTradeTransaction`; that callback only appends to
   a bounded in-memory buffer.
 - Event timestamps use the Rust gateway UTC clock returned by session and poll

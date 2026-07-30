@@ -16,6 +16,7 @@ import {
   retainStableMt5SymbolCatalog,
 } from "@/services/execution/instrumentProjection";
 import { buildExecutionOrderRequest } from "@/services/execution/orderRouting";
+import { reconcilePositionDrawingExecution } from "@/services/execution/positionDrawingLink";
 import {
   buildCancelOrderCommand,
   buildClosePositionCommand,
@@ -47,6 +48,10 @@ import {
   mt5SymbolInfoAtom,
 } from "@/store/mt5Store";
 import { pushToastAtom } from "@/store/toastStore";
+import {
+  drawingsAtom,
+  updateDrawingAtom,
+} from "@/store/chartStore";
 import {
   backendSessionAtom,
   backendSessionResolvedAtom,
@@ -238,9 +243,7 @@ export function useExecutionRegistry() {
       try {
         const state = await getExecutionAccountState(accountId);
         if (cancelled || state.accountId !== accountId) return;
-        store.set(
-          mt5PositionsAtom,
-          state.positions.map((position) => ({
+        const projectedPositions = state.positions.map((position) => ({
             ticket: position.brokerPositionId,
             symbol: position.canonicalSymbol,
             brokerSymbol: position.venueSymbol,
@@ -261,11 +264,8 @@ export function useExecutionRegistry() {
             comment: position.comment,
             openedAt: position.openedAtMs,
             updatedAt: position.observedAtMs,
-          })),
-        );
-        store.set(
-          mt5PendingOrdersAtom,
-          state.pendingOrders.map((order) => ({
+          }));
+        const projectedPendingOrders = state.pendingOrders.map((order) => ({
             ticket: order.brokerOrderId,
             symbol: order.canonicalSymbol,
             brokerSymbol: order.venueSymbol,
@@ -279,10 +279,13 @@ export function useExecutionRegistry() {
             ...(order.takeProfit != null
               ? { tp: wireNumber(order.takeProfit) }
               : {}),
+            magic: order.magic,
+            comment: order.comment,
             createdAt: order.createdAtMs,
             updatedAt: order.observedAtMs,
-          })),
-        );
+          }));
+        store.set(mt5PositionsAtom, projectedPositions);
+        store.set(mt5PendingOrdersAtom, projectedPendingOrders);
         const outcomes = state.commandOutcomes ?? [];
         store.set(mt5PendingCommandsAtom, (commands) =>
           commands.map((command) => {
@@ -353,6 +356,49 @@ export function useExecutionRegistry() {
           ) {
             store.set(pushToastAtom, presentation.toast);
           }
+        }
+        for (const drawing of store.get(drawingsAtom)) {
+          if (!drawing.execution) continue;
+          const reconciled = reconcilePositionDrawingExecution({
+            execution: drawing.execution,
+            accountId,
+            outcomes,
+            positions: projectedPositions,
+            pendingOrders: projectedPendingOrders,
+          });
+          if (!reconciled) continue;
+          const brokerTrade =
+            reconciled.position ?? reconciled.pendingOrder;
+          const entry =
+            reconciled.position?.openPrice ?? reconciled.pendingOrder?.price;
+          const stop =
+            reconciled.position?.sl ?? reconciled.pendingOrder?.sl;
+          const target =
+            reconciled.position?.tp ?? reconciled.pendingOrder?.tp;
+          const points =
+            brokerTrade && entry != null
+              ? drawing.points.map((point, index) => ({
+                  ...point,
+                  price:
+                    index === 0
+                      ? entry
+                      : index === 1 && target != null
+                        ? target
+                        : index === 2 && stop != null
+                          ? stop
+                          : point.price,
+                }))
+              : drawing.points;
+          store.set(updateDrawingAtom, {
+            id: drawing.id,
+            patch: {
+              execution: reconciled.execution,
+              tradeStatus: reconciled.tradeStatus,
+              ...(points !== drawing.points ? { points } : {}),
+              ...(stop != null ? { stop } : {}),
+              ...(target != null ? { target } : {}),
+            },
+          });
         }
       } catch {
         // Preserve the last broker snapshot during a transient read outage.
@@ -479,6 +525,25 @@ export function useExecutionRegistry() {
         } catch {
           return null;
         }
+        if (order.drawingId) {
+          const drawing = store
+            .get(drawingsAtom)
+            .find((candidate) => candidate.id === order.drawingId);
+          if (drawing && (drawing.tool === "long" || drawing.tool === "short")) {
+            store.set(updateDrawingAtom, {
+              id: drawing.id,
+              patch: {
+                tradeStatus: "pending",
+                execution: {
+                  accountId: selectedAccount.id,
+                  clientCommandId: order.clientOrderId,
+                  status: "submitting",
+                  updatedAt: Date.now(),
+                },
+              },
+            });
+          }
+        }
         void routeExecutionOrder(request)
           .then((response) => {
             const queued = response.targets.filter(
@@ -498,6 +563,26 @@ export function useExecutionRegistry() {
                 target.status === "unavailable",
             );
             const accepted = queued.length + waiting.length;
+            if (order.drawingId) {
+              const selectedAccepted = [...queued, ...waiting].some(
+                (target) => target.accountId === selectedAccount.id,
+              );
+              const drawing = store
+                .get(drawingsAtom)
+                .find((candidate) => candidate.id === order.drawingId);
+              if (drawing?.execution?.clientCommandId === order.clientOrderId) {
+                store.set(updateDrawingAtom, {
+                  id: drawing.id,
+                  patch: {
+                    execution: {
+                      ...drawing.execution,
+                      status: selectedAccepted ? "pending" : "rejected",
+                      updatedAt: Date.now(),
+                    },
+                  },
+                });
+              }
+            }
             const accounts = store.get(executionAccountsAtom);
             const accountName = (accountId: string) =>
               accounts.find((account) => account.id === accountId)?.label ??
@@ -543,6 +628,23 @@ export function useExecutionRegistry() {
             }
           })
           .catch((error: unknown) => {
+            if (order.drawingId) {
+              const drawing = store
+                .get(drawingsAtom)
+                .find((candidate) => candidate.id === order.drawingId);
+              if (drawing?.execution?.clientCommandId === order.clientOrderId) {
+                store.set(updateDrawingAtom, {
+                  id: drawing.id,
+                  patch: {
+                    execution: {
+                      ...drawing.execution,
+                      status: "rejected",
+                      updatedAt: Date.now(),
+                    },
+                  },
+                });
+              }
+            }
             store.set(mt5PendingCommandsAtom, (commands) =>
               commands.map((command) =>
                 command.id === order.clientOrderId

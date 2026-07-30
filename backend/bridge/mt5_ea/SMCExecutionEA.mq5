@@ -1,5 +1,5 @@
 #property copyright "SMC Trading Terminal"
-#property version   "1.23"
+#property version   "1.24"
 #property strict
 #property description "Broker-neutral MT5 execution agent for the Rust execution gateway."
 
@@ -10,7 +10,7 @@ input int    HttpTimeoutMs    = 5000;
 input long   MagicNumber      = 26072026;
 
 const int PROTOCOL_VERSION = 1;
-const string EA_VERSION = "1.23";
+const string EA_VERSION = "1.24";
 const int MAX_BUFFERED_EVENTS = 128;
 const int MAX_JOURNAL_COMMANDS = 4096;
 const int MAX_INSTRUMENTS_PER_HEARTBEAT = 32;
@@ -255,6 +255,8 @@ void PollCommands()
          ExecutePlaceCommand(command);
       else if(type == "modifyPosition")
          ExecuteModifyPositionCommand(command);
+      else if(type == "modifyPendingOrder")
+         ExecuteModifyPendingOrderCommand(command);
       else if(type == "closePosition")
          ExecuteClosePositionCommand(command);
       else if(type == "cancelOrder")
@@ -536,6 +538,62 @@ void ExecuteModifyPositionCommand(const string command)
    request.tp = has_target
       ? NormalizeDouble(StringToDouble(take_profit), digits)
       : PositionGetDouble(POSITION_TP);
+   SubmitDirectCommand(command_id, request);
+}
+
+void ExecuteModifyPendingOrderCommand(const string command)
+{
+   string command_id;
+   string target_account_id;
+   if(!ValidateDirectCommand(command, command_id, target_account_id))
+      return;
+   string order_id;
+   if(!JsonString(command, "brokerOrderId", order_id))
+   {
+      RecordCommandState(command_id, "rejected", 0, 0, 0,
+                         "Pending order ticket is missing");
+      BufferRejected(command_id, 0, "Pending order ticket is missing");
+      return;
+   }
+   ulong ticket = (ulong)StringToInteger(order_id);
+   if(ticket == 0 || !OrderSelect(ticket))
+   {
+      RecordCommandState(command_id, "rejected", 0, 0, 0,
+                         "Pending order was not found");
+      BufferRejected(command_id, 0, "Pending order was not found");
+      return;
+   }
+   string entry_price;
+   if(!JsonString(command, "price", entry_price))
+   {
+      RecordCommandState(command_id, "rejected", 0, 0, 0,
+                         "Pending entry price is missing");
+      BufferRejected(command_id, 0, "Pending entry price is missing");
+      return;
+   }
+   string stop_loss;
+   string take_profit;
+   bool has_stop = JsonString(command, "stopLoss", stop_loss);
+   bool has_target = JsonString(command, "takeProfit", take_profit);
+   string symbol = OrderGetString(ORDER_SYMBOL);
+   int digits = (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS);
+   MqlTradeRequest request = {};
+   request.action = TRADE_ACTION_MODIFY;
+   request.order = ticket;
+   request.symbol = symbol;
+   request.magic = (ulong)MagicNumber;
+   request.price = NormalizeDouble(StringToDouble(entry_price), digits);
+   request.sl = has_stop
+      ? NormalizeDouble(StringToDouble(stop_loss), digits)
+      : OrderGetDouble(ORDER_SL);
+   request.tp = has_target
+      ? NormalizeDouble(StringToDouble(take_profit), digits)
+      : OrderGetDouble(ORDER_TP);
+   request.stoplimit = OrderGetDouble(ORDER_PRICE_STOPLIMIT);
+   request.type_time =
+      (ENUM_ORDER_TYPE_TIME)OrderGetInteger(ORDER_TYPE_TIME);
+   request.expiration = (datetime)OrderGetInteger(ORDER_TIME_EXPIRATION);
+   request.comment = OrderGetString(ORDER_COMMENT);
    SubmitDirectCommand(command_id, request);
 }
 

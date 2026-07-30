@@ -228,6 +228,47 @@ test("drawing sync scopes are normalized and historical payloads stay global", (
   assert.equal(decodeDrawing({ ...legacy, sync: { mode: "chart-only", symbol: "EURUSD" } }).drawing?.sync, undefined);
 });
 
+test("position execution links are sanitized and round-trip through backend payloads", () => {
+  const decoded = decodeDrawing({
+    ...legacy,
+    id: "linked-long",
+    tool: "long",
+    points: [
+      { time: 10, price: 100 },
+      { time: 20, price: 110 },
+      { time: 20, price: 95 },
+    ],
+    execution: {
+      accountId: " mt5_account ",
+      clientCommandId: " exec_place_123 ",
+      status: "running",
+      brokerOrderId: "501",
+      brokerPositionId: "701",
+      updatedAt: 200,
+      unsafe: "<script>",
+    },
+  });
+  assert.deepEqual(decoded.drawing?.execution, {
+    accountId: "mt5_account",
+    clientCommandId: "exec_place_123",
+    status: "running",
+    brokerOrderId: "501",
+    brokerPositionId: "701",
+    updatedAt: 200,
+  });
+  assert.deepEqual(
+    encodeDrawing(decoded.drawing!).execution,
+    decoded.drawing?.execution,
+  );
+  assert.equal(
+    decodeDrawing({
+      ...legacy,
+      execution: { accountId: "x", clientCommandId: "y", status: "future" },
+    }).drawing?.execution,
+    undefined,
+  );
+});
+
 test("unknown tools and malformed coordinates are quarantined, not silently loaded", () => {
   const result = decodeDrawingList([
     legacy,

@@ -23,6 +23,10 @@ import {
   type CopyableMt5Trade,
 } from "@/components/trade/CopyTradeDialog";
 import {
+  Mt5OrderEditorDialog,
+  type EditableMt5Trade,
+} from "@/components/trade/Mt5OrderEditorDialog";
+import {
   cancelPendingAtom,
   closePositionAtom,
   equityAtom,
@@ -31,6 +35,7 @@ import {
   startingEquityAtom,
 } from "@/store/tradeStore";
 import {
+  cancelMt5OrderAtom,
   closeMt5PositionAtom,
   executionModeAtom,
   mt5AccountAtom,
@@ -182,8 +187,10 @@ function MobilePositionList({
   const closeSimulator = useSetAtom(closePositionAtom);
   const cancelSimulator = useSetAtom(cancelPendingAtom);
   const closeMt5 = useSetAtom(closeMt5PositionAtom);
+  const cancelMt5 = useSetAtom(cancelMt5OrderAtom);
   const replay = useReplayTrading();
   const [copyTrade, setCopyTrade] = useState<CopyableMt5Trade | null>(null);
+  const [editingTrade, setEditingTrade] = useState<EditableMt5Trade | null>(null);
 
   if (executionMode === "mt5") {
     if (!mt5Positions.length && !mt5Pending.length) return <EmptyPositions message="Connect the bridge and send a live order from the ticket." />;
@@ -199,6 +206,12 @@ function MobilePositionList({
           <Metric label="Stop / target" value={`${position.sl ? fmtPrice(position.sl, precision) : "—"} / ${position.tp ? fmtPrice(position.tp, precision) : "—"}`} />
           <Metric label="P/L" value={fmtMoney(position.profit)} tone={position.profit} />
           <div className="mobile-position-actions">
+            <button
+              type="button"
+              onClick={() => setEditingTrade({ kind: "position", position })}
+            >
+              <Pencil size={17} />Edit SL/TP
+            </button>
             <button
               type="button"
               onClick={() => setCopyTrade({ kind: "position", position })}
@@ -227,9 +240,36 @@ function MobilePositionList({
           <div className="mobile-position-actions">
             <button
               type="button"
+              onClick={() => setEditingTrade({ kind: "pendingOrder", order })}
+            >
+              <Pencil size={17} />Edit
+            </button>
+            <button
+              type="button"
               onClick={() => setCopyTrade({ kind: "pendingOrder", order })}
             >
               <Copy size={17} />Copy
+            </button>
+            <button
+              type="button"
+              className="is-danger"
+              onClick={() => {
+                void requestConfirm({
+                  title: `Cancel pending order ${order.ticket}?`,
+                  description:
+                    "The cancellation will be sent to the broker account.",
+                  confirmLabel: "Cancel order",
+                  tone: "danger",
+                }).then((accepted) => {
+                  if (!accepted) return;
+                  cancelMt5({
+                    clientOrderId: makeClientCommandId("exec_cancel"),
+                    ticket: order.ticket,
+                  });
+                });
+              }}
+            >
+              <Ban size={17} />Cancel
             </button>
           </div>
         </article>;
@@ -239,6 +279,12 @@ function MobilePositionList({
       <CopyTradeDialog
         trade={copyTrade}
         onClose={() => setCopyTrade(null)}
+      />
+    )}
+    {editingTrade && (
+      <Mt5OrderEditorDialog
+        trade={editingTrade}
+        onClose={() => setEditingTrade(null)}
       />
     )}
     </>;

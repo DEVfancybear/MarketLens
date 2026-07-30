@@ -108,6 +108,8 @@ export interface Mt5PendingOrder {
   price: number;
   sl?: number;
   tp?: number;
+  magic?: number;
+  comment?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -125,6 +127,8 @@ export interface Mt5OrderRequest {
   tp?: number;
   deviationPoints?: number;
   comment?: string;
+  /** Position drawing that originated this order; persisted after gateway acceptance. */
+  drawingId?: string;
 }
 
 export interface Mt5ModifyRequest {

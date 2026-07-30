@@ -95,6 +95,7 @@ export function OrderTicket({
   const [commissionType, setCommissionType] =
     useState<Mt5CommissionType>("currency");
   const [plannedSide, setPlannedSide] = useState<Side | null>(null);
+  const [sourceDrawingId, setSourceDrawingId] = useState<string | null>(null);
   const [mt5Lot, setMt5Lot] = useState("");
   const [mt5LotMode, setMt5LotMode] = useState<TicketLotMode>("auto");
   const [pendingLive, setPendingLive] = useState<
@@ -211,6 +212,7 @@ export function OrderTicket({
       sl: parseTicketNumber(sl),
       tp: parseTicketNumber(tp),
       comment: "SMC terminal",
+      ...(sourceDrawingId ? { drawingId: sourceDrawingId } : {}),
     };
   };
 
@@ -304,6 +306,9 @@ export function OrderTicket({
 
   const applyPrefill = (prefill: OrderPrefill) => {
     setPlannedSide(prefill.side ?? null);
+    setSourceDrawingId(
+      prefill.source === "position-drawing" ? prefill.drawingId ?? null : null,
+    );
     if (prefill.type) setType(prefill.type);
     if (prefill.price != null) setEntry(formatTicketNumber(prefill.price));
     if (prefill.stopLoss != null) setSl(formatTicketNumber(prefill.stopLoss));

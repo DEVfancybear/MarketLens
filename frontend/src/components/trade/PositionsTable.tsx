@@ -26,6 +26,10 @@ import {
   CopyTradeDialog,
   type CopyableMt5Trade,
 } from "./CopyTradeDialog";
+import {
+  Mt5OrderEditorDialog,
+  type EditableMt5Trade,
+} from "./Mt5OrderEditorDialog";
 
 /** Open & pending positions with mark-to-market P/L and close controls. */
 export function PositionsTable() {
@@ -40,6 +44,7 @@ export function PositionsTable() {
   const replayTrading = useReplayTrading();
   const { requestPrompt, requestConfirm, dialog } = usePlatformDialog();
   const [copyTrade, setCopyTrade] = useState<CopyableMt5Trade | null>(null);
+  const [editingTrade, setEditingTrade] = useState<EditableMt5Trade | null>(null);
 
   const live = positions.filter(
     (p) => p.status === "open" || p.status === "pending",
@@ -102,6 +107,17 @@ export function PositionsTable() {
                     <td className="text-right text-ink-faint">-</td>
                     <td className="text-right">
                       <div className="flex items-center justify-end gap-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditingTrade({ kind: "pendingOrder", order })
+                        }
+                        className="inline-flex h-5 w-5 items-center justify-center rounded-sm bg-terminal-hover text-ink hover:bg-brand hover:text-white focus-ring"
+                        title="Edit pending entry, stop loss, and take profit"
+                        aria-label={`Edit pending order ${order.ticket}`}
+                      >
+                        <Pencil size={11} />
+                      </button>
                       <button
                         type="button"
                         onClick={() =>
@@ -181,6 +197,17 @@ export function PositionsTable() {
                     <div className="flex items-center justify-end gap-1">
                     <button
                       type="button"
+                      onClick={() =>
+                        setEditingTrade({ kind: "position", position })
+                      }
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-sm bg-terminal-hover text-ink hover:bg-brand hover:text-white focus-ring"
+                      title="Edit stop loss and take profit"
+                      aria-label={`Edit position ${position.ticket}`}
+                    >
+                      <Pencil size={11} />
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setCopyTrade({ kind: "position", position })}
                       className="inline-flex h-5 w-5 items-center justify-center rounded-sm bg-terminal-hover text-ink hover:bg-brand hover:text-white focus-ring"
                       title="Copy position"
@@ -223,6 +250,12 @@ export function PositionsTable() {
         <CopyTradeDialog
           trade={copyTrade}
           onClose={() => setCopyTrade(null)}
+        />
+      )}
+      {editingTrade && (
+        <Mt5OrderEditorDialog
+          trade={editingTrade}
+          onClose={() => setEditingTrade(null)}
         />
       )}
       </>

@@ -97,16 +97,17 @@ Consequently, event heartbeats or portfolio snapshots cannot hide a broken
 command channel.
 
 Each account snapshot also includes the common EA release version. The current
-minimum is `1.22`; a missing, malformed, or older version is blocked before
-command creation. This additive wire field allows a future EA release to raise
-the minimum without introducing broker-specific protocol forks.
+minimum is `1.24`; a missing, malformed, or older version is blocked before
+command creation. EA 1.24 is required because it adds in-place pending-order
+entry/SL/TP modification. The additive version field prevents a gateway from
+delivering a command that an older terminal would silently ignore.
 
 Portfolio synchronization is isolated from auxiliary telemetry. Rust commits
 validated open positions and pending orders before it validates/persists
 instrument discovery and command events, so an unrelated metadata failure
-cannot roll back user-visible money state. EA 1.23 additionally sends those
-three lanes as separate requests with independent bounded backoff; the
-server-side ordering preserves the same guarantee for EA 1.22 during rollout.
+cannot roll back user-visible money state. EA 1.24 retains the independent
+portfolio, command-outcome, and instrument lanes introduced in 1.23, each with
+bounded backoff and lane-specific diagnostics.
 
 ### Account rail ordering
 
@@ -225,8 +226,20 @@ contracts, or quote notional.
 Modify, close, partial close, and cancel requests are target-scoped. Before
 queueing, Rust verifies that the referenced position or pending order belongs
 to the authenticated owner and target account. Close quantity cannot exceed the
-current position. Protection prices are checked against position side and the
-latest broker minimum stop distance.
+current position. Open-position entry remains broker-immutable; its modify
+command changes only SL/TP. `modifyPendingOrder` changes the existing broker
+ticket in place and can update entry, SL, and TP. A protection value of zero
+explicitly removes that level. Protection prices are checked against side and
+the latest broker minimum stop distance.
+
+Orders created from a Long/Short drawing store a durable execution link inside
+that drawing's normal backend-synchronized payload: selected account, parent
+command ID, broker order/position tickets, status, and update time. Broker
+command outcomes plus authoritative portfolio snapshots advance the link from
+`SUBMITTING` to `PENDING` or `LIVE`; closed and rejected states are persisted as
+well. Unlinked drawings remain risk-planning objects. Independently, every real
+portfolio resource receives a ticket-qualified `LIVE` or `PENDING` chart line,
+so multiple drawings cannot obscure which order is actually at the broker.
 
 `Close All` is split into one durable command per observed position. This avoids
 an opaque bulk operation and makes every broker result independently auditable.
@@ -273,8 +286,8 @@ An enum or trait stub is not considered production Binance support.
 | Demo and Live | implemented | identical path; no mode block |
 | Multi-target order copy | implemented | independent Rust risk and outcome per target |
 | Persistent commands/events/audit | implemented | PostgreSQL required; no in-memory production |
-| EA poll liveness/version gate | implemented | successful poll within 15 seconds; EA 1.22+ |
-| Modify/close/cancel | implemented | owner/resource validation before queue |
+| EA poll liveness/version gate | implemented | successful poll within 15 seconds; EA 1.24+ |
+| Modify/close/cancel | implemented | open SL/TP and pending entry/SL/TP; owner/resource validation before queue |
 | Native Binance | disabled | signing, secure secret storage, clock sync, filters, rate limits, portfolio sync, reconciliation, and sandbox/live certification required |
 
 ## Native Binance completion plan

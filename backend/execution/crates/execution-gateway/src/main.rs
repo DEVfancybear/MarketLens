@@ -15,9 +15,9 @@ use execution_domain::{
     AccountId, AccountMode, AccountStatus, CancelOrderCommand, ClosePositionCommand,
     CopyAllocation, CopyTarget, EXECUTION_PROTOCOL_VERSION, EaAccountSnapshot, EaCommand, EaEvent,
     EaEventBatch, EaInstrumentSnapshot, EaPendingOrderSnapshot, EaPositionSnapshot,
-    EaSessionRequest, EaSessionResponse, ExecutionAccount, InstrumentSpec, ModifyPositionCommand,
-    OrderIntent, RiskPolicy, RouteRejectCode, RouteTargetContext, RouteWarning, RoutedOrder,
-    SessionId, Side, TargetRouteResult, VenueKind,
+    EaSessionRequest, EaSessionResponse, ExecutionAccount, InstrumentSpec,
+    ModifyPendingOrderCommand, ModifyPositionCommand, OrderIntent, RiskPolicy, RouteRejectCode,
+    RouteTargetContext, RouteWarning, RoutedOrder, SessionId, Side, TargetRouteResult, VenueKind,
 };
 use execution_engine::route_order;
 use rust_decimal::Decimal;
@@ -53,7 +53,7 @@ const DEFERRED_ORDER_TTL: Duration = Duration::from_secs(5 * 60);
 const DEFERRED_EXPIRY_SWEEP_INTERVAL: Duration = Duration::from_secs(5);
 const MAX_DEFERRED_ACTIVATIONS_PER_EVENT: usize = 16;
 const EA_POLL_FRESHNESS: Duration = Duration::from_secs(15);
-const MIN_SUPPORTED_EA_VERSION: (u32, u32, u32) = (1, 22, 0);
+const MIN_SUPPORTED_EA_VERSION: (u32, u32, u32) = (1, 24, 0);
 const DEFAULT_PAIRING_TTL: Duration = Duration::from_secs(5 * 60);
 const MAX_PAIRING_TTL: Duration = Duration::from_secs(10 * 60);
 const MAX_ACTIVE_PAIRING_TOKENS_PER_OWNER: usize = 5;
@@ -221,6 +221,10 @@ enum EaPollCommandView {
         #[serde(flatten)]
         command: ModifyPositionCommand,
     },
+    ModifyPendingOrder {
+        #[serde(flatten)]
+        command: ModifyPendingOrderCommand,
+    },
     ClosePosition {
         #[serde(flatten)]
         command: ClosePositionCommand,
@@ -237,6 +241,7 @@ impl From<EaCommand> for EaPollCommandView {
         match value {
             EaCommand::Place { order } => Self::Place { order },
             EaCommand::ModifyPosition { command } => Self::ModifyPosition { command },
+            EaCommand::ModifyPendingOrder { command } => Self::ModifyPendingOrder { command },
             EaCommand::ClosePosition { command } => Self::ClosePosition { command },
             EaCommand::CancelOrder { command } => Self::CancelOrder { command },
             EaCommand::Sync => Self::Sync,
@@ -1918,6 +1923,50 @@ impl GatewayState {
                     instrument
                         .as_ref()
                         .and_then(|value| value.min_stop_distance),
+                    command.stop_loss,
+                    command.take_profit,
+                )
+            }
+            EaCommand::ModifyPendingOrder { command } => {
+                let row = sqlx::query(
+                    r#"
+                    SELECT
+                        pending.snapshot,
+                        instruments.snapshot AS instrument
+                    FROM execution_pending_orders pending
+                    LEFT JOIN execution_instruments instruments
+                      ON instruments.user_id = pending.user_id
+                     AND instruments.account_id = pending.account_id
+                     AND instruments.venue_symbol =
+                         pending.snapshot->>'venueSymbol'
+                    WHERE pending.user_id = $1
+                      AND pending.account_id = $2
+                      AND pending.broker_order_id = $3
+                    "#,
+                )
+                .bind(owner_uuid)
+                .bind(command.target_account_id.as_str())
+                .bind(&command.broker_order_id)
+                .fetch_optional(database)
+                .await
+                .map_err(|error| {
+                    ApiError::database("load pending order modification target", error)
+                })?
+                .ok_or_else(lifecycle_resource_not_found)?;
+                let order = row
+                    .try_get::<sqlx::types::Json<EaPendingOrderSnapshot>, _>("snapshot")
+                    .map_err(|error| ApiError::database("decode pending order target", error))?
+                    .0;
+                let instrument = row
+                    .try_get::<Option<sqlx::types::Json<InstrumentSpec>>, _>("instrument")
+                    .map_err(|error| ApiError::database("decode pending order instrument", error))?
+                    .map(|value| value.0);
+                validate_pending_order_modification(
+                    &order,
+                    instrument
+                        .as_ref()
+                        .and_then(|value| value.min_stop_distance),
+                    command.price,
                     command.stop_loss,
                     command.take_profit,
                 )
@@ -4327,17 +4376,33 @@ fn validate_admin_command(command: &EaCommand) -> Result<(), ApiError> {
                     "a position modification must include stop loss or take profit",
                 ));
             }
-            if command
-                .stop_loss
-                .is_some_and(|value| value <= Decimal::ZERO)
+            if command.stop_loss.is_some_and(|value| value < Decimal::ZERO)
                 || command
                     .take_profit
-                    .is_some_and(|value| value <= Decimal::ZERO)
+                    .is_some_and(|value| value < Decimal::ZERO)
             {
                 return Err(ApiError::new(
                     StatusCode::BAD_REQUEST,
                     "MODIFICATION_PRICE_INVALID",
-                    "position protection prices must be positive",
+                    "position protection prices cannot be negative",
+                ));
+            }
+        }
+        EaCommand::ModifyPendingOrder { command } => {
+            validate_identifier("commandId", command.command_id.as_str(), 128)?;
+            validate_identifier("idempotencyKey", command.idempotency_key.as_str(), 200)?;
+            validate_identifier("accountId", command.target_account_id.as_str(), 96)?;
+            validate_broker_ticket("brokerOrderId", &command.broker_order_id)?;
+            if command.price <= Decimal::ZERO
+                || command.stop_loss.is_some_and(|value| value < Decimal::ZERO)
+                || command
+                    .take_profit
+                    .is_some_and(|value| value < Decimal::ZERO)
+            {
+                return Err(ApiError::new(
+                    StatusCode::BAD_REQUEST,
+                    "MODIFICATION_PRICE_INVALID",
+                    "pending entry must be positive and protection prices cannot be negative",
                 ));
             }
         }
@@ -4395,14 +4460,18 @@ fn validate_position_modification(
             "current position price is unavailable for protection validation",
         ));
     }
-    let wrong_stop_side = stop_loss.is_some_and(|stop| match position.side {
-        Side::Buy => stop >= price,
-        Side::Sell => stop <= price,
-    });
-    let wrong_target_side = take_profit.is_some_and(|target| match position.side {
-        Side::Buy => target <= price,
-        Side::Sell => target >= price,
-    });
+    let wrong_stop_side = stop_loss
+        .filter(|value| *value > Decimal::ZERO)
+        .is_some_and(|stop| match position.side {
+            Side::Buy => stop >= price,
+            Side::Sell => stop <= price,
+        });
+    let wrong_target_side = take_profit
+        .filter(|value| *value > Decimal::ZERO)
+        .is_some_and(|target| match position.side {
+            Side::Buy => target <= price,
+            Side::Sell => target >= price,
+        });
     if wrong_stop_side || wrong_target_side {
         return Err(ApiError::new(
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -4411,8 +4480,56 @@ fn validate_position_modification(
         ));
     }
     if let Some(minimum) = minimum_stop_distance {
-        let stop_too_close = stop_loss.is_some_and(|stop| (price - stop).abs() < minimum);
-        let target_too_close = take_profit.is_some_and(|target| (price - target).abs() < minimum);
+        let stop_too_close = stop_loss
+            .filter(|value| *value > Decimal::ZERO)
+            .is_some_and(|stop| (price - stop).abs() < minimum);
+        let target_too_close = take_profit
+            .filter(|value| *value > Decimal::ZERO)
+            .is_some_and(|target| (price - target).abs() < minimum);
+        if stop_too_close || target_too_close {
+            return Err(ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "PROTECTION_DISTANCE_TOO_SMALL",
+                "stop loss or take profit is inside the broker minimum distance",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_pending_order_modification(
+    order: &EaPendingOrderSnapshot,
+    minimum_stop_distance: Option<Decimal>,
+    price: Decimal,
+    stop_loss: Option<Decimal>,
+    take_profit: Option<Decimal>,
+) -> Result<(), ApiError> {
+    let wrong_stop_side = stop_loss
+        .filter(|value| *value > Decimal::ZERO)
+        .is_some_and(|stop| match order.side {
+            Side::Buy => stop >= price,
+            Side::Sell => stop <= price,
+        });
+    let wrong_target_side = take_profit
+        .filter(|value| *value > Decimal::ZERO)
+        .is_some_and(|target| match order.side {
+            Side::Buy => target <= price,
+            Side::Sell => target >= price,
+        });
+    if wrong_stop_side || wrong_target_side {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "PROTECTION_PRICE_WRONG_SIDE",
+            "stop loss or take profit is on the wrong side of the pending entry",
+        ));
+    }
+    if let Some(minimum) = minimum_stop_distance {
+        let stop_too_close = stop_loss
+            .filter(|value| *value > Decimal::ZERO)
+            .is_some_and(|stop| (price - stop).abs() < minimum);
+        let target_too_close = take_profit
+            .filter(|value| *value > Decimal::ZERO)
+            .is_some_and(|target| (price - target).abs() < minimum);
         if stop_too_close || target_too_close {
             return Err(ApiError::new(
                 StatusCode::UNPROCESSABLE_ENTITY,
@@ -4867,6 +4984,7 @@ fn command_id(command: &EaCommand) -> Option<&str> {
     match command {
         EaCommand::Place { order } => Some(order.command_id.as_str()),
         EaCommand::ModifyPosition { command } => Some(command.command_id.as_str()),
+        EaCommand::ModifyPendingOrder { command } => Some(command.command_id.as_str()),
         EaCommand::ClosePosition { command } => Some(command.command_id.as_str()),
         EaCommand::CancelOrder { command } => Some(command.command_id.as_str()),
         EaCommand::Sync => None,
@@ -4877,6 +4995,7 @@ fn command_target_account(command: &EaCommand) -> Option<&AccountId> {
     match command {
         EaCommand::Place { order } => Some(&order.target_account_id),
         EaCommand::ModifyPosition { command } => Some(&command.target_account_id),
+        EaCommand::ModifyPendingOrder { command } => Some(&command.target_account_id),
         EaCommand::ClosePosition { command } => Some(&command.target_account_id),
         EaCommand::CancelOrder { command } => Some(&command.target_account_id),
         EaCommand::Sync => None,
@@ -4887,6 +5006,7 @@ fn command_idempotency_key(command: &EaCommand) -> Option<&str> {
     match command {
         EaCommand::Place { order } => Some(order.idempotency_key.as_str()),
         EaCommand::ModifyPosition { command } => Some(command.idempotency_key.as_str()),
+        EaCommand::ModifyPendingOrder { command } => Some(command.idempotency_key.as_str()),
         EaCommand::ClosePosition { command } => Some(command.idempotency_key.as_str()),
         EaCommand::CancelOrder { command } => Some(command.idempotency_key.as_str()),
         EaCommand::Sync => None,
@@ -4897,6 +5017,7 @@ fn command_parent_id(command: &EaCommand) -> Option<&str> {
     match command {
         EaCommand::Place { order } => Some(order.parent_command_id.as_str()),
         EaCommand::ModifyPosition { command } => Some(command.command_id.as_str()),
+        EaCommand::ModifyPendingOrder { command } => Some(command.command_id.as_str()),
         EaCommand::ClosePosition { command } => Some(command.command_id.as_str()),
         EaCommand::CancelOrder { command } => Some(command.command_id.as_str()),
         EaCommand::Sync => None,
@@ -5210,7 +5331,7 @@ mod tests {
             leverage: 100,
             trade_allowed: true,
             terminal_build: 5000,
-            ea_version: Some("1.22".into()),
+            ea_version: Some("1.24".into()),
         }
     }
 
@@ -5425,10 +5546,10 @@ mod tests {
     #[test]
     fn ea_version_gate_accepts_current_and_future_releases_only() {
         assert!(!ea_version_supported(None));
-        assert!(!ea_version_supported(Some("1.21")));
+        assert!(!ea_version_supported(Some("1.23.9")));
         assert!(!ea_version_supported(Some("invalid")));
-        assert!(ea_version_supported(Some("1.22")));
-        assert!(ea_version_supported(Some("1.22.1")));
+        assert!(ea_version_supported(Some("1.24")));
+        assert!(ea_version_supported(Some("1.24.1")));
         assert!(ea_version_supported(Some("2.0.0")));
     }
 
@@ -5644,6 +5765,51 @@ mod tests {
             Some(Decimal::new(111_000, 5)),
         )
         .expect("valid buy protection");
+
+        validate_position_modification(
+            &position,
+            Some(Decimal::new(10, 5)),
+            Some(Decimal::ZERO),
+            Some(Decimal::ZERO),
+        )
+        .expect("zero clears position protection");
+    }
+
+    #[test]
+    fn pending_order_modification_validates_entry_protection_and_clear_values() {
+        let order = EaPendingOrderSnapshot {
+            broker_order_id: "200001".into(),
+            canonical_symbol: "EURUSD".into(),
+            venue_symbol: "EURUSD".into(),
+            side: Side::Buy,
+            kind: execution_domain::OrderKind::Limit,
+            quantity: Decimal::ONE,
+            price: Decimal::new(110_000, 5),
+            stop_loss: None,
+            take_profit: None,
+            magic: 1,
+            comment: String::new(),
+            created_at_ms: now_ms(),
+            observed_at_ms: now_ms(),
+        };
+        let wrong_side = validate_pending_order_modification(
+            &order,
+            Some(Decimal::new(10, 5)),
+            Decimal::new(110_000, 5),
+            Some(Decimal::new(111_000, 5)),
+            None,
+        )
+        .expect_err("buy stop above pending entry must fail");
+        assert_eq!(wrong_side.body.code, "PROTECTION_PRICE_WRONG_SIDE");
+
+        validate_pending_order_modification(
+            &order,
+            Some(Decimal::new(10, 5)),
+            Decimal::new(110_500, 5),
+            Some(Decimal::ZERO),
+            Some(Decimal::new(112_000, 5)),
+        )
+        .expect("pending entry and protection can be modified in place");
     }
 
     async fn paired(

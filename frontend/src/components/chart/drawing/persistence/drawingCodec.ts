@@ -95,6 +95,39 @@ function normalizedSync(value: unknown): Drawing["sync"] {
   };
 }
 
+function normalizedExecution(value: unknown): Drawing["execution"] {
+  if (
+    !isRecord(value) ||
+    typeof value.accountId !== "string" ||
+    typeof value.clientCommandId !== "string" ||
+    !["submitting", "pending", "running", "closed", "rejected"].includes(
+      String(value.status),
+    ) ||
+    !finite(value.updatedAt)
+  ) {
+    return undefined;
+  }
+  const accountId = value.accountId.trim().slice(0, 96);
+  const clientCommandId = value.clientCommandId.trim().slice(0, 128);
+  if (!accountId || !clientCommandId) return undefined;
+  const brokerOrderId =
+    typeof value.brokerOrderId === "string"
+      ? value.brokerOrderId.trim().slice(0, 128)
+      : "";
+  const brokerPositionId =
+    typeof value.brokerPositionId === "string"
+      ? value.brokerPositionId.trim().slice(0, 128)
+      : "";
+  return {
+    accountId,
+    clientCommandId,
+    status: value.status as NonNullable<Drawing["execution"]>["status"],
+    updatedAt: Math.max(0, value.updatedAt),
+    ...(brokerOrderId ? { brokerOrderId } : {}),
+    ...(brokerPositionId ? { brokerPositionId } : {}),
+  };
+}
+
 function normalizedDataSnapshot(value: unknown): Drawing["dataSnapshot"] {
   if (!isRecord(value) || value.version !== 1 || typeof value.symbol !== "string" || !finite(value.capturedAt) || !Array.isArray(value.samples)) return undefined;
   const samples = sanitizeDrawingDataSamples(value.samples, MAX_DATA_SAMPLES);
@@ -258,6 +291,9 @@ export function decodeDrawing(value: unknown): DrawingDecodeResult {
   const sync = normalizedSync(value.sync);
   if (sync) drawing.sync = sync;
   else delete drawing.sync;
+  const execution = normalizedExecution(value.execution);
+  if (execution) drawing.execution = execution;
+  else delete drawing.execution;
   const dataSnapshot = normalizedDataSnapshot(value.dataSnapshot);
   if (dataSnapshot) drawing.dataSnapshot = dataSnapshot;
   else delete drawing.dataSnapshot;

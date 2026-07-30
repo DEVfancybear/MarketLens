@@ -390,6 +390,7 @@ pub struct EaSessionResponse {
 pub enum EaCommand {
     Place { order: RoutedOrder },
     ModifyPosition { command: ModifyPositionCommand },
+    ModifyPendingOrder { command: ModifyPendingOrderCommand },
     ClosePosition { command: ClosePositionCommand },
     CancelOrder { command: CancelOrderCommand },
     Sync,
@@ -489,6 +490,21 @@ pub struct ModifyPositionCommand {
     pub idempotency_key: IdempotencyKey,
     pub target_account_id: AccountId,
     pub broker_position_id: String,
+    #[serde(default, with = "nullable_decimal_string")]
+    pub stop_loss: Option<Decimal>,
+    #[serde(default, with = "nullable_decimal_string")]
+    pub take_profit: Option<Decimal>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModifyPendingOrderCommand {
+    pub command_id: CommandId,
+    pub idempotency_key: IdempotencyKey,
+    pub target_account_id: AccountId,
+    pub broker_order_id: String,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub price: Decimal,
     #[serde(default, with = "nullable_decimal_string")]
     pub stop_loss: Option<Decimal>,
     #[serde(default, with = "nullable_decimal_string")]
@@ -634,6 +650,27 @@ mod tests {
         assert_eq!(value["type"], "closePosition");
         assert_eq!(value["command"]["quantity"], "0.5");
         assert_eq!(value["command"]["brokerPositionId"], "123456");
+    }
+
+    #[test]
+    fn pending_order_modification_wire_shape_keeps_prices_as_decimal_strings() {
+        let value = serde_json::to_value(EaCommand::ModifyPendingOrder {
+            command: ModifyPendingOrderCommand {
+                command_id: CommandId::new("modify-pending-1"),
+                idempotency_key: IdempotencyKey::new("modify-pending-1"),
+                target_account_id: AccountId::new("mt5_account"),
+                broker_order_id: "654321".into(),
+                price: Decimal::new(110_250, 5),
+                stop_loss: Some(Decimal::ZERO),
+                take_profit: Some(Decimal::new(112_000, 5)),
+            },
+        })
+        .expect("serialize pending order modification");
+        assert_eq!(value["type"], "modifyPendingOrder");
+        assert_eq!(value["command"]["brokerOrderId"], "654321");
+        assert_eq!(value["command"]["price"], "1.10250");
+        assert_eq!(value["command"]["stopLoss"], "0");
+        assert_eq!(value["command"]["takeProfit"], "1.12000");
     }
 
     #[test]

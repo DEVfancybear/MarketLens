@@ -932,6 +932,7 @@ export function DrawingLayer() {
         samples: candles,
         draggingId: drawingIdRef.current,
         isEligible: (drawing) =>
+          !drawing.execution &&
           getDrawingToolManifestEntry(drawing.tool).lifecycleExtension ===
           "position-resolution",
         resolveHit: resolvePositionHit,

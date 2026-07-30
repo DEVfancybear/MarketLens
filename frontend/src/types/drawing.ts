@@ -155,6 +155,15 @@ export interface DrawingRichContent {
   cells?: string[][];
 }
 
+export interface PositionDrawingExecution {
+  accountId: string;
+  clientCommandId: string;
+  status: "submitting" | "pending" | "running" | "closed" | "rejected";
+  brokerOrderId?: string;
+  brokerPositionId?: string;
+  updatedAt: number;
+}
+
 export interface BaseDrawing
   extends RegressionTrendProperties, VolumeProfileProperties {
   /** Persisted frontend payload schema. Unversioned historical payloads decode as v1. */
@@ -284,6 +293,11 @@ export interface BaseDrawing
   middleLineStyle?: LineStyle;
   /** Position tool trade lifecycle status. */
   tradeStatus?: "pending" | "running" | "tp_hit" | "sl_hit";
+  /**
+   * Durable link to the broker command/resource created from this Long/Short
+   * drawing. The normal drawing sync persists it in the backend payload.
+   */
+  execution?: PositionDrawingExecution;
   /** UNIX time (seconds) of the candle that first hit TP or SL. */
   hitTime?: number;
   /** Price level at which the hit occurred (target or stop price). */

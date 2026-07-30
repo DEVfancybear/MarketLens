@@ -70,7 +70,7 @@ Before release, verify:
 - account readiness requires `last_poll_at` from a completely successful
   command poll within 15 seconds; generic session/event activity is
   insufficient;
-- the reported EA version is `1.22` or newer before any Place or lifecycle
+- the reported EA version is `1.24` or newer before any Place or lifecycle
   command can be created.
 - authenticated mutation throttles return `429` after their configured per-user ceilings, while a
   different user remains unaffected. Treat these in-process controls as defense in depth and keep
@@ -181,7 +181,7 @@ Do not use recovery switches during a normal release.
 
 Migration `0028_execution_ea_poll_liveness` intentionally leaves existing
 sessions with `last_poll_at=NULL`. After restart, each healthy EA establishes
-readiness on its first successful poll. Existing EA releases below 1.22 remain
+readiness on its first successful poll. Existing EA releases below 1.24 remain
 blocked until their `.ex5` is replaced; do not bypass this gate by editing
 account status in PostgreSQL.
 
@@ -192,9 +192,9 @@ Deploy portfolio synchronization changes in this order:
 1. Run the canonical backend deployment with
    `.\run-backend-production.ps1`.
 2. Deploy the frontend.
-3. Upgrade `SMCExecutionEA` one terminal at a time. EA 1.22 remains compatible
-   with the new gateway; EA 1.23 is recommended because it sends portfolio,
-   command-event, and instrument batches through independent retry lanes.
+3. Upgrade `SMCExecutionEA` one terminal at a time. EA 1.24 is required because
+   it supports `modifyPendingOrder` and sends portfolio, command-event, and
+   instrument batches through independent retry lanes.
 
 Detaching or restarting the EA does not close broker positions or cancel
 pending orders. During each terminal upgrade, stop submitting new web commands
@@ -210,7 +210,7 @@ positions and pending orders to appear before treating the state as stale.
 | Experts log or observation | Meaning | Production action |
 | --- | --- | --- |
 | `portfolio sync failed, HTTP=...` | The positions/pending-orders lane was rejected or unavailable | Inspect the sanitized response code/message and gateway logs. The last committed portfolio remains authoritative until a complete valid snapshot succeeds |
-| `instrument sync failed, HTTP=...` | Symbol discovery or metadata was rejected | Fix symbol metadata/routing independently. On EA 1.23 this must not suppress portfolio synchronization |
+| `instrument sync failed, HTTP=...` | Symbol discovery or metadata was rejected | Fix symbol metadata/routing independently. On EA 1.24 this must not suppress portfolio synchronization |
 | `command event sync failed, HTTP=...` | Outcome telemetry is delayed | Do not resend an order. Reconcile the command ID against MT5 and the target-command row, then allow retry or late acknowledgement to finalize it |
 | No EA error, account `READY`, web portfolio empty | Transport is healthy but account selection, ownership, or persistence may be wrong | Confirm the selected execution account, inspect the authenticated account-state response, then compare its account ID with PostgreSQL portfolio rows |
 
@@ -271,13 +271,14 @@ EA rejection.
 
 1. Pair one dedicated Live account with minimum balance/exposure.
 2. Verify account identity, server, currency, mode, equity, trade permission,
-   EA version `1.22+`, and a fresh successful poll (`READY`) in the UI.
+   EA version `1.24+`, and a fresh successful poll (`READY`) in the UI.
 3. Map exactly one low-risk symbol.
 4. Place the broker-minimum order with a protective stop.
 5. Verify command IDs in browser activity, PostgreSQL, EA journal, MT5 order,
    deal, and position state.
-6. Modify protection, partially close if supported, close the remainder, and
-   cancel a pending order.
+6. Modify open-position protection, modify a pending order's entry/SL/TP,
+   partially close if supported, close the remainder, and cancel a pending
+   order.
 7. Disconnect during a submission test only in the designated canary account;
    verify unknown-outcome reconciliation without duplicate orders.
 8. Add a second canary terminal and verify one source order produces

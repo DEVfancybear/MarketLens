@@ -40,8 +40,20 @@ export function buildModifyPositionCommand(
   accountId: string,
   request: Mt5ModifyRequest,
 ): Record<string, unknown> {
-  if (request.target !== "position") {
-    throw new Error("pending orders must use cancel and replace");
+  if (request.target === "pendingOrder") {
+    if (request.price == null) {
+      throw new Error("pending order entry price is required");
+    }
+    return {
+      type: "modifyPendingOrder",
+      command: {
+        ...identity(accountId, request.clientOrderId),
+        brokerOrderId: request.ticket,
+        price: executionDecimal(request.price),
+        ...(request.sl != null ? { stopLoss: executionDecimal(request.sl) } : {}),
+        ...(request.tp != null ? { takeProfit: executionDecimal(request.tp) } : {}),
+      },
+    };
   }
   return {
     type: "modifyPosition",

@@ -55,15 +55,37 @@ test("modify and cancel commands preserve broker ticket identity", () => {
   );
 });
 
-test("pending-order modify cannot bypass cancel-and-replace policy", () => {
-  assert.throws(
-    () =>
-      buildModifyPositionCommand("mt5_account", {
-        clientOrderId: "modify-2",
-        ticket: "88",
-        target: "pendingOrder",
-        price: 1.1,
-      }),
-    /cancel and replace/,
+test("pending-order modify preserves entry and protection clear values", () => {
+  assert.deepEqual(
+    buildModifyPositionCommand("mt5_account", {
+      clientOrderId: "modify-2",
+      ticket: "88",
+      target: "pendingOrder",
+      price: 1.1,
+      sl: 0,
+      tp: 1.12,
+    }),
+    {
+      type: "modifyPendingOrder",
+      command: {
+        commandId: "modify-2",
+        idempotencyKey: "modify-2",
+        targetAccountId: "mt5_account",
+        brokerOrderId: "88",
+        price: "1.1",
+        stopLoss: "0",
+        takeProfit: "1.12",
+      },
+    },
+  );
+});
+
+test("pending-order modify requires an entry price", () => {
+  assert.throws(() =>
+    buildModifyPositionCommand("mt5_account", {
+      clientOrderId: "modify-3",
+      ticket: "88",
+      target: "pendingOrder",
+    }),
   );
 });

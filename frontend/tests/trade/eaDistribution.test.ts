@@ -9,7 +9,7 @@ import {
 } from "../../src/services/execution/eaDistribution";
 
 test("EA distribution advertises the compiled portfolio-sync release", () => {
-  assert.equal(EXECUTION_EA_RELEASE_VERSION, "1.23");
+  assert.equal(EXECUTION_EA_RELEASE_VERSION, "1.24");
 });
 
 test("EA release uses same-origin public assets by default", () => {

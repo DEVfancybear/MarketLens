@@ -4,6 +4,26 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Live MT5 order editing and durable chart identity (2026-07-30)
+
+- Added a shared responsive editor for desktop and mobile: open positions can
+  update or remove SL/TP, while pending orders can update entry, SL, and TP
+  without cancel-and-replace exposure.
+- Added the durable `modifyPendingOrder` command across the TypeScript client,
+  Rust execution domain/gateway, PostgreSQL-backed command queue, and MT5 EA.
+  Gateway validation checks owner/account resource scope, protection side, and
+  broker minimum stop distance before delivery.
+- Linked orders submitted from Long/Short drawings to their account, durable
+  command, broker order, and broker position. The existing drawing sync stores
+  this metadata in the backend payload, so reloads and other devices retain
+  `SUBMITTING`, `PENDING`, `LIVE`, `REJECTED`, or `CLOSED` identity.
+- Added ticket-qualified `LIVE` and `PENDING` chart price lines so real broker
+  resources remain distinguishable when multiple unlinked risk drawings exist.
+- Released and verified `SMCExecutionEA 1.24`; older EA releases are blocked
+  from command routing because they do not understand pending-order mutation.
+- Added regression coverage for command wire shapes, drawing-link
+  reconciliation, and drawing-codec persistence.
+
 ### Fixed - Baseline indicator crash during rapid symbol switches (2026-07-30)
 
 - Sanitized indicator runtime points at the common projection boundary before
