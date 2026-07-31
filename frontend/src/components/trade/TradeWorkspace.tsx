@@ -25,6 +25,7 @@ import { OrderTicket } from "./OrderTicket";
 import { PositionsTable } from "./PositionsTable";
 import { ExecutionModeSwitch } from "./ExecutionModeSwitch";
 import { ExecutionConnectionStatus } from "./ExecutionConnectionStatus";
+import { PropRiskCompactStatus } from "./PropRiskGuardCard";
 import { Mt5CommandLog } from "./Mt5CommandLog";
 import { Mt5EaSetupGuide } from "./Mt5EaSetupGuide";
 import { ExecutionAccountManagementDialog } from "./ExecutionAccountManagementDialog";
@@ -45,6 +46,7 @@ import {
   executionAccountLayoutAtom,
   executionAccountLayoutPendingAtom,
   executionAccountsAtom,
+  selectedExecutionAccountAtom,
   selectedExecutionAccountIdAtom,
   setCopyTargetAtom,
 } from "@/store/executionRegistryStore";
@@ -81,6 +83,7 @@ export function TradeWorkspace() {
   const executionMode = useAtomValue(executionModeAtom);
   const mt5Account = useAtomValue(mt5AccountAtom);
   const mt5Positions = useAtomValue(mt5PositionsAtom);
+  const selectedExecutionAccount = useAtomValue(selectedExecutionAccountAtom);
 
   const openPnl =
     executionMode === "mt5"
@@ -127,9 +130,12 @@ export function TradeWorkspace() {
               tone={accountReturn >= 0 ? "positive" : "negative"}
             />
           )}
-          <div className="ml-auto min-w-0">
+          <div className="ml-auto flex min-w-0 items-center gap-2">
             {executionMode === "mt5" ? (
-              <ExecutionConnectionStatus />
+              <>
+                <PropRiskCompactStatus account={selectedExecutionAccount} />
+                <ExecutionConnectionStatus />
+              </>
             ) : (
               <span className="inline-flex items-center gap-1.5 rounded-lg bg-brand/10 px-2.5 py-1.5 text-[10px] font-semibold text-brand">
                 <Radio size={12} aria-hidden="true" />

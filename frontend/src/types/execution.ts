@@ -33,6 +33,84 @@ export interface ExecutionAccountSummary {
   statusReason?: "ea_update_required" | "broker_trading_disabled";
 }
 
+export interface PropRiskRules {
+  dailyLossLimitBasisPoints: number;
+  maxLossLimitBasisPoints: number;
+  maxRiskPerTradeBasisPoints: number;
+  maxTotalOpenRiskBasisPoints: number;
+  requireStopLoss: boolean;
+  warningBufferBasisPoints: number;
+  emergencyBufferBasisPoints: number;
+  dailyProfitTargetBasisPoints?: number | null;
+}
+
+export interface PropRiskActions {
+  blockNewOrders: boolean;
+  cancelPendingOrders: boolean;
+  closeOpenPositions: boolean;
+  lockAfterProfitTarget: boolean;
+  failClosedOnStaleData: boolean;
+}
+
+export type PropRiskStatus = "protected" | "warning" | "locked" | "breached";
+
+export type PropRiskReason =
+  | "DAILY_LOSS_WARNING"
+  | "MAX_LOSS_WARNING"
+  | "DAILY_LOSS_SAFETY_BUFFER"
+  | "MAX_LOSS_SAFETY_BUFFER"
+  | "DAILY_LOSS_LIMIT_BREACHED"
+  | "MAX_LOSS_LIMIT_BREACHED"
+  | "DAILY_PROFIT_TARGET_REACHED"
+  | "UNPROTECTED_EXPOSURE"
+  | "TELEMETRY_STALE"
+  | "STATE_UNAVAILABLE";
+
+export interface PropRiskEvaluation {
+  status: PropRiskStatus;
+  reason?: PropRiskReason;
+  canOpenNewOrders: boolean;
+  shouldCancelPendingOrders: boolean;
+  shouldCloseOpenPositions: boolean;
+  dailyLossLimit: number;
+  dailyLossUsed: number;
+  dailyLossRemaining: number;
+  maxLossLimit: number;
+  maxLossUsed: number;
+  maxLossRemaining: number;
+  dailyProfitTarget?: number | null;
+  dailyProfitRemaining?: number | null;
+  balance: number;
+  equity: number;
+}
+
+export interface PropRiskProfile {
+  id: string;
+  version: number;
+  providerCode: string;
+  programCode: string;
+  displayName: string;
+  timezone: string;
+  rules: PropRiskRules;
+  actions: PropRiskActions;
+}
+
+export interface PropRiskAssignment extends Omit<PropRiskProfile, "id" | "version"> {
+  accountId: string;
+  enabled: boolean;
+  profileId: string;
+  profileVersion: number;
+  initialBalance: number;
+  tradingDay?: string;
+  evaluation?: PropRiskEvaluation;
+  updatedAtMs: number;
+}
+
+export interface PropRiskGuard {
+  profiles: PropRiskProfile[];
+  assignment: PropRiskAssignment | null;
+}
+
 export type CopyAllocationMode =
   | "sameQuantity"
   | "multiplier"

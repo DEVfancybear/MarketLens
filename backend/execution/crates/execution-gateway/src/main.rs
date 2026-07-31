@@ -15,9 +15,11 @@ use execution_domain::{
     AccountId, AccountMode, AccountStatus, CancelOrderCommand, ClosePositionCommand,
     CopyAllocation, CopyTarget, EXECUTION_PROTOCOL_VERSION, EaAccountSnapshot, EaCommand, EaEvent,
     EaEventBatch, EaInstrumentSnapshot, EaPendingOrderSnapshot, EaPositionSnapshot,
-    EaSessionRequest, EaSessionResponse, ExecutionAccount, InstrumentSpec,
-    ModifyPendingOrderCommand, ModifyPositionCommand, OrderIntent, RiskPolicy, RouteRejectCode,
-    RouteTargetContext, RouteWarning, RoutedOrder, SessionId, Side, TargetRouteResult, VenueKind,
+    EaSessionRequest, EaSessionResponse, ExecutionAccount, IdempotencyKey, InstrumentSpec,
+    ModifyPendingOrderCommand, ModifyPositionCommand, OrderIntent, PropRiskActions,
+    PropRiskEvaluation, PropRiskEvaluationInput, PropRiskReason, PropRiskRules, PropRiskStatus,
+    RiskPolicy, RouteRejectCode, RouteTargetContext, RouteWarning, RoutedOrder, SessionId, Side,
+    TargetRouteResult, VenueKind, evaluate_prop_risk, prop_risk_money,
 };
 use execution_engine::route_order;
 use rust_decimal::Decimal;
@@ -150,6 +152,153 @@ struct PairingTokenRequest {
 struct PairingTokenResponse {
     token: String,
     expires_at_ms: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PropRiskProfileTemplate {
+    id: String,
+    version: u32,
+    provider_code: String,
+    program_code: String,
+    display_name: String,
+    timezone: String,
+    rules: PropRiskRules,
+    actions: PropRiskActions,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PropRiskAssignmentView {
+    account_id: AccountId,
+    enabled: bool,
+    profile_id: String,
+    profile_version: u32,
+    provider_code: String,
+    program_code: String,
+    display_name: String,
+    timezone: String,
+    #[serde(with = "rust_decimal::serde::str")]
+    initial_balance: Decimal,
+    rules: PropRiskRules,
+    actions: PropRiskActions,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    trading_day: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    evaluation: Option<PropRiskEvaluation>,
+    updated_at_ms: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PropRiskGuardView {
+    profiles: Vec<PropRiskProfileTemplate>,
+    assignment: Option<PropRiskAssignmentView>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PropRiskQuery {
+    owner_id: String,
+    account_id: AccountId,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PropRiskUpdateRequest {
+    owner_id: String,
+    account_id: AccountId,
+    enabled: bool,
+    profile_id: String,
+    #[serde(with = "rust_decimal::serde::str")]
+    initial_balance: Decimal,
+    timezone: String,
+    rules: PropRiskRules,
+    actions: PropRiskActions,
+    #[serde(default)]
+    display_name: Option<String>,
+    #[serde(default)]
+    provider_code: Option<String>,
+    #[serde(default)]
+    program_code: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+struct PropRiskRuntimeConfig {
+    initial_balance: Decimal,
+    rules: PropRiskRules,
+    actions: PropRiskActions,
+    trading_day: String,
+    day_start_balance: Decimal,
+    previously_locked_reason: Option<PropRiskReason>,
+    state_exists: bool,
+}
+
+fn prop_risk_profiles() -> Vec<PropRiskProfileTemplate> {
+    let actions = PropRiskActions {
+        block_new_orders: true,
+        cancel_pending_orders: true,
+        close_open_positions: true,
+        lock_after_profit_target: false,
+        fail_closed_on_stale_data: true,
+    };
+    let ftmo_rules = PropRiskRules {
+        daily_loss_limit_basis_points: 500,
+        max_loss_limit_basis_points: 1_000,
+        max_risk_per_trade_basis_points: 100,
+        max_total_open_risk_basis_points: 300,
+        require_stop_loss: true,
+        warning_buffer_basis_points: 100,
+        emergency_buffer_basis_points: 50,
+        daily_profit_target_basis_points: None,
+    };
+    vec![
+        PropRiskProfileTemplate {
+            id: "ftmo_2_step_step_1".into(),
+            version: 1,
+            provider_code: "ftmo".into(),
+            program_code: "two_step_step_1".into(),
+            display_name: "FTMO 2-Step · Step 1".into(),
+            timezone: "Europe/Prague".into(),
+            rules: ftmo_rules.clone(),
+            actions: actions.clone(),
+        },
+        PropRiskProfileTemplate {
+            id: "ftmo_2_step_step_2".into(),
+            version: 1,
+            provider_code: "ftmo".into(),
+            program_code: "two_step_step_2".into(),
+            display_name: "FTMO 2-Step · Step 2".into(),
+            timezone: "Europe/Prague".into(),
+            rules: ftmo_rules,
+            actions: actions.clone(),
+        },
+        PropRiskProfileTemplate {
+            id: "custom_prop_firm".into(),
+            version: 1,
+            provider_code: "custom".into(),
+            program_code: "custom".into(),
+            display_name: "Quỹ tùy chỉnh".into(),
+            timezone: "UTC".into(),
+            rules: PropRiskRules {
+                daily_loss_limit_basis_points: 500,
+                max_loss_limit_basis_points: 1_000,
+                max_risk_per_trade_basis_points: 100,
+                max_total_open_risk_basis_points: 300,
+                require_stop_loss: true,
+                warning_buffer_basis_points: 100,
+                emergency_buffer_basis_points: 50,
+                daily_profit_target_basis_points: None,
+            },
+            actions,
+        },
+    ]
+}
+
+fn prop_risk_profile(profile_id: &str) -> Option<PropRiskProfileTemplate> {
+    prop_risk_profiles()
+        .into_iter()
+        .find(|profile| profile.id == profile_id)
 }
 
 #[derive(Debug, Deserialize)]
@@ -407,6 +556,10 @@ async fn main() {
             get(account_layout).post(update_account_layout),
         )
         .route("/v1/admin/account-state", get(account_state))
+        .route(
+            "/v1/admin/prop-risk",
+            get(prop_risk_guard).post(update_prop_risk_guard),
+        )
         .route("/v1/admin/instruments", get(account_instruments))
         .route("/v1/admin/symbol-mappings", post(upsert_symbol_mapping))
         .route("/v1/admin/pairing-tokens", post(issue_pairing_token))
@@ -1245,6 +1398,619 @@ impl GatewayState {
         Ok(())
     }
 
+    async fn prop_risk_guard_view(
+        &self,
+        owner_uuid: Uuid,
+        account_id: &AccountId,
+    ) -> Result<PropRiskGuardView, ApiError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(PropRiskGuardView {
+                profiles: prop_risk_profiles(),
+                assignment: None,
+            });
+        };
+        let row = sqlx::query(
+            r#"
+            SELECT
+                assignment.enabled,
+                assignment.profile_id,
+                assignment.profile_version,
+                assignment.provider_code,
+                assignment.program_code,
+                assignment.display_name,
+                assignment.timezone,
+                assignment.initial_balance,
+                assignment.rules,
+                assignment.actions,
+                to_char(state.trading_day, 'YYYY-MM-DD') AS trading_day,
+                state.evaluation,
+                floor(extract(epoch FROM assignment.updated_at) * 1000)::bigint
+                    AS updated_at_ms
+            FROM execution_prop_risk_assignments assignment
+            LEFT JOIN execution_prop_risk_daily_state state
+              ON state.user_id = assignment.user_id
+             AND state.account_id = assignment.account_id
+             AND state.trading_day =
+                 (now() AT TIME ZONE assignment.timezone)::date
+            WHERE assignment.user_id = $1
+              AND assignment.account_id = $2
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(account_id.as_str())
+        .fetch_optional(database)
+        .await
+        .map_err(|error| ApiError::database("load prop risk settings", error))?;
+        let assignment = row
+            .map(|row| -> Result<PropRiskAssignmentView, ApiError> {
+                Ok(PropRiskAssignmentView {
+                    account_id: account_id.clone(),
+                    enabled: row.try_get("enabled").map_err(|error| {
+                        ApiError::database("decode prop risk enabled state", error)
+                    })?,
+                    profile_id: row
+                        .try_get("profile_id")
+                        .map_err(|error| ApiError::database("decode prop risk profile", error))?,
+                    profile_version: row.try_get::<i32, _>("profile_version").map_err(|error| {
+                        ApiError::database("decode prop risk profile version", error)
+                    })? as u32,
+                    provider_code: row
+                        .try_get("provider_code")
+                        .map_err(|error| ApiError::database("decode prop risk provider", error))?,
+                    program_code: row
+                        .try_get("program_code")
+                        .map_err(|error| ApiError::database("decode prop risk program", error))?,
+                    display_name: row.try_get("display_name").map_err(|error| {
+                        ApiError::database("decode prop risk display name", error)
+                    })?,
+                    timezone: row
+                        .try_get("timezone")
+                        .map_err(|error| ApiError::database("decode prop risk timezone", error))?,
+                    initial_balance: row.try_get("initial_balance").map_err(|error| {
+                        ApiError::database("decode prop risk initial balance", error)
+                    })?,
+                    rules: row
+                        .try_get::<sqlx::types::Json<PropRiskRules>, _>("rules")
+                        .map_err(|error| ApiError::database("decode prop risk rules", error))?
+                        .0,
+                    actions: row
+                        .try_get::<sqlx::types::Json<PropRiskActions>, _>("actions")
+                        .map_err(|error| ApiError::database("decode prop risk actions", error))?
+                        .0,
+                    trading_day: row.try_get("trading_day").map_err(|error| {
+                        ApiError::database("decode prop risk trading day", error)
+                    })?,
+                    evaluation: row
+                        .try_get::<Option<sqlx::types::Json<PropRiskEvaluation>>, _>("evaluation")
+                        .map_err(|error| ApiError::database("decode prop risk evaluation", error))?
+                        .map(|value| value.0),
+                    updated_at_ms: row
+                        .try_get::<i64, _>("updated_at_ms")
+                        .map_err(|error| ApiError::database("decode prop risk update time", error))?
+                        .max(0) as u64,
+                })
+            })
+            .transpose()?;
+        Ok(PropRiskGuardView {
+            profiles: prop_risk_profiles(),
+            assignment,
+        })
+    }
+
+    async fn load_prop_risk_runtime(
+        &self,
+        owner_uuid: Uuid,
+        account_id: &AccountId,
+        current_balance: Decimal,
+    ) -> Result<Option<PropRiskRuntimeConfig>, ApiError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(None);
+        };
+        let row = sqlx::query(
+            r#"
+            SELECT
+                assignment.initial_balance,
+                assignment.rules,
+                assignment.actions,
+                to_char(
+                    (now() AT TIME ZONE assignment.timezone)::date,
+                    'YYYY-MM-DD'
+                ) AS trading_day,
+                state.day_start_balance,
+                state.locked,
+                state.evaluation
+            FROM execution_prop_risk_assignments assignment
+            LEFT JOIN execution_prop_risk_daily_state state
+              ON state.user_id = assignment.user_id
+             AND state.account_id = assignment.account_id
+             AND state.trading_day =
+                 (now() AT TIME ZONE assignment.timezone)::date
+            WHERE assignment.user_id = $1
+              AND assignment.account_id = $2
+              AND assignment.enabled = true
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(account_id.as_str())
+        .fetch_optional(database)
+        .await
+        .map_err(|error| ApiError::database("load prop risk guard", error))?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let prior = row
+            .try_get::<Option<sqlx::types::Json<PropRiskEvaluation>>, _>("evaluation")
+            .map_err(|error| ApiError::database("decode prop risk evaluation", error))?
+            .map(|value| value.0);
+        let state_exists = row
+            .try_get::<Option<Decimal>, _>("day_start_balance")
+            .map_err(|error| ApiError::database("decode prop risk day baseline", error))?
+            .is_some();
+        let locked = row
+            .try_get::<Option<bool>, _>("locked")
+            .map_err(|error| ApiError::database("decode prop risk lock", error))?
+            .unwrap_or(false);
+        Ok(Some(PropRiskRuntimeConfig {
+            initial_balance: row
+                .try_get("initial_balance")
+                .map_err(|error| ApiError::database("decode prop risk initial balance", error))?,
+            rules: row
+                .try_get::<sqlx::types::Json<PropRiskRules>, _>("rules")
+                .map_err(|error| ApiError::database("decode prop risk rules", error))?
+                .0,
+            actions: row
+                .try_get::<sqlx::types::Json<PropRiskActions>, _>("actions")
+                .map_err(|error| ApiError::database("decode prop risk actions", error))?
+                .0,
+            trading_day: row
+                .try_get("trading_day")
+                .map_err(|error| ApiError::database("decode prop risk trading day", error))?,
+            day_start_balance: row
+                .try_get::<Option<Decimal>, _>("day_start_balance")
+                .map_err(|error| ApiError::database("decode prop risk day baseline", error))?
+                .unwrap_or(current_balance),
+            previously_locked_reason: if locked {
+                prior.and_then(|evaluation| evaluation.reason)
+            } else {
+                None
+            },
+            state_exists,
+        }))
+    }
+
+    async fn load_prop_risk_policy(
+        &self,
+        owner_uuid: Uuid,
+        account_id: &AccountId,
+    ) -> Result<Option<(PropRiskRules, PropRiskActions)>, ApiError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(None);
+        };
+        let row = sqlx::query(
+            r#"
+            SELECT rules, actions
+            FROM execution_prop_risk_assignments
+            WHERE user_id = $1 AND account_id = $2 AND enabled = true
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(account_id.as_str())
+        .fetch_optional(database)
+        .await
+        .map_err(|error| ApiError::database("load prop risk lifecycle policy", error))?;
+        row.map(|row| {
+            let rules = row
+                .try_get::<sqlx::types::Json<PropRiskRules>, _>("rules")
+                .map_err(|error| ApiError::database("decode prop risk lifecycle rules", error))?
+                .0;
+            let actions = row
+                .try_get::<sqlx::types::Json<PropRiskActions>, _>("actions")
+                .map_err(|error| ApiError::database("decode prop risk lifecycle actions", error))?
+                .0;
+            Ok((rules, actions))
+        })
+        .transpose()
+    }
+
+    async fn apply_prop_risk_pretrade(
+        &self,
+        owner_uuid: Uuid,
+        context: &RouteTargetContext,
+        order: &mut RoutedOrder,
+    ) -> Result<Option<(RouteRejectCode, String)>, ApiError> {
+        let balance = context.account.balance.unwrap_or_default();
+        let equity = context.account.equity.unwrap_or_default();
+        let Some(runtime) = self
+            .load_prop_risk_runtime(owner_uuid, &context.account.id, balance)
+            .await?
+        else {
+            return Ok(None);
+        };
+        if !runtime.state_exists && runtime.actions.fail_closed_on_stale_data {
+            return Ok(Some((
+                RouteRejectCode::PropRiskStateUnavailable,
+                "prop risk guard is waiting for the first fresh account heartbeat".into(),
+            )));
+        }
+        let telemetry_stale = now_ms().saturating_sub(context.account.updated_at_ms)
+            > EA_POLL_FRESHNESS.as_millis() as u64;
+        let evaluation = evaluate_prop_risk(
+            &runtime.rules,
+            &runtime.actions,
+            &PropRiskEvaluationInput {
+                initial_balance: runtime.initial_balance,
+                day_start_balance: runtime.day_start_balance,
+                balance,
+                equity,
+                previously_locked_reason: runtime.previously_locked_reason,
+                telemetry_stale,
+                unprotected_exposure: false,
+            },
+        );
+        if !evaluation.can_open_new_orders {
+            let reason = evaluation
+                .reason
+                .map(prop_risk_reason_name)
+                .unwrap_or("PROP_RISK_LOCKED");
+            return Ok(Some((
+                RouteRejectCode::PropRiskLocked,
+                format!("prop risk guard blocked the order: {reason}"),
+            )));
+        }
+        if runtime.rules.require_stop_loss && order.stop_loss.is_none() {
+            return Ok(Some((
+                RouteRejectCode::StopLossRequired,
+                "prop risk guard requires a stop loss on every order".into(),
+            )));
+        }
+        let entry = match order.kind {
+            execution_domain::OrderKind::Market => context.reference_price,
+            execution_domain::OrderKind::Limit => order.limit_price,
+            execution_domain::OrderKind::Stop => order.stop_price,
+        };
+        let risk_per_quantity = match (
+            entry,
+            order.stop_loss,
+            context.instrument.tick_value_per_quantity,
+        ) {
+            (Some(entry), Some(stop), Some(tick_value))
+                if context.instrument.price_tick > Decimal::ZERO && tick_value > Decimal::ZERO =>
+            {
+                (entry - stop).abs() / context.instrument.price_tick * tick_value
+            }
+            _ if runtime.actions.fail_closed_on_stale_data => {
+                return Ok(Some((
+                    RouteRejectCode::PropRiskStateUnavailable,
+                    "prop risk guard cannot verify the order risk from fresh broker metadata"
+                        .into(),
+                )));
+            }
+            _ => Decimal::ZERO,
+        };
+        let max_per_trade = prop_risk_money(
+            runtime.initial_balance,
+            runtime.rules.max_risk_per_trade_basis_points,
+        );
+        let open_risk = self
+            .committed_risk_at_stops(owner_uuid, &context.account.id)
+            .await?;
+        let Some(open_risk) = open_risk else {
+            if runtime.rules.require_stop_loss || runtime.actions.fail_closed_on_stale_data {
+                return Ok(Some((
+                    RouteRejectCode::PropRiskStateUnavailable,
+                    "prop risk guard cannot verify every existing position and pending order at its stop"
+                        .into(),
+                )));
+            }
+            return Ok(None);
+        };
+        let max_open_risk = prop_risk_money(
+            runtime.initial_balance,
+            runtime.rules.max_total_open_risk_basis_points,
+        );
+        let emergency_buffer = prop_risk_money(
+            runtime.initial_balance,
+            runtime.rules.emergency_buffer_basis_points,
+        );
+        let safe_risk = [
+            max_per_trade,
+            max_open_risk - open_risk,
+            evaluation.daily_loss_remaining - emergency_buffer - open_risk,
+            evaluation.max_loss_remaining - emergency_buffer - open_risk,
+        ]
+        .into_iter()
+        .min()
+        .unwrap_or(Decimal::ZERO);
+        if safe_risk <= Decimal::ZERO || risk_per_quantity <= Decimal::ZERO {
+            return Ok(Some((
+                RouteRejectCode::PropRiskLimitExceeded,
+                "no protected drawdown budget remains for another order".into(),
+            )));
+        }
+        let planned_risk = risk_per_quantity * order.quantity;
+        if planned_risk > safe_risk {
+            let capped_quantity = floor_to_step(
+                safe_risk / risk_per_quantity,
+                context.instrument.quantity_step,
+            );
+            if capped_quantity < context.instrument.min_quantity {
+                return Ok(Some((
+                    RouteRejectCode::PropRiskLimitExceeded,
+                    "the remaining protected risk budget is below the broker minimum quantity"
+                        .into(),
+                )));
+            }
+            order.quantity = capped_quantity;
+            if !order
+                .warnings
+                .contains(&RouteWarning::QuantityCappedByPropRisk)
+            {
+                order.warnings.push(RouteWarning::QuantityCappedByPropRisk);
+            }
+        }
+        Ok(None)
+    }
+
+    async fn committed_risk_at_stops(
+        &self,
+        owner_uuid: Uuid,
+        account_id: &AccountId,
+    ) -> Result<Option<Decimal>, ApiError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(None);
+        };
+        let rows = sqlx::query(
+            r#"
+            SELECT positions.snapshot AS position, instruments.snapshot AS instrument
+            FROM execution_positions positions
+            LEFT JOIN execution_instruments instruments
+              ON instruments.user_id = positions.user_id
+             AND instruments.account_id = positions.account_id
+             AND instruments.venue_symbol = positions.snapshot->>'venueSymbol'
+            WHERE positions.user_id = $1 AND positions.account_id = $2
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(account_id.as_str())
+        .fetch_all(database)
+        .await
+        .map_err(|error| ApiError::database("load open risk positions", error))?;
+        let mut total = Decimal::ZERO;
+        for row in rows {
+            let position = row
+                .try_get::<sqlx::types::Json<EaPositionSnapshot>, _>("position")
+                .map_err(|error| ApiError::database("decode open risk position", error))?
+                .0;
+            let Some(instrument) = row
+                .try_get::<Option<sqlx::types::Json<InstrumentSpec>>, _>("instrument")
+                .map_err(|error| ApiError::database("decode open risk instrument", error))?
+                .map(|value| value.0)
+            else {
+                return Ok(None);
+            };
+            let (Some(stop), Some(tick_value)) =
+                (position.stop_loss, instrument.tick_value_per_quantity)
+            else {
+                return Ok(None);
+            };
+            if instrument.price_tick <= Decimal::ZERO || tick_value <= Decimal::ZERO {
+                return Ok(None);
+            }
+            let distance = match position.side {
+                Side::Buy => positive_decimal(position.current_price - stop),
+                Side::Sell => positive_decimal(stop - position.current_price),
+            };
+            total += distance / instrument.price_tick * tick_value * position.quantity;
+        }
+
+        let rows = sqlx::query(
+            r#"
+            SELECT pending.snapshot AS pending_order, instruments.snapshot AS instrument
+            FROM execution_pending_orders pending
+            LEFT JOIN execution_instruments instruments
+              ON instruments.user_id = pending.user_id
+             AND instruments.account_id = pending.account_id
+             AND instruments.venue_symbol = pending.snapshot->>'venueSymbol'
+            WHERE pending.user_id = $1 AND pending.account_id = $2
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(account_id.as_str())
+        .fetch_all(database)
+        .await
+        .map_err(|error| ApiError::database("load pending-order risk", error))?;
+        for row in rows {
+            let order = row
+                .try_get::<sqlx::types::Json<EaPendingOrderSnapshot>, _>("pending_order")
+                .map_err(|error| ApiError::database("decode pending-order risk", error))?
+                .0;
+            let Some(instrument) = row
+                .try_get::<Option<sqlx::types::Json<InstrumentSpec>>, _>("instrument")
+                .map_err(|error| ApiError::database("decode pending-order risk instrument", error))?
+                .map(|value| value.0)
+            else {
+                return Ok(None);
+            };
+            let (Some(stop), Some(tick_value)) =
+                (order.stop_loss, instrument.tick_value_per_quantity)
+            else {
+                return Ok(None);
+            };
+            if instrument.price_tick <= Decimal::ZERO || tick_value <= Decimal::ZERO {
+                return Ok(None);
+            }
+            total +=
+                (order.price - stop).abs() / instrument.price_tick * tick_value * order.quantity;
+        }
+        Ok(Some(total))
+    }
+
+    async fn evaluate_and_apply_prop_risk_guard(
+        &self,
+        session: &EaSession,
+        account: &EaAccountSnapshot,
+        positions: &[EaPositionSnapshot],
+        pending_orders: &[EaPendingOrderSnapshot],
+    ) -> Result<(), ApiError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(());
+        };
+        let owner_uuid = parse_owner_id(&session.owner_id)?;
+        let Some(runtime) = self
+            .load_prop_risk_runtime(owner_uuid, &session.account_id, account.balance)
+            .await?
+        else {
+            return Ok(());
+        };
+        let evaluation = evaluate_prop_risk(
+            &runtime.rules,
+            &runtime.actions,
+            &PropRiskEvaluationInput {
+                initial_balance: runtime.initial_balance,
+                day_start_balance: runtime.day_start_balance,
+                balance: account.balance,
+                equity: account.equity,
+                previously_locked_reason: runtime.previously_locked_reason,
+                telemetry_stale: false,
+                unprotected_exposure: positions
+                    .iter()
+                    .any(|position| position.stop_loss.is_none_or(|stop| stop <= Decimal::ZERO))
+                    || pending_orders
+                        .iter()
+                        .any(|order| order.stop_loss.is_none_or(|stop| stop <= Decimal::ZERO)),
+            },
+        );
+        let status = prop_risk_status_name(evaluation.status);
+        let reason = evaluation.reason.map(prop_risk_reason_name);
+        let locked = matches!(
+            evaluation.status,
+            PropRiskStatus::Locked | PropRiskStatus::Breached
+        );
+        sqlx::query(
+            r#"
+            INSERT INTO execution_prop_risk_daily_state (
+                user_id, account_id, trading_day, day_start_balance,
+                last_balance, last_equity, min_equity, status, reason,
+                locked, evaluation, evaluated_at
+            )
+            VALUES ($1, $2, $3::date, $4, $5, $6, $6, $7, $8, $9, $10, now())
+            ON CONFLICT (user_id, account_id, trading_day) DO UPDATE
+            SET last_balance = EXCLUDED.last_balance,
+                last_equity = EXCLUDED.last_equity,
+                min_equity = LEAST(
+                    execution_prop_risk_daily_state.min_equity,
+                    EXCLUDED.min_equity
+                ),
+                status = EXCLUDED.status,
+                reason = EXCLUDED.reason,
+                locked = execution_prop_risk_daily_state.locked OR EXCLUDED.locked,
+                evaluation = EXCLUDED.evaluation,
+                evaluated_at = now()
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(session.account_id.as_str())
+        .bind(&runtime.trading_day)
+        .bind(runtime.day_start_balance)
+        .bind(account.balance)
+        .bind(account.equity)
+        .bind(status)
+        .bind(reason)
+        .bind(locked)
+        .bind(sqlx::types::Json(&evaluation))
+        .execute(database)
+        .await
+        .map_err(|error| ApiError::database("persist prop risk evaluation", error))?;
+
+        if locked && runtime.previously_locked_reason.is_none() {
+            sqlx::query(
+                r#"
+                INSERT INTO execution_audit_log (
+                    user_id, actor_type, actor_id, action,
+                    resource_type, resource_id, details
+                )
+                VALUES (
+                    $1, 'service', 'prop-risk-guard', 'prop_risk.locked',
+                    'execution_account', $2,
+                    jsonb_build_object(
+                        'tradingDay', $3,
+                        'status', $4,
+                        'reason', $5,
+                        'equity', $6::text
+                    )
+                )
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(session.account_id.as_str())
+            .bind(&runtime.trading_day)
+            .bind(status)
+            .bind(reason)
+            .bind(account.equity)
+            .execute(database)
+            .await
+            .map_err(|error| ApiError::database("audit prop risk lock", error))?;
+        }
+
+        if !locked {
+            return Ok(());
+        }
+        let retry_bucket = now_ms() / 30_000;
+        if evaluation.should_cancel_pending_orders {
+            for order in pending_orders {
+                let command_key = format!(
+                    "{}:cancel:{}:{}",
+                    runtime.trading_day, retry_bucket, order.broker_order_id
+                );
+                let command_id = format!("prop:{}", short_hash(command_key.as_bytes()));
+                let command = EaCommand::CancelOrder {
+                    command: CancelOrderCommand {
+                        command_id: execution_domain::CommandId::new(command_id.clone()),
+                        idempotency_key: IdempotencyKey::new(format!("guard:{command_id}")),
+                        target_account_id: session.account_id.clone(),
+                        broker_order_id: order.broker_order_id.clone(),
+                    },
+                };
+                if let Err(error) = self.enqueue(&session.account_id, command).await {
+                    warn!(
+                        account_id = %session.account_id,
+                        broker_order_id = %order.broker_order_id,
+                        ?error,
+                        "prop risk guard could not queue pending-order cancellation"
+                    );
+                }
+            }
+        }
+        if evaluation.should_close_open_positions {
+            for position in positions {
+                let command_key = format!(
+                    "{}:close:{}:{}",
+                    runtime.trading_day, retry_bucket, position.broker_position_id
+                );
+                let command_id = format!("prop:{}", short_hash(command_key.as_bytes()));
+                let command = EaCommand::ClosePosition {
+                    command: ClosePositionCommand {
+                        command_id: execution_domain::CommandId::new(command_id.clone()),
+                        idempotency_key: IdempotencyKey::new(format!("guard:{command_id}")),
+                        target_account_id: session.account_id.clone(),
+                        broker_position_id: position.broker_position_id.clone(),
+                        quantity: None,
+                        deviation_points: 50,
+                    },
+                };
+                if let Err(error) = self.enqueue(&session.account_id, command).await {
+                    warn!(
+                        account_id = %session.account_id,
+                        broker_position_id = %position.broker_position_id,
+                        ?error,
+                        "prop risk guard could not queue emergency close"
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
     async fn persist_database_payload(
         &self,
         session: &EaSession,
@@ -1885,6 +2651,11 @@ impl GatewayState {
         let Some(database) = &self.inner.database else {
             return Ok(());
         };
+        let prop_policy = if let Some(account_id) = command_target_account(command) {
+            self.load_prop_risk_policy(owner_uuid, account_id).await?
+        } else {
+            None
+        };
         match command {
             EaCommand::ModifyPosition { command } => {
                 let row = sqlx::query(
@@ -1925,7 +2696,20 @@ impl GatewayState {
                         .and_then(|value| value.min_stop_distance),
                     command.stop_loss,
                     command.take_profit,
-                )
+                )?;
+                if let Some((rules, actions)) = &prop_policy {
+                    validate_prop_risk_modification(
+                        rules,
+                        actions,
+                        position.current_price,
+                        position.stop_loss,
+                        position.current_price,
+                        command.stop_loss,
+                        position.quantity,
+                        instrument.as_ref(),
+                    )?;
+                }
+                Ok(())
             }
             EaCommand::ModifyPendingOrder { command } => {
                 let row = sqlx::query(
@@ -1969,7 +2753,20 @@ impl GatewayState {
                     command.price,
                     command.stop_loss,
                     command.take_profit,
-                )
+                )?;
+                if let Some((rules, actions)) = &prop_policy {
+                    validate_prop_risk_modification(
+                        rules,
+                        actions,
+                        order.price,
+                        order.stop_loss,
+                        command.price,
+                        command.stop_loss,
+                        order.quantity,
+                        instrument.as_ref(),
+                    )?;
+                }
+                Ok(())
             }
             EaCommand::ClosePosition { command } => {
                 let position = sqlx::query_scalar::<_, sqlx::types::Json<EaPositionSnapshot>>(
@@ -2403,16 +3200,41 @@ impl GatewayState {
             let source_equity = self
                 .source_equity(owner_uuid, envelope.intent.source_account_id.as_ref())
                 .await?;
-            let result = route_order(&envelope.intent, source_equity, &[context])
-                .into_iter()
-                .next()
-                .ok_or_else(|| {
-                    ApiError::new(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "DEFERRED_ROUTE_EMPTY",
-                        "deferred order routing returned no target result",
-                    )
-                })?;
+            let result = route_order(
+                &envelope.intent,
+                source_equity,
+                std::slice::from_ref(&context),
+            )
+            .into_iter()
+            .next()
+            .ok_or_else(|| {
+                ApiError::new(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "DEFERRED_ROUTE_EMPTY",
+                    "deferred order routing returned no target result",
+                )
+            })?;
+            let result = match result {
+                TargetRouteResult::Ready { account_id, order } => {
+                    let mut order = *order;
+                    if let Some((code, message)) = self
+                        .apply_prop_risk_pretrade(owner_uuid, &context, &mut order)
+                        .await?
+                    {
+                        TargetRouteResult::Rejected {
+                            account_id,
+                            code,
+                            message,
+                        }
+                    } else {
+                        TargetRouteResult::Ready {
+                            account_id,
+                            order: Box::new(order),
+                        }
+                    }
+                }
+                rejected => rejected,
+            };
             match result {
                 TargetRouteResult::Ready { account_id, order } => {
                     let order = *order;
@@ -3220,6 +4042,7 @@ async fn accept_events(
     let pending_orders = batch.pending_orders;
     let portfolio_snapshot_complete = batch.portfolio_snapshot_complete;
     let raw_events = batch.events;
+    let account = batch.account;
     for position in &positions {
         validate_position_snapshot(position)?;
     }
@@ -3227,7 +4050,7 @@ async fn accept_events(
         validate_pending_order_snapshot(order)?;
     }
     state
-        .touch_account(&session.owner_id, &session.account_id, batch.account)
+        .touch_account(&session.owner_id, &session.account_id, account.clone())
         .await?;
     // Portfolio is the user-visible, money-sensitive state. Commit it before
     // auxiliary instrument metadata or command telemetry so one bad symbol or
@@ -3242,6 +4065,20 @@ async fn accept_events(
             &[],
         )
         .await?;
+    if let Err(error) = state
+        .evaluate_and_apply_prop_risk_guard(&session, &account, &positions, &pending_orders)
+        .await
+    {
+        // Never discard fresh money state because a protective action failed.
+        // Pre-trade checks fail closed while the risk state is unavailable, and
+        // the next heartbeat retries the evaluation and any emergency actions.
+        error!(
+            account_id = %session.account_id,
+            code = error.body.code,
+            message = %error.body.message,
+            "prop risk guard evaluation failed"
+        );
+    }
     for instrument in &instruments {
         validate_instrument_snapshot(instrument)?;
     }
@@ -3288,6 +4125,242 @@ async fn accept_events(
         }
     }
     Ok(Json(AcceptedView { ok: true }))
+}
+
+async fn prop_risk_guard(
+    State(state): State<GatewayState>,
+    headers: HeaderMap,
+    Query(query): Query<PropRiskQuery>,
+) -> Result<Json<PropRiskGuardView>, ApiError> {
+    require_admin(&state, &headers)?;
+    validate_identifier("accountId", query.account_id.as_str())?;
+    let owner_uuid = parse_owner_id(&query.owner_id)?;
+    let owns_account = if let Some(database) = &state.inner.database {
+        sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS (
+                SELECT 1 FROM execution_accounts
+                WHERE user_id = $1 AND id = $2 AND status <> 'disabled'
+            )
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(query.account_id.as_str())
+        .fetch_one(database)
+        .await
+        .map_err(|error| ApiError::database("authorize prop risk account", error))?
+    } else {
+        state
+            .inner
+            .accounts
+            .lock()
+            .await
+            .get(&query.account_id)
+            .is_some_and(|account| account.owner_id == query.owner_id)
+    };
+    if !owns_account {
+        return Err(ApiError::new(
+            StatusCode::NOT_FOUND,
+            "TARGET_ACCOUNT_NOT_FOUND",
+            "target account was not found for this owner",
+        ));
+    }
+    Ok(Json(
+        state
+            .prop_risk_guard_view(owner_uuid, &query.account_id)
+            .await?,
+    ))
+}
+
+async fn update_prop_risk_guard(
+    State(state): State<GatewayState>,
+    headers: HeaderMap,
+    Json(request): Json<PropRiskUpdateRequest>,
+) -> Result<Json<PropRiskGuardView>, ApiError> {
+    require_admin(&state, &headers)?;
+    validate_identifier("accountId", request.account_id.as_str())?;
+    if request.initial_balance <= Decimal::ZERO {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "PROP_RISK_INITIAL_BALANCE_INVALID",
+            "initial balance must be positive",
+        ));
+    }
+    let owner_uuid = parse_owner_id(&request.owner_id)?;
+    let Some(database) = &state.inner.database else {
+        return Err(ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "PERSISTENT_STORE_REQUIRED",
+            "prop risk settings require PostgreSQL",
+        ));
+    };
+    let system_profile = prop_risk_profile(request.profile_id.trim());
+    let (
+        profile_id,
+        profile_version,
+        provider_code,
+        program_code,
+        display_name,
+        timezone,
+        rules,
+        actions,
+    ) = if let Some(profile) = system_profile {
+        (
+            profile.id,
+            profile.version,
+            profile.provider_code,
+            profile.program_code,
+            profile.display_name,
+            profile.timezone,
+            profile.rules,
+            profile.actions,
+        )
+    } else {
+        let provider_code = request
+            .provider_code
+            .as_deref()
+            .unwrap_or("custom")
+            .trim()
+            .to_lowercase();
+        let program_code = request
+            .program_code
+            .as_deref()
+            .unwrap_or("custom")
+            .trim()
+            .to_lowercase();
+        if !valid_prop_identifier(request.profile_id.trim(), 3, 64)
+            || !valid_prop_identifier(&provider_code, 2, 32)
+            || !valid_prop_identifier(&program_code, 2, 64)
+        {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "PROP_RISK_PROFILE_INVALID",
+                "profile identifiers contain unsupported characters",
+            ));
+        }
+        let display_name = request
+            .display_name
+            .as_deref()
+            .unwrap_or("Quỹ tùy chỉnh")
+            .trim();
+        validate_plain_text("displayName", display_name, 1, 120)?;
+        (
+            request.profile_id.trim().to_owned(),
+            1,
+            provider_code,
+            program_code,
+            display_name.to_owned(),
+            request.timezone.trim().to_owned(),
+            request.rules.clone(),
+            request.actions.clone(),
+        )
+    };
+    rules.validate().map_err(|message| {
+        ApiError::new(StatusCode::BAD_REQUEST, "PROP_RISK_RULES_INVALID", message)
+    })?;
+    let timezone_exists = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM pg_timezone_names WHERE name = $1)",
+    )
+    .bind(&timezone)
+    .fetch_one(database)
+    .await
+    .map_err(|error| ApiError::database("validate prop risk timezone", error))?;
+    if !timezone_exists {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "PROP_RISK_TIMEZONE_INVALID",
+            "timezone must be a valid IANA timezone",
+        ));
+    }
+    let owns_account = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS (
+            SELECT 1 FROM execution_accounts
+            WHERE user_id = $1 AND id = $2 AND status <> 'disabled'
+        )
+        "#,
+    )
+    .bind(owner_uuid)
+    .bind(request.account_id.as_str())
+    .fetch_one(database)
+    .await
+    .map_err(|error| ApiError::database("authorize prop risk update", error))?;
+    if !owns_account {
+        return Err(ApiError::new(
+            StatusCode::NOT_FOUND,
+            "TARGET_ACCOUNT_NOT_FOUND",
+            "target account was not found for this owner",
+        ));
+    }
+    sqlx::query(
+        r#"
+        INSERT INTO execution_prop_risk_assignments (
+            user_id, account_id, enabled, profile_id, profile_version,
+            provider_code, program_code, display_name, timezone,
+            initial_balance, rules, actions, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now())
+        ON CONFLICT (user_id, account_id) DO UPDATE
+        SET enabled = EXCLUDED.enabled,
+            profile_id = EXCLUDED.profile_id,
+            profile_version = EXCLUDED.profile_version,
+            provider_code = EXCLUDED.provider_code,
+            program_code = EXCLUDED.program_code,
+            display_name = EXCLUDED.display_name,
+            timezone = EXCLUDED.timezone,
+            initial_balance = EXCLUDED.initial_balance,
+            rules = EXCLUDED.rules,
+            actions = EXCLUDED.actions,
+            updated_at = now()
+        "#,
+    )
+    .bind(owner_uuid)
+    .bind(request.account_id.as_str())
+    .bind(request.enabled)
+    .bind(&profile_id)
+    .bind(profile_version as i32)
+    .bind(&provider_code)
+    .bind(&program_code)
+    .bind(&display_name)
+    .bind(&timezone)
+    .bind(request.initial_balance)
+    .bind(sqlx::types::Json(&rules))
+    .bind(sqlx::types::Json(&actions))
+    .execute(database)
+    .await
+    .map_err(|error| ApiError::database("save prop risk settings", error))?;
+    sqlx::query(
+        r#"
+        INSERT INTO execution_audit_log (
+            user_id, actor_type, actor_id, action,
+            resource_type, resource_id, details
+        )
+        VALUES (
+            $1, 'user', $1::text, 'prop_risk.settings_updated',
+            'execution_account', $2,
+            jsonb_build_object(
+                'enabled', $3,
+                'profileId', $4,
+                'profileVersion', $5,
+                'timezone', $6
+            )
+        )
+        "#,
+    )
+    .bind(owner_uuid)
+    .bind(request.account_id.as_str())
+    .bind(request.enabled)
+    .bind(&profile_id)
+    .bind(profile_version as i32)
+    .bind(&timezone)
+    .execute(database)
+    .await
+    .map_err(|error| ApiError::database("audit prop risk settings", error))?;
+    Ok(Json(
+        state
+            .prop_risk_guard_view(owner_uuid, &request.account_id)
+            .await?,
+    ))
 }
 
 async fn list_accounts(
@@ -4149,7 +5222,37 @@ async fn route_admin_order(
     for result in routed {
         match result {
             TargetRouteResult::Ready { account_id, order } => {
-                let order = *order;
+                let mut order = *order;
+                if let Some(context) = contexts
+                    .iter()
+                    .find(|context| context.account.id == account_id)
+                {
+                    if let Some((code, message)) = state
+                        .apply_prop_risk_pretrade(owner_uuid, context, &mut order)
+                        .await?
+                    {
+                        let audit_code = serde_json::to_value(code)
+                            .ok()
+                            .and_then(|value| value.as_str().map(str::to_owned))
+                            .unwrap_or_else(|| "PROP_RISK_REJECTED".into());
+                        state
+                            .audit_order_route_outcome(
+                                owner_uuid,
+                                &request.intent,
+                                &account_id,
+                                "order.prop_risk_rejected",
+                                &audit_code,
+                                &message,
+                            )
+                            .await?;
+                        submissions.push(AdminTargetSubmission::Rejected {
+                            account_id,
+                            code,
+                            message,
+                        });
+                        continue;
+                    }
+                }
                 match state
                     .enqueue(
                         &account_id,
@@ -4537,6 +5640,81 @@ fn validate_pending_order_modification(
                 "stop loss or take profit is inside the broker minimum distance",
             ));
         }
+    }
+    Ok(())
+}
+
+fn validate_prop_risk_modification(
+    rules: &PropRiskRules,
+    actions: &PropRiskActions,
+    current_reference: Decimal,
+    current_stop: Option<Decimal>,
+    next_reference: Decimal,
+    requested_stop: Option<Decimal>,
+    quantity: Decimal,
+    instrument: Option<&InstrumentSpec>,
+) -> Result<(), ApiError> {
+    let current_stop = current_stop.filter(|value| *value > Decimal::ZERO);
+    let next_stop = match requested_stop {
+        Some(value) if value > Decimal::ZERO => Some(value),
+        Some(_) => None,
+        None => current_stop,
+    };
+    if rules.require_stop_loss && next_stop.is_none() {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "PROP_RISK_STOP_LOSS_REQUIRED",
+            "prop risk guard does not allow removing or retaining an unprotected order",
+        ));
+    }
+    let Some(current_stop) = current_stop else {
+        // Adding the first valid stop converts previously unbounded risk into a
+        // measurable loss, so it is always a risk-reducing modification.
+        return Ok(());
+    };
+    let Some(next_stop) = next_stop else {
+        return Ok(());
+    };
+    let Some(instrument) = instrument else {
+        if actions.fail_closed_on_stale_data {
+            return Err(ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "PROP_RISK_STATE_UNAVAILABLE",
+                "prop risk guard cannot verify the lifecycle modification without instrument metadata",
+            ));
+        }
+        return Ok(());
+    };
+    let Some(tick_value) = instrument.tick_value_per_quantity else {
+        if actions.fail_closed_on_stale_data {
+            return Err(ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "PROP_RISK_STATE_UNAVAILABLE",
+                "prop risk guard cannot verify the lifecycle modification without tick value",
+            ));
+        }
+        return Ok(());
+    };
+    if instrument.price_tick <= Decimal::ZERO || tick_value <= Decimal::ZERO {
+        if actions.fail_closed_on_stale_data {
+            return Err(ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "PROP_RISK_STATE_UNAVAILABLE",
+                "prop risk guard cannot verify the lifecycle modification from invalid tick metadata",
+            ));
+        }
+        return Ok(());
+    }
+    let current_risk =
+        (current_reference - current_stop).abs() / instrument.price_tick * tick_value * quantity;
+    let next_risk =
+        (next_reference - next_stop).abs() / instrument.price_tick * tick_value * quantity;
+    if next_risk > current_risk {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "PROP_RISK_MODIFICATION_INCREASES_RISK",
+            "prop risk guard allows stop and pending-entry edits only when they keep or reduce the committed risk",
+        ));
     }
     Ok(())
 }
@@ -4968,6 +6146,55 @@ fn parse_owner_id(owner_id: &str) -> Result<Uuid, ApiError> {
             "ownerId must be a valid UUID",
         )
     })
+}
+
+fn prop_risk_status_name(status: PropRiskStatus) -> &'static str {
+    match status {
+        PropRiskStatus::Protected => "protected",
+        PropRiskStatus::Warning => "warning",
+        PropRiskStatus::Locked => "locked",
+        PropRiskStatus::Breached => "breached",
+    }
+}
+
+fn prop_risk_reason_name(reason: PropRiskReason) -> &'static str {
+    match reason {
+        PropRiskReason::DailyLossWarning => "DAILY_LOSS_WARNING",
+        PropRiskReason::MaxLossWarning => "MAX_LOSS_WARNING",
+        PropRiskReason::DailyLossSafetyBuffer => "DAILY_LOSS_SAFETY_BUFFER",
+        PropRiskReason::MaxLossSafetyBuffer => "MAX_LOSS_SAFETY_BUFFER",
+        PropRiskReason::DailyLossLimitBreached => "DAILY_LOSS_LIMIT_BREACHED",
+        PropRiskReason::MaxLossLimitBreached => "MAX_LOSS_LIMIT_BREACHED",
+        PropRiskReason::DailyProfitTargetReached => "DAILY_PROFIT_TARGET_REACHED",
+        PropRiskReason::UnprotectedExposure => "UNPROTECTED_EXPOSURE",
+        PropRiskReason::TelemetryStale => "TELEMETRY_STALE",
+        PropRiskReason::StateUnavailable => "STATE_UNAVAILABLE",
+    }
+}
+
+fn valid_prop_identifier(value: &str, min_len: usize, max_len: usize) -> bool {
+    let value = value.trim();
+    (min_len..=max_len).contains(&value.len())
+        && value.bytes().enumerate().all(|(index, character)| {
+            character.is_ascii_lowercase()
+                || character.is_ascii_digit()
+                || (index > 0 && matches!(character, b'_' | b'-'))
+        })
+}
+
+fn positive_decimal(value: Decimal) -> Decimal {
+    if value > Decimal::ZERO {
+        value
+    } else {
+        Decimal::ZERO
+    }
+}
+
+fn floor_to_step(value: Decimal, step: Decimal) -> Decimal {
+    if step <= Decimal::ZERO {
+        return value;
+    }
+    (value / step).floor() * step
 }
 
 fn stable_mt5_account_id(owner_id: &str, account: &EaAccountSnapshot) -> AccountId {
@@ -5669,6 +6896,52 @@ mod tests {
             ask: Some(Decimal::new(110_020, 5)),
             observed_at_ms: now_ms(),
         }
+    }
+
+    #[test]
+    fn prop_risk_lifecycle_edits_may_only_keep_or_reduce_committed_risk() {
+        let profile = prop_risk_profiles().remove(0);
+        let instrument = instrument_snapshot().spec;
+        let current_price = Decimal::new(110_000, 5);
+        let current_stop = Some(Decimal::new(109_000, 5));
+
+        validate_prop_risk_modification(
+            &profile.rules,
+            &profile.actions,
+            current_price,
+            current_stop,
+            current_price,
+            Some(Decimal::new(109_500, 5)),
+            Decimal::ONE,
+            Some(&instrument),
+        )
+        .expect("a tighter stop must remain allowed");
+
+        let wider = validate_prop_risk_modification(
+            &profile.rules,
+            &profile.actions,
+            current_price,
+            current_stop,
+            current_price,
+            Some(Decimal::new(108_000, 5)),
+            Decimal::ONE,
+            Some(&instrument),
+        )
+        .expect_err("a wider stop must not increase committed risk");
+        assert_eq!(wider.body.code, "PROP_RISK_MODIFICATION_INCREASES_RISK");
+
+        let removed = validate_prop_risk_modification(
+            &profile.rules,
+            &profile.actions,
+            current_price,
+            current_stop,
+            current_price,
+            Some(Decimal::ZERO),
+            Decimal::ONE,
+            Some(&instrument),
+        )
+        .expect_err("an enforced stop must not be removed");
+        assert_eq!(removed.body.code, "PROP_RISK_STOP_LOSS_REQUIRED");
     }
 
     #[test]

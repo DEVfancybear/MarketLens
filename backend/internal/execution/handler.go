@@ -22,6 +22,8 @@ type Gateway interface {
 	RemoveAccount(ctx context.Context, ownerID string, accountID string) error
 	RouteOrder(ctx context.Context, ownerID string, order OrderRequest) (json.RawMessage, error)
 	AccountState(ctx context.Context, ownerID string, accountID string) (json.RawMessage, error)
+	PropRisk(ctx context.Context, ownerID string, accountID string) (json.RawMessage, error)
+	UpdatePropRisk(ctx context.Context, ownerID string, request PropRiskUpdate) (json.RawMessage, error)
 	AccountInstruments(ctx context.Context, ownerID string, accountID string) (json.RawMessage, error)
 	UpsertSymbolMapping(ctx context.Context, ownerID string, request SymbolMappingRequest) (json.RawMessage, error)
 	QueueCommand(ctx context.Context, ownerID string, request CommandRequest) (json.RawMessage, error)
@@ -78,6 +80,8 @@ func (h *Handler) Register(router fiber.Router) {
 	router.Get("/execution/account-layout", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.accountLayout)
 	router.Post("/execution/account-layout", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.updateAccountLayout)
 	router.Get("/execution/account-state", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.accountState)
+	router.Get("/execution/prop-risk", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.propRisk)
+	router.Post("/execution/prop-risk", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.updatePropRisk)
 	router.Get("/execution/instruments", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.accountInstruments)
 	router.Post("/execution/accounts/:accountId/disconnect", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.disconnectAccount)
 	router.Delete("/execution/accounts/:accountId", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.removeAccount)
@@ -197,6 +201,48 @@ func (h *Handler) accountState(c fiber.Ctx) error {
 		c.Context(),
 		authenticatedUserID(c),
 		accountID,
+	)
+	if err != nil {
+		return gatewayHTTPError(err)
+	}
+	c.Set(fiber.HeaderCacheControl, "no-store")
+	c.Type(fiber.MIMEApplicationJSON)
+	return c.Send(response)
+}
+
+func (h *Handler) propRisk(c fiber.Ctx) error {
+	accountID := c.Query("accountId")
+	if !validExecutionIdentifier(accountID, 96) {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid accountId")
+	}
+	response, err := h.gateway.PropRisk(
+		c.Context(),
+		authenticatedUserID(c),
+		accountID,
+	)
+	if err != nil {
+		return gatewayHTTPError(err)
+	}
+	c.Set(fiber.HeaderCacheControl, "no-store")
+	c.Type(fiber.MIMEApplicationJSON)
+	return c.Send(response)
+}
+
+func (h *Handler) updatePropRisk(c fiber.Ctx) error {
+	var request PropRiskUpdate
+	if err := decodeStrict(c.Body(), &request); err != nil ||
+		!validExecutionIdentifier(request.AccountID, 96) ||
+		!validExecutionIdentifier(request.ProfileID, 64) ||
+		strings.TrimSpace(request.InitialBalance) == "" ||
+		len(strings.TrimSpace(request.Timezone)) > 64 ||
+		len(request.Rules) == 0 || !json.Valid(request.Rules) ||
+		len(request.Actions) == 0 || !json.Valid(request.Actions) {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	response, err := h.gateway.UpdatePropRisk(
+		c.Context(),
+		authenticatedUserID(c),
+		request,
 	)
 	if err != nil {
 		return gatewayHTTPError(err)

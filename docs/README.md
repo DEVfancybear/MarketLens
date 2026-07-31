@@ -15,6 +15,8 @@ owning package docs.
 | `NEXT_TASKS.md` | Prioritized implementation backlog |
 | `KNOWN_ISSUES.md` | Known mismatches, limitations, and operational gotchas |
 | `CHANGELOG.md` | Dated log of major changes |
+| `TRADE_EXECUTION_ARCHITECTURE.md` | Durable multi-account web execution architecture and safety boundaries |
+| `PROP_RISK_GUARD.md` | Automated, versioned prop-firm drawdown protection on the web execution path |
 
 ## Package Docs
 

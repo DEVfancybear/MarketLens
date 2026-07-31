@@ -552,6 +552,9 @@ export function useExecutionRegistry() {
             const waiting = response.targets.filter(
               (target) => target.status === "waiting",
             );
+            const propRiskCapped = queued.filter((target) =>
+              target.warnings.includes("QUANTITY_CAPPED_BY_PROP_RISK"),
+            );
             const rejected = response.targets.filter(
               (
                 target,
@@ -605,15 +608,25 @@ export function useExecutionRegistry() {
               requestId: order.clientOrderId,
               clientOrderId: order.clientOrderId,
             });
-            if (waiting.length > 0 || rejected.length > 0) {
+            if (
+              waiting.length > 0 ||
+              rejected.length > 0 ||
+              propRiskCapped.length > 0
+            ) {
               store.set(pushToastAtom, {
                 title:
                   rejected.length > 0 && accepted > 0
                     ? "Order partially routed"
                     : waiting.length > 0 && rejected.length === 0
                       ? "Waiting for offline MT5"
-                      : "Order rejected",
+                      : propRiskCapped.length > 0
+                        ? "Risk Guard adjusted quantity"
+                        : "Order rejected",
                 message: [
+                  ...propRiskCapped.map(
+                    (target) =>
+                      `${accountName(target.accountId)}: quantity was automatically reduced to the protected risk budget`,
+                  ),
                   ...waiting.map(
                     (target) =>
                       `${accountName(target.accountId)}: open MT5 before ${new Date(target.expiresAtMs).toLocaleTimeString()}`,

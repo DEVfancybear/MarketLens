@@ -4,6 +4,24 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Automated prop-firm risk guard (2026-08-01)
+
+- Added a broker-neutral, versioned Prop Risk Guard for the web execution path,
+  with locked FTMO 2-Step presets and a configurable profile for future firms.
+- Added pre-trade enforcement for mandatory Stop Loss, per-trade risk, combined
+  position + pending-order risk, daily equity drawdown, maximum drawdown, stale
+  telemetry, and protected safety buffers. Oversized orders are automatically
+  capped to the largest safe broker quantity step and are rejected only when
+  the remaining budget is below the venue minimum.
+- Added heartbeat-owned daily baselines in each firm's IANA timezone, sticky
+  daily locks, and automatic cancel-pending/close-position commands. Exposure
+  opened outside the web without Stop Loss is detected on the next heartbeat
+  and triggers the same emergency path.
+- Prevented position Stop Loss and pending-entry edits from increasing committed
+  risk while protection is enabled. Added authenticated Go APIs, account-level
+  UI configuration, a live workspace status badge, audit records, migration
+  `0034_execution_prop_risk_guard`, and common extension documentation.
+
 ### Fixed - Active alerts open their chart symbol (2026-07-31)
 
 - Made each active Alert Center row navigate the active chart to the alert's

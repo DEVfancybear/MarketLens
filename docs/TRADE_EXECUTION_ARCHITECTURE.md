@@ -19,6 +19,10 @@ implementations are complete.
 - Fail closed whenever ownership, account state, broker metadata, quote
   freshness, transport availability, or a risk input cannot be proven.
 
+The account-level prop-firm safety layer is documented in
+[Prop Risk Guard](PROP_RISK_GUARD.md), including FTMO v1 formulas, automatic
+actions, API/data boundaries, and the extension path for future firms.
+
 ## Runtime boundaries
 
 ```mermaid

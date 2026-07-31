@@ -1,5 +1,13 @@
 import { deleteJson, getJson, postJson } from "@/services/api/client";
-import type { ExecutionAccountSummary } from "@/types/execution";
+import type {
+  ExecutionAccountSummary,
+  PropRiskActions,
+  PropRiskAssignment,
+  PropRiskEvaluation,
+  PropRiskGuard,
+  PropRiskProfile,
+  PropRiskRules,
+} from "@/types/execution";
 import type { ExecutionOrderWireRequest } from "@/services/execution/orderRouting";
 import {
   normalizeExecutionOrderResponse,
@@ -173,6 +181,109 @@ export const getExecutionAccountState = (
     `execution/account-state?accountId=${encodeURIComponent(accountId)}`,
     { retry: { limit: 1, methods: ["get"] } },
   );
+
+interface PropRiskEvaluationWire
+  extends Omit<
+    PropRiskEvaluation,
+    | "dailyLossLimit"
+    | "dailyLossUsed"
+    | "dailyLossRemaining"
+    | "maxLossLimit"
+    | "maxLossUsed"
+    | "maxLossRemaining"
+    | "dailyProfitTarget"
+    | "dailyProfitRemaining"
+    | "balance"
+    | "equity"
+  > {
+  dailyLossLimit: string;
+  dailyLossUsed: string;
+  dailyLossRemaining: string;
+  maxLossLimit: string;
+  maxLossUsed: string;
+  maxLossRemaining: string;
+  dailyProfitTarget?: string | null;
+  dailyProfitRemaining?: string | null;
+  balance: string;
+  equity: string;
+}
+
+interface PropRiskAssignmentWire
+  extends Omit<PropRiskAssignment, "initialBalance" | "evaluation"> {
+  initialBalance: string;
+  evaluation?: PropRiskEvaluationWire;
+}
+
+interface PropRiskGuardWire {
+  profiles: PropRiskProfile[];
+  assignment: PropRiskAssignmentWire | null;
+}
+
+export interface UpdatePropRiskGuardInput {
+  accountId: string;
+  enabled: boolean;
+  profileId: string;
+  initialBalance: number;
+  timezone: string;
+  rules: PropRiskRules;
+  actions: PropRiskActions;
+  displayName?: string;
+  providerCode?: string;
+  programCode?: string;
+}
+
+export const getExecutionPropRisk = (accountId: string): Promise<PropRiskGuard> =>
+  getJson<PropRiskGuardWire>(
+    `execution/prop-risk?accountId=${encodeURIComponent(accountId)}`,
+    { retry: { limit: 1, methods: ["get"] }, cache: "no-store" },
+  ).then(normalizePropRiskGuard);
+
+export const updateExecutionPropRisk = (
+  input: UpdatePropRiskGuardInput,
+): Promise<PropRiskGuard> =>
+  postJson<PropRiskGuardWire>(
+    "execution/prop-risk",
+    { ...input, initialBalance: String(input.initialBalance) },
+    { retry: { limit: 0 } },
+  ).then(normalizePropRiskGuard);
+
+function normalizePropRiskGuard(value: PropRiskGuardWire): PropRiskGuard {
+  const assignment = value.assignment;
+  return {
+    profiles: value.profiles,
+    assignment: assignment
+      ? {
+          ...assignment,
+          initialBalance: Number(assignment.initialBalance),
+          evaluation: assignment.evaluation
+            ? normalizePropRiskEvaluation(assignment.evaluation)
+            : undefined,
+        }
+      : null,
+  };
+}
+
+function normalizePropRiskEvaluation(
+  value: PropRiskEvaluationWire,
+): PropRiskEvaluation {
+  return {
+    ...value,
+    dailyLossLimit: Number(value.dailyLossLimit),
+    dailyLossUsed: Number(value.dailyLossUsed),
+    dailyLossRemaining: Number(value.dailyLossRemaining),
+    maxLossLimit: Number(value.maxLossLimit),
+    maxLossUsed: Number(value.maxLossUsed),
+    maxLossRemaining: Number(value.maxLossRemaining),
+    dailyProfitTarget:
+      value.dailyProfitTarget == null ? value.dailyProfitTarget : Number(value.dailyProfitTarget),
+    dailyProfitRemaining:
+      value.dailyProfitRemaining == null
+        ? value.dailyProfitRemaining
+        : Number(value.dailyProfitRemaining),
+    balance: Number(value.balance),
+    equity: Number(value.equity),
+  };
+}
 
 export const submitExecutionCommand = (
   command: Record<string, unknown>,

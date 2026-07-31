@@ -1,5 +1,13 @@
 # Current Progress
 
+- Automated prop-firm protection (2026-08-01): the web execution backend now
+  owns a versioned, broker-neutral Prop Risk Guard. Locked FTMO 2-Step presets
+  and a custom future-firm profile enforce daily/maximum drawdown, Stop Loss,
+  per-trade and combined position/pending risk before enqueue. Heartbeats reset
+  by firm timezone, persist sticky daily locks, detect unprotected external
+  exposure, and automatically block, cancel, or close without daily user
+  intervention. See `PROP_RISK_GUARD.md`.
+
 - English/Vietnamese localization (2026-07-29): desktop and mobile now share a persisted locale,
   every drawing tool/group uses stable-ID localization with official TradingView Vietnamese
   terminology, and a bounded compatibility catalog covers existing UI/accessibility copy in both
@@ -33,7 +41,7 @@
 > milestones below are historical. Current implementation and remaining native
 > venue work are tracked in `TRADE_EXECUTION_ARCHITECTURE.md`.
 
-Last updated: 2026-07-30
+Last updated: 2026-08-01
 
 - Chart drag/symbol-switch stability (2026-07-30): the production chart path
   now uses granular market-data subscriptions, revision-safe deferred viewport

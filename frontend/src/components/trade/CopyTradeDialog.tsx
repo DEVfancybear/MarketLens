@@ -112,6 +112,9 @@ export function CopyTradeDialog({
       const waiting = response.targets.filter(
         (target) => target.status === "waiting",
       );
+      const propRiskCapped = queued.filter((target) =>
+        target.warnings.includes("QUANTITY_CAPPED_BY_PROP_RISK"),
+      );
       const rejected = response.targets.filter(
         (
           target,
@@ -137,11 +140,13 @@ export function CopyTradeDialog({
               ? "Trade partially accepted"
               : waiting.length > 0
                 ? `Waiting for ${waiting.length} offline account${waiting.length === 1 ? "" : "s"}`
-                : `Trade copied to ${queued.length} account${queued.length === 1 ? "" : "s"}`,
+                : propRiskCapped.length > 0
+                  ? "Risk Guard adjusted copied quantity"
+                  : `Trade copied to ${queued.length} account${queued.length === 1 ? "" : "s"}`,
           message:
             [
               ...queued.map((target) =>
-                accountName(accounts, target.accountId),
+                `${accountName(accounts, target.accountId)}${target.warnings.includes("QUANTITY_CAPPED_BY_PROP_RISK") ? ": quantity auto-reduced to protected risk" : ""}`,
               ),
               ...waiting.map(
                 (target) =>
@@ -153,7 +158,11 @@ export function CopyTradeDialog({
               ),
             ].join(" · "),
           variant:
-            rejected.length > 0 || waiting.length > 0 ? "warn" : "success",
+            rejected.length > 0 ||
+            waiting.length > 0 ||
+            propRiskCapped.length > 0
+              ? "warn"
+              : "success",
         });
         onClose();
         return;

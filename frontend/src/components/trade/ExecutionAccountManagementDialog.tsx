@@ -27,6 +27,7 @@ import {
 import { setExecutionModeAtom } from "@/store/mt5Store";
 import { pushToastAtom } from "@/store/toastStore";
 import type { ExecutionAccountSummary } from "@/types/execution";
+import { PropRiskGuardCard } from "./PropRiskGuardCard";
 
 export function ExecutionAccountManagementDialog({
   account,
@@ -204,6 +205,8 @@ export function ExecutionAccountManagementDialog({
               </p>
             )}
           </section>
+
+          <PropRiskGuardCard account={account} />
 
           <section className="grid gap-2 sm:grid-cols-2">
             <button

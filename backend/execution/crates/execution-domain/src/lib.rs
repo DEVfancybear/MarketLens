@@ -236,6 +236,265 @@ pub struct RiskPolicy {
     pub blocked_symbols: Vec<String>,
 }
 
+pub const PROP_RISK_BASIS_POINTS_DENOMINATOR: u32 = 10_000;
+
+/// Broker-neutral prop-firm rules. Profiles such as FTMO are versioned
+/// presets of this structure; the evaluator never branches on a firm name.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PropRiskRules {
+    pub daily_loss_limit_basis_points: u32,
+    pub max_loss_limit_basis_points: u32,
+    pub max_risk_per_trade_basis_points: u32,
+    pub max_total_open_risk_basis_points: u32,
+    pub require_stop_loss: bool,
+    pub warning_buffer_basis_points: u32,
+    pub emergency_buffer_basis_points: u32,
+    #[serde(default)]
+    pub daily_profit_target_basis_points: Option<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PropRiskActions {
+    pub block_new_orders: bool,
+    pub cancel_pending_orders: bool,
+    pub close_open_positions: bool,
+    pub lock_after_profit_target: bool,
+    pub fail_closed_on_stale_data: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PropRiskStatus {
+    Protected,
+    Warning,
+    Locked,
+    Breached,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum PropRiskReason {
+    DailyLossWarning,
+    MaxLossWarning,
+    DailyLossSafetyBuffer,
+    MaxLossSafetyBuffer,
+    DailyLossLimitBreached,
+    MaxLossLimitBreached,
+    DailyProfitTargetReached,
+    UnprotectedExposure,
+    TelemetryStale,
+    StateUnavailable,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PropRiskEvaluationInput {
+    pub initial_balance: Decimal,
+    pub day_start_balance: Decimal,
+    pub balance: Decimal,
+    pub equity: Decimal,
+    pub previously_locked_reason: Option<PropRiskReason>,
+    pub telemetry_stale: bool,
+    pub unprotected_exposure: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropRiskEvaluation {
+    pub status: PropRiskStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<PropRiskReason>,
+    pub can_open_new_orders: bool,
+    pub should_cancel_pending_orders: bool,
+    pub should_close_open_positions: bool,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub daily_loss_limit: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub daily_loss_used: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub daily_loss_remaining: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub max_loss_limit: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub max_loss_used: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub max_loss_remaining: Decimal,
+    #[serde(default, with = "nullable_decimal_string")]
+    pub daily_profit_target: Option<Decimal>,
+    #[serde(default, with = "nullable_decimal_string")]
+    pub daily_profit_remaining: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub balance: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub equity: Decimal,
+}
+
+impl PropRiskRules {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.daily_loss_limit_basis_points == 0
+            || self.daily_loss_limit_basis_points > PROP_RISK_BASIS_POINTS_DENOMINATOR
+        {
+            return Err("daily loss limit must be between 1 and 10000 basis points");
+        }
+        if self.max_loss_limit_basis_points == 0
+            || self.max_loss_limit_basis_points > PROP_RISK_BASIS_POINTS_DENOMINATOR
+        {
+            return Err("maximum loss limit must be between 1 and 10000 basis points");
+        }
+        if self.max_risk_per_trade_basis_points == 0
+            || self.max_risk_per_trade_basis_points > self.daily_loss_limit_basis_points
+        {
+            return Err("per-trade risk must be positive and no greater than the daily limit");
+        }
+        if self.max_total_open_risk_basis_points == 0
+            || self.max_total_open_risk_basis_points > self.daily_loss_limit_basis_points
+            || self.max_total_open_risk_basis_points < self.max_risk_per_trade_basis_points
+        {
+            return Err("total open risk must fit between the per-trade and daily limits");
+        }
+        if self.emergency_buffer_basis_points > self.warning_buffer_basis_points
+            || self.warning_buffer_basis_points >= self.daily_loss_limit_basis_points
+            || self.warning_buffer_basis_points >= self.max_loss_limit_basis_points
+        {
+            return Err("risk buffers must fit inside both loss limits");
+        }
+        if self
+            .daily_profit_target_basis_points
+            .is_some_and(|value| value == 0 || value > PROP_RISK_BASIS_POINTS_DENOMINATOR)
+        {
+            return Err("daily profit target must be between 1 and 10000 basis points");
+        }
+        Ok(())
+    }
+}
+
+pub fn prop_risk_money(balance: Decimal, basis_points: u32) -> Decimal {
+    balance * Decimal::from(basis_points) / Decimal::from(PROP_RISK_BASIS_POINTS_DENOMINATOR)
+}
+
+/// Evaluates both FTMO-style fixed initial-balance limits and daily reset
+/// limits from live equity. Floating P/L, commission and swap are therefore
+/// included whenever the venue includes them in equity.
+pub fn evaluate_prop_risk(
+    rules: &PropRiskRules,
+    actions: &PropRiskActions,
+    input: &PropRiskEvaluationInput,
+) -> PropRiskEvaluation {
+    let daily_loss_limit =
+        prop_risk_money(input.initial_balance, rules.daily_loss_limit_basis_points);
+    let max_loss_limit = prop_risk_money(input.initial_balance, rules.max_loss_limit_basis_points);
+    let daily_floor = input.day_start_balance - daily_loss_limit;
+    let max_floor = input.initial_balance - max_loss_limit;
+    let daily_loss_used = positive(input.day_start_balance - input.equity);
+    let max_loss_used = positive(input.initial_balance - input.equity);
+    let daily_loss_remaining = input.equity - daily_floor;
+    let max_loss_remaining = input.equity - max_floor;
+    let daily_profit_target = rules
+        .daily_profit_target_basis_points
+        .map(|basis_points| prop_risk_money(input.initial_balance, basis_points));
+    let daily_profit_remaining = daily_profit_target
+        .map(|target| positive(target - (input.equity - input.day_start_balance)));
+    let warning_buffer = prop_risk_money(input.initial_balance, rules.warning_buffer_basis_points);
+    let emergency_buffer =
+        prop_risk_money(input.initial_balance, rules.emergency_buffer_basis_points);
+
+    let locked = |status: PropRiskStatus, reason: PropRiskReason| PropRiskEvaluation {
+        status,
+        reason: Some(reason),
+        can_open_new_orders: !actions.block_new_orders,
+        should_cancel_pending_orders: actions.cancel_pending_orders,
+        should_close_open_positions: actions.close_open_positions,
+        daily_loss_limit,
+        daily_loss_used,
+        daily_loss_remaining,
+        max_loss_limit,
+        max_loss_used,
+        max_loss_remaining,
+        daily_profit_target,
+        daily_profit_remaining,
+        balance: input.balance,
+        equity: input.equity,
+    };
+
+    if let Some(reason) = input.previously_locked_reason {
+        return locked(PropRiskStatus::Locked, reason);
+    }
+    if input.telemetry_stale && actions.fail_closed_on_stale_data {
+        return locked(PropRiskStatus::Locked, PropRiskReason::TelemetryStale);
+    }
+    if rules.require_stop_loss && input.unprotected_exposure {
+        return locked(PropRiskStatus::Locked, PropRiskReason::UnprotectedExposure);
+    }
+    if max_loss_remaining <= Decimal::ZERO {
+        return locked(
+            PropRiskStatus::Breached,
+            PropRiskReason::MaxLossLimitBreached,
+        );
+    }
+    if daily_loss_remaining <= Decimal::ZERO {
+        return locked(
+            PropRiskStatus::Breached,
+            PropRiskReason::DailyLossLimitBreached,
+        );
+    }
+    if max_loss_remaining <= emergency_buffer {
+        return locked(PropRiskStatus::Locked, PropRiskReason::MaxLossSafetyBuffer);
+    }
+    if daily_loss_remaining <= emergency_buffer {
+        return locked(
+            PropRiskStatus::Locked,
+            PropRiskReason::DailyLossSafetyBuffer,
+        );
+    }
+    if actions.lock_after_profit_target
+        && daily_profit_target
+            .is_some_and(|target| input.equity - input.day_start_balance >= target)
+    {
+        return locked(
+            PropRiskStatus::Locked,
+            PropRiskReason::DailyProfitTargetReached,
+        );
+    }
+
+    let warning_reason = if max_loss_remaining <= warning_buffer {
+        Some(PropRiskReason::MaxLossWarning)
+    } else if daily_loss_remaining <= warning_buffer {
+        Some(PropRiskReason::DailyLossWarning)
+    } else {
+        None
+    };
+    PropRiskEvaluation {
+        status: if warning_reason.is_some() {
+            PropRiskStatus::Warning
+        } else {
+            PropRiskStatus::Protected
+        },
+        reason: warning_reason,
+        can_open_new_orders: true,
+        should_cancel_pending_orders: false,
+        should_close_open_positions: false,
+        daily_loss_limit,
+        daily_loss_used,
+        daily_loss_remaining,
+        max_loss_limit,
+        max_loss_used,
+        max_loss_remaining,
+        daily_profit_target,
+        daily_profit_remaining,
+        balance: input.balance,
+        equity: input.equity,
+    }
+}
+
+fn positive(value: Decimal) -> Decimal {
+    if value > Decimal::ZERO {
+        value
+    } else {
+        Decimal::ZERO
+    }
+}
+
 impl Default for RiskPolicy {
     fn default() -> Self {
         Self {
@@ -292,6 +551,7 @@ pub struct RoutedOrder {
 pub enum RouteWarning {
     QuantityCappedByTarget,
     QuantityCappedByPolicy,
+    QuantityCappedByPropRisk,
     QuantityFlooredToStep,
 }
 
@@ -313,6 +573,9 @@ pub enum RouteRejectCode {
     EntryPriceRequired,
     TickValueRequired,
     RiskLimitExceeded,
+    PropRiskLocked,
+    PropRiskLimitExceeded,
+    PropRiskStateUnavailable,
     StopLossWrongSide,
     StopDistanceTooSmall,
 }
@@ -709,5 +972,111 @@ mod tests {
           "bid":"1.10","ask":"1.11","observedAtMs":1
         }"#;
         assert!(serde_json::from_str::<EaInstrumentSnapshot>(invalid).is_err());
+    }
+
+    fn prop_rules() -> PropRiskRules {
+        PropRiskRules {
+            daily_loss_limit_basis_points: 500,
+            max_loss_limit_basis_points: 1_000,
+            max_risk_per_trade_basis_points: 100,
+            max_total_open_risk_basis_points: 300,
+            require_stop_loss: true,
+            warning_buffer_basis_points: 100,
+            emergency_buffer_basis_points: 25,
+            daily_profit_target_basis_points: None,
+        }
+    }
+
+    fn prop_actions() -> PropRiskActions {
+        PropRiskActions {
+            block_new_orders: true,
+            cancel_pending_orders: true,
+            close_open_positions: true,
+            lock_after_profit_target: true,
+            fail_closed_on_stale_data: true,
+        }
+    }
+
+    #[test]
+    fn prop_risk_uses_fixed_initial_balance_for_daily_allowance() {
+        let result = evaluate_prop_risk(
+            &prop_rules(),
+            &prop_actions(),
+            &PropRiskEvaluationInput {
+                initial_balance: Decimal::new(100_000, 0),
+                day_start_balance: Decimal::new(104_000, 0),
+                balance: Decimal::new(104_000, 0),
+                equity: Decimal::new(100_000, 0),
+                previously_locked_reason: None,
+                telemetry_stale: false,
+                unprotected_exposure: false,
+            },
+        );
+        assert_eq!(result.daily_loss_limit, Decimal::new(5_000, 0));
+        assert_eq!(result.daily_loss_used, Decimal::new(4_000, 0));
+        assert_eq!(result.daily_loss_remaining, Decimal::new(1_000, 0));
+        assert_eq!(result.status, PropRiskStatus::Warning);
+    }
+
+    #[test]
+    fn prop_risk_locks_before_the_official_limit_and_requests_actions() {
+        let result = evaluate_prop_risk(
+            &prop_rules(),
+            &prop_actions(),
+            &PropRiskEvaluationInput {
+                initial_balance: Decimal::new(100_000, 0),
+                day_start_balance: Decimal::new(100_000, 0),
+                balance: Decimal::new(100_000, 0),
+                equity: Decimal::new(95_200, 0),
+                previously_locked_reason: None,
+                telemetry_stale: false,
+                unprotected_exposure: false,
+            },
+        );
+        assert_eq!(result.status, PropRiskStatus::Locked);
+        assert_eq!(result.reason, Some(PropRiskReason::DailyLossSafetyBuffer));
+        assert!(!result.can_open_new_orders);
+        assert!(result.should_cancel_pending_orders);
+        assert!(result.should_close_open_positions);
+    }
+
+    #[test]
+    fn prop_risk_daily_lock_is_sticky_after_equity_recovers() {
+        let result = evaluate_prop_risk(
+            &prop_rules(),
+            &prop_actions(),
+            &PropRiskEvaluationInput {
+                initial_balance: Decimal::new(100_000, 0),
+                day_start_balance: Decimal::new(100_000, 0),
+                balance: Decimal::new(100_000, 0),
+                equity: Decimal::new(99_000, 0),
+                previously_locked_reason: Some(PropRiskReason::DailyLossSafetyBuffer),
+                telemetry_stale: false,
+                unprotected_exposure: false,
+            },
+        );
+        assert_eq!(result.status, PropRiskStatus::Locked);
+        assert_eq!(result.reason, Some(PropRiskReason::DailyLossSafetyBuffer));
+    }
+
+    #[test]
+    fn prop_risk_locks_unprotected_exposure_from_outside_the_web() {
+        let result = evaluate_prop_risk(
+            &prop_rules(),
+            &prop_actions(),
+            &PropRiskEvaluationInput {
+                initial_balance: Decimal::new(100_000, 0),
+                day_start_balance: Decimal::new(100_000, 0),
+                balance: Decimal::new(100_000, 0),
+                equity: Decimal::new(100_000, 0),
+                previously_locked_reason: None,
+                telemetry_stale: false,
+                unprotected_exposure: true,
+            },
+        );
+        assert_eq!(result.status, PropRiskStatus::Locked);
+        assert_eq!(result.reason, Some(PropRiskReason::UnprotectedExposure));
+        assert!(result.should_close_open_positions);
+        assert!(result.should_cancel_pending_orders);
     }
 }

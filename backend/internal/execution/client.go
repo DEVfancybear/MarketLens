@@ -103,6 +103,19 @@ type SymbolMappingRequest struct {
 	VenueSymbol     string `json:"venueSymbol"`
 }
 
+type PropRiskUpdate struct {
+	AccountID      string          `json:"accountId"`
+	Enabled        bool            `json:"enabled"`
+	ProfileID      string          `json:"profileId"`
+	InitialBalance string          `json:"initialBalance"`
+	Timezone       string          `json:"timezone"`
+	Rules          json.RawMessage `json:"rules"`
+	Actions        json.RawMessage `json:"actions"`
+	DisplayName    string          `json:"displayName,omitempty"`
+	ProviderCode   string          `json:"providerCode,omitempty"`
+	ProgramCode    string          `json:"programCode,omitempty"`
+}
+
 func NewClient(baseURL, adminToken string) (*Client, error) {
 	parsed, err := parseLoopbackHTTPURL(baseURL)
 	if err != nil {
@@ -194,6 +207,56 @@ func (c *Client) AccountLayout(ctx context.Context, ownerID string) (AccountLayo
 	var layout AccountLayout
 	err := c.doJSON(ctx, http.MethodGet, endpoint, nil, &layout)
 	return layout, err
+}
+
+func (c *Client) PropRisk(
+	ctx context.Context,
+	ownerID string,
+	accountID string,
+) (json.RawMessage, error) {
+	endpoint := c.resolve("/v1/admin/prop-risk")
+	query := endpoint.Query()
+	query.Set("ownerId", ownerID)
+	query.Set("accountId", accountID)
+	endpoint.RawQuery = query.Encode()
+	var response json.RawMessage
+	err := c.doJSON(ctx, http.MethodGet, endpoint, nil, &response)
+	return response, err
+}
+
+func (c *Client) UpdatePropRisk(
+	ctx context.Context,
+	ownerID string,
+	request PropRiskUpdate,
+) (json.RawMessage, error) {
+	body := struct {
+		OwnerID        string          `json:"ownerId"`
+		AccountID      string          `json:"accountId"`
+		Enabled        bool            `json:"enabled"`
+		ProfileID      string          `json:"profileId"`
+		InitialBalance string          `json:"initialBalance"`
+		Timezone       string          `json:"timezone"`
+		Rules          json.RawMessage `json:"rules"`
+		Actions        json.RawMessage `json:"actions"`
+		DisplayName    string          `json:"displayName,omitempty"`
+		ProviderCode   string          `json:"providerCode,omitempty"`
+		ProgramCode    string          `json:"programCode,omitempty"`
+	}{
+		OwnerID:        ownerID,
+		AccountID:      request.AccountID,
+		Enabled:        request.Enabled,
+		ProfileID:      request.ProfileID,
+		InitialBalance: request.InitialBalance,
+		Timezone:       request.Timezone,
+		Rules:          request.Rules,
+		Actions:        request.Actions,
+		DisplayName:    request.DisplayName,
+		ProviderCode:   request.ProviderCode,
+		ProgramCode:    request.ProgramCode,
+	}
+	var response json.RawMessage
+	err := c.doJSON(ctx, http.MethodPost, c.resolve("/v1/admin/prop-risk"), body, &response)
+	return response, err
 }
 
 func (c *Client) UpdateAccountLayout(

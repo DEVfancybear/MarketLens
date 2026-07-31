@@ -29,6 +29,10 @@ type fakeGateway struct {
 	orderAuthorization   OrderRequest
 	stateOwner           string
 	stateAccount         string
+	propRiskOwner        string
+	propRiskAccount      string
+	propRiskUpdate       PropRiskUpdate
+	propRiskUpdateCalls  int
 	commandOwner         string
 	commandAuthorization CommandRequest
 	commandCalls         int
@@ -37,6 +41,27 @@ type fakeGateway struct {
 	mappingOwner         string
 	mappingRequest       SymbolMappingRequest
 	err                  error
+}
+
+func (f *fakeGateway) PropRisk(
+	_ context.Context,
+	ownerID string,
+	accountID string,
+) (json.RawMessage, error) {
+	f.propRiskOwner = ownerID
+	f.propRiskAccount = accountID
+	return json.RawMessage(`{"profiles":[],"assignment":null}`), f.err
+}
+
+func (f *fakeGateway) UpdatePropRisk(
+	_ context.Context,
+	ownerID string,
+	request PropRiskUpdate,
+) (json.RawMessage, error) {
+	f.propRiskOwner = ownerID
+	f.propRiskUpdate = request
+	f.propRiskUpdateCalls++
+	return json.RawMessage(`{"profiles":[],"assignment":null}`), f.err
 }
 
 func (f *fakeGateway) AccountState(
@@ -592,6 +617,72 @@ func TestAccountStateAndCommandAlwaysUseAuthenticatedOwner(t *testing.T) {
 	}
 	if gateway.commandCalls != 1 {
 		t.Fatalf("invalid command reached gateway %d times", gateway.commandCalls)
+	}
+}
+
+func TestPropRiskAlwaysUsesAuthenticatedOwner(t *testing.T) {
+	gateway := &fakeGateway{}
+	response, err := testApp(gateway).Test(httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/execution/prop-risk?accountId=mt5_account&ownerId=attacker",
+		nil,
+	))
+	if err != nil || response.StatusCode != http.StatusOK {
+		t.Fatalf("prop risk status=%d err=%v", response.StatusCode, err)
+	}
+	response.Body.Close()
+	if gateway.propRiskOwner != "11111111-1111-4111-8111-111111111111" ||
+		gateway.propRiskAccount != "mt5_account" {
+		t.Fatalf("unexpected prop risk scope: %+v", gateway)
+	}
+
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/execution/prop-risk",
+		strings.NewReader(`{
+			"accountId":"mt5_account",
+			"enabled":true,
+			"profileId":"ftmo_2_step_step_1",
+			"initialBalance":"100000",
+			"timezone":"Europe/Prague",
+			"rules":{"dailyLossLimitBasisPoints":500},
+			"actions":{"blockNewOrders":true}
+		}`),
+	)
+	request.Header.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
+	response, err = testApp(gateway).Test(request)
+	if err != nil || response.StatusCode != http.StatusOK {
+		t.Fatalf("update prop risk status=%d err=%v", response.StatusCode, err)
+	}
+	response.Body.Close()
+	if gateway.propRiskOwner != "11111111-1111-4111-8111-111111111111" ||
+		gateway.propRiskUpdate.AccountID != "mt5_account" ||
+		gateway.propRiskUpdateCalls != 1 {
+		t.Fatalf("unexpected prop risk update scope: %+v", gateway)
+	}
+
+	attacker := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/execution/prop-risk",
+		strings.NewReader(`{
+			"ownerId":"attacker",
+			"accountId":"mt5_account",
+			"enabled":true,
+			"profileId":"ftmo_2_step_step_1",
+			"initialBalance":"100000",
+			"timezone":"Europe/Prague",
+			"rules":{},
+			"actions":{}
+		}`),
+	)
+	attacker.Header.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
+	response, err = testApp(gateway).Test(attacker)
+	if err != nil || response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("attacker prop risk status=%d err=%v", response.StatusCode, err)
+	}
+	response.Body.Close()
+	if gateway.propRiskUpdateCalls != 1 {
+		t.Fatalf("invalid prop risk update reached gateway %d times", gateway.propRiskUpdateCalls)
 	}
 }
 
