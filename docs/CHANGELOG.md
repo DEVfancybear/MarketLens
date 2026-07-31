@@ -4,6 +4,14 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Active alerts open their chart symbol (2026-07-31)
+
+- Made each active Alert Center row navigate the active chart to the alert's
+  stored symbol and close the drawer so the selected market is visible
+  immediately.
+- Kept alert deletion as a separate action, so using the trash button never
+  changes the chart symbol.
+
 ### Fixed - TradingView candle density and deep-zoom parity (2026-07-31)
 
 - Benchmarked the production chart against a live TradingView USDCAD 5-minute

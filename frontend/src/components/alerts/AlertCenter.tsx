@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { alertCenterOpenAtom, setAlertCenterAtom } from "@/store/uiStore";
-import { symbolAtom } from "@/store/chartStore";
+import { setSymbolAtom, symbolAtom } from "@/store/chartStore";
 import {
   getMarketDataState,
   marketCandleSeriesAtom,
@@ -133,6 +133,7 @@ export function AlertCenter() {
   const replayActive = Boolean(useReplayClientProjection().snapshot);
 
   const chartSymbol = useAtomValue(symbolAtom);
+  const setChartSymbol = useSetAtom(setSymbolAtom);
   const alerts = useAlertStore((s) => s.alerts);
   const triggered = useAlertStore((s) => s.triggeredAlerts);
   const expired = useAlertStore((s) => s.expiredAlerts);
@@ -540,26 +541,37 @@ export function AlertCenter() {
                 key={a.id}
                 className="flex items-center gap-2 rounded border border-terminal-border bg-terminal-panel-2 px-2.5 py-1.5"
               >
-                <span className="font-mono text-xs font-semibold text-ink">
-                  {a.symbol}
-                </span>
-                <span className="text-2xs text-ink-muted">
-                  {alertTargetText(a)}
-                </span>
-                {a.recurring && (
-                  <span className="rounded bg-terminal-hover px-1 text-[9px] uppercase text-ink-faint">
-                    repeat
-                  </span>
-                )}
-                {a.source?.kind === "drawing" && (
-                  <span
-                    className="max-w-24 truncate rounded bg-brand/10 px-1 text-[9px] text-brand"
-                    title={`${a.source.drawingTool}: ${a.source.targetLabel}`}
-                  >
-                    Drawing · {a.source.targetLabel}
-                  </span>
-                )}
                 <button
+                  type="button"
+                  onClick={() => {
+                    setChartSymbol(a.symbol);
+                    setOpen(false);
+                  }}
+                  className="flex min-w-0 flex-1 items-center gap-2 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+                  aria-label={`Open ${a.symbol} chart`}
+                >
+                  <span className="font-mono text-xs font-semibold text-ink">
+                    {a.symbol}
+                  </span>
+                  <span className="text-2xs text-ink-muted">
+                    {alertTargetText(a)}
+                  </span>
+                  {a.recurring && (
+                    <span className="rounded bg-terminal-hover px-1 text-[9px] uppercase text-ink-faint">
+                      repeat
+                    </span>
+                  )}
+                  {a.source?.kind === "drawing" && (
+                    <span
+                      className="max-w-24 truncate rounded bg-brand/10 px-1 text-[9px] text-brand"
+                      title={`${a.source.drawingTool}: ${a.source.targetLabel}`}
+                    >
+                      Drawing · {a.source.targetLabel}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
                   onClick={() => deleteAlert(a.id)}
                   className="ml-auto rounded p-1 text-ink-faint hover:bg-terminal-hover hover:text-bear"
                   aria-label="Delete alert"

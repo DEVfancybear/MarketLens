@@ -4,7 +4,7 @@ TradingView-style price and technical drawing alert runtime. This document refle
 frontend code, including browser notifications, sound, Firebase push, external Telegram/Discord
 dispatch paths, immutable drawing targets, and the closed-browser push evaluator.
 
-_Updated: 2026-07-23_
+_Updated: 2026-07-31_
 
 ## Goals
 
@@ -158,6 +158,12 @@ section. It reuses the store's canonical bulk clear path, so every active alert
 is removed locally, detached from chart ownership, and queued for deletion from
 PostgreSQL. Triggered, expired, and history sections retain their independent
 clear actions.
+
+Each active-alert row is also a chart-navigation target. Selecting its content
+passes the alert's immutable stored symbol through `setSymbolAtom` and closes
+the drawer, which uses the same symbol normalization, persistence, chart reset,
+and backend settings queue as the toolbar symbol picker. The trash action stays
+outside that navigation control so deleting an alert cannot switch markets.
 
 ## Alert Model
 
