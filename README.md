@@ -31,9 +31,41 @@ tảng biểu đồ hiện đại mà không phải chia nhỏ nghiên cứu, lu
 ghi giao dịch cuối cùng, mọi giai đoạn đều nằm trong một không gian liền mạch và
 thích ứng trên mọi màn hình.
 
-| **Phân tích** | **Luyện tập** | **Thực thi** | **Luôn nắm bắt** |
-| --- | --- | --- | --- |
-| Đa biểu đồ, bộ máy vẽ hiệu năng cao, chỉ báo, Pine runtime và lớp phủ Smart Money Concepts. | Phát lại dữ liệu lịch sử, kiểm chứng ý tưởng, mô phỏng lệnh và phân tích quyết định mà không mạo hiểm vốn. | Định tuyến lệnh đã qua kiểm soát rủi ro tới nhiều tài khoản MT5 qua nền tảng Go và Rust bền vững. | Theo dõi cảnh báo giá và hình vẽ qua ứng dụng, trình duyệt, push, Telegram và Discord. |
+### Vì sao dự án này tồn tại?
+
+Thị trường không thiếu biểu đồ. Điều còn thiếu là một hành trình không đứt gãy.
+Trader thường nhìn cấu trúc ở một nơi, kiểm chứng ý tưởng ở nơi khác, đặt lệnh
+trên một terminal riêng rồi quay lại thêm một công cụ nữa để theo dõi và đánh
+giá. Mỗi lần chuyển đổi là một lần ngữ cảnh bị mất, thao tác bị lặp lại và rủi ro
+sai lệch tăng lên.
+
+SMC Trading Terminal bắt đầu từ một câu hỏi đầy tham vọng:
+
+> **Điều gì sẽ xảy ra nếu một nét vẽ trên biểu đồ không kết thúc ở biểu đồ?**
+
+### Từ một nét vẽ đến quyết định thật
+
+<div align="center">
+
+**Quan sát** → **Vẽ kịch bản** → **Replay** → **Kiểm soát rủi ro** → **MT5** → **Cảnh báo & đánh giá**
+
+</div>
+
+Bạn có thể phát hiện một cấu trúc giá, dựng kịch bản bằng công cụ Long/Short
+Position, quay lại lịch sử để kiểm chứng, rồi mở ticket với entry, stop loss và
+take profit đã được chuẩn bị từ chính hình vẽ đó. Chỉ sau khi bạn xác nhận, lệnh
+mới đi qua lớp kiểm soát rủi ro và được định tuyến tới các tài khoản MT5 đã chọn.
+Trong lúc bạn rời màn hình, cảnh báo giá hoặc hình học tiếp tục canh thị trường;
+khi quay lại, journal và analytics giúp biến kết quả thành kinh nghiệm.
+
+### Khác biệt nằm ở những gì nối liền bên dưới
+
+| Ý tưởng | Điều dự án thực sự làm |
+| --- | --- |
+| **Hình vẽ không chỉ để trang trí** | Drawing có thể tạo cảnh báo, chuẩn bị kế hoạch giao dịch và duy trì liên kết với trạng thái lệnh/vị thế. |
+| **Replay không chỉ là xem lại** | Dữ liệu lịch sử trở thành môi trường luyện tập để kiểm chứng quy trình và quyết định trước khi dùng vốn thật. |
+| **Thực thi không chỉ là một nút bấm** | Go, Rust và EA MT5 phối hợp để xác thực, kiểm tra rủi ro, lưu lệnh bền vững và giữ biên thực thi riêng tư. |
+| **Đa tài khoản không đồng nghĩa sao chép mù quáng** | Mỗi copy target có ánh xạ symbol, giới hạn rủi ro và dấu vết trạng thái độc lập. |
 
 ### Hơn cả một biểu đồ
 

@@ -30,9 +30,41 @@ charting platform without separating research, practice, execution, and review
 across disconnected tools. From the first market observation to the final trade
 record, every stage lives in one coherent, responsive workspace.
 
-| **Analyze** | **Rehearse** | **Execute** | **Stay informed** |
-| --- | --- | --- | --- |
-| Multi-chart layouts, a high-performance drawing engine, indicators, Pine runtime, and Smart Money Concepts overlays. | Replay historical markets, validate ideas, simulate orders, and study decisions without risking capital. | Route risk-checked orders across broker-neutral MT5 accounts through a durable Go and Rust execution stack. | Track price and drawing alerts through in-app, browser, push, Telegram, and Discord channels. |
+### Why does this project exist?
+
+The market does not lack charts. What is missing is an unbroken journey. A
+trader often reads structure in one place, validates an idea somewhere else,
+executes in a separate terminal, and opens yet another tool to monitor and
+review the outcome. Every switch loses context, repeats work, and creates
+another opportunity for intent and execution to drift apart.
+
+SMC Trading Terminal began with one ambitious question:
+
+> **What if a drawing on the chart did not end at the chart?**
+
+### From a drawing to a real decision
+
+<div align="center">
+
+**Observe** → **Sketch the scenario** → **Replay** → **Control risk** → **MT5** → **Alert & review**
+
+</div>
+
+Spot a market structure, shape the idea with a Long/Short Position drawing,
+travel back through history to test it, then open a ticket with entry, stop loss,
+and take profit prepared from that same visual plan. Only after confirmation
+does the order pass through risk controls and route to the selected MT5
+accounts. While you are away, price and geometry alerts keep watch; when you
+return, the journal and analytics help turn outcomes into experience.
+
+### The difference lives in the connections underneath
+
+| Idea | What the project actually does |
+| --- | --- |
+| **Drawings are more than decoration** | A drawing can create an alert, prepare a trade plan, and retain links to order and position state. |
+| **Replay is more than playback** | Historical data becomes a practice environment for validating process and decisions before risking real capital. |
+| **Execution is more than a button** | Go, Rust, and the MT5 EA work together to authenticate, control risk, persist commands, and preserve private execution boundaries. |
+| **Multi-account does not mean blind copying** | Every copy target has independent symbol mapping, risk limits, and an auditable state trail. |
 
 ### Built beyond the chart
 
