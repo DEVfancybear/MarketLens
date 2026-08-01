@@ -346,20 +346,14 @@ fn resolve_profile_initial_balance(
         .ok_or("reference-balance profiles must declare at least one positive balance")
 }
 
+/// Captures the first observed balance for a trading day and keeps it stable.
+/// Starting capital is deliberately not an input: it sizes the allowance but
+/// must never replace an observed daily baseline.
 fn resolve_prop_risk_day_start_balance(
     stored_day_start_balance: Option<Decimal>,
     current_balance: Decimal,
-    initial_balance: Decimal,
-    has_prior_state: bool,
-    assignment_changed_today: bool,
-    initial_balance_reconciled: bool,
 ) -> Decimal {
-    let observed_day_start = stored_day_start_balance.unwrap_or(current_balance);
-    if initial_balance_reconciled || assignment_changed_today || !has_prior_state {
-        observed_day_start.max(initial_balance)
-    } else {
-        observed_day_start
-    }
+    stored_day_start_balance.unwrap_or(current_balance)
 }
 
 #[derive(Debug, Deserialize)]
@@ -1606,23 +1600,13 @@ impl GatewayState {
                 assignment.rules,
                 assignment.actions,
                 assignment.updated_at::text AS assignment_revision,
-                (
-                    (assignment.updated_at AT TIME ZONE assignment.timezone)::date =
-                    (now() AT TIME ZONE assignment.timezone)::date
-                ) AS assignment_changed_today,
                 to_char(
                     (now() AT TIME ZONE assignment.timezone)::date,
                     'YYYY-MM-DD'
                 ) AS trading_day,
                 state.day_start_balance,
                 state.locked,
-                state.evaluation,
-                EXISTS (
-                    SELECT 1
-                    FROM execution_prop_risk_daily_state history
-                    WHERE history.user_id = assignment.user_id
-                      AND history.account_id = assignment.account_id
-                ) AS has_prior_state
+                state.evaluation
             FROM execution_prop_risk_assignments assignment
             LEFT JOIN execution_prop_risk_daily_state state
               ON state.user_id = assignment.user_id
@@ -1649,9 +1633,6 @@ impl GatewayState {
         let stored_day_start_balance = row
             .try_get::<Option<Decimal>, _>("day_start_balance")
             .map_err(|error| ApiError::database("decode prop risk day baseline", error))?;
-        let has_prior_state = row
-            .try_get::<bool, _>("has_prior_state")
-            .map_err(|error| ApiError::database("decode prop risk state history", error))?;
         let locked = row
             .try_get::<Option<bool>, _>("locked")
             .map_err(|error| ApiError::database("decode prop risk lock", error))?
@@ -1666,11 +1647,6 @@ impl GatewayState {
         let assignment_revision = row
             .try_get::<String, _>("assignment_revision")
             .map_err(|error| ApiError::database("decode prop risk assignment revision", error))?;
-        let assignment_changed_today =
-            row.try_get::<bool, _>("assignment_changed_today")
-                .map_err(|error| {
-                    ApiError::database("decode prop risk assignment activation day", error)
-                })?;
         let stored_initial_balance = row
             .try_get::<Decimal, _>("initial_balance")
             .map_err(|error| ApiError::database("decode prop risk initial balance", error))?;
@@ -1686,14 +1662,8 @@ impl GatewayState {
             .try_get::<String, _>("trading_day")
             .map_err(|error| ApiError::database("decode prop risk trading day", error))?;
         let initial_balance_reconciled = initial_balance != stored_initial_balance;
-        let day_start_balance = resolve_prop_risk_day_start_balance(
-            stored_day_start_balance,
-            current_balance,
-            initial_balance,
-            has_prior_state,
-            assignment_changed_today,
-            initial_balance_reconciled,
-        );
+        let day_start_balance =
+            resolve_prop_risk_day_start_balance(stored_day_start_balance, current_balance);
         if initial_balance_reconciled {
             let mut transaction = database.begin().await.map_err(|error| {
                 ApiError::database("begin prop risk capital reconciliation", error)
@@ -1727,20 +1697,6 @@ impl GatewayState {
                     "prop risk settings changed during capital reconciliation; retry",
                 ));
             }
-            sqlx::query(
-                r#"
-                UPDATE execution_prop_risk_daily_state
-                SET day_start_balance = GREATEST(day_start_balance, $4)
-                WHERE user_id = $1 AND account_id = $2 AND trading_day = $3::date
-                "#,
-            )
-            .bind(owner_uuid)
-            .bind(account_id.as_str())
-            .bind(&trading_day)
-            .bind(initial_balance)
-            .execute(&mut *transaction)
-            .await
-            .map_err(|error| ApiError::database("reconcile prop risk daily baseline", error))?;
             transaction.commit().await.map_err(|error| {
                 ApiError::database("commit prop risk capital reconciliation", error)
             })?;
@@ -4535,23 +4491,6 @@ async fn update_prop_risk_guard(
     .execute(&mut *transaction)
     .await
     .map_err(|error| ApiError::database("save prop risk settings", error))?;
-    if request.enabled {
-        sqlx::query(
-            r#"
-            UPDATE execution_prop_risk_daily_state
-            SET day_start_balance = GREATEST(day_start_balance, $4)
-            WHERE user_id = $1 AND account_id = $2
-              AND trading_day = (now() AT TIME ZONE $3)::date
-            "#,
-        )
-        .bind(owner_uuid)
-        .bind(request.account_id.as_str())
-        .bind(&timezone)
-        .bind(initial_balance)
-        .execute(&mut *transaction)
-        .await
-        .map_err(|error| ApiError::database("tighten prop risk daily baseline", error))?;
-    }
     sqlx::query(
         r#"
         INSERT INTO execution_audit_log (
@@ -6799,42 +6738,17 @@ mod tests {
     }
 
     #[test]
-    fn same_day_activation_never_grants_a_fresh_daily_allowance() {
+    fn daily_baseline_uses_first_observed_balance_and_remains_stable() {
         let current_balance = Decimal::new(4_569_807, 2);
-        let initial_balance = Decimal::new(50_000, 0);
+        let stored_day_start_balance = Decimal::new(4_667_594, 2);
 
         assert_eq!(
-            resolve_prop_risk_day_start_balance(
-                None,
-                current_balance,
-                initial_balance,
-                true,
-                true,
-                false,
-            ),
-            initial_balance
-        );
-        assert_eq!(
-            resolve_prop_risk_day_start_balance(
-                Some(current_balance),
-                current_balance,
-                initial_balance,
-                true,
-                true,
-                false,
-            ),
-            initial_balance
-        );
-        assert_eq!(
-            resolve_prop_risk_day_start_balance(
-                None,
-                current_balance,
-                initial_balance,
-                true,
-                false,
-                false,
-            ),
+            resolve_prop_risk_day_start_balance(None, current_balance),
             current_balance
+        );
+        assert_eq!(
+            resolve_prop_risk_day_start_balance(Some(stored_day_start_balance), current_balance),
+            stored_day_start_balance
         );
     }
 

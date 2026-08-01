@@ -45,17 +45,26 @@ flowchart LR
 ```
 
 No manual daily reset is required. PostgreSQL derives `trading_day` from the
-profile's IANA time zone and captures `day_start_balance` on the first heartbeat
-of the new trading day. Once the state is locked, the lock remains sticky until
-the next trading day.
+profile's IANA time zone and captures `day_start_balance` from the first
+heartbeat observed while protection is active for that trading day. Once
+captured, that baseline is immutable for the rest of the day. A real lock also
+remains sticky until the next trading day.
 
-When protection is first enabled, re-enabled, or materially updated mid-day, no
-trustworthy continuously-protected midnight snapshot exists. The common runtime
-therefore uses the greater of observed balance and initial capital as a
-conservative same-day baseline and fails closed until a fresh evaluation is
-stored. After the next firm-time-zone reset, the first heartbeat becomes the
-normal day-start baseline. This avoids granting a fresh daily allowance for
-losses that may already have occurred while protection was absent or changing.
+When protection is first enabled mid-day, no trustworthy continuously observed
+midnight snapshot exists. The common runtime therefore uses the live balance
+from the first protected heartbeat and fails closed until that evaluation is
+stored. It never substitutes or clamps this daily baseline with
+`initial_balance`: starting capital determines the configured allowance and
+static maximum-loss floor, while the observed balance anchors the current
+trading day. Re-saving settings or reconciling starting capital does not rewrite
+an already captured same-day baseline. Losses from before activation cannot be
+reconstructed by the web guard; they remain covered by the static maximum-loss
+check and the venue's own enforcement.
+
+Deployment does not clear an already persisted lock for the current trading
+day. The runtime cannot safely distinguish a legacy false lock from a genuine
+breach without historical baseline telemetry, so existing locks expire through
+the normal time-zone reset. New daily states use the observed-baseline policy.
 
 ## Common Formulas
 
@@ -83,13 +92,17 @@ capital entry. A `reference_balances` profile with no valid reference fails
 closed instead of falling back to the live balance. The same profile-driven rule
 is enforced in the UI and again by the backend, so a modified client cannot
 weaken the floor. Existing assignments created with a live balance are
-reconciled automatically; their current-day baseline is only tightened, never
-lowered, and stale evaluations are hidden until the next heartbeat recalculates
-them. While that heartbeat is pending, the web card refreshes automatically.
+reconciled automatically without changing their captured current-day baseline,
+and stale evaluations are hidden until the next heartbeat recalculates them.
+While that heartbeat is pending, the web card refreshes automatically.
 
 For example, an account observed at `45,698.07` with a `50,000` reference and a
 10% static maximum loss has a `45,000` floor and only `698.07` total loss
 headroom. It does **not** receive a new 10% allowance based on `45,698.07`.
+If that observation is also the first protected heartbeat of the trading day,
+`45,698.07` is the daily baseline: the configured 5% daily allowance remains
+`2,500`, while the smaller `698.07` static-loss headroom is still the binding
+limit.
 
 The evaluator uses **equity**, so floating P/L, commission, and swap are
 included whenever the broker reflects them in equity. Before accepting a new

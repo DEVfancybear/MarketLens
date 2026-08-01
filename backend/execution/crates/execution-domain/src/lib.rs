@@ -373,9 +373,9 @@ pub fn prop_risk_money(balance: Decimal, basis_points: u32) -> Decimal {
     balance * Decimal::from(basis_points) / Decimal::from(PROP_RISK_BASIS_POINTS_DENOMINATOR)
 }
 
-/// Evaluates both FTMO-style fixed initial-balance limits and daily reset
-/// limits from live equity. Floating P/L, commission and swap are therefore
-/// included whenever the venue includes them in equity.
+/// Evaluates fixed initial-capital limits and trading-day limits from live
+/// equity. Floating P/L, commission and swap are therefore included whenever
+/// the venue includes them in equity.
 pub fn evaluate_prop_risk(
     rules: &PropRiskRules,
     actions: &PropRiskActions,
