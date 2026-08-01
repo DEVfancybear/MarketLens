@@ -4,6 +4,25 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Profile-driven prop-account capital floors (2026-08-01)
+
+- Fixed Prop Risk Guard treating the current, already-drawn-down balance as the
+  initial capital, which incorrectly granted a fresh daily and maximum-loss
+  allowance. Both UI and backend now resolve starting capital from generic
+  profile reference balances and use equity headroom to the real floor.
+- Existing assignments self-reconcile on the backend. First activation or a
+  corrected assignment uses a conservative first-day baseline. Re-enabling or
+  changing protection mid-day also tightens the existing baseline, so the guard
+  cannot silently reset the firm's daily-loss allowance.
+- Added profile metadata for reference balances and locked-rule behavior, so
+  future firms extend data instead of adding provider-specific branches. A
+  profile without reference balances continues to support manual capital, while
+  an invalid reference-based profile fails closed.
+- The web card now refreshes automatically while a corrected assignment waits
+  for its first fresh heartbeat.
+- Added the 50,000 to 45,698.07 regression vector: daily allowance 2,500,
+  maximum-loss floor 45,000, and remaining total headroom 698.07.
+
 ### Added - Automated prop-firm risk guard (2026-08-01)
 
 - Added a broker-neutral, versioned Prop Risk Guard for the web execution path,

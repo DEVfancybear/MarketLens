@@ -20,6 +20,7 @@ import {
   getExecutionPropRisk,
   updateExecutionPropRisk,
 } from "@/services/api/resources/executionApi";
+import { resolveProfileInitialBalance } from "@/services/execution/propRiskProfile";
 import type {
   ExecutionAccountSummary,
   PropRiskActions,
@@ -168,16 +169,49 @@ export function PropRiskGuardCard({
     () => guard?.profiles.find((profile) => profile.id === draft?.profileId),
     [draft?.profileId, guard?.profiles],
   );
-  const presetLocked = draft?.profileId !== "custom_prop_firm";
+  const presetLocked = selectedProfile?.rulesLocked ?? true;
+  const balanceAutoDetected = selectedProfile?.capitalMode === "referenceBalances";
   const assignment = guard?.assignment ?? null;
+  const waitingForEvaluation = Boolean(
+    assignment?.enabled && !assignment.evaluation,
+  );
+
+  useEffect(() => {
+    if (!waitingForEvaluation || saving) return;
+    let active = true;
+    let timeoutId: number | undefined;
+
+    const refresh = async () => {
+      try {
+        const next = await getExecutionPropRisk(accountId);
+        if (active) setGuard(next);
+      } catch {
+        // Keep the last known guard visible and retry while the heartbeat is pending.
+      } finally {
+        if (active) {
+          timeoutId = window.setTimeout(() => void refresh(), 2_000);
+        }
+      }
+    };
+
+    timeoutId = window.setTimeout(() => void refresh(), 2_000);
+    return () => {
+      active = false;
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    };
+  }, [accountId, saving, waitingForEvaluation]);
 
   const chooseProfile = (profile: PropRiskProfile) => {
     setDraft((current) => ({
       enabled: current?.enabled ?? true,
       profileId: profile.id,
-      initialBalance:
-        current?.initialBalance ||
-        String(latestAccount.current.balance ?? latestAccount.current.equity ?? ""),
+      initialBalance: String(
+        resolveProfileInitialBalance(
+          profile.capitalMode,
+          profile.referenceBalances,
+          latestAccount.current.balance ?? latestAccount.current.equity,
+        ) ?? current?.initialBalance ?? "",
+      ),
       timezone: profile.timezone,
       rules: { ...profile.rules },
       actions: { ...profile.actions },
@@ -306,17 +340,19 @@ export function PropRiskGuardCard({
             </select>
           </label>
           <Field
-            label="Vốn ban đầu"
+            label={balanceAutoDetected ? "Vốn gốc (tự nhận diện)" : "Vốn ban đầu"}
             value={draft.initialBalance}
             onChange={(value) => setDraft({ ...draft, initialBalance: value })}
             inputMode="decimal"
+            readOnly={balanceAutoDetected}
           />
         </div>
 
         {presetLocked && (
           <p className="rounded-lg border border-brand/20 bg-brand/5 px-2.5 py-2 text-[9px] leading-4 text-ink-muted">
             Preset quỹ được khóa theo phiên bản để không thể nới lỏng rule nhưng vẫn
-            mang nhãn FTMO. Chọn “Quỹ tùy chỉnh” nếu bạn cần một bộ rule riêng.
+            mang nhãn của nhà cung cấp. Chọn một mẫu cho phép tùy chỉnh nếu bạn cần
+            một bộ rule riêng.
           </p>
         )}
 
@@ -382,7 +418,7 @@ export function PropRiskGuardCard({
           <Field
             label="Múi giờ reset"
             value={draft.timezone}
-            readOnly={draft.profileId !== "custom_prop_firm"}
+            readOnly={presetLocked}
             onChange={(value) => setDraft({ ...draft, timezone: value })}
           />
         </div>
@@ -519,12 +555,14 @@ function RiskStatus({
           label="Còn lại hôm nay"
           value={evaluation.dailyLossRemaining}
           limit={evaluation.dailyLossLimit}
+          floor={evaluation.equity - evaluation.dailyLossRemaining}
           format={format}
         />
         <RiskMeter
           label="Còn lại tổng"
           value={evaluation.maxLossRemaining}
           limit={evaluation.maxLossLimit}
+          floor={evaluation.equity - evaluation.maxLossRemaining}
           format={format}
         />
       </div>
@@ -536,11 +574,13 @@ function RiskMeter({
   label,
   value,
   limit,
+  floor,
   format,
 }: {
   label: string;
   value: number;
   limit: number;
+  floor: number;
   format: (value: number) => string;
 }) {
   const ratio = limit > 0 ? Math.max(0, Math.min(1, value / limit)) : 0;
@@ -550,6 +590,9 @@ function RiskMeter({
       <strong className="mt-0.5 block text-[11px] tabular-nums text-ink">
         {format(value)}
       </strong>
+      <span className="mt-0.5 block text-[8px] tabular-nums text-ink-faint">
+        Ngưỡng equity: {format(floor)}
+      </span>
       <span className="mt-1.5 block h-1 overflow-hidden rounded-full bg-terminal-border">
         <span
           className={cn(
@@ -686,7 +729,13 @@ function draftFromGuard(
   return {
     enabled: true,
     profileId: profile.id,
-    initialBalance: String(account.balance ?? account.equity ?? ""),
+    initialBalance: String(
+      resolveProfileInitialBalance(
+        profile.capitalMode,
+        profile.referenceBalances,
+        account.balance ?? account.equity,
+      ) ?? "",
+    ),
     timezone: profile.timezone,
     rules: { ...profile.rules },
     actions: { ...profile.actions },

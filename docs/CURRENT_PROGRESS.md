@@ -6,7 +6,13 @@
   per-trade and combined position/pending risk before enqueue. Heartbeats reset
   by firm timezone, persist sticky daily locks, detect unprotected external
   exposure, and automatically block, cancel, or close without daily user
-  intervention. See `PROP_RISK_GUARD.md`.
+  intervention. Starting capital is resolved from profile-owned reference
+  balances in both UI and backend, preventing a drawn-down live balance from
+  being mistaken for a fresh loss allowance. Profiles remain provider-neutral:
+  rule locking and capital inference are independent metadata, not firm-name
+  branches. First enable, re-enable, and same-day changes use a conservative
+  baseline until the automatically refreshed heartbeat evaluation arrives. See
+  `PROP_RISK_GUARD.md`.
 
 - English/Vietnamese localization (2026-07-29): desktop and mobile now share a persisted locale,
   every drawing tool/group uses stable-ID localization with official TradingView Vietnamese

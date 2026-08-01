@@ -214,8 +214,18 @@ interface PropRiskAssignmentWire
   evaluation?: PropRiskEvaluationWire;
 }
 
+interface PropRiskProfileWire
+  extends Omit<
+    PropRiskProfile,
+    "rulesLocked" | "capitalMode" | "referenceBalances"
+  > {
+  rulesLocked?: boolean;
+  capitalMode?: PropRiskProfile["capitalMode"];
+  referenceBalances?: number[];
+}
+
 interface PropRiskGuardWire {
-  profiles: PropRiskProfile[];
+  profiles: PropRiskProfileWire[];
   assignment: PropRiskAssignmentWire | null;
 }
 
@@ -250,7 +260,7 @@ export const updateExecutionPropRisk = (
 function normalizePropRiskGuard(value: PropRiskGuardWire): PropRiskGuard {
   const assignment = value.assignment;
   return {
-    profiles: value.profiles,
+    profiles: value.profiles.map(normalizePropRiskProfile),
     assignment: assignment
       ? {
           ...assignment,
@@ -260,6 +270,26 @@ function normalizePropRiskGuard(value: PropRiskGuardWire): PropRiskGuard {
             : undefined,
         }
       : null,
+  };
+}
+
+function normalizePropRiskProfile(value: PropRiskProfileWire): PropRiskProfile {
+  if (
+    typeof value.rulesLocked !== "boolean" ||
+    (value.capitalMode !== "referenceBalances" && value.capitalMode !== "manual") ||
+    !Array.isArray(value.referenceBalances) ||
+    value.referenceBalances.some(
+      (balance) => !Number.isSafeInteger(balance) || balance <= 0,
+    ) ||
+    (value.capitalMode === "referenceBalances" && value.referenceBalances.length === 0)
+  ) {
+    throw new Error("Prop risk profile capital metadata is unavailable");
+  }
+  return {
+    ...value,
+    rulesLocked: value.rulesLocked,
+    capitalMode: value.capitalMode,
+    referenceBalances: [...value.referenceBalances],
   };
 }
 

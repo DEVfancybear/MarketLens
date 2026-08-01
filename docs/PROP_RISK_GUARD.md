@@ -49,6 +49,14 @@ profile's IANA time zone and captures `day_start_balance` on the first heartbeat
 of the new trading day. Once the state is locked, the lock remains sticky until
 the next trading day.
 
+When protection is first enabled, re-enabled, or materially updated mid-day, no
+trustworthy continuously-protected midnight snapshot exists. The common runtime
+therefore uses the greater of observed balance and initial capital as a
+conservative same-day baseline and fails closed until a fresh evaluation is
+stored. After the next firm-time-zone reset, the first heartbeat becomes the
+normal day-start baseline. This avoids granting a fresh daily allowance for
+losses that may already have occurred while protection was absent or changing.
+
 ## Common Formulas
 
 Rates are stored as basis points (`100 bp = 1%`) and calculated from
@@ -64,6 +72,24 @@ max_floor   = initial_balance   - max_loss_limit
 daily_remaining = equity - daily_floor
 max_remaining   = equity - max_floor
 ```
+
+`initial_balance` is the account's starting capital, never the current balance.
+A profile declares a `capital_mode`. In `reference_balances` mode, the shared
+resolver selects the declared capital with the smallest relative deviation from
+the observed account balance and selects the larger capital on an exact tie as
+the fail-safe choice. Relative deviation avoids incorrectly preferring a much
+smaller account tier after a drawdown. Profiles in `manual` mode keep manual
+capital entry. A `reference_balances` profile with no valid reference fails
+closed instead of falling back to the live balance. The same profile-driven rule
+is enforced in the UI and again by the backend, so a modified client cannot
+weaken the floor. Existing assignments created with a live balance are
+reconciled automatically; their current-day baseline is only tightened, never
+lowered, and stale evaluations are hidden until the next heartbeat recalculates
+them. While that heartbeat is pending, the web card refreshes automatically.
+
+For example, an account observed at `45,698.07` with a `50,000` reference and a
+10% static maximum loss has a `45,000` floor and only `698.07` total loss
+headroom. It does **not** receive a new 10% allowance based on `45,698.07`.
 
 The evaluator uses **equity**, so floating P/L, commission, and swap are
 included whenever the broker reflects them in equity. Before accepting a new
@@ -91,6 +117,7 @@ result.
 | Warning buffer | 1% | 1% |
 | Emergency buffer | 0.5% | 0.5% |
 | Reset time zone | `Europe/Prague` | `Europe/Prague` |
+| Reference balances | 10k, 25k, 50k, 100k, 200k | 10k, 25k, 50k, 100k, 200k |
 | Stop Loss | Required | Required |
 | Automatic block, cancel, and close | Enabled | Enabled |
 
@@ -110,7 +137,8 @@ Sources verified on 2026-08-01:
 - [DAOEA Prop Safe Pro](https://daoea.co/ea/prop-safe-pro)
 - [FTMO Maximum Daily Loss](https://academy.ftmo.com/lesson/maximum-daily-loss/)
 - [FTMO Maximum Loss](https://academy.ftmo.com/lesson/maximum-loss/)
-- [FTMO 2-Step objectives](https://promo.ftmo.com/l26b-start-today-achieve-more-tomorrow/us/)
+- [FTMO Trading Objectives](https://ftmo.com/en/trading-objectives/)
+- [FTMO Challenge sizes](https://ftmo.com/en/how-it-works/)
 
 ## Open Architecture for Future Firms
 
@@ -120,6 +148,10 @@ versioned data object containing:
 - identity: `profile_id`, `profile_version`, `provider_code`, and
   `program_code`;
 - calendar: an IANA `timezone`;
+- capital policy: `capital_mode` plus optional `reference_balances`, consumed by
+  the common starting-capital resolver;
+- edit policy: `rules_locked`, rather than checks against a provider or profile
+  ID;
 - rules: daily and maximum loss, per-trade and combined risk, Stop Loss,
   warning and emergency buffers, and an optional daily profit target; and
 - actions: block new orders, cancel pending orders, close positions, lock after
@@ -129,7 +161,7 @@ To add another firm with the same drawdown model:
 
 1. verify its rules from an official source;
 2. add a new `PropRiskProfileTemplate`, increasing its version whenever the
-   rules change;
+   rules or capital policy change;
 3. leave the evaluator, Go BFF, React form, and EA unchanged; and
 4. add test vectors for equity floors, time-zone reset behavior, and profile
    actions.
@@ -138,6 +170,8 @@ The `custom_prop_firm` profile allows rules and time zones to be configured on
 the web without a deployment. Fundamentally different rule models, such as a
 trailing drawdown based on a high-water mark, should be added as a new data
 strategy in the domain rather than as broker-specific code or UI logic.
+Catalog membership, capital policy, and rule editability are independent: an
+editable future profile can still require common reference-balance resolution.
 
 ## API and Data Model
 
@@ -171,6 +205,7 @@ Migration `0034_execution_prop_risk_guard` creates:
   Loss locks the trading day and triggers the emergency action, but the backend
   cannot block an order before another terminal sends it directly to the
   broker.
-- Users must still select the correct program and initial balance and verify
-  the official rules for their account. Similar commercial names do not
-  guarantee identical account conditions.
+- Users must still select the correct program and verify the official rules for
+  their account. Starting capital is automatic only when that profile declares
+  reference balances; profiles without them retain manual capital entry.
+  Similar commercial names do not guarantee identical account conditions.

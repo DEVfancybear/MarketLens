@@ -21,7 +21,9 @@ implementations are complete.
 
 The account-level prop-firm safety layer is documented in
 [Prop Risk Guard](PROP_RISK_GUARD.md), including FTMO v1 formulas, automatic
-actions, API/data boundaries, and the extension path for future firms.
+actions, profile-driven starting-capital resolution, API/data boundaries, and
+the extension path for future firms. Provider names never branch the common
+evaluator or React form.
 
 ## Runtime boundaries
 

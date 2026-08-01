@@ -91,11 +91,18 @@ export interface PropRiskProfile {
   programCode: string;
   displayName: string;
   timezone: string;
+  rulesLocked: boolean;
+  capitalMode: "referenceBalances" | "manual";
+  referenceBalances: number[];
   rules: PropRiskRules;
   actions: PropRiskActions;
 }
 
-export interface PropRiskAssignment extends Omit<PropRiskProfile, "id" | "version"> {
+export interface PropRiskAssignment
+  extends Omit<
+    PropRiskProfile,
+    "id" | "version" | "rulesLocked" | "capitalMode" | "referenceBalances"
+  > {
   accountId: string;
   enabled: boolean;
   profileId: string;

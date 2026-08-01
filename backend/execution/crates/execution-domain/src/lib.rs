@@ -1019,6 +1019,28 @@ mod tests {
     }
 
     #[test]
+    fn static_drawdown_uses_equity_headroom_to_the_configured_floor() {
+        let result = evaluate_prop_risk(
+            &prop_rules(),
+            &prop_actions(),
+            &PropRiskEvaluationInput {
+                initial_balance: Decimal::new(50_000, 0),
+                day_start_balance: Decimal::new(4_569_807, 2),
+                balance: Decimal::new(4_569_807, 2),
+                equity: Decimal::new(4_569_807, 2),
+                previously_locked_reason: None,
+                telemetry_stale: false,
+                unprotected_exposure: false,
+            },
+        );
+        assert_eq!(result.daily_loss_limit, Decimal::new(2_500, 0));
+        assert_eq!(result.daily_loss_remaining, Decimal::new(2_500, 0));
+        assert_eq!(result.max_loss_limit, Decimal::new(5_000, 0));
+        assert_eq!(result.max_loss_remaining, Decimal::new(69_807, 2));
+        assert_eq!(result.status, PropRiskStatus::Protected);
+    }
+
+    #[test]
     fn prop_risk_locks_before_the_official_limit_and_requests_actions() {
         let result = evaluate_prop_risk(
             &prop_rules(),
