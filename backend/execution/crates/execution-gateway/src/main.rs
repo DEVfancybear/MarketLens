@@ -4133,7 +4133,7 @@ async fn prop_risk_guard(
     Query(query): Query<PropRiskQuery>,
 ) -> Result<Json<PropRiskGuardView>, ApiError> {
     require_admin(&state, &headers)?;
-    validate_identifier("accountId", query.account_id.as_str())?;
+    validate_identifier("accountId", query.account_id.as_str(), 96)?;
     let owner_uuid = parse_owner_id(&query.owner_id)?;
     let owns_account = if let Some(database) = &state.inner.database {
         sqlx::query_scalar::<_, bool>(
@@ -4178,7 +4178,7 @@ async fn update_prop_risk_guard(
     Json(request): Json<PropRiskUpdateRequest>,
 ) -> Result<Json<PropRiskGuardView>, ApiError> {
     require_admin(&state, &headers)?;
-    validate_identifier("accountId", request.account_id.as_str())?;
+    validate_identifier("accountId", request.account_id.as_str(), 96)?;
     if request.initial_balance <= Decimal::ZERO {
         return Err(ApiError::new(
             StatusCode::BAD_REQUEST,
