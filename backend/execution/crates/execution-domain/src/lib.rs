@@ -1034,9 +1034,9 @@ mod tests {
             },
         );
         assert_eq!(result.daily_loss_limit, Decimal::new(2_500, 0));
-        assert_eq!(result.daily_loss_remaining, Decimal::new(-1_801, -93));
+        assert_eq!(result.daily_loss_remaining, Decimal::new(-180_193, 2));
         assert_eq!(result.max_loss_limit, Decimal::new(5_000, 0));
-        assert_eq!(result.max_loss_remaining, Decimal::new(698, 07));
+        assert_eq!(result.max_loss_remaining, Decimal::new(69_807, 2));
         assert_eq!(result.status, PropRiskStatus::Breached);
         assert_eq!(result.reason, Some(PropRiskReason::DailyLossLimitBreached));
     }
