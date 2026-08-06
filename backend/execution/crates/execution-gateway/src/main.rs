@@ -12,18 +12,17 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use execution_adapters::{AdapterError, EaCommandQueue};
 use execution_domain::{
-    AccountId, AccountMode, AccountStatus, BrokerMarginCap, CancelOrderCommand,
-    ClosePositionCommand, ContinuousCopyConfig, ContinuousCopyTargetConfig, CopyAllocation,
-    CopyGroupDefinition, CopyGroupId, CopyGroupRuntimeStatus, CopyGroupWriteRequest,
-    CopyProtectionConfig, CopyTarget, CopyTargetDefinition, CopyTargetRuntimeStatus,
-    CopyTargetWriteRequest, EXECUTION_PROTOCOL_VERSION, EaAccountSnapshot, EaCommand, EaEvent,
-    EaEventBatch, EaInstrumentSnapshot, EaPendingOrderSnapshot, EaPositionSnapshot,
-    EaSessionRequest, EaSessionResponse, ExecutionAccount, IdempotencyKey, InstrumentSpec,
-    ModifyPendingOrderCommand, ModifyPositionCommand, OrderIntent, OrderKind, OrderSizing,
-    PropRiskActions, PropRiskEvaluation, PropRiskEvaluationInput, PropRiskReason, PropRiskRules,
-    PropRiskStatus, QuantityUnit, RiskPolicy, RouteRejectCode, RouteTargetContext, RouteWarning,
-    RoutedOrder, SessionId, Side, TargetRouteResult, VenueKind, evaluate_prop_risk,
-    prop_risk_money,
+    AccountId, AccountMode, AccountStatus, CancelOrderCommand, ClosePositionCommand,
+    ContinuousCopyConfig, ContinuousCopyTargetConfig, CopyAllocation, CopyGroupDefinition,
+    CopyGroupId, CopyGroupRuntimeStatus, CopyGroupWriteRequest, CopyProtectionConfig, CopyTarget,
+    CopyTargetDefinition, CopyTargetRuntimeStatus, CopyTargetWriteRequest,
+    EXECUTION_PROTOCOL_VERSION, EaAccountSnapshot, EaCommand, EaEvent, EaEventBatch,
+    EaInstrumentSnapshot, EaPendingOrderSnapshot, EaPositionSnapshot, EaSessionRequest,
+    EaSessionResponse, ExecutionAccount, IdempotencyKey, InstrumentSpec, ModifyPendingOrderCommand,
+    ModifyPositionCommand, OrderIntent, OrderKind, OrderSizing, PropRiskActions,
+    PropRiskEvaluation, PropRiskEvaluationInput, PropRiskReason, PropRiskRules, PropRiskStatus,
+    QuantityUnit, RiskPolicy, RouteRejectCode, RouteTargetContext, RouteWarning, RoutedOrder,
+    SessionId, Side, TargetRouteResult, VenueKind, evaluate_prop_risk, prop_risk_money,
 };
 use execution_engine::route_order;
 use rust_decimal::Decimal;
@@ -11372,6 +11371,7 @@ fn validate_ea_event(event: &EaEvent) -> Result<(), ApiError> {
             broker_position_id,
             transaction_type,
             occurred_at_ms,
+            ..
         } => {
             if let Some(value) = broker_order_id {
                 validate_broker_ticket("brokerOrderId", value)?;
@@ -11659,6 +11659,7 @@ fn event_identity(event: &EaEvent) -> String {
             broker_position_id,
             transaction_type,
             occurred_at_ms,
+            ..
         } => {
             let identity = format!(
                 "{}:{}:{}:{}:{}",
