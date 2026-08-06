@@ -50,6 +50,11 @@ heartbeat observed while protection is active for that trading day. Once
 captured, that baseline is immutable for the rest of the day. A real lock also
 remains sticky until the next trading day.
 
+If two first heartbeats race at a day boundary, PostgreSQL keeps the baseline
+from the winning insert. The losing evaluation is not allowed to overwrite or
+lock that row using its different candidate baseline; the gateway reloads the
+stored baseline and evaluates that heartbeat again before applying actions.
+
 When protection is first enabled mid-day, no trustworthy continuously observed
 midnight snapshot exists. The common runtime therefore uses the live balance
 from the first protected heartbeat and fails closed until that evaluation is
@@ -61,10 +66,15 @@ an already captured same-day baseline. Losses from before activation cannot be
 reconstructed by the web guard; they remain covered by the static maximum-loss
 check and the venue's own enforcement.
 
-Deployment does not clear an already persisted lock for the current trading
-day. The runtime cannot safely distinguish a legacy false lock from a genuine
-breach without historical baseline telemetry, so existing locks expire through
-the normal time-zone reset. New daily states use the observed-baseline policy.
+The runtime preserves genuine daily locks, but it can repair locks produced by
+the legacy initial-balance daily-floor regression when the stored evidence is
+conclusive. A repair requires the original append-only lock audit, an unchanged
+rule snapshot, legacy-formula metrics, and a recorded `min_equity` that stayed
+strictly above both corrected emergency floors for the entire observed day.
+Missing, malformed, or ambiguous evidence remains fail-closed until the normal
+time-zone reset. The repair preserves `day_start_balance`, hides the stale
+evaluation, writes its own audit record, and lets the same heartbeat persist a
+fresh evaluation.
 
 ## Common Formulas
 
@@ -75,8 +85,8 @@ Rates are stored as basis points (`100 bp = 1%`) and calculated from
 daily_loss_limit = initial_balance × daily_loss_limit_bp / 10,000
 max_loss_limit   = initial_balance × max_loss_limit_bp / 10,000
 
-daily_floor = initial_balance - daily_loss_limit
-max_floor   = initial_balance - max_loss_limit
+daily_floor = day_start_balance - daily_loss_limit
+max_floor   = initial_balance   - max_loss_limit
 
 daily_remaining = equity - daily_floor
 max_remaining   = equity - max_floor
@@ -145,7 +155,7 @@ A payload therefore cannot loosen 5% to 8% while still saving the configuration
 under the FTMO label. Users who need different thresholds must select
 `custom_prop_firm`.
 
-Sources verified on 2026-08-01:
+Sources verified on 2026-08-06:
 
 - [DAOEA Prop Safe Pro](https://daoea.co/ea/prop-safe-pro)
 - [FTMO Maximum Daily Loss](https://academy.ftmo.com/lesson/maximum-daily-loss/)

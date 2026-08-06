@@ -661,6 +661,36 @@ pub fn prop_risk_money(balance: Decimal, basis_points: u32) -> Decimal {
     balance * Decimal::from(basis_points) / Decimal::from(PROP_RISK_BASIS_POINTS_DENOMINATOR)
 }
 
+/// Returns whether a sticky daily lock created by the legacy initial-balance
+/// daily-floor formula can be cleared without weakening the configured guard.
+/// The recorded minimum equity must have remained strictly above both
+/// corrected emergency floors for the entire observed trading day.
+pub fn should_repair_legacy_prop_risk_daily_lock(
+    rules: &PropRiskRules,
+    actions: &PropRiskActions,
+    initial_balance: Decimal,
+    day_start_balance: Decimal,
+    min_equity: Decimal,
+    reason: PropRiskReason,
+) -> bool {
+    if actions.lock_after_profit_target
+        || !matches!(
+            reason,
+            PropRiskReason::DailyLossLimitBreached | PropRiskReason::DailyLossSafetyBuffer
+        )
+    {
+        return false;
+    }
+
+    let daily_loss_limit = prop_risk_money(initial_balance, rules.daily_loss_limit_basis_points);
+    let max_loss_limit = prop_risk_money(initial_balance, rules.max_loss_limit_basis_points);
+    let emergency_buffer = prop_risk_money(initial_balance, rules.emergency_buffer_basis_points);
+    let corrected_daily_emergency_floor = day_start_balance - daily_loss_limit + emergency_buffer;
+    let max_emergency_floor = initial_balance - max_loss_limit + emergency_buffer;
+
+    min_equity > corrected_daily_emergency_floor && min_equity > max_emergency_floor
+}
+
 /// Evaluates fixed initial-capital limits and trading-day limits from live
 /// equity. Floating P/L, commission and swap are therefore included whenever
 /// the venue includes them in equity.
@@ -672,7 +702,7 @@ pub fn evaluate_prop_risk(
     let daily_loss_limit =
         prop_risk_money(input.initial_balance, rules.daily_loss_limit_basis_points);
     let max_loss_limit = prop_risk_money(input.initial_balance, rules.max_loss_limit_basis_points);
-    let daily_floor = input.initial_balance - daily_loss_limit;
+    let daily_floor = input.day_start_balance - daily_loss_limit;
     let max_floor = input.initial_balance - max_loss_limit;
     let daily_loss_used = positive(input.day_start_balance - input.equity);
     let max_loss_used = positive(input.initial_balance - input.equity);
@@ -1545,8 +1575,9 @@ mod tests {
         );
         assert_eq!(result.daily_loss_limit, Decimal::new(5_000, 0));
         assert_eq!(result.daily_loss_used, Decimal::new(4_000, 0));
-        assert_eq!(result.daily_loss_remaining, Decimal::new(5_000, 0));
-        assert_eq!(result.status, PropRiskStatus::Protected);
+        assert_eq!(result.daily_loss_remaining, Decimal::new(1_000, 0));
+        assert_eq!(result.status, PropRiskStatus::Warning);
+        assert_eq!(result.reason, Some(PropRiskReason::DailyLossWarning));
     }
 
     #[test]
@@ -1565,11 +1596,127 @@ mod tests {
             },
         );
         assert_eq!(result.daily_loss_limit, Decimal::new(2_500, 0));
-        assert_eq!(result.daily_loss_remaining, Decimal::new(-180_193, 2));
+        assert_eq!(result.daily_loss_remaining, Decimal::new(2_500, 0));
         assert_eq!(result.max_loss_limit, Decimal::new(5_000, 0));
         assert_eq!(result.max_loss_remaining, Decimal::new(69_807, 2));
-        assert_eq!(result.status, PropRiskStatus::Breached);
-        assert_eq!(result.reason, Some(PropRiskReason::DailyLossLimitBreached));
+        assert_eq!(result.status, PropRiskStatus::Protected);
+        assert_eq!(result.reason, None);
+    }
+
+    #[test]
+    fn prop_risk_matches_reported_drawdown_vector() {
+        let result = evaluate_prop_risk(
+            &prop_rules(),
+            &prop_actions(),
+            &PropRiskEvaluationInput {
+                initial_balance: Decimal::new(50_000, 0),
+                day_start_balance: Decimal::new(4_667_594, 2),
+                balance: Decimal::new(4_569_807, 2),
+                equity: Decimal::new(4_594_647, 2),
+                previously_locked_reason: None,
+                telemetry_stale: false,
+                unprotected_exposure: false,
+            },
+        );
+        assert_eq!(result.daily_loss_limit, Decimal::new(2_500, 0));
+        assert_eq!(result.daily_loss_used, Decimal::new(72_947, 2));
+        assert_eq!(result.daily_loss_remaining, Decimal::new(177_053, 2));
+        assert_eq!(result.max_loss_remaining, Decimal::new(94_647, 2));
+        assert_eq!(result.status, PropRiskStatus::Protected);
+        assert_eq!(result.reason, None);
+    }
+
+    #[test]
+    fn legacy_daily_lock_repair_requires_a_daily_reason_and_no_profit_target_lock() {
+        let rules = prop_rules();
+        let mut actions = prop_actions();
+        actions.lock_after_profit_target = false;
+        let initial_balance = Decimal::new(100_000, 0);
+        let day_start_balance = Decimal::new(104_000, 0);
+        let safe_min_equity = Decimal::new(9_925_001, 2);
+
+        assert!(should_repair_legacy_prop_risk_daily_lock(
+            &rules,
+            &actions,
+            initial_balance,
+            day_start_balance,
+            safe_min_equity,
+            PropRiskReason::DailyLossLimitBreached,
+        ));
+        assert!(should_repair_legacy_prop_risk_daily_lock(
+            &rules,
+            &actions,
+            initial_balance,
+            day_start_balance,
+            safe_min_equity,
+            PropRiskReason::DailyLossSafetyBuffer,
+        ));
+        assert!(!should_repair_legacy_prop_risk_daily_lock(
+            &rules,
+            &actions,
+            initial_balance,
+            day_start_balance,
+            safe_min_equity,
+            PropRiskReason::MaxLossSafetyBuffer,
+        ));
+
+        actions.lock_after_profit_target = true;
+        assert!(!should_repair_legacy_prop_risk_daily_lock(
+            &rules,
+            &actions,
+            initial_balance,
+            day_start_balance,
+            safe_min_equity,
+            PropRiskReason::DailyLossLimitBreached,
+        ));
+    }
+
+    #[test]
+    fn legacy_daily_lock_repair_requires_equity_strictly_above_both_emergency_floors() {
+        let rules = prop_rules();
+        let mut actions = prop_actions();
+        actions.lock_after_profit_target = false;
+        let initial_balance = Decimal::new(100_000, 0);
+
+        // A profitable day makes the corrected daily emergency floor binding.
+        let profitable_day_start = Decimal::new(104_000, 0);
+        let daily_emergency_floor = Decimal::new(99_250, 0);
+        assert!(!should_repair_legacy_prop_risk_daily_lock(
+            &rules,
+            &actions,
+            initial_balance,
+            profitable_day_start,
+            daily_emergency_floor,
+            PropRiskReason::DailyLossSafetyBuffer,
+        ));
+        assert!(should_repair_legacy_prop_risk_daily_lock(
+            &rules,
+            &actions,
+            initial_balance,
+            profitable_day_start,
+            daily_emergency_floor + Decimal::new(1, 2),
+            PropRiskReason::DailyLossSafetyBuffer,
+        ));
+
+        // A prior-loss day makes the static maximum-loss emergency floor binding.
+        let prior_loss_day_start = Decimal::new(94_000, 0);
+        let max_emergency_floor = Decimal::new(90_250, 0);
+        assert!(!should_repair_legacy_prop_risk_daily_lock(
+            &rules,
+            &actions,
+            initial_balance,
+            prior_loss_day_start,
+            max_emergency_floor,
+            PropRiskReason::DailyLossLimitBreached,
+        ));
+        assert!(should_repair_legacy_prop_risk_daily_lock(
+            &rules,
+            &actions,
+            initial_balance,
+            prior_loss_day_start,
+            max_emergency_floor + Decimal::new(1, 2),
+            PropRiskReason::DailyLossLimitBreached,
+        ));
     }
 
     #[test]

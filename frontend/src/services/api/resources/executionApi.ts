@@ -6,12 +6,16 @@ import type {
   ContinuousCopyGroupView,
   PropRiskActions,
   PropRiskAssignment,
-  PropRiskEvaluation,
   PropRiskGuard,
   PropRiskProfile,
   PropRiskRules,
 } from "@/types/execution";
 import type { ExecutionOrderWireRequest } from "@/services/execution/orderRouting";
+import {
+  normalizePropRiskEvaluation,
+  propRiskDecimal,
+  type PropRiskEvaluationWire,
+} from "@/services/execution/propRiskEvaluation";
 import {
   normalizeExecutionOrderResponse,
   type ExecutionOrderResponse,
@@ -239,32 +243,6 @@ export const runContinuousCopyGroupAction = (
   );
 };
 
-interface PropRiskEvaluationWire
-  extends Omit<
-    PropRiskEvaluation,
-    | "dailyLossLimit"
-    | "dailyLossUsed"
-    | "dailyLossRemaining"
-    | "maxLossLimit"
-    | "maxLossUsed"
-    | "maxLossRemaining"
-    | "dailyProfitTarget"
-    | "dailyProfitRemaining"
-    | "balance"
-    | "equity"
-  > {
-  dailyLossLimit: string;
-  dailyLossUsed: string;
-  dailyLossRemaining: string;
-  maxLossLimit: string;
-  maxLossUsed: string;
-  maxLossRemaining: string;
-  dailyProfitTarget?: string | null;
-  dailyProfitRemaining?: string | null;
-  balance: string;
-  equity: string;
-}
-
 interface PropRiskAssignmentWire
   extends Omit<PropRiskAssignment, "initialBalance" | "evaluation"> {
   initialBalance: string;
@@ -321,7 +299,10 @@ function normalizePropRiskGuard(value: PropRiskGuardWire): PropRiskGuard {
     assignment: assignment
       ? {
           ...assignment,
-          initialBalance: Number(assignment.initialBalance),
+          initialBalance: propRiskDecimal(
+            assignment.initialBalance,
+            "initialBalance",
+          ),
           evaluation: assignment.evaluation
             ? normalizePropRiskEvaluation(assignment.evaluation)
             : undefined,
@@ -347,28 +328,6 @@ function normalizePropRiskProfile(value: PropRiskProfileWire): PropRiskProfile {
     rulesLocked: value.rulesLocked,
     capitalMode: value.capitalMode,
     referenceBalances: [...value.referenceBalances],
-  };
-}
-
-function normalizePropRiskEvaluation(
-  value: PropRiskEvaluationWire,
-): PropRiskEvaluation {
-  return {
-    ...value,
-    dailyLossLimit: Number(value.dailyLossLimit),
-    dailyLossUsed: Number(value.dailyLossUsed),
-    dailyLossRemaining: Number(value.dailyLossRemaining),
-    maxLossLimit: Number(value.maxLossLimit),
-    maxLossUsed: Number(value.maxLossUsed),
-    maxLossRemaining: Number(value.maxLossRemaining),
-    dailyProfitTarget:
-      value.dailyProfitTarget == null ? value.dailyProfitTarget : Number(value.dailyProfitTarget),
-    dailyProfitRemaining:
-      value.dailyProfitRemaining == null
-        ? value.dailyProfitRemaining
-        : Number(value.dailyProfitRemaining),
-    balance: Number(value.balance),
-    equity: Number(value.equity),
   };
 }
 

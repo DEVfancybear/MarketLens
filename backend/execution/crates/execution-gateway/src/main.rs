@@ -23,6 +23,7 @@ use execution_domain::{
     PropRiskEvaluation, PropRiskEvaluationInput, PropRiskReason, PropRiskRules, PropRiskStatus,
     QuantityUnit, RiskPolicy, RouteRejectCode, RouteTargetContext, RouteWarning, RoutedOrder,
     SessionId, Side, TargetRouteResult, VenueKind, evaluate_prop_risk, prop_risk_money,
+    should_repair_legacy_prop_risk_daily_lock,
 };
 use execution_engine::route_order;
 use rust_decimal::Decimal;
@@ -361,6 +362,37 @@ fn resolve_prop_risk_day_start_balance(
     current_balance: Decimal,
 ) -> Decimal {
     stored_day_start_balance.unwrap_or(current_balance)
+}
+
+fn matches_legacy_prop_risk_daily_floor(
+    rules: &PropRiskRules,
+    initial_balance: Decimal,
+    last_equity: Decimal,
+    evaluation: &PropRiskEvaluation,
+) -> bool {
+    let daily_loss_limit = prop_risk_money(initial_balance, rules.daily_loss_limit_basis_points);
+    evaluation.daily_loss_limit == daily_loss_limit
+        && evaluation.equity == last_equity
+        && evaluation.daily_loss_remaining == last_equity - (initial_balance - daily_loss_limit)
+}
+
+fn matches_legacy_prop_risk_lock_event(
+    rules: &PropRiskRules,
+    initial_balance: Decimal,
+    reason: PropRiskReason,
+    locked_equity: Decimal,
+) -> bool {
+    let daily_loss_limit = prop_risk_money(initial_balance, rules.daily_loss_limit_basis_points);
+    let legacy_daily_floor = initial_balance - daily_loss_limit;
+    let emergency_buffer = prop_risk_money(initial_balance, rules.emergency_buffer_basis_points);
+    match reason {
+        PropRiskReason::DailyLossLimitBreached => locked_equity <= legacy_daily_floor,
+        PropRiskReason::DailyLossSafetyBuffer => {
+            locked_equity > legacy_daily_floor
+                && locked_equity <= legacy_daily_floor + emergency_buffer
+        }
+        _ => false,
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1868,14 +1900,41 @@ impl GatewayState {
                     'YYYY-MM-DD'
                 ) AS trading_day,
                 state.day_start_balance,
+                state.last_equity,
+                state.min_equity,
+                state.reason AS state_reason,
                 state.locked,
-                state.evaluation
+                state.evaluation,
+                state.evaluated_at > assignment.updated_at AS state_fresh,
+                lock_audit.locked_equity,
+                lock_audit.occurred_at >= assignment.updated_at
+                    AS lock_policy_matches
             FROM execution_prop_risk_assignments assignment
             LEFT JOIN execution_prop_risk_daily_state state
               ON state.user_id = assignment.user_id
              AND state.account_id = assignment.account_id
              AND state.trading_day =
                  (now() AT TIME ZONE assignment.timezone)::date
+            LEFT JOIN LATERAL (
+                SELECT
+                    audit.details->>'equity' AS locked_equity,
+                    audit.occurred_at
+                FROM execution_audit_log audit
+                WHERE state.locked = true
+                  AND state.reason IN (
+                      'DAILY_LOSS_LIMIT_BREACHED',
+                      'DAILY_LOSS_SAFETY_BUFFER'
+                  )
+                  AND audit.user_id = assignment.user_id
+                  AND audit.action = 'prop_risk.locked'
+                  AND audit.resource_type = 'execution_account'
+                  AND audit.resource_id = assignment.account_id
+                  AND audit.details->>'tradingDay' =
+                      to_char(state.trading_day, 'YYYY-MM-DD')
+                  AND audit.details->>'reason' = state.reason
+                ORDER BY audit.occurred_at, audit.sequence
+                LIMIT 1
+            ) lock_audit ON true
             WHERE assignment.user_id = $1
               AND assignment.account_id = $2
               AND assignment.enabled = true
@@ -1896,6 +1955,27 @@ impl GatewayState {
         let stored_day_start_balance = row
             .try_get::<Option<Decimal>, _>("day_start_balance")
             .map_err(|error| ApiError::database("decode prop risk day baseline", error))?;
+        let last_equity = row
+            .try_get::<Option<Decimal>, _>("last_equity")
+            .map_err(|error| ApiError::database("decode prop risk last equity", error))?;
+        let min_equity = row
+            .try_get::<Option<Decimal>, _>("min_equity")
+            .map_err(|error| ApiError::database("decode prop risk minimum equity", error))?;
+        let state_reason = row
+            .try_get::<Option<String>, _>("state_reason")
+            .map_err(|error| ApiError::database("decode prop risk state reason", error))?;
+        let state_fresh = row
+            .try_get::<Option<bool>, _>("state_fresh")
+            .map_err(|error| ApiError::database("decode prop risk state freshness", error))?
+            .unwrap_or(false);
+        let locked_equity = row
+            .try_get::<Option<String>, _>("locked_equity")
+            .map_err(|error| ApiError::database("decode prop risk lock equity", error))?
+            .and_then(|value| value.parse::<Decimal>().ok());
+        let lock_policy_matches = row
+            .try_get::<Option<bool>, _>("lock_policy_matches")
+            .map_err(|error| ApiError::database("decode prop risk lock policy", error))?
+            .unwrap_or(false);
         let locked = row
             .try_get::<Option<bool>, _>("locked")
             .map_err(|error| ApiError::database("decode prop risk lock", error))?
@@ -1913,6 +1993,14 @@ impl GatewayState {
         let stored_initial_balance = row
             .try_get::<Decimal, _>("initial_balance")
             .map_err(|error| ApiError::database("decode prop risk initial balance", error))?;
+        let rules = row
+            .try_get::<sqlx::types::Json<PropRiskRules>, _>("rules")
+            .map_err(|error| ApiError::database("decode prop risk rules", error))?
+            .0;
+        let actions = row
+            .try_get::<sqlx::types::Json<PropRiskActions>, _>("actions")
+            .map_err(|error| ApiError::database("decode prop risk actions", error))?
+            .0;
         let initial_balance = if let Some(profile) =
             prop_risk_profile(&profile_id).filter(|profile| profile.version == profile_version)
         {
@@ -1964,23 +2052,149 @@ impl GatewayState {
                 ApiError::database("commit prop risk capital reconciliation", error)
             })?;
         }
+        let mut previously_locked_reason = if locked {
+            Some(
+                prior
+                    .as_ref()
+                    .and_then(|evaluation| evaluation.reason)
+                    .unwrap_or(PropRiskReason::StateUnavailable),
+            )
+        } else {
+            None
+        };
+        let repair_candidate = match (
+            previously_locked_reason,
+            prior.as_ref(),
+            stored_day_start_balance,
+            last_equity,
+            min_equity,
+            locked_equity,
+        ) {
+            (
+                Some(reason),
+                Some(evaluation),
+                Some(day_start),
+                Some(last),
+                Some(minimum),
+                Some(lock_equity),
+            ) => {
+                !initial_balance_reconciled
+                    && state_fresh
+                    && lock_policy_matches
+                    && state_reason.as_deref() == Some(prop_risk_reason_name(reason))
+                    && matches_legacy_prop_risk_daily_floor(
+                        &rules,
+                        initial_balance,
+                        last,
+                        evaluation,
+                    )
+                    && matches_legacy_prop_risk_lock_event(
+                        &rules,
+                        initial_balance,
+                        reason,
+                        lock_equity,
+                    )
+                    && should_repair_legacy_prop_risk_daily_lock(
+                        &rules,
+                        &actions,
+                        initial_balance,
+                        day_start,
+                        minimum,
+                        reason,
+                    )
+            }
+            _ => false,
+        };
+        if repair_candidate {
+            let reason = previously_locked_reason.expect("repair candidate has a lock reason");
+            let evaluation = prior.as_ref().expect("repair candidate has an evaluation");
+            let minimum = min_equity.expect("repair candidate has minimum equity");
+            let day_start = stored_day_start_balance.expect("repair candidate has a baseline");
+            let mut transaction = database
+                .begin()
+                .await
+                .map_err(|error| ApiError::database("begin legacy prop risk lock repair", error))?;
+            let repaired = sqlx::query(
+                r#"
+                UPDATE execution_prop_risk_daily_state AS state
+                SET locked = false,
+                    status = 'protected',
+                    reason = NULL,
+                    evaluated_at = assignment.updated_at
+                FROM execution_prop_risk_assignments AS assignment
+                WHERE state.user_id = assignment.user_id
+                  AND state.account_id = assignment.account_id
+                  AND state.user_id = $1
+                  AND state.account_id = $2
+                  AND state.trading_day = $3::date
+                  AND state.locked = true
+                  AND state.min_equity = $4
+                  AND state.reason = $5
+                  AND state.evaluation = $6
+                  AND assignment.enabled = true
+                  AND assignment.updated_at = $7::timestamptz
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(account_id.as_str())
+            .bind(&trading_day)
+            .bind(minimum)
+            .bind(prop_risk_reason_name(reason))
+            .bind(sqlx::types::Json(evaluation))
+            .bind(&assignment_revision)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| ApiError::database("repair legacy prop risk lock", error))?;
+            if repaired.rows_affected() != 1 {
+                transaction.rollback().await.map_err(|error| {
+                    ApiError::database("rollback stale prop risk lock repair", error)
+                })?;
+                return Err(ApiError::new(
+                    StatusCode::CONFLICT,
+                    "PROP_RISK_STATE_CHANGED",
+                    "prop risk state changed during legacy lock repair; retry",
+                ));
+            }
+            sqlx::query(
+                r#"
+                INSERT INTO execution_audit_log (
+                    user_id, actor_type, actor_id, action,
+                    resource_type, resource_id, details
+                )
+                VALUES (
+                    $1, 'service', 'prop-risk-guard',
+                    'prop_risk.legacy_false_lock_repaired',
+                    'execution_account', $2,
+                    jsonb_build_object(
+                        'tradingDay', $3,
+                        'previousReason', $4,
+                        'dayStartBalance', $5::text,
+                        'minimumEquity', $6::text
+                    )
+                )
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(account_id.as_str())
+            .bind(&trading_day)
+            .bind(prop_risk_reason_name(reason))
+            .bind(day_start)
+            .bind(minimum)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| ApiError::database("audit legacy prop risk lock repair", error))?;
+            previously_locked_reason = None;
+            transaction.commit().await.map_err(|error| {
+                ApiError::database("commit legacy prop risk lock repair", error)
+            })?;
+        }
         Ok(Some(PropRiskRuntimeConfig {
             initial_balance,
-            rules: row
-                .try_get::<sqlx::types::Json<PropRiskRules>, _>("rules")
-                .map_err(|error| ApiError::database("decode prop risk rules", error))?
-                .0,
-            actions: row
-                .try_get::<sqlx::types::Json<PropRiskActions>, _>("actions")
-                .map_err(|error| ApiError::database("decode prop risk actions", error))?
-                .0,
+            rules,
+            actions,
             trading_day,
             day_start_balance,
-            previously_locked_reason: if locked {
-                prior.and_then(|evaluation| evaluation.reason)
-            } else {
-                None
-            },
+            previously_locked_reason,
             state_exists: stored_day_start_balance.is_some() && !initial_balance_reconciled,
         }))
     }
@@ -2263,71 +2477,187 @@ impl GatewayState {
             return Ok(());
         };
         let owner_uuid = parse_owner_id(&session.owner_id)?;
-        let Some(runtime) = self
+        let Some(mut runtime) = self
             .load_prop_risk_runtime(owner_uuid, &session.account_id, account.balance)
             .await?
         else {
             return Ok(());
         };
-        let evaluation = evaluate_prop_risk(
-            &runtime.rules,
-            &runtime.actions,
-            &PropRiskEvaluationInput {
-                initial_balance: runtime.initial_balance,
-                day_start_balance: runtime.day_start_balance,
-                balance: account.balance,
-                equity: account.equity,
-                previously_locked_reason: runtime.previously_locked_reason,
-                telemetry_stale: false,
-                unprotected_exposure: positions
-                    .iter()
-                    .any(|position| position.stop_loss.is_none_or(|stop| stop <= Decimal::ZERO))
-                    || pending_orders
-                        .iter()
-                        .any(|order| order.stop_loss.is_none_or(|stop| stop <= Decimal::ZERO)),
-            },
-        );
-        let status = prop_risk_status_name(evaluation.status);
-        let reason = evaluation.reason.map(prop_risk_reason_name);
-        let locked = matches!(
-            evaluation.status,
-            PropRiskStatus::Locked | PropRiskStatus::Breached
-        );
-        sqlx::query(
-            r#"
-            INSERT INTO execution_prop_risk_daily_state (
-                user_id, account_id, trading_day, day_start_balance,
-                last_balance, last_equity, min_equity, status, reason,
-                locked, evaluation, evaluated_at
+        let unprotected_exposure = positions
+            .iter()
+            .any(|position| position.stop_loss.is_none_or(|stop| stop <= Decimal::ZERO))
+            || pending_orders
+                .iter()
+                .any(|order| order.stop_loss.is_none_or(|stop| stop <= Decimal::ZERO));
+        let mut persisted = None;
+        for attempt in 0..2 {
+            let evaluation = evaluate_prop_risk(
+                &runtime.rules,
+                &runtime.actions,
+                &PropRiskEvaluationInput {
+                    initial_balance: runtime.initial_balance,
+                    day_start_balance: runtime.day_start_balance,
+                    balance: account.balance,
+                    equity: account.equity,
+                    previously_locked_reason: runtime.previously_locked_reason,
+                    telemetry_stale: false,
+                    unprotected_exposure,
+                },
+            );
+            let status = prop_risk_status_name(evaluation.status);
+            let reason = evaluation.reason.map(prop_risk_reason_name);
+            let locked = matches!(
+                evaluation.status,
+                PropRiskStatus::Locked | PropRiskStatus::Breached
+            );
+            let row = sqlx::query(
+                r#"
+                INSERT INTO execution_prop_risk_daily_state (
+                    user_id, account_id, trading_day, day_start_balance,
+                    last_balance, last_equity, min_equity, status, reason,
+                    locked, evaluation, evaluated_at
+                )
+                VALUES ($1, $2, $3::date, $4, $5, $6, $6, $7, $8, $9, $10, now())
+                ON CONFLICT (user_id, account_id, trading_day) DO UPDATE
+                SET last_balance = CASE
+                        WHEN execution_prop_risk_daily_state.day_start_balance =
+                             EXCLUDED.day_start_balance
+                         AND (
+                             NOT execution_prop_risk_daily_state.locked
+                             OR EXCLUDED.locked
+                         )
+                        THEN EXCLUDED.last_balance
+                        ELSE execution_prop_risk_daily_state.last_balance
+                    END,
+                    last_equity = CASE
+                        WHEN execution_prop_risk_daily_state.day_start_balance =
+                             EXCLUDED.day_start_balance
+                         AND (
+                             NOT execution_prop_risk_daily_state.locked
+                             OR EXCLUDED.locked
+                         )
+                        THEN EXCLUDED.last_equity
+                        ELSE execution_prop_risk_daily_state.last_equity
+                    END,
+                    min_equity = CASE
+                        WHEN execution_prop_risk_daily_state.day_start_balance =
+                             EXCLUDED.day_start_balance
+                         AND (
+                             NOT execution_prop_risk_daily_state.locked
+                             OR EXCLUDED.locked
+                         )
+                        THEN LEAST(
+                            execution_prop_risk_daily_state.min_equity,
+                            EXCLUDED.min_equity
+                        )
+                        ELSE execution_prop_risk_daily_state.min_equity
+                    END,
+                    status = CASE
+                        WHEN execution_prop_risk_daily_state.day_start_balance =
+                             EXCLUDED.day_start_balance
+                         AND (
+                             NOT execution_prop_risk_daily_state.locked
+                             OR EXCLUDED.locked
+                         )
+                        THEN EXCLUDED.status
+                        ELSE execution_prop_risk_daily_state.status
+                    END,
+                    reason = CASE
+                        WHEN execution_prop_risk_daily_state.day_start_balance =
+                             EXCLUDED.day_start_balance
+                         AND (
+                             NOT execution_prop_risk_daily_state.locked
+                             OR EXCLUDED.locked
+                         )
+                        THEN EXCLUDED.reason
+                        ELSE execution_prop_risk_daily_state.reason
+                    END,
+                    locked = execution_prop_risk_daily_state.locked OR (
+                        execution_prop_risk_daily_state.day_start_balance =
+                            EXCLUDED.day_start_balance
+                        AND EXCLUDED.locked
+                    ),
+                    evaluation = CASE
+                        WHEN execution_prop_risk_daily_state.day_start_balance =
+                             EXCLUDED.day_start_balance
+                         AND (
+                             NOT execution_prop_risk_daily_state.locked
+                             OR EXCLUDED.locked
+                         )
+                        THEN EXCLUDED.evaluation
+                        ELSE execution_prop_risk_daily_state.evaluation
+                    END,
+                    evaluated_at = CASE
+                        WHEN execution_prop_risk_daily_state.day_start_balance =
+                             EXCLUDED.day_start_balance
+                         AND (
+                             NOT execution_prop_risk_daily_state.locked
+                             OR EXCLUDED.locked
+                         )
+                        THEN now()
+                        ELSE execution_prop_risk_daily_state.evaluated_at
+                    END
+                RETURNING day_start_balance, locked, evaluation
+                "#,
             )
-            VALUES ($1, $2, $3::date, $4, $5, $6, $6, $7, $8, $9, $10, now())
-            ON CONFLICT (user_id, account_id, trading_day) DO UPDATE
-            SET last_balance = EXCLUDED.last_balance,
-                last_equity = EXCLUDED.last_equity,
-                min_equity = LEAST(
-                    execution_prop_risk_daily_state.min_equity,
-                    EXCLUDED.min_equity
-                ),
-                status = EXCLUDED.status,
-                reason = EXCLUDED.reason,
-                locked = execution_prop_risk_daily_state.locked OR EXCLUDED.locked,
-                evaluation = EXCLUDED.evaluation,
-                evaluated_at = now()
-            "#,
-        )
-        .bind(owner_uuid)
-        .bind(session.account_id.as_str())
-        .bind(&runtime.trading_day)
-        .bind(runtime.day_start_balance)
-        .bind(account.balance)
-        .bind(account.equity)
-        .bind(status)
-        .bind(reason)
-        .bind(locked)
-        .bind(sqlx::types::Json(&evaluation))
-        .execute(database)
-        .await
-        .map_err(|error| ApiError::database("persist prop risk evaluation", error))?;
+            .bind(owner_uuid)
+            .bind(session.account_id.as_str())
+            .bind(&runtime.trading_day)
+            .bind(runtime.day_start_balance)
+            .bind(account.balance)
+            .bind(account.equity)
+            .bind(status)
+            .bind(reason)
+            .bind(locked)
+            .bind(sqlx::types::Json(&evaluation))
+            .fetch_one(database)
+            .await
+            .map_err(|error| ApiError::database("persist prop risk evaluation", error))?;
+            let persisted_day_start =
+                row.try_get::<Decimal, _>("day_start_balance")
+                    .map_err(|error| {
+                        ApiError::database("decode persisted prop risk baseline", error)
+                    })?;
+            if persisted_day_start == runtime.day_start_balance {
+                let persisted_locked = row.try_get::<bool, _>("locked").map_err(|error| {
+                    ApiError::database("decode persisted prop risk lock", error)
+                })?;
+                let persisted_evaluation = row
+                    .try_get::<sqlx::types::Json<PropRiskEvaluation>, _>("evaluation")
+                    .map_err(|error| {
+                        ApiError::database("decode persisted prop risk evaluation", error)
+                    })?
+                    .0;
+                let persisted_status = prop_risk_status_name(persisted_evaluation.status);
+                let persisted_reason = persisted_evaluation.reason.map(prop_risk_reason_name);
+                persisted = Some((
+                    persisted_evaluation,
+                    persisted_status,
+                    persisted_reason,
+                    persisted_locked,
+                ));
+                break;
+            }
+            if attempt == 1 {
+                return Err(ApiError::new(
+                    StatusCode::CONFLICT,
+                    "PROP_RISK_BASELINE_CHANGED",
+                    "prop risk daily baseline changed during evaluation; retry",
+                ));
+            }
+            runtime = self
+                .load_prop_risk_runtime(owner_uuid, &session.account_id, account.balance)
+                .await?
+                .ok_or_else(|| {
+                    ApiError::new(
+                        StatusCode::CONFLICT,
+                        "PROP_RISK_ASSIGNMENT_CHANGED",
+                        "prop risk settings changed during evaluation; retry",
+                    )
+                })?;
+        }
+        let (evaluation, status, reason, locked) =
+            persisted.expect("evaluation loop persists once");
 
         if locked && runtime.previously_locked_reason.is_none() {
             sqlx::query(
@@ -2353,7 +2683,7 @@ impl GatewayState {
             .bind(&runtime.trading_day)
             .bind(status)
             .bind(reason)
-            .bind(account.equity)
+            .bind(evaluation.equity)
             .execute(database)
             .await
             .map_err(|error| ApiError::database("audit prop risk lock", error))?;
@@ -12450,6 +12780,80 @@ mod tests {
             resolve_prop_risk_day_start_balance(Some(stored_day_start_balance), current_balance),
             stored_day_start_balance
         );
+    }
+
+    #[test]
+    fn legacy_daily_floor_match_requires_the_buggy_persisted_metrics() {
+        let profile = prop_risk_profiles().remove(0);
+        let initial_balance = Decimal::new(50_000, 0);
+        let last_equity = Decimal::new(4_594_647, 2);
+        let mut evaluation = evaluate_prop_risk(
+            &profile.rules,
+            &profile.actions,
+            &PropRiskEvaluationInput {
+                initial_balance,
+                day_start_balance: Decimal::new(4_667_594, 2),
+                balance: Decimal::new(4_569_807, 2),
+                equity: last_equity,
+                previously_locked_reason: None,
+                telemetry_stale: false,
+                unprotected_exposure: false,
+            },
+        );
+
+        assert!(!matches_legacy_prop_risk_daily_floor(
+            &profile.rules,
+            initial_balance,
+            last_equity,
+            &evaluation,
+        ));
+
+        evaluation.daily_loss_remaining = Decimal::new(-155_353, 2);
+        assert!(matches_legacy_prop_risk_daily_floor(
+            &profile.rules,
+            initial_balance,
+            last_equity,
+            &evaluation,
+        ));
+    }
+
+    #[test]
+    fn legacy_lock_audit_match_uses_exact_reason_boundaries() {
+        let profile = prop_risk_profiles().remove(0);
+        let initial_balance = Decimal::new(50_000, 0);
+        let legacy_floor = Decimal::new(47_500, 0);
+        let legacy_emergency_ceiling = Decimal::new(47_750, 0);
+
+        assert!(matches_legacy_prop_risk_lock_event(
+            &profile.rules,
+            initial_balance,
+            PropRiskReason::DailyLossLimitBreached,
+            legacy_floor,
+        ));
+        assert!(!matches_legacy_prop_risk_lock_event(
+            &profile.rules,
+            initial_balance,
+            PropRiskReason::DailyLossSafetyBuffer,
+            legacy_floor,
+        ));
+        assert!(matches_legacy_prop_risk_lock_event(
+            &profile.rules,
+            initial_balance,
+            PropRiskReason::DailyLossSafetyBuffer,
+            legacy_emergency_ceiling,
+        ));
+        assert!(!matches_legacy_prop_risk_lock_event(
+            &profile.rules,
+            initial_balance,
+            PropRiskReason::DailyLossSafetyBuffer,
+            legacy_emergency_ceiling + Decimal::new(1, 2),
+        ));
+        assert!(!matches_legacy_prop_risk_lock_event(
+            &profile.rules,
+            initial_balance,
+            PropRiskReason::MaxLossLimitBreached,
+            legacy_floor,
+        ));
     }
 
     fn snapshot(login: &str, server: &str) -> EaAccountSnapshot {

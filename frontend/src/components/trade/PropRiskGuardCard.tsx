@@ -20,6 +20,7 @@ import {
   getExecutionPropRisk,
   updateExecutionPropRisk,
 } from "@/services/api/resources/executionApi";
+import { presentPropRiskHeadroom } from "@/services/execution/propRiskEvaluation";
 import { resolveProfileInitialBalance } from "@/services/execution/propRiskProfile";
 import type {
   ExecutionAccountSummary,
@@ -62,8 +63,8 @@ export function PropRiskCompactStatus({
   const [assignment, setAssignment] = useState<PropRiskAssignment | null>(null);
   const accountId = account?.id;
   useEffect(() => {
+    setAssignment(null);
     if (!accountId) {
-      setAssignment(null);
       return;
     }
     let active = true;
@@ -83,8 +84,9 @@ export function PropRiskCompactStatus({
       window.clearInterval(timer);
     };
   }, [accountId]);
-  const evaluation = assignment?.evaluation;
-  if (!assignment?.enabled) return null;
+  const currentAssignment = assignment?.accountId === accountId ? assignment : null;
+  const evaluation = currentAssignment?.evaluation;
+  if (!currentAssignment?.enabled) return null;
   const locked = evaluation?.status === "locked" || evaluation?.status === "breached";
   const warning = !evaluation || evaluation.status === "warning";
   const label = locked
@@ -101,7 +103,7 @@ export function PropRiskCompactStatus({
         evaluation?.reason
           ? REASON_LABELS[evaluation.reason]
           : evaluation
-            ? assignment.displayName
+            ? currentAssignment.displayName
             : "Đang chờ heartbeat tài khoản đầu tiên; lệnh mới được fail-closed."
       }
       className={cn(
@@ -146,6 +148,8 @@ export function PropRiskGuardCard({
 
   useEffect(() => {
     let active = true;
+    setGuard(null);
+    setDraft(null);
     setLoading(true);
     setError(null);
     void getExecutionPropRisk(accountId)
@@ -172,12 +176,10 @@ export function PropRiskGuardCard({
   const presetLocked = selectedProfile?.rulesLocked ?? true;
   const balanceAutoDetected = selectedProfile?.capitalMode === "referenceBalances";
   const assignment = guard?.assignment ?? null;
-  const waitingForEvaluation = Boolean(
-    assignment?.enabled && !assignment.evaluation,
-  );
+  const hasLoadedGuard = guard !== null;
 
   useEffect(() => {
-    if (!waitingForEvaluation || saving) return;
+    if (!hasLoadedGuard || saving) return;
     let active = true;
     let timeoutId: number | undefined;
 
@@ -186,20 +188,20 @@ export function PropRiskGuardCard({
         const next = await getExecutionPropRisk(accountId);
         if (active) setGuard(next);
       } catch {
-        // Keep the last known guard visible and retry while the heartbeat is pending.
+        // Keep the last known guard and any unsaved draft edits visible.
       } finally {
         if (active) {
-          timeoutId = window.setTimeout(() => void refresh(), 2_000);
+          timeoutId = window.setTimeout(() => void refresh(), 5_000);
         }
       }
     };
 
-    timeoutId = window.setTimeout(() => void refresh(), 2_000);
+    timeoutId = window.setTimeout(() => void refresh(), 5_000);
     return () => {
       active = false;
       if (timeoutId !== undefined) window.clearTimeout(timeoutId);
     };
-  }, [accountId, saving, waitingForEvaluation]);
+  }, [accountId, hasLoadedGuard, saving]);
 
   const chooseProfile = (profile: PropRiskProfile) => {
     setDraft((current) => ({
@@ -553,6 +555,7 @@ function RiskStatus({
       <div className="mt-2 grid grid-cols-2 gap-2">
         <RiskMeter
           label="Còn lại hôm nay"
+          exceededLabel="Đã vượt hôm nay"
           value={evaluation.dailyLossRemaining}
           limit={evaluation.dailyLossLimit}
           floor={evaluation.equity - evaluation.dailyLossRemaining}
@@ -560,6 +563,7 @@ function RiskStatus({
         />
         <RiskMeter
           label="Còn lại tổng"
+          exceededLabel="Đã vượt tổng"
           value={evaluation.maxLossRemaining}
           limit={evaluation.maxLossLimit}
           floor={evaluation.equity - evaluation.maxLossRemaining}
@@ -572,23 +576,32 @@ function RiskStatus({
 
 function RiskMeter({
   label,
+  exceededLabel,
   value,
   limit,
   floor,
   format,
 }: {
   label: string;
+  exceededLabel: string;
   value: number;
   limit: number;
   floor: number;
   format: (value: number) => string;
 }) {
-  const ratio = limit > 0 ? Math.max(0, Math.min(1, value / limit)) : 0;
+  const presentation = presentPropRiskHeadroom(value, limit);
   return (
     <div className="rounded-lg bg-terminal-bg/70 p-2">
-      <span className="text-[9px] text-ink-faint">{label}</span>
-      <strong className="mt-0.5 block text-[11px] tabular-nums text-ink">
-        {format(value)}
+      <span className="text-[9px] text-ink-faint">
+        {presentation.exceeded ? exceededLabel : label}
+      </span>
+      <strong
+        className={cn(
+          "mt-0.5 block text-[11px] tabular-nums",
+          presentation.exceeded ? "text-bear" : "text-ink",
+        )}
+      >
+        {format(presentation.displayValue)}
       </strong>
       <span className="mt-0.5 block text-[8px] tabular-nums text-ink-faint">
         Ngưỡng equity: {format(floor)}
@@ -597,9 +610,13 @@ function RiskMeter({
         <span
           className={cn(
             "block h-full rounded-full",
-            ratio > 0.4 ? "bg-bull" : ratio > 0.15 ? "bg-amber-400" : "bg-bear",
+            presentation.ratio > 0.4
+              ? "bg-bull"
+              : presentation.ratio > 0.15
+                ? "bg-amber-400"
+                : "bg-bear",
           )}
-          style={{ width: `${ratio * 100}%` }}
+          style={{ width: `${presentation.ratio * 100}%` }}
         />
       </span>
     </div>
