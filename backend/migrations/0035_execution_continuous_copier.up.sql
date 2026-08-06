@@ -13,7 +13,7 @@ ALTER TABLE execution_copy_groups
   ADD COLUMN status_message text,
   ADD COLUMN last_event_at timestamptz,
   ADD COLUMN last_reconciled_at timestamptz,
-  ADD CONSTRAINT execution_copy_groups_applied_revision_check
+  ADD CONSTRAINT execution_copy_groups_revision_order_check
     CHECK (applied_revision <= revision),
   ADD CONSTRAINT execution_copy_groups_configuration_check
     CHECK (jsonb_typeof(configuration) = 'object');
@@ -47,7 +47,7 @@ ALTER TABLE execution_copy_targets
   ADD COLUMN status_message text,
   ADD COLUMN last_error_at timestamptz,
   ADD COLUMN last_reconciled_at timestamptz,
-  ADD CONSTRAINT execution_copy_targets_applied_revision_check
+  ADD CONSTRAINT execution_copy_targets_revision_order_check
     CHECK (applied_revision <= revision),
   ADD CONSTRAINT execution_copy_targets_configuration_check
     CHECK (jsonb_typeof(configuration) = 'object'),
