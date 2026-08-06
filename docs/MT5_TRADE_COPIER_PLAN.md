@@ -1,7 +1,7 @@
 # MT5 Trade Copier: End-to-End Production Plan
 
 - Status: implemented full-flow foundation plus production-hardening plan
-- Repository baseline reviewed: 2 August 2026
+- Repository baseline reviewed: 6 August 2026
 - Reference behavior reviewed: [DAOEA MT5 Trade Copier v1.5.1](https://daoea.co/ea/copier)
 
 This document uses the external product only as a capability reference. It does
@@ -541,10 +541,13 @@ components remain in audit details.
 
 ## 8. Database plan
 
-Migration `0035_execution_continuous_copier` is now present in the working tree.
-It is additive to `0026_execution_platform` and has a matching development
-down migration. Applied migrations must never be edited; production rollback
-uses feature/state rollback rather than destructive migration rollback.
+Migration `0035_execution_continuous_copier` was applied in production on
+6 August 2026. It is additive to `0026_execution_platform` and has a matching
+development down migration. Before its first successful application, explicit
+cross-column checks were renamed so they cannot collide with PostgreSQL's
+automatically generated per-column check names. Applied migrations must never
+be edited; production rollback uses feature/state rollback rather than
+destructive migration rollback.
 
 ### 8.1 Implemented schema foundation
 

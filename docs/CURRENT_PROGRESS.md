@@ -1,5 +1,13 @@
 # Current Progress
 
+- Continuous MT5 copier production foundation (2026-08-06): migration
+  `0035_execution_continuous_copier` is applied in production and the canonical
+  runner completed its Go/Rust build, restart, and local/public health gates.
+  The migration uses non-colliding explicit names for cross-column revision
+  ordering and fixed-quantity mode checks. The durable lifecycle path remains
+  inbox -> leased work -> transactional command outbox -> EA outcome ->
+  link/reconciliation. See `MT5_TRADE_COPIER_PLAN.md`.
+
 - Automated prop-firm protection (2026-08-01): the web execution backend now
   owns a versioned, broker-neutral Prop Risk Guard. Locked FTMO 2-Step presets
   and a custom future-firm profile enforce daily/maximum drawdown, Stop Loss,
@@ -47,7 +55,7 @@
 > milestones below are historical. Current implementation and remaining native
 > venue work are tracked in `TRADE_EXECUTION_ARCHITECTURE.md`.
 
-Last updated: 2026-08-01
+Last updated: 2026-08-06
 
 - Chart drag/symbol-switch stability (2026-07-30): the production chart path
   now uses granular market-data subscriptions, revision-safe deferred viewport

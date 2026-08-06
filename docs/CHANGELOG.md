@@ -4,6 +4,18 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Continuous copier production migration (2026-08-06)
+
+- Fixed PostgreSQL check-constraint name collisions in
+  `0035_execution_continuous_copier`. Cross-column revision-order checks and
+  fixed-quantity mode validation now use explicit names that cannot collide
+  with PostgreSQL's automatically generated per-column check names.
+- Verified that the failed migration transaction left the application schema
+  at version 34, cleared only the dirty migration marker, and then applied
+  migration 0035 through the canonical production runner.
+- Completed the production Go/Rust build, forward migration, managed restart,
+  and local/public health gates after the correction.
+
 ### Fixed - Profile-driven prop-account capital floors (2026-08-01)
 
 - Fixed Prop Risk Guard treating the current, already-drawn-down balance as the

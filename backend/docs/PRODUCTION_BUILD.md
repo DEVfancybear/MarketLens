@@ -479,6 +479,7 @@ statuses must never trigger fallback.
 | `/api/push/alerts/sync` returns 409 | The FCM token is owned by another Firebase user; sign out, clear site notification data/service worker state, then register under the intended account. Do not blindly retry. |
 | `/api/push/alerts/sync` returns 503 | The eight-second Next deadline expired or the Go worker/PostgreSQL path is unavailable. Verify migration `0025`, public API reachability, database readiness, and matching `PUSH_WORKER_SECRET`; retry is safe. |
 | Firebase `ACCESS_TOKEN_EXPIRED` | Synchronize Windows Time with an NTP peer, then restart Next. |
+| Migration reports `dirty=true` | Stop before replacing services. Inspect the failed migration and actual schema first. Use `migrate force` only when the schema version has been proven and the failed transaction's effects are understood; never use `force` or `down` as a blind retry. Commit any migration correction so the canonical runner retains its clean-worktree gate. |
 | `/health/ready` says database down | Verify `DATABASE_URL`, network access, and migration version before restarting the API. |
 
 ## Safe cleanup
