@@ -23,10 +23,10 @@ WHERE allocation_mode = 'fixed_quantity';
 ALTER TABLE execution_copy_targets
   ALTER COLUMN enabled SET DEFAULT true,
   DROP CONSTRAINT IF EXISTS execution_copy_targets_owner_key,
-  DROP CONSTRAINT IF EXISTS execution_copy_targets_fixed_quantity_check,
+  DROP CONSTRAINT IF EXISTS execution_copy_targets_fixed_quantity_mode_check,
   DROP CONSTRAINT IF EXISTS execution_copy_targets_symbol_mapping_check,
   DROP CONSTRAINT IF EXISTS execution_copy_targets_configuration_check,
-  DROP CONSTRAINT IF EXISTS execution_copy_targets_revision_check,
+  DROP CONSTRAINT IF EXISTS execution_copy_targets_applied_revision_check,
   DROP CONSTRAINT IF EXISTS execution_copy_targets_allocation_mode_check,
   DROP COLUMN IF EXISTS last_reconciled_at,
   DROP COLUMN IF EXISTS last_error_at,
@@ -49,7 +49,7 @@ ALTER TABLE execution_copy_targets
 ALTER TABLE execution_copy_groups
   ALTER COLUMN enabled SET DEFAULT true,
   DROP CONSTRAINT IF EXISTS execution_copy_groups_configuration_check,
-  DROP CONSTRAINT IF EXISTS execution_copy_groups_revision_check,
+  DROP CONSTRAINT IF EXISTS execution_copy_groups_applied_revision_check,
   DROP COLUMN IF EXISTS last_reconciled_at,
   DROP COLUMN IF EXISTS last_event_at,
   DROP COLUMN IF EXISTS status_message,

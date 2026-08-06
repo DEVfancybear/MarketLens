@@ -13,7 +13,7 @@ ALTER TABLE execution_copy_groups
   ADD COLUMN status_message text,
   ADD COLUMN last_event_at timestamptz,
   ADD COLUMN last_reconciled_at timestamptz,
-  ADD CONSTRAINT execution_copy_groups_revision_check
+  ADD CONSTRAINT execution_copy_groups_applied_revision_check
     CHECK (applied_revision <= revision),
   ADD CONSTRAINT execution_copy_groups_configuration_check
     CHECK (jsonb_typeof(configuration) = 'object');
@@ -47,13 +47,13 @@ ALTER TABLE execution_copy_targets
   ADD COLUMN status_message text,
   ADD COLUMN last_error_at timestamptz,
   ADD COLUMN last_reconciled_at timestamptz,
-  ADD CONSTRAINT execution_copy_targets_revision_check
+  ADD CONSTRAINT execution_copy_targets_applied_revision_check
     CHECK (applied_revision <= revision),
   ADD CONSTRAINT execution_copy_targets_configuration_check
     CHECK (jsonb_typeof(configuration) = 'object'),
   ADD CONSTRAINT execution_copy_targets_symbol_mapping_check
     CHECK (jsonb_typeof(symbol_mapping) = 'object'),
-  ADD CONSTRAINT execution_copy_targets_fixed_quantity_check
+  ADD CONSTRAINT execution_copy_targets_fixed_quantity_mode_check
     CHECK (
       (allocation_mode = 'fixed_quantity' AND fixed_quantity IS NOT NULL) OR
       (allocation_mode <> 'fixed_quantity' AND fixed_quantity IS NULL)
