@@ -16,6 +16,7 @@ import {
   retainStableMt5SymbolCatalog,
 } from "@/services/execution/instrumentProjection";
 import { buildExecutionOrderRequest } from "@/services/execution/orderRouting";
+import { loadTradeCopierPreferences } from "@/services/execution/copierPreferences";
 import { reconcilePositionDrawingExecution } from "@/services/execution/positionDrawingLink";
 import {
   buildCancelOrderCommand,
@@ -31,6 +32,8 @@ import { userFacingErrorMessage } from "@/services/feedback/errorReporter";
 import {
   applyExecutionAccountsAtom,
   applyExecutionAccountLayoutAtom,
+  applyCopyRoutesAtom,
+  copyRoutesHydratedAtom,
   copyTargetsAtom,
   executionAccountsAtom,
   resetExecutionRegistryAtom,
@@ -71,6 +74,8 @@ const STATE_REFRESH_INTERVAL_MS = 2_000;
 export function useExecutionRegistry() {
   const applyAccounts = useSetAtom(applyExecutionAccountsAtom);
   const applyAccountLayout = useSetAtom(applyExecutionAccountLayoutAtom);
+  const applyCopyRoutes = useSetAtom(applyCopyRoutesAtom);
+  const copyRoutesHydrated = useAtomValue(copyRoutesHydratedAtom);
   const resetExecutionRegistry = useSetAtom(resetExecutionRegistryAtom);
   const resetMt5Session = useSetAtom(resetMt5SessionAtom);
   const selected = useAtomValue(selectedExecutionAccountAtom);
@@ -82,6 +87,32 @@ export function useExecutionRegistry() {
   const setLastHeartbeat = useSetAtom(mt5LastHeartbeatAtom);
   const backendSession = useAtomValue(backendSessionAtom);
   const backendSessionResolved = useAtomValue(backendSessionResolvedAtom);
+
+  useEffect(() => {
+    if (
+      !backendSession ||
+      !backendSessionResolved ||
+      copyRoutesHydrated
+    ) {
+      return;
+    }
+    let cancelled = false;
+    void loadTradeCopierPreferences()
+      .then((routes) => {
+        if (!cancelled) applyCopyRoutes(routes);
+      })
+      .catch(() => {
+        // Keep routing fail-closed until user-owned preferences can be loaded.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    applyCopyRoutes,
+    backendSession,
+    backendSessionResolved,
+    copyRoutesHydrated,
+  ]);
 
   useEffect(() => {
     // Auth bootstrap and the execution registry mount together. Wait for the

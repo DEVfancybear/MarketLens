@@ -149,6 +149,7 @@ fn route_target(
             stop_price: prices[1],
             stop_loss: prices[2],
             take_profit: prices[3],
+            broker_margin_cap: None,
             warnings,
         }),
     }
@@ -196,6 +197,9 @@ fn resolve_quantity(
 ) -> Result<Decimal, (RouteRejectCode, &'static str)> {
     match &target.copy_target.allocation {
         CopyAllocation::SameQuantity => fixed_quantity(intent, target.instrument.quantity_unit),
+        CopyAllocation::FixedQuantity { quantity, unit } => {
+            fixed_target_quantity(*quantity, *unit, target.instrument.quantity_unit)
+        }
         CopyAllocation::Multiplier { multiplier } => {
             fixed_quantity(intent, target.instrument.quantity_unit).map(|value| value * *multiplier)
         }
@@ -227,6 +231,26 @@ fn resolve_quantity(
             risk_sized_quantity(intent, *basis_points, target)
         }
     }
+}
+
+fn fixed_target_quantity(
+    quantity: Decimal,
+    unit: QuantityUnit,
+    target_unit: QuantityUnit,
+) -> Result<Decimal, (RouteRejectCode, &'static str)> {
+    if unit != target_unit {
+        return Err((
+            RouteRejectCode::QuantityUnitMismatch,
+            "fixed target quantity unit differs from the target venue",
+        ));
+    }
+    if quantity <= Decimal::ZERO {
+        return Err((
+            RouteRejectCode::QuantityInvalid,
+            "fixed target quantity must be positive",
+        ));
+    }
+    Ok(quantity)
 }
 
 fn fixed_quantity(
@@ -426,6 +450,59 @@ mod tests {
             &results[0],
             TargetRouteResult::Ready { order, .. }
                 if order.idempotency_key.as_str() == "once:account-a"
+        ));
+    }
+
+    #[test]
+    fn fixed_target_quantity_is_independent_of_source_sizing() {
+        let mut intent = intent();
+        intent.sizing = OrderSizing::RiskPercent { basis_points: 50 };
+        let mut target = target("fixed", 10_000, AccountStatus::Ready);
+        target.copy_target.allocation = CopyAllocation::FixedQuantity {
+            quantity: decimal(37, 2),
+            unit: QuantityUnit::Lots,
+        };
+
+        let results = route_order(&intent, None, &[target]);
+        assert!(matches!(
+            &results[0],
+            TargetRouteResult::Ready { order, .. } if order.quantity == decimal(37, 2)
+        ));
+    }
+
+    #[test]
+    fn fixed_target_quantity_must_be_positive() {
+        let mut target = target("fixed", 10_000, AccountStatus::Ready);
+        target.copy_target.allocation = CopyAllocation::FixedQuantity {
+            quantity: Decimal::ZERO,
+            unit: QuantityUnit::Lots,
+        };
+
+        let results = route_order(&intent(), None, &[target]);
+        assert!(matches!(
+            &results[0],
+            TargetRouteResult::Rejected {
+                code: RouteRejectCode::QuantityInvalid,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn fixed_target_quantity_unit_must_match_target_instrument() {
+        let mut target = target("fixed", 10_000, AccountStatus::Ready);
+        target.copy_target.allocation = CopyAllocation::FixedQuantity {
+            quantity: decimal(37, 2),
+            unit: QuantityUnit::BaseUnits,
+        };
+
+        let results = route_order(&intent(), None, &[target]);
+        assert!(matches!(
+            &results[0],
+            TargetRouteResult::Rejected {
+                code: RouteRejectCode::QuantityUnitMismatch,
+                ..
+            }
         ));
     }
 

@@ -109,6 +109,32 @@ test("floors quantity to the target step and respects the target cap", () => {
   });
 });
 
+test("fixed quantity ignores source size and still respects the target cap", () => {
+  const [result] = previewCopyRoutes({
+    sourceAccountId: "source",
+    sourceQuantity: 8,
+    accounts,
+    quantitySteps: { "target-a": 0.01 },
+    targets: [
+      {
+        accountId: "target-a",
+        enabled: true,
+        allocationMode: "fixedQuantity",
+        fixedQuantity: 0.35,
+        multiplier: 1,
+        maxQuantity: 0.3,
+      },
+    ],
+  });
+
+  assert.deepEqual(result, {
+    accountId: "target-a",
+    status: "ready",
+    quantity: 0.3,
+    allocationMode: "fixedQuantity",
+  });
+});
+
 test("offline MT5 targets remain selectable for the five-minute delivery window", () => {
   const availability = copyTargetAvailability(accounts[2]!);
 

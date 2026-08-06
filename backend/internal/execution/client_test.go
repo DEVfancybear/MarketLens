@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 )
 
@@ -195,5 +196,104 @@ func TestClientRejectsInvalidAccountActionAcknowledgement(t *testing.T) {
 	}
 	if err := client.RemoveAccount(t.Context(), "owner", "account"); err == nil {
 		t.Fatal("invalid acknowledgement must fail closed")
+	}
+}
+
+func TestClientForwardsCopyGroupOwnerServerSide(t *testing.T) {
+	const token = "admin-token-with-at-least-32-characters"
+	const owner = "owner-1"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/v1/admin/copy-groups" || request.URL.Query().Get("ownerId") != owner {
+			t.Errorf("unexpected list request: %s?%s", request.URL.Path, request.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+	client, err := NewClient(server.URL, token)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	if _, err := client.ListCopyGroups(t.Context(), owner, "group-1"); err != nil {
+		t.Fatalf("ListCopyGroups: %v", err)
+	}
+}
+
+func TestClientForwardsCopyGroupAuthorizationWithoutChangingApprovedPayload(t *testing.T) {
+	const token = "admin-token-with-at-least-32-characters"
+	const owner = "11111111-1111-4111-8111-111111111111"
+	const authorization = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"
+	const session = "22222222-2222-4222-8222-222222222222"
+
+	upsertJSON := copyGroupRequestBody(true, true)
+	var expectedUpsert map[string]any
+	if err := json.Unmarshal([]byte(upsertJSON), &expectedUpsert); err != nil {
+		t.Fatalf("decode expected upsert: %v", err)
+	}
+	expectedAction := map[string]any{
+		"groupId":          testCopyGroupID,
+		"expectedRevision": float64(7),
+		"action":           CopyGroupActionResume,
+	}
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		requests++
+		if request.Header.Get("X-Execution-Admin-Token") != token {
+			t.Error("missing internal admin credential")
+		}
+		var forwarded map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&forwarded); err != nil {
+			t.Errorf("decode copier request: %v", err)
+			return
+		}
+		if forwarded["ownerId"] != owner ||
+			forwarded["authorizationToken"] != authorization ||
+			forwarded["authorizationSessionId"] != session {
+			t.Errorf("unexpected copier authorization context: %#v", forwarded)
+		}
+		delete(forwarded, "ownerId")
+		delete(forwarded, "authorizationToken")
+		delete(forwarded, "authorizationSessionId")
+		switch request.URL.Path {
+		case "/v1/admin/copy-groups":
+			if !reflect.DeepEqual(forwarded, expectedUpsert) {
+				t.Errorf("forwarded upsert changed approved payload:\n got %#v\nwant %#v", forwarded, expectedUpsert)
+			}
+		case "/v1/admin/copy-groups/actions":
+			if !reflect.DeepEqual(forwarded, expectedAction) {
+				t.Errorf("forwarded action changed approved payload:\n got %#v\nwant %#v", forwarded, expectedAction)
+			}
+		default:
+			t.Errorf("unexpected copier gateway path: %s", request.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"group":{"id":"` + testCopyGroupID + `"},"targets":[]}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(server.URL, token)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	var upsert CopyGroupUpsertRequest
+	if err = json.Unmarshal([]byte(upsertJSON), &upsert); err != nil {
+		t.Fatalf("decode upsert request: %v", err)
+	}
+	upsert.AuthorizationToken = authorization
+	upsert.AuthorizationSessionID = session
+	if _, err = client.UpsertCopyGroup(t.Context(), owner, upsert); err != nil {
+		t.Fatalf("UpsertCopyGroup: %v", err)
+	}
+	if _, err = client.ApplyCopyGroupAction(t.Context(), owner, CopyGroupActionRequest{
+		GroupID:                testCopyGroupID,
+		ExpectedRevision:       7,
+		Action:                 CopyGroupActionResume,
+		AuthorizationToken:     authorization,
+		AuthorizationSessionID: session,
+	}); err != nil {
+		t.Fatalf("ApplyCopyGroupAction: %v", err)
+	}
+	if requests != 2 {
+		t.Fatalf("copier gateway requests=%d, want 2", requests)
 	}
 }

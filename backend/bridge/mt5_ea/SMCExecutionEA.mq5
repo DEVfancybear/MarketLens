@@ -1,5 +1,5 @@
 #property copyright "SMC Trading Terminal"
-#property version   "1.24"
+#property version   "1.25"
 #property strict
 #property description "Broker-neutral MT5 execution agent for the Rust execution gateway."
 
@@ -10,11 +10,10 @@ input int    HttpTimeoutMs    = 5000;
 input long   MagicNumber      = 26072026;
 
 const int PROTOCOL_VERSION = 1;
-const string EA_VERSION = "1.24";
+const string EA_VERSION = "1.25";
 const int MAX_BUFFERED_EVENTS = 128;
 const int MAX_JOURNAL_COMMANDS = 4096;
 const int MAX_INSTRUMENTS_PER_HEARTBEAT = 32;
-const int MAX_PORTFOLIO_ITEMS_PER_HEARTBEAT = 200;
 
 string g_session_token = "";
 string g_account_id = "";
@@ -39,6 +38,7 @@ ulong g_next_portfolio_retry_at = 0;
 ulong g_next_event_retry_at = 0;
 ulong g_next_instrument_retry_at = 0;
 ulong g_last_instrument_snapshot_at = 0;
+ulong g_transaction_sequence = 0;
 
 int OnInit()
 {
@@ -55,6 +55,9 @@ int OnInit()
 
    g_agent_id = StringFormat("mt5-%I64d-%s", AccountInfoInteger(ACCOUNT_LOGIN),
                              TerminalInfoString(TERMINAL_DATA_PATH));
+   // Time-seeding keeps the sequence unique across normal terminal restarts,
+   // while the increment preserves callback order inside one EA process.
+   g_transaction_sequence = EpochMilliseconds() * 1000;
    ArrayResize(g_events, 0);
    LoadCommandJournal();
    LoadSessionCache();
@@ -144,14 +147,18 @@ void OnTimer()
    // An empty event batch is also the account heartbeat. This keeps account
    // identity and equity fresh without running HTTP inside trade callbacks.
    ulong monotonic_now = GetTickCount64();
-   bool portfolio_due =
-      ArraySize(g_events) > 0 ||
-      monotonic_now - g_last_snapshot_at >= 10000;
-   if(portfolio_due && monotonic_now >= g_next_portfolio_retry_at)
+   bool has_events = ArraySize(g_events) > 0;
+   if(has_events)
+   {
+      // A transaction and the complete portfolio it produced are one causal
+      // unit. Never let the event reach the gateway without that truth set.
+      if(monotonic_now >= g_next_portfolio_retry_at &&
+         monotonic_now >= g_next_event_retry_at)
+         FlushBufferedEventsWithPortfolio();
+   }
+   else if(monotonic_now - g_last_snapshot_at >= 10000 &&
+           monotonic_now >= g_next_portfolio_retry_at)
       FlushPortfolioSnapshot();
-   if(ArraySize(g_events) > 0 &&
-      monotonic_now >= g_next_event_retry_at)
-      FlushBufferedEvents();
    if(monotonic_now - g_last_instrument_snapshot_at >= 10000 &&
       monotonic_now >= g_next_instrument_retry_at)
       FlushInstrumentSnapshots();
@@ -164,17 +171,191 @@ void OnTradeTransaction(const MqlTradeTransaction &transaction,
 {
    // MT5 can emit many, unordered transaction callbacks for one request.
    // Keep this handler bounded and defer network I/O to OnTimer.
+   g_transaction_sequence++;
+   if(g_transaction_sequence == 0)
+      g_transaction_sequence = 1;
+
+   ulong order_id = transaction.order > 0 ? transaction.order : result.order;
+   ulong deal_id = transaction.deal > 0 ? transaction.deal : result.deal;
+   ulong position_id = transaction.position > 0
+      ? transaction.position
+      : request.position;
+   ulong position_by_id = transaction.position_by > 0
+      ? transaction.position_by
+      : request.position_by;
+   ulong transaction_time_ms = ResolveTransactionTimeMs(
+      order_id, deal_id, position_id);
+
+   bool request_event = transaction.type == TRADE_TRANSACTION_REQUEST;
+   bool order_event = IsOrderTransaction(transaction.type);
+   bool deal_event = IsDealTransaction(transaction.type);
+   bool position_event = transaction.type == TRADE_TRANSACTION_POSITION;
+   bool request_has_order = request_event &&
+      (request.action == TRADE_ACTION_DEAL ||
+       request.action == TRADE_ACTION_PENDING);
+   bool request_has_price = request_has_order ||
+      (request_event && request.action == TRADE_ACTION_MODIFY);
+   bool request_has_levels = request_has_price ||
+      (request_event && request.action == TRADE_ACTION_SLTP);
+
+   string symbol = transaction.symbol;
+   if(symbol == "" && request_event)
+      symbol = request.symbol;
+
+   ENUM_ORDER_TYPE order_type = transaction.order_type;
+   bool has_order_type = order_event || request_has_order;
+   if(request_has_order)
+      order_type = request.type;
+
+   string side = "";
+   if(deal_event || position_event)
+      side = DealSide(transaction.deal_type);
+   if(side == "" && has_order_type)
+      side = OrderSide(order_type);
+
+   string volume_json = "null";
+   string price_json = "null";
+   string stop_loss_json = "null";
+   string take_profit_json = "null";
+   if(!request_event)
+   {
+      volume_json = JsonDecimal(transaction.volume);
+      price_json = JsonDecimal(transaction.price);
+      stop_loss_json = JsonDecimal(transaction.price_sl);
+      take_profit_json = JsonDecimal(transaction.price_tp);
+   }
+   else
+   {
+      if(request_has_order)
+         volume_json = JsonDecimal(request.volume);
+      if(request_has_price)
+         price_json = JsonDecimal(request.price);
+      if(request_has_levels)
+      {
+         stop_loss_json = JsonDecimal(request.sl);
+         take_profit_json = JsonDecimal(request.tp);
+      }
+   }
+
+   string order_state = order_event
+      ? EnumToString(transaction.order_state)
+      : "";
+   string deal_type = (deal_event || position_event)
+      ? EnumToString(transaction.deal_type)
+      : "";
+   string order_reason = ResolveOrderReason(order_id);
+   ulong occurred_at_ms = EpochMilliseconds();
    string event_json = StringFormat(
-      "{\"type\":\"tradeTransaction\",\"brokerOrderId\":%s,"
-      "\"brokerDealId\":%s,\"brokerPositionId\":%s,"
-      "\"transactionType\":\"%s\",\"occurredAtMs\":%I64u}",
-      JsonNullableUlong(transaction.order),
-      JsonNullableUlong(transaction.deal),
-      JsonNullableUlong(transaction.position),
-      JsonEscape(EnumToString(transaction.type)),
-      EpochMilliseconds()
-   );
+       "{\"type\":\"tradeTransaction\",\"brokerOrderId\":%s,"
+       "\"brokerDealId\":%s,\"brokerPositionId\":%s,"
+       "\"brokerPositionById\":%s,\"transactionType\":\"%s\","
+       "\"transactionSequence\":%I64u,\"transactionTimeMs\":%s,"
+       "\"venueSymbol\":%s,\"side\":%s,\"orderType\":%s,"
+       "\"orderState\":%s,\"orderReason\":%s,\"dealType\":%s,"
+       "\"volume\":%s,\"price\":%s,\"stopLoss\":%s,"
+       "\"takeProfit\":%s,\"occurredAtMs\":%I64u}",
+       JsonNullableUlong(order_id),
+       JsonNullableUlong(deal_id),
+       JsonNullableUlong(position_id),
+       JsonNullableUlong(position_by_id),
+       JsonEscape(EnumToString(transaction.type)),
+       g_transaction_sequence,
+       JsonNullableNumber(transaction_time_ms),
+       JsonNullableString(symbol),
+       JsonNullableString(side),
+       JsonNullableString(has_order_type ? EnumToString(order_type) : ""),
+       JsonNullableString(order_state),
+       JsonNullableString(order_reason),
+       JsonNullableString(deal_type),
+       volume_json,
+       price_json,
+       stop_loss_json,
+       take_profit_json,
+       occurred_at_ms
+    );
    BufferEvent(event_json);
+   g_last_snapshot_at = 0;
+}
+
+bool IsOrderTransaction(const ENUM_TRADE_TRANSACTION_TYPE type)
+{
+   return type == TRADE_TRANSACTION_ORDER_ADD ||
+          type == TRADE_TRANSACTION_ORDER_UPDATE ||
+          type == TRADE_TRANSACTION_ORDER_DELETE ||
+          type == TRADE_TRANSACTION_HISTORY_ADD ||
+          type == TRADE_TRANSACTION_HISTORY_UPDATE ||
+          type == TRADE_TRANSACTION_HISTORY_DELETE;
+}
+
+bool IsDealTransaction(const ENUM_TRADE_TRANSACTION_TYPE type)
+{
+   return type == TRADE_TRANSACTION_DEAL_ADD ||
+          type == TRADE_TRANSACTION_DEAL_UPDATE ||
+          type == TRADE_TRANSACTION_DEAL_DELETE;
+}
+
+string OrderSide(const ENUM_ORDER_TYPE type)
+{
+   if(type == ORDER_TYPE_BUY || type == ORDER_TYPE_BUY_LIMIT ||
+      type == ORDER_TYPE_BUY_STOP || type == ORDER_TYPE_BUY_STOP_LIMIT)
+      return "buy";
+   if(type == ORDER_TYPE_SELL || type == ORDER_TYPE_SELL_LIMIT ||
+      type == ORDER_TYPE_SELL_STOP || type == ORDER_TYPE_SELL_STOP_LIMIT)
+      return "sell";
+   return "";
+}
+
+string DealSide(const ENUM_DEAL_TYPE type)
+{
+   if(type == DEAL_TYPE_BUY)
+      return "buy";
+   if(type == DEAL_TYPE_SELL)
+      return "sell";
+   return "";
+}
+
+ulong ResolveTransactionTimeMs(const ulong order_id, const ulong deal_id,
+                               const ulong position_id)
+{
+   ulong broker_time_ms = 0;
+   if(deal_id > 0 && HistoryDealSelect(deal_id))
+      broker_time_ms = (ulong)HistoryDealGetInteger(deal_id, DEAL_TIME_MSC);
+
+   if(broker_time_ms == 0 && order_id > 0)
+   {
+      if(OrderSelect(order_id))
+         broker_time_ms = (ulong)OrderGetInteger(ORDER_TIME_SETUP_MSC);
+      else if(HistoryOrderSelect(order_id))
+      {
+         broker_time_ms = (ulong)HistoryOrderGetInteger(
+            order_id, ORDER_TIME_DONE_MSC);
+         if(broker_time_ms == 0)
+            broker_time_ms = (ulong)HistoryOrderGetInteger(
+               order_id, ORDER_TIME_SETUP_MSC);
+      }
+   }
+
+   if(broker_time_ms == 0 && position_id > 0 &&
+      PositionSelectByTicket(position_id))
+   {
+      broker_time_ms = (ulong)PositionGetInteger(POSITION_TIME_UPDATE_MSC);
+      if(broker_time_ms == 0)
+         broker_time_ms = (ulong)PositionGetInteger(POSITION_TIME_MSC);
+   }
+   return NormalizeBrokerTimestampMs(broker_time_ms);
+}
+
+string ResolveOrderReason(const ulong order_id)
+{
+   if(order_id == 0)
+      return "";
+   if(OrderSelect(order_id))
+      return EnumToString(
+         (ENUM_ORDER_REASON)OrderGetInteger(ORDER_REASON));
+   if(HistoryOrderSelect(order_id))
+      return EnumToString((ENUM_ORDER_REASON)HistoryOrderGetInteger(
+         order_id, ORDER_REASON));
+   return "";
 }
 
 bool RegisterSession()
@@ -371,6 +552,9 @@ void ExecutePlaceCommand(const string command)
       return;
    }
 
+   if(!ValidateBrokerMarginCap(command, command_id, request))
+      return;
+
    ResetLastError();
    if(!OrderCheck(request, check))
    {
@@ -414,6 +598,95 @@ void ExecutePlaceCommand(const string command)
                       result.retcode, result.comment);
    BufferAccepted(command_id, result.order, result.deal,
                   result.retcode, result.comment, EpochMilliseconds());
+}
+
+bool RejectBrokerMarginCap(const string command_id, const ulong retcode,
+                           const string message, const bool alert_enabled)
+{
+   RecordCommandState(command_id, "rejected", 0, 0, retcode, message);
+   BufferRejected(command_id, retcode, message);
+   PrintFormat("SMCExecutionEA: command %s rejected before broker submission: %s",
+               command_id, message);
+   if(alert_enabled)
+      Alert("SMCExecutionEA margin protection: ", message);
+   return false;
+}
+
+bool ValidateBrokerMarginCap(const string command, const string command_id,
+                             const MqlTradeRequest &request)
+{
+   if(!JsonHasKey(command, "brokerMarginCap"))
+      return true;
+
+   string cap_json;
+   if(!JsonObject(command, "brokerMarginCap", cap_json))
+      return RejectBrokerMarginCap(
+         command_id, 0,
+         "Invalid brokerMarginCap: expected a non-null object", false);
+
+   string basis;
+   string basis_points_text;
+   bool alert_enabled = false;
+   if(!JsonString(cap_json, "basis", basis) ||
+      !JsonNumber(cap_json, "basisPoints", basis_points_text) ||
+      !JsonBoolean(cap_json, "alert", alert_enabled) ||
+      !IsUnsignedIntegerText(basis_points_text))
+   {
+      return RejectBrokerMarginCap(
+         command_id, 0,
+         "Invalid brokerMarginCap: basis, integer basisPoints, and alert are required",
+         false);
+   }
+
+   long basis_points = StringToInteger(basis_points_text);
+   if((basis != "equity" && basis != "balance") ||
+      basis_points < 1 || basis_points > 10000)
+   {
+      return RejectBrokerMarginCap(
+         command_id, 0,
+         "Invalid brokerMarginCap: basis must be equity or balance and basisPoints must be 1..10000",
+         alert_enabled);
+   }
+
+   double basis_value = basis == "equity"
+      ? AccountInfoDouble(ACCOUNT_EQUITY)
+      : AccountInfoDouble(ACCOUNT_BALANCE);
+   string currency = AccountInfoString(ACCOUNT_CURRENCY);
+   if(!MathIsValidNumber(basis_value) || basis_value <= 0)
+   {
+      string message = StringFormat(
+         "Broker margin cap cannot be evaluated: orderMargin=unavailable, basis=%s %s %s, cap=%d bps",
+         basis, DecimalText(basis_value), currency, basis_points);
+      return RejectBrokerMarginCap(command_id, 0, message, alert_enabled);
+   }
+
+   double order_margin = 0;
+   ResetLastError();
+   if(!OrderCalcMargin(request.type, request.symbol, request.volume,
+                       request.price, order_margin) ||
+      !MathIsValidNumber(order_margin) || order_margin < 0)
+   {
+      ulong margin_error = (ulong)GetLastError();
+      string message = StringFormat(
+         "Broker margin cap calculation failed: orderMargin=unavailable, basis=%s %s %s, cap=%d bps, symbol=%s, volume=%s, error=%I64u",
+         basis, DecimalText(basis_value), currency, basis_points,
+         request.symbol, DecimalText(request.volume), margin_error);
+      return RejectBrokerMarginCap(
+         command_id, margin_error, message, alert_enabled);
+   }
+
+   double allowed_margin = basis_value * (double)basis_points / 10000.0;
+   double usage_bps = order_margin / basis_value * 10000.0;
+   if(order_margin > allowed_margin + 0.00000001)
+   {
+      string message = StringFormat(
+         "Broker margin cap exceeded: orderMargin=%s %s, basis=%s %s %s, allowedMargin=%s %s, usage=%s bps, cap=%d bps",
+         DecimalText(order_margin), currency, basis,
+         DecimalText(basis_value), currency, DecimalText(allowed_margin),
+         currency, DecimalText(usage_bps), basis_points);
+      return RejectBrokerMarginCap(command_id, 0, message, alert_enabled);
+   }
+   return true;
 }
 
 bool ValidateDirectCommand(const string command, string &command_id,
@@ -741,12 +1014,9 @@ void FlushPortfolioSnapshot()
 {
    string positions_json = PositionSnapshotsJson();
    string pending_orders_json = PendingOrderSnapshotsJson();
-   bool portfolio_complete =
-      PositionsTotal() <= MAX_PORTFOLIO_ITEMS_PER_HEARTBEAT &&
-      OrdersTotal() <= MAX_PORTFOLIO_ITEMS_PER_HEARTBEAT;
    int status = PostEventBatch(
       "portfolio sync", "[]", positions_json, pending_orders_json,
-      portfolio_complete, "[]");
+      true, "[]");
    if(status == 401)
       return;
    if(status < 200 || status >= 300)
@@ -761,25 +1031,34 @@ void FlushPortfolioSnapshot()
    g_next_portfolio_retry_at = 0;
 }
 
-void FlushBufferedEvents()
+void FlushBufferedEventsWithPortfolio()
 {
    int event_count = ArraySize(g_events);
    if(event_count == 0)
       return;
+   string positions_json = PositionSnapshotsJson();
+   string pending_orders_json = PendingOrderSnapshotsJson();
    int status = PostEventBatch(
-      "command event sync", "[]", "[]", "[]", false,
+      "transaction and portfolio sync", "[]", positions_json,
+      pending_orders_json, true,
       BufferedEventsJson());
    if(status == 401)
       return;
    if(status < 200 || status >= 300)
    {
+      g_portfolio_failure_count++;
       g_event_failure_count++;
+      g_next_portfolio_retry_at =
+         GetTickCount64() + RetryDelayMs(g_portfolio_failure_count);
       g_next_event_retry_at =
          GetTickCount64() + RetryDelayMs(g_event_failure_count);
       return;
    }
    ArrayResize(g_events, 0);
+   g_last_snapshot_at = GetTickCount64();
+   g_portfolio_failure_count = 0;
    g_event_failure_count = 0;
+   g_next_portfolio_retry_at = 0;
    g_next_event_retry_at = 0;
 }
 
@@ -805,7 +1084,7 @@ void FlushInstrumentSnapshots()
 string PositionSnapshotsJson()
 {
    string output = "[";
-   int total = MathMin(PositionsTotal(), MAX_PORTFOLIO_ITEMS_PER_HEARTBEAT);
+   int total = PositionsTotal();
    int appended = 0;
    ulong observed_at = EpochMilliseconds();
    for(int index = 0; index < total; index++)
@@ -854,7 +1133,7 @@ string PositionSnapshotsJson()
 string PendingOrderSnapshotsJson()
 {
    string output = "[";
-   int total = MathMin(OrdersTotal(), MAX_PORTFOLIO_ITEMS_PER_HEARTBEAT);
+   int total = OrdersTotal();
    int appended = 0;
    ulong observed_at = EpochMilliseconds();
    for(int index = 0; index < total; index++)
@@ -1556,6 +1835,97 @@ bool JsonNumber(const string json, const string key, string &value)
    return true;
 }
 
+bool JsonHasKey(const string json, const string key)
+{
+   return StringFind(json, "\"" + key + "\"") >= 0;
+}
+
+bool JsonObject(const string json, const string key, string &value)
+{
+   int key_at = StringFind(json, "\"" + key + "\"");
+   if(key_at < 0)
+      return false;
+   int colon = StringFind(json, ":", key_at + StringLen(key) + 2);
+   if(colon < 0)
+      return false;
+   int start = colon + 1;
+   while(start < StringLen(json) &&
+         StringFind(" \r\n\t", StringSubstr(json, start, 1)) >= 0)
+      start++;
+   if(start >= StringLen(json) || StringSubstr(json, start, 1) != "{")
+      return false;
+
+   int depth = 0;
+   bool quoted = false;
+   bool escaped = false;
+   for(int index = start; index < StringLen(json); index++)
+   {
+      ushort character = StringGetCharacter(json, index);
+      if(quoted)
+      {
+         if(escaped)
+            escaped = false;
+         else if(character == '\\')
+            escaped = true;
+         else if(character == '"')
+            quoted = false;
+         continue;
+      }
+      if(character == '"')
+         quoted = true;
+      else if(character == '{')
+         depth++;
+      else if(character == '}')
+      {
+         depth--;
+         if(depth == 0)
+         {
+            value = StringSubstr(json, start, index - start + 1);
+            return true;
+         }
+      }
+   }
+   return false;
+}
+
+bool JsonBoolean(const string json, const string key, bool &value)
+{
+   int key_at = StringFind(json, "\"" + key + "\"");
+   if(key_at < 0)
+      return false;
+   int colon = StringFind(json, ":", key_at + StringLen(key) + 2);
+   if(colon < 0)
+      return false;
+   int start = colon + 1;
+   while(start < StringLen(json) &&
+         StringFind(" \r\n\t", StringSubstr(json, start, 1)) >= 0)
+      start++;
+   if(StringSubstr(json, start, 4) == "true")
+   {
+      value = true;
+      return true;
+   }
+   if(StringSubstr(json, start, 5) == "false")
+   {
+      value = false;
+      return true;
+   }
+   return false;
+}
+
+bool IsUnsignedIntegerText(const string value)
+{
+   if(StringLen(value) == 0)
+      return false;
+   for(int index = 0; index < StringLen(value); index++)
+   {
+      ushort character = StringGetCharacter(value, index);
+      if(character < '0' || character > '9')
+         return false;
+   }
+   return true;
+}
+
 string JsonEscape(string value)
 {
    StringReplace(value, "\\", "\\\\");
@@ -1569,6 +1939,23 @@ string JsonEscape(string value)
 string JsonNullableUlong(const ulong value)
 {
    return value == 0 ? "null" : "\"" + IntegerToString((long)value) + "\"";
+}
+
+string JsonNullableNumber(const ulong value)
+{
+   return value == 0 ? "null" : IntegerToString((long)value);
+}
+
+string JsonNullableString(const string value)
+{
+   return value == "" ? "null" : "\"" + JsonEscape(value) + "\"";
+}
+
+string JsonDecimal(const double value)
+{
+   return !MathIsValidNumber(value)
+      ? "null"
+      : "\"" + DecimalText(value) + "\"";
 }
 
 ulong EpochMilliseconds()

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::env;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -12,14 +12,18 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use execution_adapters::{AdapterError, EaCommandQueue};
 use execution_domain::{
-    AccountId, AccountMode, AccountStatus, CancelOrderCommand, ClosePositionCommand,
-    CopyAllocation, CopyTarget, EXECUTION_PROTOCOL_VERSION, EaAccountSnapshot, EaCommand, EaEvent,
+    AccountId, AccountMode, AccountStatus, BrokerMarginCap, CancelOrderCommand,
+    ClosePositionCommand, ContinuousCopyConfig, ContinuousCopyTargetConfig, CopyAllocation,
+    CopyGroupDefinition, CopyGroupId, CopyGroupRuntimeStatus, CopyGroupWriteRequest,
+    CopyProtectionConfig, CopyTarget, CopyTargetDefinition, CopyTargetRuntimeStatus,
+    CopyTargetWriteRequest, EXECUTION_PROTOCOL_VERSION, EaAccountSnapshot, EaCommand, EaEvent,
     EaEventBatch, EaInstrumentSnapshot, EaPendingOrderSnapshot, EaPositionSnapshot,
     EaSessionRequest, EaSessionResponse, ExecutionAccount, IdempotencyKey, InstrumentSpec,
-    ModifyPendingOrderCommand, ModifyPositionCommand, OrderIntent, PropRiskActions,
-    PropRiskEvaluation, PropRiskEvaluationInput, PropRiskReason, PropRiskRules, PropRiskStatus,
-    RiskPolicy, RouteRejectCode, RouteTargetContext, RouteWarning, RoutedOrder, SessionId, Side,
-    TargetRouteResult, VenueKind, evaluate_prop_risk, prop_risk_money,
+    ModifyPendingOrderCommand, ModifyPositionCommand, OrderIntent, OrderKind, OrderSizing,
+    PropRiskActions, PropRiskEvaluation, PropRiskEvaluationInput, PropRiskReason, PropRiskRules,
+    PropRiskStatus, QuantityUnit, RiskPolicy, RouteRejectCode, RouteTargetContext, RouteWarning,
+    RoutedOrder, SessionId, Side, TargetRouteResult, VenueKind, evaluate_prop_risk,
+    prop_risk_money,
 };
 use execution_engine::route_order;
 use rust_decimal::Decimal;
@@ -41,6 +45,10 @@ mod sqlx {
     }
 }
 
+mod copier;
+
+use copier::{PortfolioChange, diff_portfolio};
+
 const DEFAULT_BIND: &str = "127.0.0.1:8790";
 const DEFAULT_ADMIN_BIND: &str = "127.0.0.1:8791";
 const SESSION_TTL: Duration = Duration::from_secs(15 * 60);
@@ -55,7 +63,7 @@ const DEFERRED_ORDER_TTL: Duration = Duration::from_secs(5 * 60);
 const DEFERRED_EXPIRY_SWEEP_INTERVAL: Duration = Duration::from_secs(5);
 const MAX_DEFERRED_ACTIVATIONS_PER_EVENT: usize = 16;
 const EA_POLL_FRESHNESS: Duration = Duration::from_secs(15);
-const MIN_SUPPORTED_EA_VERSION: (u32, u32, u32) = (1, 24, 0);
+const MIN_SUPPORTED_EA_VERSION: (u32, u32, u32) = (1, 25, 0);
 const DEFAULT_PAIRING_TTL: Duration = Duration::from_secs(5 * 60);
 const MAX_PAIRING_TTL: Duration = Duration::from_secs(10 * 60);
 const MAX_ACTIVE_PAIRING_TOKENS_PER_OWNER: usize = 5;
@@ -520,6 +528,110 @@ struct AdminOrderResponse {
     targets: Vec<AdminTargetSubmission>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CopierWorkPayload {
+    change: PortfolioChange,
+    #[serde(default)]
+    source_account_id: Option<AccountId>,
+    group_config: ContinuousCopyConfig,
+    target_config: ContinuousCopyTargetConfig,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    target_leg: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    phase: Option<String>,
+}
+
+#[derive(Debug)]
+struct CopierWorkError {
+    code: String,
+    message: String,
+    retryable: bool,
+}
+
+impl CopierWorkError {
+    fn retryable(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            message: message.into(),
+            retryable: true,
+        }
+    }
+
+    fn permanent(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            message: message.into(),
+            retryable: false,
+        }
+    }
+
+    fn api(error: ApiError) -> Self {
+        let retryable = error.status.is_server_error()
+            || error.status == StatusCode::TOO_MANY_REQUESTS
+            || error.status == StatusCode::SERVICE_UNAVAILABLE;
+        Self {
+            code: error.body.code.into(),
+            message: error.body.message,
+            retryable,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CopyGroupQuery {
+    owner_id: String,
+    #[serde(default)]
+    group_id: Option<CopyGroupId>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CopyGroupUpsertRequest {
+    owner_id: String,
+    #[serde(default)]
+    group_id: Option<CopyGroupId>,
+    group: CopyGroupWriteRequest,
+    targets: Vec<CopyTargetWriteRequest>,
+    #[serde(default, skip_serializing)]
+    authorization_token: Option<String>,
+    #[serde(default, skip_serializing)]
+    authorization_session_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CopyGroupActionRequest {
+    owner_id: String,
+    group_id: CopyGroupId,
+    expected_revision: u64,
+    action: CopyGroupAction,
+    #[serde(default, skip_serializing)]
+    authorization_token: Option<String>,
+    #[serde(default, skip_serializing)]
+    authorization_session_id: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum CopyGroupAction {
+    Pause,
+    Resume,
+    Reconcile,
+    Archive,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CopyGroupView {
+    group: CopyGroupDefinition,
+    targets: Vec<CopyTargetDefinition>,
+    pending_work: u64,
+    unresolved_errors: u64,
+    active_links: u64,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(
     tag = "status",
@@ -617,6 +729,11 @@ async fn main() {
         )
         .route("/v1/admin/instruments", get(account_instruments))
         .route("/v1/admin/symbol-mappings", post(upsert_symbol_mapping))
+        .route(
+            "/v1/admin/copy-groups",
+            get(list_copy_groups).post(upsert_copy_group),
+        )
+        .route("/v1/admin/copy-groups/actions", post(copy_group_action))
         .route("/v1/admin/pairing-tokens", post(issue_pairing_token))
         .route("/v1/admin/accounts/disconnect", post(disconnect_account))
         .route("/v1/admin/accounts/remove", post(remove_account))
@@ -887,6 +1004,61 @@ impl GatewayState {
                 ));
             }
 
+            let mut affected_copy_group_ids = Vec::new();
+            if remove {
+                sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+                    .bind(format!("continuous-copier-owner:{owner_uuid}"))
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(|error| ApiError::database("lock copier account removal", error))?;
+                affected_copy_group_ids = sqlx::query_scalar::<_, Uuid>(
+                    r#"
+                    SELECT groups.id
+                    FROM execution_copy_groups groups
+                    WHERE groups.user_id = $1
+                      AND (
+                          groups.source_account_id = $2 OR
+                          EXISTS (
+                              SELECT 1
+                              FROM execution_copy_targets targets
+                              WHERE targets.user_id = groups.user_id
+                                AND targets.group_id = groups.id
+                                AND targets.account_id = $2
+                          )
+                      )
+                    ORDER BY groups.id
+                    FOR UPDATE
+                    "#,
+                )
+                .bind(owner_uuid)
+                .bind(account_id.as_str())
+                .fetch_all(&mut *transaction)
+                .await
+                .map_err(|error| ApiError::database("lock account copier groups", error))?;
+                if !affected_copy_group_ids.is_empty() {
+                    let live_link_count = sqlx::query_scalar::<_, i64>(
+                        r#"
+                        SELECT count(*)
+                        FROM execution_copy_links
+                        WHERE user_id = $1 AND group_id = ANY($2)
+                          AND lifecycle_status NOT IN ('closed', 'cancelled')
+                        "#,
+                    )
+                    .bind(owner_uuid)
+                    .bind(&affected_copy_group_ids)
+                    .fetch_one(&mut *transaction)
+                    .await
+                    .map_err(|error| ApiError::database("check account copier links", error))?;
+                    if live_link_count > 0 {
+                        return Err(ApiError::new(
+                            StatusCode::CONFLICT,
+                            "COPY_GROUP_DRAIN_REQUIRED",
+                            "the MT5 account cannot be removed while a copier group still has open, pending, closing, orphaned, or error links",
+                        ));
+                    }
+                }
+            }
+
             sqlx::query(
                 r#"
                 UPDATE execution_ea_sessions
@@ -957,21 +1129,113 @@ impl GatewayState {
 
             if remove {
                 sqlx::query(
-                    "DELETE FROM execution_copy_groups WHERE user_id = $1 AND source_account_id = $2",
+                    r#"
+                    UPDATE execution_copy_groups
+                    SET enabled = false,
+                        runtime_status = 'inactive',
+                        status_message = 'Source account removed',
+                        revision = revision + 1,
+                        applied_revision = revision + 1,
+                        updated_at = now()
+                    WHERE user_id = $1 AND source_account_id = $2
+                    "#,
                 )
                 .bind(owner_uuid)
                 .bind(account_id.as_str())
                 .execute(&mut *transaction)
                 .await
-                .map_err(|error| ApiError::database("remove source copy routes", error))?;
+                .map_err(|error| ApiError::database("disable source copier groups", error))?;
                 sqlx::query(
-                    "DELETE FROM execution_copy_targets WHERE user_id = $1 AND account_id = $2",
+                    r#"
+                    UPDATE execution_copy_targets targets
+                    SET enabled = CASE WHEN targets.account_id = $2 THEN false ELSE targets.enabled END,
+                        runtime_status = 'inactive',
+                        status_message = CASE
+                            WHEN targets.account_id = $2 THEN 'Target account removed'
+                            ELSE 'Source account removed'
+                        END,
+                        revision = targets.revision + 1,
+                        applied_revision = targets.revision + 1,
+                        updated_at = now()
+                    FROM execution_copy_groups groups
+                    WHERE targets.user_id = $1
+                      AND groups.user_id = targets.user_id
+                      AND groups.id = targets.group_id
+                      AND (
+                          targets.account_id = $2 OR
+                          groups.source_account_id = $2
+                      )
+                    "#,
                 )
                 .bind(owner_uuid)
                 .bind(account_id.as_str())
                 .execute(&mut *transaction)
                 .await
-                .map_err(|error| ApiError::database("remove target copy routes", error))?;
+                .map_err(|error| ApiError::database("disable account copier targets", error))?;
+                sqlx::query(
+                    r#"
+                    UPDATE execution_copy_groups groups
+                    SET enabled = false,
+                        runtime_status = 'inactive',
+                        status_message = 'No enabled copier targets remain',
+                        revision = groups.revision + 1,
+                        applied_revision = groups.revision + 1,
+                        updated_at = now()
+                    WHERE groups.user_id = $1 AND groups.id = ANY($2)
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM execution_copy_targets targets
+                          WHERE targets.user_id = groups.user_id
+                            AND targets.group_id = groups.id
+                            AND targets.enabled = true
+                      )
+                    "#,
+                )
+                .bind(owner_uuid)
+                .bind(&affected_copy_group_ids)
+                .execute(&mut *transaction)
+                .await
+                .map_err(|error| ApiError::database("disable empty copier groups", error))?;
+                sqlx::query(
+                    r#"
+                    WITH superseded_work AS (
+                        UPDATE execution_copy_work_items work
+                        SET status = 'superseded',
+                            completed_at = COALESCE(completed_at, now()),
+                            last_error = 'superseded because an MT5 account was removed',
+                            lease_owner = NULL,
+                            lease_expires_at = NULL,
+                            updated_at = now()
+                        FROM execution_copy_groups groups
+                        WHERE work.user_id = $1
+                          AND groups.user_id = work.user_id
+                          AND groups.id = work.group_id
+                          AND work.status IN ('pending', 'leased', 'retry')
+                          AND (
+                              groups.source_account_id = $2 OR
+                              work.target_account_id = $2
+                          )
+                        RETURNING work.id
+                    )
+                    UPDATE execution_copy_command_outbox outbox
+                    SET status = 'dead_letter',
+                        last_error = 'superseded because an MT5 account was removed',
+                        lease_owner = NULL,
+                        lease_expires_at = NULL,
+                        updated_at = now()
+                    FROM superseded_work
+                    WHERE outbox.user_id = $1
+                      AND outbox.work_item_id = superseded_work.id
+                      AND outbox.status NOT IN ('published', 'acknowledged')
+                    "#,
+                )
+                .bind(owner_uuid)
+                .bind(account_id.as_str())
+                .execute(&mut *transaction)
+                .await
+                .map_err(|error| {
+                    ApiError::database("supersede removed-account copier work", error)
+                })?;
                 for statement in [
                     "DELETE FROM execution_positions WHERE user_id = $1 AND account_id = $2",
                     "DELETE FROM execution_pending_orders WHERE user_id = $1 AND account_id = $2",
@@ -2188,6 +2452,31 @@ impl GatewayState {
             .await
             .map_err(|error| ApiError::database("begin EA event transaction", error))?;
 
+        if portfolio_snapshot_complete {
+            self.stage_continuous_copy_changes(
+                &mut transaction,
+                session,
+                positions,
+                pending_orders,
+                events,
+            )
+            .await?;
+            self.stage_continuous_copy_protection(
+                &mut transaction,
+                session,
+                instruments,
+                positions,
+                pending_orders,
+            )
+            .await?;
+            self.stage_due_copier_reconciliations(
+                &mut transaction,
+                owner_uuid,
+                session.account_id.as_str(),
+            )
+            .await?;
+        }
+
         for instrument in instruments {
             validate_instrument_snapshot(instrument)?;
             let snapshot = serde_json::to_value(&instrument.spec)
@@ -2333,6 +2622,23 @@ impl GatewayState {
             .await
             .map_err(|error| ApiError::database("reconcile completed orders", error))?;
         }
+
+        // MT5 reports the broker order ticket in CommandAccepted even for a
+        // market order. Position lifecycle commands require the distinct
+        // broker position ticket carried by tradeTransaction telemetry.
+        // Build the batch correlation up front so event ordering cannot make
+        // a market link bind to the wrong identifier.
+        let batch_position_by_order = events
+            .iter()
+            .filter_map(|event| match event {
+                EaEvent::TradeTransaction {
+                    broker_order_id: Some(order_id),
+                    broker_position_id: Some(position_id),
+                    ..
+                } => Some((order_id.as_str(), position_id.as_str())),
+                _ => None,
+            })
+            .collect::<HashMap<_, _>>();
 
         for event in events {
             let (
@@ -2482,6 +2788,214 @@ impl GatewayState {
                     .await
                     .map_err(|error| ApiError::database("update parent command outcome", error))?;
                 }
+
+                let broker_position_id = if terminal_status == "accepted" {
+                    if let Some(position_id) = broker_order_id
+                        .and_then(|order_id| batch_position_by_order.get(order_id).copied())
+                    {
+                        Some(position_id.to_owned())
+                    } else if let Some(order_id) = broker_order_id {
+                        // The transaction can arrive in an earlier heartbeat
+                        // than the command acknowledgement. Reuse its durable
+                        // event record instead of ever treating an order
+                        // ticket as a position ticket.
+                        sqlx::query_scalar::<_, String>(
+                            r#"
+                            SELECT payload->>'brokerPositionId'
+                            FROM execution_events
+                            WHERE user_id = $1 AND account_id = $2
+                              AND event_type = 'trade.transaction'
+                              AND payload->>'brokerOrderId' = $3
+                              AND NULLIF(payload->>'brokerPositionId', '') IS NOT NULL
+                            ORDER BY occurred_at DESC, id DESC
+                            LIMIT 1
+                            "#,
+                        )
+                        .bind(owner_uuid)
+                        .bind(session.account_id.as_str())
+                        .bind(order_id)
+                        .fetch_optional(&mut *transaction)
+                        .await
+                        .map_err(|error| {
+                            ApiError::database("resolve copier broker position", error)
+                        })?
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                // Continuous-copy outbox/link acknowledgement is coupled to
+                // the same EA event transaction. This makes a broker ack
+                // replay-safe and binds the broker ticket to the durable leg
+                // before a later partial-close or protection event arrives.
+                sqlx::query(
+                    r#"
+                    UPDATE execution_copy_command_outbox outbox
+                    SET status = CASE
+                            WHEN $3 = 'accepted' THEN 'acknowledged'
+                            WHEN $3 = 'unknown' THEN 'retry'
+                            ELSE 'dead_letter'
+                        END,
+                        target_command_id = COALESCE(outbox.target_command_id, $2),
+                        acknowledged_at = CASE WHEN $3 = 'accepted' THEN COALESCE(outbox.acknowledged_at, now()) ELSE outbox.acknowledged_at END,
+                        available_at = CASE WHEN $3 = 'unknown' THEN now() + interval '30 seconds' ELSE outbox.available_at END,
+                        last_error = CASE WHEN $3 = 'accepted' THEN NULL ELSE 'EA command outcome: ' || $3 END,
+                        updated_at = now()
+                    WHERE outbox.user_id = $1
+                      AND outbox.target_command_id = $2
+                    "#,
+                )
+                .bind(owner_uuid)
+                .bind(command_id)
+                .bind(terminal_status)
+                .execute(&mut *transaction)
+                .await
+                .map_err(|error| ApiError::database("update copier outbox outcome", error))?;
+                sqlx::query(
+                    r#"
+                    UPDATE execution_copy_links links
+                    SET target_entity_kind = CASE
+                            WHEN $4 = 'accepted'
+                             AND outbox.command_type IN ('place', 'open_market')
+                             AND COALESCE(
+                                 links.target_entity_id,
+                                 CASE
+                                     WHEN COALESCE(
+                                         links.target_entity_kind,
+                                         links.metadata->>'expectedTargetKind'
+                                     ) = 'position' THEN $5
+                                     ELSE $3
+                                 END
+                             ) IS NOT NULL
+                            THEN COALESCE(
+                                links.target_entity_kind,
+                                links.metadata->>'expectedTargetKind'
+                            )
+                            ELSE links.target_entity_kind
+                        END,
+                        target_entity_id = COALESCE(
+                            links.target_entity_id,
+                            CASE
+                                WHEN COALESCE(
+                                    links.target_entity_kind,
+                                    links.metadata->>'expectedTargetKind'
+                                ) = 'position' THEN $5
+                                ELSE $3
+                            END
+                        ),
+                        lifecycle_status = CASE
+                            WHEN $4 <> 'accepted' THEN 'error'
+                            WHEN outbox.command_type IN ('place', 'open_market')
+                             AND COALESCE(
+                                 links.target_entity_id,
+                                 CASE
+                                     WHEN COALESCE(
+                                         links.target_entity_kind,
+                                         links.metadata->>'expectedTargetKind'
+                                     ) = 'position' THEN $5
+                                     ELSE $3
+                                 END
+                             ) IS NOT NULL THEN 'active'
+                            WHEN outbox.command_type = 'close_position' THEN 'closed'
+                            WHEN outbox.command_type = 'cancel_pending' THEN 'cancelled'
+                            ELSE links.lifecycle_status
+                        END,
+                        source_quantity = CASE
+                            WHEN $4 = 'accepted' AND outbox.command_type = 'partial_close'
+                            THEN COALESCE(
+                                NULLIF(outbox.command_payload->>'copierSourceRemaining', '')::numeric,
+                                links.source_quantity
+                            )
+                            ELSE links.source_quantity
+                        END,
+                        target_quantity = CASE
+                            WHEN $4 = 'accepted' AND outbox.command_type = 'partial_close'
+                            THEN COALESCE(
+                                NULLIF(outbox.command_payload->>'copierTargetRemaining', '')::numeric,
+                                links.target_quantity
+                            )
+                            ELSE links.target_quantity
+                        END,
+                        closed_at = CASE
+                            WHEN $4 = 'accepted' AND outbox.command_type IN ('close_position', 'cancel_pending')
+                            THEN COALESCE(links.closed_at, now())
+                            ELSE links.closed_at
+                        END,
+                        last_target_event_id = COALESCE(links.last_target_event_id, $2),
+                        revision = links.revision + 1,
+                        updated_at = now()
+                    FROM execution_copy_command_outbox outbox
+                    WHERE outbox.user_id = $1
+                      AND outbox.target_command_id = $2
+                      AND links.user_id = outbox.user_id
+                      AND links.group_id = outbox.group_id
+                      AND links.target_account_id = outbox.target_account_id
+                      AND (
+                          links.metadata->>'commandId' = $2 OR
+                          links.metadata->>'lastCommandId' = $2
+                      )
+                    "#,
+                )
+                .bind(owner_uuid)
+                .bind(command_id)
+                .bind(broker_order_id)
+                .bind(terminal_status)
+                .bind(broker_position_id.as_deref())
+                .execute(&mut *transaction)
+                .await
+                .map_err(|error| ApiError::database("update copier link outcome", error))?;
+            }
+
+            if let EaEvent::TradeTransaction {
+                broker_order_id: Some(order_id),
+                broker_position_id: Some(position_id),
+                ..
+            } = event
+            {
+                // A trade transaction can arrive after its acknowledgement.
+                // Correlate it through the durable target command so market
+                // links converge even when the two signals cross heartbeats.
+                sqlx::query(
+                    r#"
+                    UPDATE execution_copy_links links
+                    SET target_entity_kind = 'position',
+                        target_entity_id = $4,
+                        lifecycle_status = 'active',
+                        last_target_event_id = COALESCE($5, links.last_target_event_id),
+                        opened_at = COALESCE(links.opened_at, now()),
+                        revision = links.revision + 1,
+                        updated_at = now()
+                    FROM execution_copy_command_outbox outbox
+                    JOIN execution_target_commands commands
+                      ON commands.user_id = outbox.user_id
+                     AND commands.id = outbox.target_command_id
+                    WHERE links.user_id = $1
+                      AND links.target_account_id = $2
+                      AND commands.target_account_id = $2
+                      AND commands.broker_order_id = $3
+                      AND outbox.command_type IN ('place', 'open_market')
+                      AND links.user_id = outbox.user_id
+                      AND links.group_id = outbox.group_id
+                      AND links.target_account_id = outbox.target_account_id
+                      AND links.metadata->>'expectedTargetKind' = 'position'
+                      AND (
+                          links.metadata->>'commandId' = commands.id OR
+                          links.metadata->>'lastCommandId' = commands.id
+                      )
+                      AND links.lifecycle_status NOT IN ('closed', 'cancelled', 'orphaned')
+                      AND links.last_target_event_id IS DISTINCT FROM $5
+                    "#,
+                )
+                .bind(owner_uuid)
+                .bind(session.account_id.as_str())
+                .bind(order_id)
+                .bind(position_id)
+                .bind(event_identity(event))
+                .execute(&mut *transaction)
+                .await
+                .map_err(|error| ApiError::database("correlate copier trade transaction", error))?;
             }
 
             let payload = serde_json::to_value(event)
@@ -2517,7 +3031,3305 @@ impl GatewayState {
         transaction
             .commit()
             .await
-            .map_err(|error| ApiError::database("commit EA events", error))
+            .map_err(|error| ApiError::database("commit EA events", error))?;
+
+        // Drain only after the source snapshot/event transaction is durable. A
+        // failed drain is deliberately retained in the work ledger and retried
+        // by the next heartbeat/reconciliation pass.
+        if portfolio_snapshot_complete || !events.is_empty() {
+            // Apply the lifecycle event first so reconciliation observes links
+            // in their expected `closing`/`pending` state instead of staging a
+            // duplicate repair for the same source transition.
+            if let Err(error) = self.process_continuous_copier_work(owner_uuid).await {
+                warn!(%error.body.message, code = error.body.code, "continuous copier drain deferred");
+            }
+            if let Err(error) = self
+                .process_continuous_copier_reconciliations(owner_uuid)
+                .await
+            {
+                warn!(%error.body.message, code = error.body.code, "continuous copier reconciliation deferred");
+            }
+            // Reconciliation can stage targeted repairs; drain those without
+            // waiting for another EA heartbeat.
+            if let Err(error) = self.process_continuous_copier_work(owner_uuid).await {
+                warn!(%error.body.message, code = error.body.code, "continuous copier repair drain deferred");
+            }
+        }
+        Ok(())
+    }
+
+    async fn stage_continuous_copy_changes(
+        &self,
+        transaction: &mut sqlx_postgres::PgConnection,
+        session: &EaSession,
+        positions: &[EaPositionSnapshot],
+        pending_orders: &[EaPendingOrderSnapshot],
+        events: &[EaEvent],
+    ) -> Result<(), ApiError> {
+        let owner_uuid = parse_owner_id(&session.owner_id)?;
+        let group_rows = sqlx::query(
+            r#"
+            SELECT id, configuration, runtime_status
+            FROM execution_copy_groups
+            WHERE user_id = $1 AND source_account_id = $2 AND enabled = true
+              AND runtime_status <> 'error'
+            ORDER BY id
+            FOR SHARE
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(session.account_id.as_str())
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("load active copier groups", error))?;
+        if group_rows.is_empty() {
+            return Ok(());
+        }
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+            .bind(format!("{}:{}", owner_uuid, session.account_id))
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| ApiError::database("lock copier source snapshot", error))?;
+        let previous_position_rows = sqlx::query(
+            r#"
+            SELECT snapshot FROM execution_positions
+            WHERE user_id = $1 AND account_id = $2
+            ORDER BY broker_position_id
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(session.account_id.as_str())
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("load prior source positions", error))?;
+        let previous_pending_rows = sqlx::query(
+            r#"
+            SELECT snapshot FROM execution_pending_orders
+            WHERE user_id = $1 AND account_id = $2
+            ORDER BY broker_order_id
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(session.account_id.as_str())
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("load prior source pending orders", error))?;
+        let previous_positions = previous_position_rows
+            .into_iter()
+            .map(|row| {
+                row.try_get::<sqlx::types::Json<EaPositionSnapshot>, _>("snapshot")
+                    .map(|value| value.0)
+                    .map_err(|error| ApiError::database("decode prior source position", error))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let previous_pending = previous_pending_rows
+            .into_iter()
+            .map(|row| {
+                row.try_get::<sqlx::types::Json<EaPendingOrderSnapshot>, _>("snapshot")
+                    .map(|value| value.0)
+                    .map_err(|error| ApiError::database("decode prior source pending order", error))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let pending_fill_positions = events
+            .iter()
+            .filter_map(|event| match event {
+                EaEvent::TradeTransaction {
+                    broker_order_id: Some(order_id),
+                    broker_position_id: Some(position_id),
+                    ..
+                } => Some((order_id.clone(), position_id.clone())),
+                _ => None,
+            })
+            .collect::<BTreeMap<_, _>>();
+        let changes = diff_portfolio(
+            &previous_positions,
+            &previous_pending,
+            positions,
+            pending_orders,
+            &pending_fill_positions,
+        );
+        if changes.is_empty() {
+            return Ok(());
+        }
+
+        for group_row in group_rows {
+            let group_id: Uuid = group_row
+                .try_get("id")
+                .map_err(|error| ApiError::database("decode active copier group id", error))?;
+            let group_config = group_row
+                .try_get::<sqlx::types::Json<ContinuousCopyConfig>, _>("configuration")
+                .map(|value| value.0)
+                .unwrap_or_default();
+            let group_runtime_status: String = group_row
+                .try_get("runtime_status")
+                .map_err(|error| ApiError::database("decode copier group runtime status", error))?;
+            let target_rows = sqlx::query(
+                r#"
+                SELECT account_id, configuration
+                FROM execution_copy_targets
+                WHERE user_id = $1 AND group_id = $2 AND enabled = true
+                ORDER BY account_id
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(group_id)
+            .fetch_all(&mut *transaction)
+            .await
+            .map_err(|error| ApiError::database("load active copier targets", error))?;
+            for change in &changes {
+                if !copy_change_allowed(change, &group_config) {
+                    continue;
+                }
+                if group_runtime_status == "paused" && !copy_change_allowed_while_paused(change) {
+                    continue;
+                }
+                let change_json = serde_json::to_value(change)
+                    .map_err(|error| ApiError::internal("serialize copier source change", error))?;
+                let source_payload = serde_json::to_vec(change)
+                    .map_err(|error| ApiError::internal("hash copier source change", error))?;
+                let source_identity = format!(
+                    "{}:{}:{}:{}:{}",
+                    group_id,
+                    session.account_id,
+                    change.kind(),
+                    change.source_resource_id(),
+                    short_hash(&source_payload)
+                );
+                let source_event_id =
+                    format!("snapshot:{}", short_hash(source_identity.as_bytes()));
+                let inbox_id = sqlx::query_scalar::<_, Uuid>(
+                    r#"
+                    INSERT INTO execution_copy_lifecycle_inbox (
+                        user_id, group_id, source_account_id, source_event_id,
+                        event_type, source_entity_kind, source_entity_id,
+                        payload, occurred_at
+                    )
+                    VALUES (
+                        $1, $2, $3, $4, $5, $6, $7, $8,
+                        to_timestamp($9::double precision / 1000.0)
+                    )
+                    ON CONFLICT (user_id, group_id, source_account_id, source_event_id)
+                    DO NOTHING
+                    RETURNING id
+                    "#,
+                )
+                .bind(owner_uuid)
+                .bind(group_id)
+                .bind(session.account_id.as_str())
+                .bind(&source_event_id)
+                .bind(change.kind())
+                .bind(copy_source_entity_kind(change))
+                .bind(change.source_resource_id())
+                .bind(sqlx::types::Json(change_json))
+                .bind(change.observed_at_ms().max(1) as i64)
+                .fetch_optional(&mut *transaction)
+                .await
+                .map_err(|error| ApiError::database("stage copier lifecycle inbox", error))?;
+                let Some(inbox_id) = inbox_id else {
+                    continue;
+                };
+                let operations =
+                    copy_work_operations_for_runtime(change, &group_config, &group_runtime_status);
+                let mut staged_count = 0usize;
+                for target_row in &target_rows {
+                    let target_account_id: String =
+                        target_row.try_get("account_id").map_err(|error| {
+                            ApiError::database("decode active copier target account", error)
+                        })?;
+                    let config_value = target_row
+                        .try_get::<sqlx::types::Json<serde_json::Value>, _>("configuration")
+                        .map_err(|error| {
+                            ApiError::database("decode active copier target config", error)
+                        })?
+                        .0;
+                    let target_config =
+                        serde_json::from_value::<ContinuousCopyTargetConfig>(config_value)
+                            .unwrap_or_else(|_| legacy_copy_target_config(target_row));
+                    self.supersede_unissued_copier_predecessors(
+                        transaction,
+                        owner_uuid,
+                        group_id,
+                        &target_account_id,
+                        change,
+                    )
+                    .await?;
+                    for (operation_index, operation) in operations.iter().enumerate() {
+                        let target_legs = self
+                            .copier_work_target_legs(
+                                transaction,
+                                owner_uuid,
+                                group_id,
+                                &target_account_id,
+                                change,
+                                operation,
+                            )
+                            .await?;
+                        for target_leg in target_legs {
+                            let work_payload = CopierWorkPayload {
+                                change: change.clone(),
+                                source_account_id: Some(session.account_id.clone()),
+                                group_config: group_config.clone(),
+                                target_config: target_config.clone(),
+                                target_leg,
+                                phase: None,
+                            };
+                            let payload = serde_json::to_value(work_payload).map_err(|error| {
+                                ApiError::internal("serialize copier work payload", error)
+                            })?;
+                            let work_identity = format!(
+                                "{}:{}:{}:{}:{}:{:?}",
+                                group_id,
+                                target_account_id,
+                                source_event_id,
+                                operation,
+                                operation_index,
+                                target_leg
+                            );
+                            let idempotency_key =
+                                format!("cpw:{}", short_hash(work_identity.as_bytes()));
+                            let inserted = sqlx::query(
+                                r#"
+                            INSERT INTO execution_copy_work_items (
+                                user_id, group_id, target_account_id, inbox_event_id,
+                                operation, idempotency_key, payload
+                            )
+                            VALUES ($1, $2, $3, $4, $5, $6, $7)
+                            ON CONFLICT (user_id, group_id, target_account_id, idempotency_key)
+                            DO NOTHING
+                            "#,
+                            )
+                            .bind(owner_uuid)
+                            .bind(group_id)
+                            .bind(&target_account_id)
+                            .bind(inbox_id)
+                            .bind(*operation)
+                            .bind(&idempotency_key)
+                            .bind(sqlx::types::Json(payload))
+                            .execute(&mut *transaction)
+                            .await
+                            .map_err(|error| ApiError::database("stage copier work item", error))?;
+                            staged_count += inserted.rows_affected() as usize;
+                        }
+                    }
+                }
+                sqlx::query(
+                    r#"
+                    UPDATE execution_copy_lifecycle_inbox
+                    SET status = $3,
+                        processed_at = now(),
+                        lease_owner = NULL,
+                        lease_expires_at = NULL
+                    WHERE user_id = $1 AND id = $2
+                    "#,
+                )
+                .bind(owner_uuid)
+                .bind(inbox_id)
+                .bind(if staged_count > 0 {
+                    "processed"
+                } else {
+                    "ignored"
+                })
+                .execute(&mut *transaction)
+                .await
+                .map_err(|error| ApiError::database("finalize copier lifecycle inbox", error))?;
+            }
+            sqlx::query(
+                r#"
+                UPDATE execution_copy_groups
+                SET runtime_status = CASE
+                        WHEN runtime_status = 'paused' THEN 'paused'
+                        ELSE 'active'
+                    END,
+                    status_message = CASE
+                        WHEN runtime_status = 'paused' THEN status_message
+                        ELSE NULL
+                    END,
+                    last_event_at = now(),
+                    updated_at = now()
+                WHERE user_id = $1 AND id = $2 AND enabled = true
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(group_id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| ApiError::database("activate copier group runtime", error))?;
+        }
+        Ok(())
+    }
+
+    async fn supersede_unissued_copier_predecessors(
+        &self,
+        transaction: &mut sqlx_postgres::PgConnection,
+        owner_uuid: Uuid,
+        group_id: Uuid,
+        target_account_id: &str,
+        change: &PortfolioChange,
+    ) -> Result<(), ApiError> {
+        let predecessor_operation = match change {
+            PortfolioChange::PositionClosed { .. } => "open_market",
+            PortfolioChange::PendingReplaced { .. }
+            | PortfolioChange::PendingCancelled { .. }
+            | PortfolioChange::PendingFilled { .. } => "place_pending",
+            _ => return Ok(()),
+        };
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+            .bind(format!(
+                "continuous-copier-target:{owner_uuid}:{group_id}:{target_account_id}"
+            ))
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| ApiError::database("lock obsolete copier predecessor", error))?;
+        let reason = format!(
+            "superseded because source lifecycle advanced to {} before durable enqueue",
+            change.kind()
+        );
+        sqlx::query(
+            r#"
+            WITH superseded_work AS (
+                UPDATE execution_copy_work_items work
+                SET status = 'superseded',
+                    completed_at = COALESCE(completed_at, now()),
+                    last_error = $8,
+                    lease_owner = NULL,
+                    lease_expires_at = NULL,
+                    updated_at = now()
+                FROM execution_copy_lifecycle_inbox prior_inbox
+                WHERE work.user_id = $1
+                  AND work.group_id = $2
+                  AND work.target_account_id = $3
+                  AND work.inbox_event_id = prior_inbox.id
+                  AND prior_inbox.user_id = work.user_id
+                  AND prior_inbox.group_id = work.group_id
+                  AND prior_inbox.source_entity_kind = $4
+                  AND prior_inbox.source_entity_id = $5
+                  AND work.operation = $6
+                  AND work.status IN ('pending', 'leased', 'retry')
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM execution_copy_command_outbox issued_outbox
+                      JOIN execution_target_commands issued_command
+                        ON issued_command.user_id = issued_outbox.user_id
+                       AND issued_command.id = COALESCE(
+                           issued_outbox.target_command_id,
+                           issued_outbox.command_payload #>> '{order,commandId}',
+                           issued_outbox.command_payload #>> '{command,commandId}'
+                       )
+                      WHERE issued_outbox.user_id = work.user_id
+                        AND issued_outbox.work_item_id = work.id
+                  )
+                RETURNING work.id
+            ), dead_lettered_outbox AS (
+                UPDATE execution_copy_command_outbox outbox
+                SET status = 'dead_letter',
+                    last_error = $8,
+                    lease_owner = NULL,
+                    lease_expires_at = NULL,
+                    updated_at = now()
+                FROM superseded_work
+                WHERE outbox.user_id = $1
+                  AND outbox.work_item_id = superseded_work.id
+                  AND outbox.status <> 'acknowledged'
+                RETURNING outbox.work_item_id
+            )
+            UPDATE execution_copy_links links
+            SET lifecycle_status = 'cancelled',
+                closed_at = COALESCE(closed_at, now()),
+                last_source_event_id = $7,
+                metadata = metadata || jsonb_build_object('supersededReason', $8),
+                revision = revision + 1,
+                updated_at = now()
+            FROM superseded_work
+            WHERE links.user_id = $1
+              AND links.group_id = $2
+              AND links.target_account_id = $3
+              AND links.metadata->>'workItemId' = superseded_work.id::text
+              AND links.lifecycle_status = 'pending'
+              AND links.target_entity_id IS NULL
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_id)
+        .bind(target_account_id)
+        .bind(copy_source_entity_kind(change))
+        .bind(change.source_resource_id())
+        .bind(predecessor_operation)
+        .bind(change.kind())
+        .bind(&reason)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("supersede obsolete copier predecessor", error))?;
+        Ok(())
+    }
+
+    async fn copier_work_target_legs(
+        &self,
+        transaction: &mut sqlx_postgres::PgConnection,
+        owner_uuid: Uuid,
+        group_id: Uuid,
+        target_account_id: &str,
+        change: &PortfolioChange,
+        operation: &str,
+    ) -> Result<Vec<Option<i32>>, ApiError> {
+        if !matches!(
+            operation,
+            "modify_position"
+                | "modify_pending"
+                | "partial_close"
+                | "close_position"
+                | "cancel_pending"
+                | "reconcile"
+        ) {
+            return Ok(vec![None]);
+        }
+        let legs = sqlx::query_scalar::<_, i32>(if operation == "partial_close" {
+            r#"
+            SELECT target_leg
+            FROM execution_copy_links
+            WHERE user_id = $1 AND group_id = $2 AND target_account_id = $3
+              AND source_entity_kind = $4 AND source_entity_id = $5
+              AND lifecycle_status NOT IN ('closed', 'cancelled', 'orphaned')
+            ORDER BY target_leg
+            "#
+        } else {
+            // Netting accounts can have several source contribution legs
+            // pointing at one broker ticket. A full close/cancel/modify must
+            // be issued once per distinct target entity, while hedging
+            // accounts still receive one command for every distinct ticket.
+            r#"
+            SELECT min(target_leg) AS target_leg
+            FROM execution_copy_links
+            WHERE user_id = $1 AND group_id = $2 AND target_account_id = $3
+              AND source_entity_kind = $4 AND source_entity_id = $5
+              AND lifecycle_status NOT IN ('closed', 'cancelled', 'orphaned')
+            GROUP BY CASE
+                WHEN target_entity_id IS NULL THEN '__leg__:' || target_leg::text
+                ELSE COALESCE(target_entity_kind, '') || ':' || target_entity_id
+            END
+            ORDER BY min(target_leg)
+            "#
+        })
+        .bind(owner_uuid)
+        .bind(group_id)
+        .bind(target_account_id)
+        .bind(copy_source_entity_kind(change))
+        .bind(change.source_resource_id())
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("load copier target legs", error))?;
+        if legs.is_empty() {
+            Ok(vec![None])
+        } else {
+            Ok(legs.into_iter().map(Some).collect())
+        }
+    }
+
+    async fn stage_continuous_copy_protection(
+        &self,
+        transaction: &mut sqlx_postgres::PgConnection,
+        session: &EaSession,
+        instruments: &[EaInstrumentSnapshot],
+        positions: &[EaPositionSnapshot],
+        pending_orders: &[EaPendingOrderSnapshot],
+    ) -> Result<(), ApiError> {
+        let owner_uuid = parse_owner_id(&session.owner_id)?;
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                links.group_id, links.source_account_id,
+                links.source_entity_id,
+                links.target_entity_kind, links.target_entity_id,
+                links.target_leg,
+                groups.configuration AS group_configuration,
+                targets.configuration AS target_configuration,
+                targets.allocation_mode, targets.multiplier,
+                targets.risk_basis_points, targets.max_quantity,
+                targets.fixed_quantity, targets.allocation_unit,
+                accounts.balance, accounts.equity
+            FROM execution_copy_links links
+            JOIN execution_copy_groups groups
+              ON groups.user_id = links.user_id AND groups.id = links.group_id
+            JOIN execution_copy_targets targets
+              ON targets.user_id = links.user_id
+             AND targets.group_id = links.group_id
+             AND targets.account_id = links.target_account_id
+            JOIN execution_accounts accounts
+              ON accounts.user_id = links.user_id AND accounts.id = links.target_account_id
+            WHERE links.user_id = $1 AND links.target_account_id = $2
+              AND links.lifecycle_status IN ('pending', 'active')
+              AND links.target_entity_id IS NOT NULL
+              AND groups.enabled = true
+              AND groups.runtime_status <> 'error'
+              AND targets.enabled = true
+            ORDER BY links.group_id, links.source_entity_kind,
+                     links.source_entity_id, links.target_leg
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(session.account_id.as_str())
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("load target-local copier protections", error))?;
+        if rows.is_empty() {
+            return Ok(());
+        }
+
+        let mut instrument_specs = HashMap::<String, InstrumentSpec>::new();
+        let persisted_instruments = sqlx::query(
+            r#"
+            SELECT venue_symbol, snapshot
+            FROM execution_instruments
+            WHERE user_id = $1 AND account_id = $2
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(session.account_id.as_str())
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("load target protection instruments", error))?;
+        for row in persisted_instruments {
+            let venue_symbol: String = row.try_get("venue_symbol").map_err(|error| {
+                ApiError::database("decode target protection instrument symbol", error)
+            })?;
+            let spec = row
+                .try_get::<sqlx::types::Json<InstrumentSpec>, _>("snapshot")
+                .map_err(|error| ApiError::database("decode target protection instrument", error))?
+                .0;
+            instrument_specs.insert(venue_symbol.to_uppercase(), spec);
+        }
+        for instrument in instruments {
+            instrument_specs.insert(
+                instrument.spec.venue_symbol.to_uppercase(),
+                instrument.spec.clone(),
+            );
+        }
+        let position_by_id = positions
+            .iter()
+            .map(|position| (position.broker_position_id.as_str(), position))
+            .collect::<HashMap<_, _>>();
+        let pending_by_id = pending_orders
+            .iter()
+            .map(|order| (order.broker_order_id.as_str(), order))
+            .collect::<HashMap<_, _>>();
+
+        for row in rows {
+            let group_id: Uuid = row
+                .try_get("group_id")
+                .map_err(|error| ApiError::database("decode protection group", error))?;
+            let source_account_id: String = row
+                .try_get("source_account_id")
+                .map_err(|error| ApiError::database("decode protection source account", error))?;
+            let source_entity_id: String = row
+                .try_get("source_entity_id")
+                .map_err(|error| ApiError::database("decode protection source id", error))?;
+            let target_entity_kind: String = row
+                .try_get("target_entity_kind")
+                .map_err(|error| ApiError::database("decode protection target kind", error))?;
+            let target_entity_id: String = row
+                .try_get("target_entity_id")
+                .map_err(|error| ApiError::database("decode protection target id", error))?;
+            let target_leg: i32 = row
+                .try_get("target_leg")
+                .map_err(|error| ApiError::database("decode protection target leg", error))?;
+            let group_config = row
+                .try_get::<sqlx::types::Json<ContinuousCopyConfig>, _>("group_configuration")
+                .map(|value| value.0)
+                .unwrap_or_default();
+            let target_config_value = row
+                .try_get::<sqlx::types::Json<serde_json::Value>, _>("target_configuration")
+                .map_err(|error| {
+                    ApiError::database("decode target protection configuration", error)
+                })?
+                .0;
+            let target_config =
+                serde_json::from_value::<ContinuousCopyTargetConfig>(target_config_value)
+                    .unwrap_or_else(|_| legacy_copy_target_config(&row));
+            let balance = row
+                .try_get::<Option<Decimal>, _>("balance")
+                .map_err(|error| ApiError::database("decode protection balance", error))?;
+            let equity = row
+                .try_get::<Option<Decimal>, _>("equity")
+                .map_err(|error| ApiError::database("decode protection equity", error))?;
+            let drawdown_breached = target_config
+                .protection
+                .max_drawdown_basis_points
+                .is_some_and(|limit| copier_drawdown_breached(balance, equity, limit));
+
+            let generated = match target_entity_kind.as_str() {
+                "position" => {
+                    let Some(position) = position_by_id.get(target_entity_id.as_str()) else {
+                        continue;
+                    };
+                    let mut source_position = (*position).clone();
+                    source_position.broker_position_id = source_entity_id.clone();
+                    if drawdown_breached {
+                        Some((
+                            PortfolioChange::PositionClosed {
+                                previous: source_position,
+                            },
+                            "close_position",
+                            "max_drawdown",
+                        ))
+                    } else {
+                        let spec = instrument_specs.get(&position.venue_symbol.to_uppercase());
+                        let Some(desired_stop) = spec.and_then(|spec| {
+                            copier_target_protection_stop(
+                                position,
+                                spec.price_tick,
+                                &target_config.protection,
+                            )
+                        }) else {
+                            continue;
+                        };
+                        let previous = source_position.clone();
+                        source_position.stop_loss = Some(desired_stop);
+                        Some((
+                            PortfolioChange::PositionProtectionChanged {
+                                previous,
+                                current: source_position,
+                            },
+                            "modify_position",
+                            "target_protection",
+                        ))
+                    }
+                }
+                "pending_order" if drawdown_breached => {
+                    let Some(order) = pending_by_id.get(target_entity_id.as_str()) else {
+                        continue;
+                    };
+                    let mut source_order = (*order).clone();
+                    source_order.broker_order_id = source_entity_id.clone();
+                    Some((
+                        PortfolioChange::PendingCancelled {
+                            previous: source_order,
+                        },
+                        "cancel_pending",
+                        "max_drawdown",
+                    ))
+                }
+                _ => None,
+            };
+            let Some((change, operation, phase)) = generated else {
+                continue;
+            };
+            self.stage_generated_copier_work(
+                transaction,
+                owner_uuid,
+                group_id,
+                &source_account_id,
+                session.account_id.as_str(),
+                target_leg,
+                change,
+                operation,
+                phase,
+                group_config,
+                target_config,
+            )
+            .await?;
+            if drawdown_breached {
+                sqlx::query(
+                    r#"
+                    UPDATE execution_copy_targets
+                    SET runtime_status = 'degraded',
+                        status_message = 'Target maximum drawdown protection is reducing exposure',
+                        updated_at = now()
+                    WHERE user_id = $1 AND group_id = $2 AND account_id = $3
+                    "#,
+                )
+                .bind(owner_uuid)
+                .bind(group_id)
+                .bind(session.account_id.as_str())
+                .execute(&mut *transaction)
+                .await
+                .map_err(|error| ApiError::database("mark target drawdown protection", error))?;
+            }
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn stage_generated_copier_work(
+        &self,
+        transaction: &mut sqlx_postgres::PgConnection,
+        owner_uuid: Uuid,
+        group_id: Uuid,
+        source_account_id: &str,
+        target_account_id: &str,
+        target_leg: i32,
+        change: PortfolioChange,
+        operation: &'static str,
+        phase: &'static str,
+        group_config: ContinuousCopyConfig,
+        target_config: ContinuousCopyTargetConfig,
+    ) -> Result<(), ApiError> {
+        let serialized_change = serde_json::to_value(&change)
+            .map_err(|error| ApiError::internal("serialize generated copier change", error))?;
+        let identity = serde_json::to_vec(&serialized_change)
+            .map_err(|error| ApiError::internal("hash generated copier change", error))?;
+        let source_event_id = format!(
+            "{}:{}",
+            phase,
+            short_hash(
+                format!(
+                    "{}:{}:{}:{}:{}",
+                    group_id,
+                    target_account_id,
+                    operation,
+                    target_leg,
+                    short_hash(&identity)
+                )
+                .as_bytes()
+            )
+        );
+        let inbox_id = sqlx::query_scalar::<_, Uuid>(
+            r#"
+            INSERT INTO execution_copy_lifecycle_inbox (
+                user_id, group_id, source_account_id, source_event_id,
+                event_type, source_entity_kind, source_entity_id,
+                payload, status, occurred_at, processed_at
+            )
+            VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8,
+                'processed', to_timestamp($9::double precision / 1000.0), now()
+            )
+            ON CONFLICT (user_id, group_id, source_account_id, source_event_id)
+            DO NOTHING
+            RETURNING id
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_id)
+        .bind(source_account_id)
+        .bind(&source_event_id)
+        .bind(format!("protection.{phase}"))
+        .bind(copy_source_entity_kind(&change))
+        .bind(change.source_resource_id())
+        .bind(sqlx::types::Json(serialized_change))
+        .bind(change.observed_at_ms().max(1) as i64)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("stage generated copier inbox", error))?;
+        let Some(inbox_id) = inbox_id else {
+            return Ok(());
+        };
+        let payload = CopierWorkPayload {
+            change,
+            source_account_id: Some(AccountId::new(source_account_id.to_owned())),
+            group_config,
+            target_config,
+            target_leg: Some(target_leg),
+            phase: Some(phase.to_owned()),
+        };
+        let work_identity = format!(
+            "{}:{}:{}:{}",
+            source_event_id, target_account_id, operation, target_leg
+        );
+        sqlx::query(
+            r#"
+            INSERT INTO execution_copy_work_items (
+                user_id, group_id, target_account_id, inbox_event_id,
+                operation, idempotency_key, payload
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (user_id, group_id, target_account_id, idempotency_key)
+            DO NOTHING
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_id)
+        .bind(target_account_id)
+        .bind(inbox_id)
+        .bind(operation)
+        .bind(format!("cpw:{}", short_hash(work_identity.as_bytes())))
+        .bind(sqlx::types::Json(serde_json::to_value(payload).map_err(
+            |error| ApiError::internal("serialize generated copier work", error),
+        )?))
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("stage generated copier work", error))?;
+        Ok(())
+    }
+
+    async fn stage_due_copier_reconciliations(
+        &self,
+        transaction: &mut sqlx_postgres::PgConnection,
+        owner_uuid: Uuid,
+        account_id: &str,
+    ) -> Result<(), ApiError> {
+        sqlx::query(
+            r#"
+            INSERT INTO execution_copy_reconciliation_runs (
+                user_id, group_id, trigger_kind, group_revision
+            )
+            SELECT groups.user_id, groups.id, 'scheduled', groups.revision
+            FROM execution_copy_groups groups
+            WHERE groups.user_id = $1
+              AND groups.enabled = true
+              AND (
+                  groups.source_account_id = $2 OR EXISTS (
+                      SELECT 1
+                      FROM execution_copy_targets targets
+                      WHERE targets.user_id = groups.user_id
+                        AND targets.group_id = groups.id
+                        AND targets.account_id = $2
+                        AND targets.enabled = true
+                  )
+              )
+              AND (
+                  groups.last_reconciled_at IS NULL OR
+                  groups.last_reconciled_at <= now() - make_interval(
+                      secs => greatest(
+                          COALESCE(
+                              NULLIF(groups.configuration->>'reconciliationIntervalMs', '')::double precision,
+                              5000.0
+                          ),
+                          1000.0
+                      ) / 1000.0
+                  )
+              )
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM execution_copy_reconciliation_runs runs
+                  WHERE runs.user_id = groups.user_id
+                    AND runs.group_id = groups.id
+                    AND runs.status IN ('queued', 'running')
+              )
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(account_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("schedule copier reconciliation", error))?;
+        Ok(())
+    }
+
+    async fn process_continuous_copier_reconciliations(
+        &self,
+        owner_uuid: Uuid,
+    ) -> Result<u64, ApiError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(0);
+        };
+        let worker_id = Uuid::new_v4();
+        let runs = sqlx::query(
+            r#"
+            WITH candidates AS (
+                SELECT id
+                FROM execution_copy_reconciliation_runs
+                WHERE user_id = $1
+                  AND status IN ('queued', 'running')
+                  AND (lease_expires_at IS NULL OR lease_expires_at <= now())
+                ORDER BY created_at, id
+                FOR UPDATE SKIP LOCKED
+                LIMIT 8
+            )
+            UPDATE execution_copy_reconciliation_runs runs
+            SET status = 'running', lease_owner = $2,
+                lease_expires_at = now() + interval '60 seconds',
+                started_at = COALESCE(started_at, now()), error_message = NULL
+            FROM candidates
+            WHERE runs.user_id = $1 AND runs.id = candidates.id
+            RETURNING runs.id, runs.group_id
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(worker_id)
+        .fetch_all(database)
+        .await
+        .map_err(|error| ApiError::database("claim copier reconciliation", error))?;
+
+        let mut processed = 0_u64;
+        for run in runs {
+            let run_id: Uuid = run
+                .try_get("id")
+                .map_err(|error| ApiError::database("decode reconciliation id", error))?;
+            let group_id: Uuid = run
+                .try_get("group_id")
+                .map_err(|error| ApiError::database("decode reconciliation group", error))?;
+            match self
+                .reconcile_continuous_copy_group(owner_uuid, run_id, group_id)
+                .await
+            {
+                Ok(()) => processed += 1,
+                Err(error) => {
+                    sqlx::query(
+                        r#"
+                        UPDATE execution_copy_reconciliation_runs
+                        SET status = 'failed', error_message = $3,
+                            lease_owner = NULL, lease_expires_at = NULL,
+                            completed_at = now()
+                        WHERE user_id = $1 AND id = $2
+                        "#,
+                    )
+                    .bind(owner_uuid)
+                    .bind(run_id)
+                    .bind(&error.body.message)
+                    .execute(database)
+                    .await
+                    .map_err(|update_error| {
+                        ApiError::database("fail copier reconciliation", update_error)
+                    })?;
+                    warn!(
+                        reconciliation_id = %run_id,
+                        group_id = %group_id,
+                        code = error.body.code,
+                        message = %error.body.message,
+                        "continuous copier reconciliation failed"
+                    );
+                }
+            }
+        }
+        Ok(processed)
+    }
+
+    async fn reconcile_continuous_copy_group(
+        &self,
+        owner_uuid: Uuid,
+        reconciliation_id: Uuid,
+        group_id: Uuid,
+    ) -> Result<(), ApiError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(());
+        };
+        let mut transaction = database
+            .begin()
+            .await
+            .map_err(|error| ApiError::database("begin copier reconciliation", error))?;
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                links.id, links.source_account_id, links.target_account_id,
+                links.source_entity_kind, links.source_entity_id,
+                links.target_entity_kind, links.target_entity_id,
+                links.target_leg, links.lifecycle_status,
+                groups.configuration AS group_configuration,
+                targets.configuration AS target_configuration,
+                targets.allocation_mode, targets.multiplier,
+                targets.risk_basis_points, targets.max_quantity,
+                targets.fixed_quantity, targets.allocation_unit,
+                targets.symbol_mapping,
+                EXISTS (
+                    SELECT 1
+                    FROM execution_copy_work_items work
+                    JOIN execution_copy_lifecycle_inbox inbox
+                      ON inbox.user_id = work.user_id
+                     AND inbox.group_id = work.group_id
+                     AND inbox.id = work.inbox_event_id
+                    WHERE work.user_id = links.user_id
+                      AND work.group_id = links.group_id
+                      AND work.target_account_id = links.target_account_id
+                      AND work.status IN ('pending', 'leased', 'retry')
+                      AND work.operation IN ('close_position', 'cancel_pending')
+                      AND inbox.source_entity_kind = links.source_entity_kind
+                      AND inbox.source_entity_id = links.source_entity_id
+                ) AS lifecycle_work_pending,
+                CASE links.source_entity_kind
+                    WHEN 'position' THEN (
+                        SELECT positions.snapshot
+                        FROM execution_positions positions
+                        WHERE positions.user_id = links.user_id
+                          AND positions.account_id = links.source_account_id
+                          AND positions.broker_position_id = links.source_entity_id
+                    )
+                    ELSE (
+                        SELECT pending.snapshot
+                        FROM execution_pending_orders pending
+                        WHERE pending.user_id = links.user_id
+                          AND pending.account_id = links.source_account_id
+                          AND pending.broker_order_id = links.source_entity_id
+                    )
+                END AS source_snapshot,
+                CASE links.target_entity_kind
+                    WHEN 'position' THEN (
+                        SELECT positions.snapshot
+                        FROM execution_positions positions
+                        WHERE positions.user_id = links.user_id
+                          AND positions.account_id = links.target_account_id
+                          AND positions.broker_position_id = links.target_entity_id
+                    )
+                    WHEN 'pending_order' THEN (
+                        SELECT pending.snapshot
+                        FROM execution_pending_orders pending
+                        WHERE pending.user_id = links.user_id
+                          AND pending.account_id = links.target_account_id
+                          AND pending.broker_order_id = links.target_entity_id
+                    )
+                END AS target_snapshot
+            FROM execution_copy_links links
+            JOIN execution_copy_groups groups
+              ON groups.user_id = links.user_id AND groups.id = links.group_id
+            JOIN execution_copy_targets targets
+              ON targets.user_id = links.user_id
+             AND targets.group_id = links.group_id
+             AND targets.account_id = links.target_account_id
+            WHERE links.user_id = $1 AND links.group_id = $2
+              AND links.lifecycle_status NOT IN ('closed', 'cancelled')
+            ORDER BY links.target_account_id, links.source_entity_kind,
+                     links.source_entity_id, links.target_leg
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_id)
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("load copier reconciliation links", error))?;
+
+        let mut checked_count = 0_i32;
+        let mut mismatch_count = 0_i32;
+        let mut repaired_count = 0_i32;
+        for row in rows {
+            checked_count += 1;
+            let link_id: Uuid = row
+                .try_get("id")
+                .map_err(|error| ApiError::database("decode reconciliation link", error))?;
+            let source_account_id: String = row.try_get("source_account_id").map_err(|error| {
+                ApiError::database("decode reconciliation source account", error)
+            })?;
+            let target_account_id: String = row.try_get("target_account_id").map_err(|error| {
+                ApiError::database("decode reconciliation target account", error)
+            })?;
+            let source_entity_kind: String = row
+                .try_get("source_entity_kind")
+                .map_err(|error| ApiError::database("decode reconciliation source kind", error))?;
+            let source_entity_id: String = row
+                .try_get("source_entity_id")
+                .map_err(|error| ApiError::database("decode reconciliation source id", error))?;
+            let target_entity_kind: Option<String> = row
+                .try_get("target_entity_kind")
+                .map_err(|error| ApiError::database("decode reconciliation target kind", error))?;
+            let target_entity_id: Option<String> = row
+                .try_get("target_entity_id")
+                .map_err(|error| ApiError::database("decode reconciliation target id", error))?;
+            let target_leg: i32 = row
+                .try_get("target_leg")
+                .map_err(|error| ApiError::database("decode reconciliation target leg", error))?;
+            let lifecycle_status: String = row
+                .try_get("lifecycle_status")
+                .map_err(|error| ApiError::database("decode reconciliation lifecycle", error))?;
+            let lifecycle_work_pending: bool = row
+                .try_get("lifecycle_work_pending")
+                .map_err(|error| ApiError::database("decode pending lifecycle work", error))?;
+            let source_snapshot = row
+                .try_get::<Option<sqlx::types::Json<serde_json::Value>>, _>("source_snapshot")
+                .map_err(|error| ApiError::database("decode reconciliation source state", error))?
+                .map(|value| value.0);
+            let target_snapshot = row
+                .try_get::<Option<sqlx::types::Json<serde_json::Value>>, _>("target_snapshot")
+                .map_err(|error| ApiError::database("decode reconciliation target state", error))?
+                .map(|value| value.0);
+
+            if source_snapshot.is_some() && target_snapshot.is_some() {
+                sqlx::query(
+                    r#"
+                    UPDATE execution_copy_links
+                    SET lifecycle_status = CASE
+                            WHEN lifecycle_status = 'closing' THEN lifecycle_status
+                            ELSE 'active'
+                        END,
+                        last_reconciled_at = now(), revision = revision + 1,
+                        updated_at = now()
+                    WHERE user_id = $1 AND id = $2
+                    "#,
+                )
+                .bind(owner_uuid)
+                .bind(link_id)
+                .execute(&mut *transaction)
+                .await
+                .map_err(|error| ApiError::database("confirm copier reconciliation link", error))?;
+                continue;
+            }
+
+            mismatch_count += 1;
+            let expected_state = serde_json::json!({
+                "sourceAccountId": source_account_id,
+                "sourceEntityKind": source_entity_kind,
+                "sourceEntityId": source_entity_id,
+                "targetEntityKind": target_entity_kind,
+                "targetEntityId": target_entity_id,
+                "targetLeg": target_leg,
+                "lifecycleStatus": lifecycle_status,
+            });
+            let actual_state = serde_json::json!({
+                "sourcePresent": source_snapshot.is_some(),
+                "targetPresent": target_snapshot.is_some(),
+            });
+
+            let (discrepancy_type, item_status, resolution_action) = if source_snapshot.is_none()
+                && target_snapshot.is_some()
+            {
+                let mut queued_repair = false;
+                if lifecycle_status != "closing" && !lifecycle_work_pending {
+                    let change = match (target_entity_kind.as_deref(), target_snapshot) {
+                        (Some("position"), Some(snapshot)) => {
+                            let mut position = serde_json::from_value::<EaPositionSnapshot>(
+                                snapshot,
+                            )
+                            .map_err(|error| {
+                                ApiError::internal("decode reconciliation target position", error)
+                            })?;
+                            position.broker_position_id = source_entity_id.clone();
+                            PortfolioChange::PositionClosed { previous: position }
+                        }
+                        (Some("pending_order"), Some(snapshot)) => {
+                            let mut pending =
+                                serde_json::from_value::<EaPendingOrderSnapshot>(snapshot)
+                                    .map_err(|error| {
+                                        ApiError::internal(
+                                            "decode reconciliation target pending order",
+                                            error,
+                                        )
+                                    })?;
+                            pending.broker_order_id = source_entity_id.clone();
+                            PortfolioChange::PendingCancelled { previous: pending }
+                        }
+                        _ => {
+                            return Err(ApiError::new(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                "COPY_RECONCILIATION_STATE_INVALID",
+                                "target copier state could not be decoded for repair",
+                            ));
+                        }
+                    };
+                    let group_config = row
+                        .try_get::<sqlx::types::Json<ContinuousCopyConfig>, _>(
+                            "group_configuration",
+                        )
+                        .map(|value| value.0)
+                        .unwrap_or_default();
+                    let target_config_value = row
+                        .try_get::<sqlx::types::Json<serde_json::Value>, _>("target_configuration")
+                        .map_err(|error| {
+                            ApiError::database("decode reconciliation target configuration", error)
+                        })?
+                        .0;
+                    let target_config =
+                        serde_json::from_value::<ContinuousCopyTargetConfig>(target_config_value)
+                            .unwrap_or_else(|_| legacy_copy_target_config(&row));
+                    let operation = match &change {
+                        PortfolioChange::PositionClosed { .. } => "close_position",
+                        _ => "cancel_pending",
+                    };
+                    self.stage_generated_copier_work(
+                        &mut transaction,
+                        owner_uuid,
+                        group_id,
+                        &source_account_id,
+                        &target_account_id,
+                        target_leg,
+                        change,
+                        operation,
+                        "reconciliation",
+                        group_config,
+                        target_config,
+                    )
+                    .await?;
+                    sqlx::query(
+                        r#"
+                            UPDATE execution_copy_links
+                            SET lifecycle_status = 'closing', last_reconciled_at = now(),
+                                revision = revision + 1, updated_at = now()
+                            WHERE user_id = $1 AND id = $2
+                            "#,
+                    )
+                    .bind(owner_uuid)
+                    .bind(link_id)
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(|error| {
+                        ApiError::database("stage copier reconciliation repair", error)
+                    })?;
+                    queued_repair = true;
+                    repaired_count += 1;
+                }
+                (
+                    "source_missing",
+                    "resolving",
+                    if queued_repair {
+                        "close_target"
+                    } else {
+                        "await_target_close"
+                    },
+                )
+            } else if source_snapshot.is_some() {
+                let safely_terminal = lifecycle_status == "closing";
+                let next_status = if safely_terminal {
+                    if source_entity_kind == "position" {
+                        "closed"
+                    } else {
+                        "cancelled"
+                    }
+                } else if target_entity_id.is_none() {
+                    "pending"
+                } else {
+                    "orphaned"
+                };
+                sqlx::query(
+                    r#"
+                        UPDATE execution_copy_links
+                        SET lifecycle_status = $3,
+                            closed_at = CASE WHEN $3 IN ('closed', 'cancelled')
+                                THEN COALESCE(closed_at, now()) ELSE closed_at END,
+                            last_reconciled_at = now(), revision = revision + 1,
+                            updated_at = now()
+                        WHERE user_id = $1 AND id = $2
+                        "#,
+                )
+                .bind(owner_uuid)
+                .bind(link_id)
+                .bind(next_status)
+                .execute(&mut *transaction)
+                .await
+                .map_err(|error| ApiError::database("resolve missing copier target", error))?;
+                if safely_terminal {
+                    repaired_count += 1;
+                }
+                (
+                    if target_entity_id.is_some() {
+                        "target_missing"
+                    } else {
+                        "target_link_unresolved"
+                    },
+                    if safely_terminal { "resolved" } else { "open" },
+                    if safely_terminal {
+                        "confirm_target_closed"
+                    } else if target_entity_id.is_none() {
+                        "await_target_ack"
+                    } else {
+                        "manual_review"
+                    },
+                )
+            } else {
+                let next_status = if source_entity_kind == "position" {
+                    "closed"
+                } else {
+                    "cancelled"
+                };
+                sqlx::query(
+                    r#"
+                        UPDATE execution_copy_links
+                        SET lifecycle_status = $3, closed_at = COALESCE(closed_at, now()),
+                            last_reconciled_at = now(), revision = revision + 1,
+                            updated_at = now()
+                        WHERE user_id = $1 AND id = $2
+                        "#,
+                )
+                .bind(owner_uuid)
+                .bind(link_id)
+                .bind(next_status)
+                .execute(&mut *transaction)
+                .await
+                .map_err(|error| {
+                    ApiError::database("close absent copier reconciliation link", error)
+                })?;
+                repaired_count += 1;
+                ("source_and_target_missing", "resolved", "close_link")
+            };
+
+            sqlx::query(
+                r#"
+                INSERT INTO execution_copy_reconciliation_items (
+                    user_id, reconciliation_id, group_id, target_account_id,
+                    link_id, discrepancy_type, status,
+                    expected_state, actual_state, resolution_action, resolved_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                    CASE WHEN $7 = 'resolved' THEN now() ELSE NULL END
+                )
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(reconciliation_id)
+            .bind(group_id)
+            .bind(&target_account_id)
+            .bind(link_id)
+            .bind(discrepancy_type)
+            .bind(item_status)
+            .bind(sqlx::types::Json(expected_state))
+            .bind(sqlx::types::Json(actual_state))
+            .bind(resolution_action)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| ApiError::database("record copier discrepancy", error))?;
+        }
+
+        let reconciliation_status = if mismatch_count == 0 {
+            "succeeded"
+        } else {
+            "degraded"
+        };
+        sqlx::query(
+            r#"
+            UPDATE execution_copy_reconciliation_runs
+            SET status = $3, checked_count = $4, mismatch_count = $5,
+                repaired_count = $6, lease_owner = NULL, lease_expires_at = NULL,
+                completed_at = now(), error_message = NULL
+            WHERE user_id = $1 AND id = $2
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(reconciliation_id)
+        .bind(reconciliation_status)
+        .bind(checked_count)
+        .bind(mismatch_count)
+        .bind(repaired_count)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("complete copier reconciliation", error))?;
+        sqlx::query(
+            r#"
+            UPDATE execution_copy_groups
+            SET last_reconciled_at = now(),
+                runtime_status = CASE
+                    WHEN enabled = false THEN runtime_status
+                    WHEN runtime_status = 'paused' THEN 'paused'
+                    WHEN $3 = 0 THEN 'active'
+                    ELSE 'degraded'
+                END,
+                status_message = CASE
+                    WHEN enabled = false THEN status_message
+                    WHEN runtime_status = 'paused' THEN status_message
+                    WHEN $3 = 0 THEN NULL
+                    ELSE 'Reconciliation found copier lifecycle discrepancies'
+                END,
+                updated_at = now()
+            WHERE user_id = $1 AND id = $2
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_id)
+        .bind(mismatch_count)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("update reconciled copier group", error))?;
+        sqlx::query(
+            r#"
+            UPDATE execution_copy_targets
+            SET last_reconciled_at = now(),
+                runtime_status = CASE
+                    WHEN enabled = false THEN 'inactive'
+                    WHEN $3 = 0 THEN 'active'
+                    ELSE 'degraded'
+                END,
+                status_message = CASE
+                    WHEN enabled = false OR $3 = 0 THEN NULL
+                    ELSE 'Reconciliation found copier lifecycle discrepancies'
+                END,
+                updated_at = now()
+            WHERE user_id = $1 AND group_id = $2
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_id)
+        .bind(mismatch_count)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("update reconciled copier targets", error))?;
+        transaction
+            .commit()
+            .await
+            .map_err(|error| ApiError::database("commit copier reconciliation", error))
+    }
+
+    async fn process_continuous_copier_work(&self, owner_uuid: Uuid) -> Result<u64, ApiError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(0);
+        };
+        let worker_id = Uuid::new_v4();
+        let rows = sqlx::query(
+            r#"
+            WITH candidates AS (
+                SELECT work.id
+                FROM execution_copy_work_items work
+                JOIN execution_copy_groups groups
+                  ON groups.user_id = work.user_id AND groups.id = work.group_id
+                JOIN execution_copy_targets targets
+                  ON targets.user_id = work.user_id
+                 AND targets.group_id = work.group_id
+                 AND targets.account_id = work.target_account_id
+                WHERE work.user_id = $1
+                  AND work.status IN ('pending', 'retry', 'leased')
+                  AND work.available_at <= now()
+                  AND (work.lease_expires_at IS NULL OR work.lease_expires_at <= now())
+                  AND groups.enabled = true
+                  AND (
+                      groups.runtime_status NOT IN ('paused', 'error') OR
+                      (
+                          groups.runtime_status = 'paused' AND (
+                              work.operation IN (
+                                  'partial_close', 'close_position',
+                                  'cancel_pending', 'reconcile'
+                              ) OR (
+                                  work.operation = 'modify_position' AND
+                                  work.payload->>'phase' = 'target_protection'
+                              )
+                          )
+                      )
+                  )
+                  AND targets.enabled = true
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM execution_copy_work_items prior
+                      WHERE prior.user_id = work.user_id
+                        AND prior.group_id = work.group_id
+                        AND prior.target_account_id = work.target_account_id
+                        AND (prior.created_at, prior.id) < (work.created_at, work.id)
+                        AND (
+                            prior.status IN ('pending', 'leased', 'retry') OR
+                            EXISTS (
+                                SELECT 1
+                                FROM execution_copy_command_outbox prior_outbox
+                                WHERE prior_outbox.user_id = prior.user_id
+                                  AND prior_outbox.work_item_id = prior.id
+                                  AND prior_outbox.status IN (
+                                      'pending', 'publishing', 'published', 'retry'
+                                  )
+                            )
+                        )
+                  )
+                ORDER BY work.created_at, work.id
+                FOR UPDATE OF work SKIP LOCKED
+                LIMIT 32
+            )
+            UPDATE execution_copy_work_items work
+            SET status = 'leased',
+                lease_owner = $2,
+                lease_expires_at = now() + interval '30 seconds',
+                attempt_count = work.attempt_count + 1,
+                updated_at = now()
+            FROM candidates
+            WHERE work.user_id = $1 AND work.id = candidates.id
+            RETURNING work.id, work.group_id, work.target_account_id,
+                      work.operation, work.idempotency_key, work.payload,
+                      work.attempt_count
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(worker_id)
+        .fetch_all(database)
+        .await
+        .map_err(|error| ApiError::database("claim copier work", error))?;
+
+        let mut processed = 0_u64;
+        for row in rows {
+            let work_id: Uuid = row
+                .try_get("id")
+                .map_err(|error| ApiError::database("decode copier work id", error))?;
+            let group_id: Uuid = row
+                .try_get("group_id")
+                .map_err(|error| ApiError::database("decode copier work group", error))?;
+            let target_account_id: String = row
+                .try_get("target_account_id")
+                .map_err(|error| ApiError::database("decode copier work target account", error))?;
+            let operation: String = row
+                .try_get("operation")
+                .map_err(|error| ApiError::database("decode copier work operation", error))?;
+            let idempotency_key: String = row
+                .try_get("idempotency_key")
+                .map_err(|error| ApiError::database("decode copier work idempotency key", error))?;
+            let payload = row
+                .try_get::<sqlx::types::Json<CopierWorkPayload>, _>("payload")
+                .map_err(|error| ApiError::database("decode copier work payload", error))?
+                .0;
+            let attempt_count: i32 = row
+                .try_get("attempt_count")
+                .map_err(|error| ApiError::database("decode copier work attempt", error))?;
+
+            let result = self
+                .execute_continuous_copier_work(
+                    owner_uuid,
+                    group_id,
+                    work_id,
+                    &target_account_id,
+                    &operation,
+                    &idempotency_key,
+                    &payload,
+                )
+                .await;
+            match result {
+                Ok(()) => {
+                    processed += 1;
+                }
+                Err(error) => {
+                    self.fail_continuous_copier_work(
+                        owner_uuid,
+                        group_id,
+                        work_id,
+                        &target_account_id,
+                        attempt_count,
+                        error,
+                    )
+                    .await?;
+                }
+            }
+        }
+        Ok(processed)
+    }
+
+    async fn execute_continuous_copier_work(
+        &self,
+        owner_uuid: Uuid,
+        group_id: Uuid,
+        work_id: Uuid,
+        target_account_id: &str,
+        operation: &str,
+        idempotency_key: &str,
+        payload: &CopierWorkPayload,
+    ) -> Result<(), CopierWorkError> {
+        payload
+            .group_config
+            .validate()
+            .map_err(|message| CopierWorkError::permanent("COPY_CONFIG_INVALID", message))?;
+        payload
+            .target_config
+            .validate()
+            .map_err(|message| CopierWorkError::permanent("COPY_TARGET_CONFIG_INVALID", message))?;
+        let is_pending_fill_market = operation == "open_market"
+            && matches!(&payload.change, PortfolioChange::PendingFilled { .. });
+        if !is_pending_fill_market
+            && copier_work_is_stale(
+                operation,
+                payload.change.observed_at_ms(),
+                now_ms(),
+                payload.group_config.stale_after_ms,
+            )
+        {
+            if !self
+                .copier_work_target_command_exists(owner_uuid, work_id)
+                .await?
+            {
+                return self
+                    .supersede_continuous_copier_work(
+                        owner_uuid,
+                        group_id,
+                        work_id,
+                        target_account_id,
+                        &payload.change,
+                        "risk-increasing copier work exceeded staleAfterMs",
+                    )
+                    .await;
+            }
+        }
+        let target_account = AccountId::new(target_account_id.to_owned());
+        let command_identity = format!("{}:{}:{}", group_id, work_id, operation);
+        let command_id = execution_domain::CommandId::new(format!(
+            "cp:{}",
+            short_hash(command_identity.as_bytes())
+        ));
+        let command_idempotency =
+            IdempotencyKey::new(format!("cpc:{}", short_hash(idempotency_key.as_bytes())));
+
+        let command = match operation {
+            "open_market" | "place_pending" => {
+                if operation == "open_market"
+                    && let PortfolioChange::PendingFilled { previous, position } = &payload.change
+                {
+                    if let Some(lifecycle_status) = self
+                        .copier_pending_fill_link_status(
+                            owner_uuid,
+                            group_id,
+                            target_account_id,
+                            &position.broker_position_id,
+                            &previous.broker_order_id,
+                            payload.target_leg,
+                        )
+                        .await?
+                    {
+                        if matches!(lifecycle_status.as_str(), "error" | "orphaned") {
+                            return Err(CopierWorkError::retryable(
+                                "COPY_PENDING_FILL_LINK_UNRESOLVED",
+                                "the pending-fill link is unresolved and cannot be replaced safely",
+                            ));
+                        }
+                        return self
+                            .complete_continuous_copier_work(
+                                owner_uuid,
+                                group_id,
+                                work_id,
+                                target_account_id,
+                                None,
+                                &payload.change,
+                            )
+                            .await;
+                    }
+                    if self
+                        .copier_target_link_exists(
+                            owner_uuid,
+                            group_id,
+                            target_account_id,
+                            &payload.change,
+                            "pending_order",
+                            payload.target_leg,
+                        )
+                        .await?
+                    {
+                        // Existing pending exposure must be adopted/reconciled,
+                        // never duplicated by a market copy. If no pending link
+                        // was ever issued, the market fallback remains valid.
+                        return self
+                            .reconcile_continuous_copy_target(
+                                owner_uuid,
+                                group_id,
+                                work_id,
+                                target_account_id,
+                                &payload.change,
+                                payload.target_leg,
+                            )
+                            .await;
+                    }
+                    if !copy_source_filters_match(&payload.change, &payload.group_config) {
+                        return self
+                            .complete_continuous_copier_work(
+                                owner_uuid,
+                                group_id,
+                                work_id,
+                                target_account_id,
+                                None,
+                                &payload.change,
+                            )
+                            .await;
+                    }
+                    if copier_work_is_stale(
+                        operation,
+                        payload.change.observed_at_ms(),
+                        now_ms(),
+                        payload.group_config.stale_after_ms,
+                    ) && !self
+                        .copier_work_target_command_exists(owner_uuid, work_id)
+                        .await?
+                    {
+                        return self
+                            .supersede_continuous_copier_work(
+                                owner_uuid,
+                                group_id,
+                                work_id,
+                                target_account_id,
+                                &payload.change,
+                                "unlinked pending-fill market fallback exceeded staleAfterMs",
+                            )
+                            .await;
+                    }
+                }
+                if operation == "place_pending"
+                    && matches!(&payload.change, PortfolioChange::PendingReplaced { .. })
+                    && self
+                        .copier_target_link_exists(
+                            owner_uuid,
+                            group_id,
+                            target_account_id,
+                            &payload.change,
+                            "pending_order",
+                            None,
+                        )
+                        .await?
+                {
+                    return Err(CopierWorkError::retryable(
+                        "COPY_PENDING_REPLACE_WAIT",
+                        "replacement pending order is waiting for the prior target order to cancel",
+                    ));
+                }
+                if operation == "place_pending"
+                    && matches!(&payload.change, PortfolioChange::PendingReplaced { .. })
+                    && !copy_source_filters_match(&payload.change, &payload.group_config)
+                    && !self
+                        .copier_source_link_history_exists(
+                            owner_uuid,
+                            group_id,
+                            target_account_id,
+                            &payload.change,
+                        )
+                        .await?
+                {
+                    return self
+                        .complete_continuous_copier_work(
+                            owner_uuid,
+                            group_id,
+                            work_id,
+                            target_account_id,
+                            None,
+                            &payload.change,
+                        )
+                        .await;
+                }
+                let intent = copier_order_intent(
+                    &payload.change,
+                    &payload.target_config,
+                    &command_id,
+                    &command_idempotency,
+                    operation,
+                    payload.source_account_id.clone(),
+                    payload.group_config.copy_stop_loss_take_profit,
+                )?;
+                let target = AdminOrderTarget {
+                    account_id: target_account.clone(),
+                    allocation: payload.target_config.allocation.clone(),
+                    max_quantity: payload.target_config.max_quantity,
+                };
+                let context = self
+                    .load_route_target(owner_uuid, &target, &intent.canonical_symbol, intent.side)
+                    .await
+                    .map_err(CopierWorkError::api)?
+                    .ok_or_else(|| {
+                        CopierWorkError::retryable(
+                            "TARGET_CONTEXT_UNAVAILABLE",
+                            "target account or fresh broker instrument metadata is unavailable",
+                        )
+                    })?;
+                if !execution_transport_enabled(context.account.venue_kind) {
+                    return Err(CopierWorkError::permanent(
+                        "TARGET_TRANSPORT_UNAVAILABLE",
+                        "the target venue transport is not enabled",
+                    ));
+                }
+                if matches!(
+                    context.account.status,
+                    AccountStatus::Offline | AccountStatus::Connecting
+                ) {
+                    return Err(CopierWorkError::retryable(
+                        "TARGET_OFFLINE",
+                        "target EA is offline; copier work will retry without issuing a stale command",
+                    ));
+                }
+                let source_equity = self
+                    .source_equity(owner_uuid, intent.source_account_id.as_ref())
+                    .await
+                    .map_err(CopierWorkError::api)?;
+                let mut routed =
+                    route_order(&intent, source_equity, std::slice::from_ref(&context));
+                let Some(result) = routed.pop() else {
+                    return Err(CopierWorkError::permanent(
+                        "COPY_ROUTE_EMPTY",
+                        "the route engine returned no target result",
+                    ));
+                };
+                let mut order = match result {
+                    TargetRouteResult::Ready { order, .. } => *order,
+                    TargetRouteResult::Rejected { code, message, .. } => {
+                        let code = serde_json::to_value(code)
+                            .ok()
+                            .and_then(|value| value.as_str().map(str::to_owned))
+                            .unwrap_or_else(|| "COPY_ROUTE_REJECTED".into());
+                        return Err(CopierWorkError::permanent(code, message));
+                    }
+                };
+                if let Some((code, message)) = self
+                    .apply_prop_risk_pretrade(owner_uuid, &context, &mut order)
+                    .await
+                    .map_err(CopierWorkError::api)?
+                {
+                    let code = serde_json::to_value(code)
+                        .ok()
+                        .and_then(|value| value.as_str().map(str::to_owned))
+                        .unwrap_or_else(|| "PROP_RISK_REJECTED".into());
+                    return Err(CopierWorkError::permanent(code, message));
+                }
+                order.broker_margin_cap =
+                    payload.target_config.protection.broker_margin_cap.clone();
+                EaCommand::Place { order }
+            }
+            "modify_position" => {
+                let Some(target_entity_id) = self
+                    .copier_target_entity_id(
+                        owner_uuid,
+                        group_id,
+                        target_account_id,
+                        &payload.change,
+                        "position",
+                        payload.target_leg,
+                    )
+                    .await?
+                else {
+                    if self
+                        .copier_target_link_exists(
+                            owner_uuid,
+                            group_id,
+                            target_account_id,
+                            &payload.change,
+                            "position",
+                            payload.target_leg,
+                        )
+                        .await?
+                    {
+                        return Err(CopierWorkError::retryable(
+                            "COPY_LINK_PENDING",
+                            "target position link has not been reconciled yet",
+                        ));
+                    }
+                    return self
+                        .complete_continuous_copier_work(
+                            owner_uuid,
+                            group_id,
+                            work_id,
+                            target_account_id,
+                            None,
+                            &payload.change,
+                        )
+                        .await;
+                };
+                let reverse_protection = payload.target_config.reverse_trade
+                    && payload.phase.as_deref() != Some("target_protection");
+                let (stop_loss, take_profit) =
+                    copier_position_protection(&payload.change, reverse_protection)?;
+                EaCommand::ModifyPosition {
+                    command: ModifyPositionCommand {
+                        command_id: command_id.clone(),
+                        idempotency_key: command_idempotency.clone(),
+                        target_account_id: target_account.clone(),
+                        broker_position_id: target_entity_id,
+                        stop_loss,
+                        take_profit,
+                    },
+                }
+            }
+            "modify_pending" => {
+                let Some(target_entity_id) = self
+                    .copier_target_entity_id(
+                        owner_uuid,
+                        group_id,
+                        target_account_id,
+                        &payload.change,
+                        "pending_order",
+                        payload.target_leg,
+                    )
+                    .await?
+                else {
+                    if self
+                        .copier_target_link_exists(
+                            owner_uuid,
+                            group_id,
+                            target_account_id,
+                            &payload.change,
+                            "pending_order",
+                            payload.target_leg,
+                        )
+                        .await?
+                    {
+                        return Err(CopierWorkError::retryable(
+                            "COPY_LINK_PENDING",
+                            "target pending-order link has not been reconciled yet",
+                        ));
+                    }
+                    return self
+                        .complete_continuous_copier_work(
+                            owner_uuid,
+                            group_id,
+                            work_id,
+                            target_account_id,
+                            None,
+                            &payload.change,
+                        )
+                        .await;
+                };
+                let (price, stop_loss, take_profit) = copier_pending_modification(
+                    &payload.change,
+                    payload.target_config.reverse_trade,
+                )?;
+                EaCommand::ModifyPendingOrder {
+                    command: ModifyPendingOrderCommand {
+                        command_id: command_id.clone(),
+                        idempotency_key: command_idempotency.clone(),
+                        target_account_id: target_account.clone(),
+                        broker_order_id: target_entity_id,
+                        price,
+                        stop_loss,
+                        take_profit,
+                    },
+                }
+            }
+            "partial_close" | "close_position" => {
+                let Some(target_entity_id) = self
+                    .copier_target_entity_id(
+                        owner_uuid,
+                        group_id,
+                        target_account_id,
+                        &payload.change,
+                        "position",
+                        payload.target_leg,
+                    )
+                    .await?
+                else {
+                    if self
+                        .copier_target_link_exists(
+                            owner_uuid,
+                            group_id,
+                            target_account_id,
+                            &payload.change,
+                            "position",
+                            payload.target_leg,
+                        )
+                        .await?
+                    {
+                        return Err(CopierWorkError::retryable(
+                            "COPY_LINK_PENDING",
+                            "target position link has not been reconciled yet",
+                        ));
+                    }
+                    return self
+                        .complete_continuous_copier_work(
+                            owner_uuid,
+                            group_id,
+                            work_id,
+                            target_account_id,
+                            None,
+                            &payload.change,
+                        )
+                        .await;
+                };
+                let quantity = if operation == "partial_close" {
+                    let target_quantity = self
+                        .copier_target_quantity(
+                            owner_uuid,
+                            group_id,
+                            target_account_id,
+                            &payload.change,
+                            "position",
+                            payload.target_leg,
+                        )
+                        .await?
+                        .ok_or_else(|| {
+                            CopierWorkError::retryable(
+                                "COPY_LINK_QUANTITY_PENDING",
+                                "target position quantity is not reconciled yet",
+                            )
+                        })?;
+                    Some(
+                        copier_partial_close_quantity(&payload.change, Some(target_quantity))
+                            .ok_or_else(|| {
+                                CopierWorkError::permanent(
+                                    "COPY_PARTIAL_CLOSE_INVALID",
+                                    "partial-close work did not resolve a positive target quantity",
+                                )
+                            })?,
+                    )
+                } else {
+                    None
+                };
+                EaCommand::ClosePosition {
+                    command: ClosePositionCommand {
+                        command_id: command_id.clone(),
+                        idempotency_key: command_idempotency.clone(),
+                        target_account_id: target_account.clone(),
+                        broker_position_id: target_entity_id,
+                        quantity,
+                        deviation_points: payload.group_config.max_slippage_points,
+                    },
+                }
+            }
+            "cancel_pending" => {
+                let Some(target_entity_id) = self
+                    .copier_target_entity_id(
+                        owner_uuid,
+                        group_id,
+                        target_account_id,
+                        &payload.change,
+                        "pending_order",
+                        payload.target_leg,
+                    )
+                    .await?
+                else {
+                    if self
+                        .copier_target_link_exists(
+                            owner_uuid,
+                            group_id,
+                            target_account_id,
+                            &payload.change,
+                            "pending_order",
+                            payload.target_leg,
+                        )
+                        .await?
+                    {
+                        return Err(CopierWorkError::retryable(
+                            "COPY_LINK_PENDING",
+                            "target pending-order link is waiting for its broker ticket",
+                        ));
+                    }
+                    return self
+                        .complete_continuous_copier_work(
+                            owner_uuid,
+                            group_id,
+                            work_id,
+                            target_account_id,
+                            None,
+                            &payload.change,
+                        )
+                        .await;
+                };
+                EaCommand::CancelOrder {
+                    command: CancelOrderCommand {
+                        command_id: command_id.clone(),
+                        idempotency_key: command_idempotency.clone(),
+                        target_account_id: target_account.clone(),
+                        broker_order_id: target_entity_id,
+                    },
+                }
+            }
+            "reconcile" => {
+                return self
+                    .reconcile_continuous_copy_target(
+                        owner_uuid,
+                        group_id,
+                        work_id,
+                        target_account_id,
+                        &payload.change,
+                        payload.target_leg,
+                    )
+                    .await;
+            }
+            _ => {
+                return Err(CopierWorkError::permanent(
+                    "COPY_OPERATION_INVALID",
+                    format!("unsupported copier operation {operation}"),
+                ));
+            }
+        };
+
+        let command_json = serde_json::to_value(&command).map_err(|error| {
+            CopierWorkError::permanent("COPY_COMMAND_SERIALIZE_FAILED", error.to_string())
+        })?;
+        self.persist_copier_outbox(
+            owner_uuid,
+            group_id,
+            work_id,
+            target_account_id,
+            idempotency_key,
+            operation,
+            payload.phase.as_deref(),
+            payload.target_leg,
+            &command,
+            command_json,
+            &payload.change,
+        )
+        .await?;
+        match self.enqueue(&target_account, command.clone()).await {
+            Ok(()) => {
+                self.publish_copier_outbox(
+                    owner_uuid,
+                    work_id,
+                    command_id.as_str(),
+                    &payload.change,
+                )
+                .await
+            }
+            Err(AdapterError::AccountOffline | AdapterError::Backpressure) => {
+                Err(CopierWorkError::retryable(
+                    "COPY_TARGET_TEMPORARILY_UNAVAILABLE",
+                    "target execution queue is temporarily unavailable",
+                ))
+            }
+            Err(AdapterError::IdempotencyConflict) => Err(CopierWorkError::permanent(
+                "COPY_COMMAND_IDEMPOTENCY_CONFLICT",
+                "the durable target command conflicts with prior payload",
+            )),
+            Err(error) => {
+                let (code, message) = adapter_submission_error(error);
+                Err(CopierWorkError::permanent(code, message))
+            }
+        }
+    }
+
+    async fn copier_target_entity_id(
+        &self,
+        owner_uuid: Uuid,
+        group_id: Uuid,
+        target_account_id: &str,
+        change: &PortfolioChange,
+        target_entity_kind: &str,
+        target_leg: Option<i32>,
+    ) -> Result<Option<String>, CopierWorkError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(None);
+        };
+        sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT target_entity_id
+            FROM execution_copy_links
+            WHERE user_id = $1 AND group_id = $2 AND target_account_id = $3
+              AND source_entity_kind = $4 AND source_entity_id = $5
+              AND target_entity_kind = $6 AND target_entity_id IS NOT NULL
+              AND ($7::integer IS NULL OR target_leg = $7)
+              AND lifecycle_status NOT IN ('closed', 'cancelled', 'orphaned')
+            ORDER BY target_leg, updated_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_id)
+        .bind(target_account_id)
+        .bind(copy_source_entity_kind(change))
+        .bind(change.source_resource_id())
+        .bind(target_entity_kind)
+        .bind(target_leg)
+        .fetch_optional(database)
+        .await
+        .map_err(|error| CopierWorkError::api(ApiError::database("load copier target link", error)))
+    }
+
+    async fn copier_target_quantity(
+        &self,
+        owner_uuid: Uuid,
+        group_id: Uuid,
+        target_account_id: &str,
+        change: &PortfolioChange,
+        target_entity_kind: &str,
+        target_leg: Option<i32>,
+    ) -> Result<Option<Decimal>, CopierWorkError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(None);
+        };
+        sqlx::query_scalar::<_, Decimal>(
+            r#"
+            SELECT target_quantity
+            FROM execution_copy_links
+            WHERE user_id = $1 AND group_id = $2 AND target_account_id = $3
+              AND source_entity_kind = $4 AND source_entity_id = $5
+              AND target_entity_kind = $6 AND target_entity_id IS NOT NULL
+              AND ($7::integer IS NULL OR target_leg = $7)
+              AND lifecycle_status NOT IN ('closed', 'cancelled', 'orphaned')
+              AND target_quantity IS NOT NULL
+            ORDER BY target_leg, updated_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_id)
+        .bind(target_account_id)
+        .bind(copy_source_entity_kind(change))
+        .bind(change.source_resource_id())
+        .bind(target_entity_kind)
+        .bind(target_leg)
+        .fetch_optional(database)
+        .await
+        .map_err(|error| {
+            CopierWorkError::api(ApiError::database("load copier target quantity", error))
+        })
+    }
+
+    async fn copier_target_link_exists(
+        &self,
+        owner_uuid: Uuid,
+        group_id: Uuid,
+        target_account_id: &str,
+        change: &PortfolioChange,
+        target_entity_kind: &str,
+        target_leg: Option<i32>,
+    ) -> Result<bool, CopierWorkError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(false);
+        };
+        sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM execution_copy_links
+                WHERE user_id = $1 AND group_id = $2 AND target_account_id = $3
+                  AND source_entity_kind = $4 AND source_entity_id = $5
+                  AND (
+                      target_entity_kind = $6 OR
+                      (target_entity_kind IS NULL AND metadata->>'expectedTargetKind' = $6)
+                  )
+                  AND ($7::integer IS NULL OR target_leg = $7)
+                  AND lifecycle_status NOT IN ('closed', 'cancelled')
+            )
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_id)
+        .bind(target_account_id)
+        .bind(copy_source_entity_kind(change))
+        .bind(change.source_resource_id())
+        .bind(target_entity_kind)
+        .bind(target_leg)
+        .fetch_one(database)
+        .await
+        .map_err(|error| {
+            CopierWorkError::api(ApiError::database("check copier target link", error))
+        })
+    }
+
+    async fn copier_pending_fill_link_status(
+        &self,
+        owner_uuid: Uuid,
+        group_id: Uuid,
+        target_account_id: &str,
+        source_position_id: &str,
+        source_pending_order_id: &str,
+        target_leg: Option<i32>,
+    ) -> Result<Option<String>, CopierWorkError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(None);
+        };
+        sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT lifecycle_status
+            FROM execution_copy_links
+            WHERE user_id = $1 AND group_id = $2 AND target_account_id = $3
+              AND source_entity_kind = 'position' AND source_entity_id = $4
+              AND metadata->>'originatingPendingOrderId' = $5
+              AND ($6::integer IS NULL OR target_leg = $6)
+              AND lifecycle_status NOT IN ('closed', 'cancelled')
+            ORDER BY updated_at DESC, target_leg
+            LIMIT 1
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_id)
+        .bind(target_account_id)
+        .bind(source_position_id)
+        .bind(source_pending_order_id)
+        .bind(target_leg)
+        .fetch_optional(database)
+        .await
+        .map_err(|error| {
+            CopierWorkError::api(ApiError::database(
+                "check handled pending-fill copier link",
+                error,
+            ))
+        })
+    }
+
+    async fn copier_source_link_history_exists(
+        &self,
+        owner_uuid: Uuid,
+        group_id: Uuid,
+        target_account_id: &str,
+        change: &PortfolioChange,
+    ) -> Result<bool, CopierWorkError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(false);
+        };
+        sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM execution_copy_links
+                WHERE user_id = $1 AND group_id = $2 AND target_account_id = $3
+                  AND source_entity_kind = $4 AND source_entity_id = $5
+                  AND NOT (
+                      lifecycle_status = 'cancelled' AND
+                      target_entity_id IS NULL AND
+                      metadata ? 'supersededReason'
+                  )
+            )
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_id)
+        .bind(target_account_id)
+        .bind(copy_source_entity_kind(change))
+        .bind(change.source_resource_id())
+        .fetch_one(database)
+        .await
+        .map_err(|error| {
+            CopierWorkError::api(ApiError::database(
+                "check copier source link history",
+                error,
+            ))
+        })
+    }
+
+    async fn copier_work_target_command_exists(
+        &self,
+        owner_uuid: Uuid,
+        work_id: Uuid,
+    ) -> Result<bool, CopierWorkError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(false);
+        };
+        sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM execution_copy_command_outbox outbox
+                JOIN execution_target_commands target_command
+                  ON target_command.user_id = outbox.user_id
+                 AND target_command.id = COALESCE(
+                     outbox.target_command_id,
+                     outbox.command_payload #>> '{order,commandId}',
+                     outbox.command_payload #>> '{command,commandId}'
+                 )
+                WHERE outbox.user_id = $1 AND outbox.work_item_id = $2
+            )
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(work_id)
+        .fetch_one(database)
+        .await
+        .map_err(|error| {
+            CopierWorkError::api(ApiError::database(
+                "check issued copier target command",
+                error,
+            ))
+        })
+    }
+
+    async fn persist_copier_outbox(
+        &self,
+        owner_uuid: Uuid,
+        group_id: Uuid,
+        work_id: Uuid,
+        target_account_id: &str,
+        work_idempotency_key: &str,
+        operation: &str,
+        phase: Option<&str>,
+        target_leg: Option<i32>,
+        command: &EaCommand,
+        mut command_json: serde_json::Value,
+        change: &PortfolioChange,
+    ) -> Result<(), CopierWorkError> {
+        let Some(database) = &self.inner.database else {
+            return Err(CopierWorkError::permanent(
+                "PERSISTENT_STORE_REQUIRED",
+                "continuous copier requires PostgreSQL",
+            ));
+        };
+        let mut transaction = database.begin().await.map_err(|error| {
+            CopierWorkError::api(ApiError::database("begin copier outbox", error))
+        })?;
+        let group_runtime_status = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT runtime_status
+            FROM execution_copy_groups
+            WHERE user_id = $1 AND id = $2 AND enabled = true
+            FOR SHARE
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|error| {
+            CopierWorkError::api(ApiError::database("lock active copier group", error))
+        })?;
+        let Some(group_runtime_status) = group_runtime_status else {
+            return Err(CopierWorkError::permanent(
+                "COPY_GROUP_NOT_ACTIVE",
+                "the copier group was disabled before its command could be persisted",
+            ));
+        };
+        if group_runtime_status == "paused"
+            && !copier_operation_allowed_while_paused(operation, phase)
+        {
+            return Err(CopierWorkError::retryable(
+                "COPY_GROUP_PAUSED",
+                "risk-increasing copier work was paused before command persistence",
+            ));
+        }
+        let work_is_current = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT true
+            FROM execution_copy_work_items work
+            JOIN execution_copy_targets targets
+              ON targets.user_id = work.user_id
+             AND targets.group_id = work.group_id
+             AND targets.account_id = work.target_account_id
+            WHERE work.user_id = $1 AND work.group_id = $2 AND work.id = $3
+              AND work.status = 'leased' AND targets.enabled = true
+            FOR SHARE OF work, targets
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_id)
+        .bind(work_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|error| {
+            CopierWorkError::api(ApiError::database("validate current copier work", error))
+        })?
+        .unwrap_or(false);
+        if !work_is_current {
+            return Err(CopierWorkError::permanent(
+                "COPY_WORK_SUPERSEDED",
+                "the copier work item or target was superseded before command persistence",
+            ));
+        }
+        if operation == "partial_close" {
+            if let (
+                EaCommand::ClosePosition { command },
+                PortfolioChange::PositionReduced {
+                    previous,
+                    current,
+                    delta,
+                },
+            ) = (command, change)
+            {
+                if let Some(close_quantity) = command.quantity {
+                    let prior_link_state = sqlx::query(
+                        r#"
+                        SELECT source_quantity, target_quantity
+                        FROM execution_copy_links
+                        WHERE user_id = $1 AND group_id = $2 AND target_account_id = $3
+                          AND source_entity_kind = 'position' AND source_entity_id = $4
+                          AND ($5::integer IS NULL OR target_leg = $5)
+                          AND lifecycle_status NOT IN ('closed', 'cancelled', 'orphaned')
+                          AND target_quantity IS NOT NULL
+                        ORDER BY target_leg, updated_at DESC
+                        LIMIT 1
+                        "#,
+                    )
+                    .bind(owner_uuid)
+                    .bind(group_id)
+                    .bind(target_account_id)
+                    .bind(change.source_resource_id())
+                    .bind(target_leg)
+                    .fetch_optional(&mut *transaction)
+                    .await
+                    .map_err(|error| {
+                        CopierWorkError::api(ApiError::database(
+                            "load partial-close copier state",
+                            error,
+                        ))
+                    })?;
+                    if let (Some(prior_link_state), Some(object)) =
+                        (prior_link_state, command_json.as_object_mut())
+                    {
+                        let prior_source_quantity = prior_link_state
+                            .try_get::<Option<Decimal>, _>("source_quantity")
+                            .map_err(|error| {
+                                CopierWorkError::api(ApiError::database(
+                                    "decode partial-close source quantity",
+                                    error,
+                                ))
+                            })?;
+                        let prior_target_quantity = prior_link_state
+                            .try_get::<Decimal, _>("target_quantity")
+                            .map_err(|error| {
+                                CopierWorkError::api(ApiError::database(
+                                    "decode partial-close target quantity",
+                                    error,
+                                ))
+                            })?;
+                        let source_remaining = prior_source_quantity
+                            .filter(|_| previous.quantity > Decimal::ZERO)
+                            .map(|quantity| {
+                                let reduced = *delta * quantity / previous.quantity;
+                                (quantity - reduced).max(Decimal::ZERO)
+                            })
+                            .unwrap_or(current.quantity);
+                        object.insert(
+                            "copierSourceRemaining".into(),
+                            serde_json::Value::String(source_remaining.to_string()),
+                        );
+                        object.insert(
+                            "copierTargetRemaining".into(),
+                            serde_json::Value::String(
+                                (prior_target_quantity - close_quantity)
+                                    .max(Decimal::ZERO)
+                                    .to_string(),
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+        let outbox_identity = format!("{}:{}", work_id, work_idempotency_key);
+        sqlx::query(
+            r#"
+            INSERT INTO execution_copy_command_outbox (
+                user_id, group_id, target_account_id, work_item_id,
+                idempotency_key, command_type, command_payload
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (user_id, work_item_id) DO NOTHING
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_id)
+        .bind(target_account_id)
+        .bind(work_id)
+        .bind(format!("cpo:{}", short_hash(outbox_identity.as_bytes())))
+        .bind(if operation == "partial_close" {
+            "partial_close"
+        } else {
+            copier_command_type(command)
+        })
+        .bind(sqlx::types::Json(command_json.clone()))
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| {
+            CopierWorkError::api(ApiError::database("persist copier command outbox", error))
+        })?;
+        let stored_command_payload = sqlx::query_scalar::<_, sqlx::types::Json<serde_json::Value>>(
+            r#"
+            SELECT command_payload
+            FROM execution_copy_command_outbox
+            WHERE user_id = $1 AND work_item_id = $2
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(work_id)
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(|error| {
+            CopierWorkError::api(ApiError::database("reload copier command outbox", error))
+        })?;
+        if stored_command_payload.0 != command_json {
+            return Err(CopierWorkError::permanent(
+                "COPY_OUTBOX_IDEMPOTENCY_CONFLICT",
+                "the copier work item already has a different immutable command payload",
+            ));
+        }
+
+        if let EaCommand::Place { order } = command {
+            let target_kind = if order.kind == OrderKind::Market {
+                "position"
+            } else {
+                "pending_order"
+            };
+            let (link_source_kind, link_source_id) = copier_link_source_identity(change, operation);
+            let link_target_leg = if matches!(
+                change,
+                PortfolioChange::PendingReplaced { .. }
+                    | PortfolioChange::PendingFilled { .. }
+                    | PortfolioChange::PositionIncreased { .. }
+            ) {
+                sqlx::query_scalar::<_, i32>(
+                    r#"
+                    SELECT COALESCE(
+                        (
+                            SELECT target_leg
+                            FROM execution_copy_links
+                            WHERE user_id = $1 AND group_id = $2 AND target_account_id = $3
+                              AND source_entity_kind = $4 AND source_entity_id = $5
+                              AND metadata->>'commandId' = $6
+                            LIMIT 1
+                        ),
+                        (
+                            SELECT COALESCE(max(target_leg), -1) + 1
+                            FROM execution_copy_links
+                            WHERE user_id = $1 AND group_id = $2 AND target_account_id = $3
+                              AND source_entity_kind = $4 AND source_entity_id = $5
+                        )
+                    )
+                    "#,
+                )
+                .bind(owner_uuid)
+                .bind(group_id)
+                .bind(target_account_id)
+                .bind(link_source_kind)
+                .bind(link_source_id)
+                .bind(order.command_id.as_str())
+                .fetch_one(&mut *transaction)
+                .await
+                .map_err(|error| {
+                    CopierWorkError::api(ApiError::database(
+                        "allocate replacement copier target leg",
+                        error,
+                    ))
+                })?
+            } else {
+                target_leg.unwrap_or(0)
+            };
+            let source_quantity = copier_source_quantity(change);
+            sqlx::query(
+                r#"
+                INSERT INTO execution_copy_links (
+                    user_id, group_id, source_account_id, target_account_id,
+                    source_entity_kind, source_entity_id, target_leg,
+                    target_entity_kind, lifecycle_status,
+                    source_quantity, target_quantity, last_source_event_id,
+                    metadata, opened_at
+                )
+                SELECT $1, $2, groups.source_account_id, $3,
+                       $4, $5, $15, NULL, 'pending', $7, $8, $9,
+                       jsonb_build_object(
+                           'commandId', $10,
+                           'venueSymbol', $11,
+                           'canonicalSymbol', $12,
+                           'side', $13,
+                           'workItemId', $14::text,
+                           'expectedTargetKind', $6
+                       ), now()
+                FROM execution_copy_groups groups
+                WHERE groups.user_id = $1 AND groups.id = $2
+                ON CONFLICT (
+                    user_id, group_id, target_account_id,
+                    source_entity_kind, source_entity_id, target_leg
+                ) DO UPDATE
+                SET target_entity_kind = execution_copy_links.target_entity_kind,
+                    lifecycle_status = CASE
+                        WHEN execution_copy_links.lifecycle_status IN ('active', 'closing')
+                        THEN execution_copy_links.lifecycle_status
+                        ELSE 'pending'
+                    END,
+                    source_quantity = EXCLUDED.source_quantity,
+                    target_quantity = EXCLUDED.target_quantity,
+                    last_source_event_id = EXCLUDED.last_source_event_id,
+                    metadata = execution_copy_links.metadata || EXCLUDED.metadata,
+                    revision = execution_copy_links.revision + 1,
+                    updated_at = now()
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(group_id)
+            .bind(target_account_id)
+            .bind(link_source_kind)
+            .bind(link_source_id)
+            .bind(target_kind)
+            .bind(source_quantity)
+            .bind(order.quantity)
+            .bind(change.kind())
+            .bind(order.command_id.as_str())
+            .bind(&order.venue_symbol)
+            .bind(&order.canonical_symbol)
+            .bind(copier_side_name(order.side))
+            .bind(work_id)
+            .bind(link_target_leg)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| {
+                CopierWorkError::api(ApiError::database("persist copier link", error))
+            })?;
+        } else if let Some(command_id) = command_id(command) {
+            sqlx::query(
+                r#"
+                UPDATE execution_copy_links
+                SET metadata = metadata || jsonb_build_object(
+                        'lastCommandId', $6,
+                        'lastWorkItemId', $7::text
+                    ),
+                    last_source_event_id = $8,
+                    revision = revision + 1,
+                    updated_at = now()
+                WHERE user_id = $1 AND group_id = $2 AND target_account_id = $3
+                  AND source_entity_kind = $4 AND source_entity_id = $5
+                  AND ($9::integer IS NULL OR target_leg = $9)
+                  AND lifecycle_status NOT IN ('closed', 'cancelled', 'orphaned')
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(group_id)
+            .bind(target_account_id)
+            .bind(copy_source_entity_kind(change))
+            .bind(change.source_resource_id())
+            .bind(command_id)
+            .bind(work_id)
+            .bind(change.kind())
+            .bind(target_leg)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| {
+                CopierWorkError::api(ApiError::database(
+                    "associate copier lifecycle command",
+                    error,
+                ))
+            })?;
+        }
+        transaction.commit().await.map_err(|error| {
+            CopierWorkError::api(ApiError::database("commit copier outbox", error))
+        })
+    }
+
+    async fn publish_copier_outbox(
+        &self,
+        owner_uuid: Uuid,
+        work_id: Uuid,
+        target_command_id: &str,
+        change: &PortfolioChange,
+    ) -> Result<(), CopierWorkError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(());
+        };
+        let mut transaction = database.begin().await.map_err(|error| {
+            CopierWorkError::api(ApiError::database("begin copier publish", error))
+        })?;
+        sqlx::query(
+            r#"
+            UPDATE execution_copy_command_outbox
+            SET target_command_id = $3,
+                status = 'published',
+                published_at = COALESCE(published_at, now()),
+                lease_owner = NULL,
+                lease_expires_at = NULL,
+                updated_at = now()
+            WHERE user_id = $1 AND work_item_id = $2
+              AND status IN ('pending', 'publishing', 'published', 'retry')
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(work_id)
+        .bind(target_command_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| {
+            CopierWorkError::api(ApiError::database("publish copier outbox", error))
+        })?;
+        sqlx::query(
+            r#"
+            UPDATE execution_copy_work_items
+            SET status = 'succeeded', completed_at = now(),
+                lease_owner = NULL, lease_expires_at = NULL,
+                last_error = NULL, updated_at = now()
+            WHERE user_id = $1 AND id = $2 AND status IN ('leased', 'succeeded')
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(work_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| {
+            CopierWorkError::api(ApiError::database("complete copier publish work", error))
+        })?;
+        if matches!(
+            change,
+            PortfolioChange::PositionClosed { .. }
+                | PortfolioChange::PendingCancelled { .. }
+                | PortfolioChange::PendingReplaced { .. }
+        ) {
+            sqlx::query(
+                r#"
+                UPDATE execution_copy_links links
+                SET lifecycle_status = 'closing', revision = revision + 1, updated_at = now()
+                FROM execution_copy_work_items work
+                WHERE work.user_id = $1 AND work.id = $2
+                  AND links.user_id = work.user_id AND links.group_id = work.group_id
+                  AND links.target_account_id = work.target_account_id
+                  AND links.source_entity_kind = $3 AND links.source_entity_id = $4
+                  AND (
+                      links.metadata->>'lastWorkItemId' = work.id::text OR
+                      links.metadata->>'workItemId' = work.id::text
+                  )
+                  AND links.lifecycle_status NOT IN ('closed', 'cancelled')
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(work_id)
+            .bind(copy_source_entity_kind(change))
+            .bind(change.source_resource_id())
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| {
+                CopierWorkError::api(ApiError::database("mark copier link closing", error))
+            })?;
+        }
+        transaction.commit().await.map_err(|error| {
+            CopierWorkError::api(ApiError::database("commit copier publish", error))
+        })
+    }
+
+    async fn complete_continuous_copier_work(
+        &self,
+        owner_uuid: Uuid,
+        group_id: Uuid,
+        work_id: Uuid,
+        target_account_id: &str,
+        lifecycle_status: Option<&str>,
+        change: &PortfolioChange,
+    ) -> Result<(), CopierWorkError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(());
+        };
+        let mut transaction = database.begin().await.map_err(|error| {
+            CopierWorkError::api(ApiError::database("begin complete copier work", error))
+        })?;
+        sqlx::query(
+            r#"
+            UPDATE execution_copy_work_items
+            SET status = 'succeeded', completed_at = now(), last_error = NULL,
+                lease_owner = NULL, lease_expires_at = NULL, updated_at = now()
+            WHERE user_id = $1 AND id = $2
+              AND status IN ('pending', 'leased', 'retry')
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(work_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| CopierWorkError::api(ApiError::database("complete copier work", error)))?;
+        if let Some(lifecycle_status) = lifecycle_status {
+            sqlx::query(
+                r#"
+                UPDATE execution_copy_links
+                SET lifecycle_status = $6,
+                    closed_at = CASE WHEN $6 IN ('closed', 'cancelled') THEN now() ELSE closed_at END,
+                    revision = revision + 1, updated_at = now()
+                WHERE user_id = $1 AND group_id = $2 AND target_account_id = $3
+                  AND source_entity_kind = $4 AND source_entity_id = $5
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(group_id)
+            .bind(target_account_id)
+            .bind(copy_source_entity_kind(change))
+            .bind(change.source_resource_id())
+            .bind(lifecycle_status)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| {
+                CopierWorkError::api(ApiError::database("complete copier link", error))
+            })?;
+        }
+        transaction.commit().await.map_err(|error| {
+            CopierWorkError::api(ApiError::database("commit completed copier work", error))
+        })
+    }
+
+    async fn supersede_continuous_copier_work(
+        &self,
+        owner_uuid: Uuid,
+        group_id: Uuid,
+        work_id: Uuid,
+        target_account_id: &str,
+        change: &PortfolioChange,
+        reason: &str,
+    ) -> Result<(), CopierWorkError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(());
+        };
+        let mut transaction = database.begin().await.map_err(|error| {
+            CopierWorkError::api(ApiError::database("begin supersede copier work", error))
+        })?;
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+            .bind(format!(
+                "continuous-copier-target:{owner_uuid}:{group_id}:{target_account_id}"
+            ))
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| {
+                CopierWorkError::api(ApiError::database("lock stale copier work", error))
+            })?;
+        let command_was_issued = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM execution_copy_command_outbox outbox
+                JOIN execution_target_commands target_command
+                  ON target_command.user_id = outbox.user_id
+                 AND target_command.id = COALESCE(
+                     outbox.target_command_id,
+                     outbox.command_payload #>> '{order,commandId}',
+                     outbox.command_payload #>> '{command,commandId}'
+                 )
+                WHERE outbox.user_id = $1 AND outbox.work_item_id = $2
+            )
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(work_id)
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(|error| {
+            CopierWorkError::api(ApiError::database("recheck stale copier command", error))
+        })?;
+        if command_was_issued {
+            return Err(CopierWorkError::retryable(
+                "COPY_COMMAND_ALREADY_ISSUED",
+                "the stale copier work already has a durable target command and must reconcile idempotently",
+            ));
+        }
+        sqlx::query(
+            r#"
+            UPDATE execution_copy_work_items
+            SET status = 'superseded', completed_at = now(), last_error = $3,
+                lease_owner = NULL, lease_expires_at = NULL, updated_at = now()
+            WHERE user_id = $1 AND id = $2
+              AND status IN ('pending', 'leased', 'retry')
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(work_id)
+        .bind(reason)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| {
+            CopierWorkError::api(ApiError::database("supersede copier work", error))
+        })?;
+        sqlx::query(
+            r#"
+            UPDATE execution_copy_command_outbox
+            SET status = 'dead_letter', last_error = $3,
+                lease_owner = NULL, lease_expires_at = NULL, updated_at = now()
+            WHERE user_id = $1 AND work_item_id = $2
+              AND status NOT IN ('published', 'acknowledged')
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(work_id)
+        .bind(reason)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| {
+            CopierWorkError::api(ApiError::database("supersede copier outbox", error))
+        })?;
+        sqlx::query(
+            r#"
+            UPDATE execution_copy_links
+            SET lifecycle_status = 'cancelled', closed_at = COALESCE(closed_at, now()),
+                last_source_event_id = $6,
+                metadata = metadata || jsonb_build_object('supersededReason', $7),
+                revision = revision + 1, updated_at = now()
+            WHERE user_id = $1 AND group_id = $2 AND target_account_id = $3
+              AND source_entity_kind = $4 AND source_entity_id = $5
+              AND metadata->>'workItemId' = $8::text
+              AND lifecycle_status = 'pending'
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_id)
+        .bind(target_account_id)
+        .bind(copy_source_entity_kind(change))
+        .bind(change.source_resource_id())
+        .bind(change.kind())
+        .bind(reason)
+        .bind(work_id)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| {
+            CopierWorkError::api(ApiError::database("supersede copier link", error))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            CopierWorkError::api(ApiError::database("commit superseded copier work", error))
+        })
+    }
+
+    async fn reconcile_continuous_copy_target(
+        &self,
+        owner_uuid: Uuid,
+        group_id: Uuid,
+        work_id: Uuid,
+        target_account_id: &str,
+        change: &PortfolioChange,
+        target_leg: Option<i32>,
+    ) -> Result<(), CopierWorkError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(());
+        };
+        if let PortfolioChange::PendingFilled { previous, position } = change {
+            let link = sqlx::query(
+                r#"
+                SELECT id, target_entity_kind, target_entity_id, metadata,
+                       lifecycle_status
+                FROM execution_copy_links
+                WHERE user_id = $1 AND group_id = $2 AND target_account_id = $3
+                  AND source_entity_kind = 'pending_order' AND source_entity_id = $4
+                  AND ($5::integer IS NULL OR target_leg = $5)
+                  AND lifecycle_status NOT IN ('closed', 'cancelled')
+                ORDER BY target_leg
+                LIMIT 1
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(group_id)
+            .bind(target_account_id)
+            .bind(&previous.broker_order_id)
+            .bind(target_leg)
+            .fetch_optional(database)
+            .await
+            .map_err(|error| {
+                CopierWorkError::api(ApiError::database("load pending-fill copier link", error))
+            })?;
+            let Some(link) = link else {
+                return self
+                    .complete_continuous_copier_work(
+                        owner_uuid,
+                        group_id,
+                        work_id,
+                        target_account_id,
+                        None,
+                        change,
+                    )
+                    .await;
+            };
+            let link_id: Uuid = link.try_get("id").map_err(|error| {
+                CopierWorkError::api(ApiError::database("decode pending-fill link", error))
+            })?;
+            let link_lifecycle_status: String =
+                link.try_get("lifecycle_status").map_err(|error| {
+                    CopierWorkError::api(ApiError::database(
+                        "decode pending-fill link lifecycle",
+                        error,
+                    ))
+                })?;
+            if matches!(link_lifecycle_status.as_str(), "error" | "orphaned") {
+                return Err(CopierWorkError::retryable(
+                    "COPY_PENDING_FILL_LINK_UNRESOLVED",
+                    "the target pending link is unresolved and requires reconciliation before fill adoption",
+                ));
+            }
+            let target_entity_id = link
+                .try_get::<Option<String>, _>("target_entity_id")
+                .map_err(|error| {
+                    CopierWorkError::api(ApiError::database("decode pending-fill target", error))
+                })?;
+            let link_metadata = link
+                .try_get::<sqlx::types::Json<serde_json::Value>, _>("metadata")
+                .map_err(|error| {
+                    CopierWorkError::api(ApiError::database(
+                        "decode pending-fill link metadata",
+                        error,
+                    ))
+                })?
+                .0;
+            let expected_target_side = copier_expected_target_side(&link_metadata, position.side);
+            if let Some(target_entity_id) = target_entity_id.as_deref() {
+                let still_pending = sqlx::query_scalar::<_, bool>(
+                    r#"
+                    SELECT EXISTS (
+                        SELECT 1 FROM execution_pending_orders
+                        WHERE user_id = $1 AND account_id = $2 AND broker_order_id = $3
+                    )
+                    "#,
+                )
+                .bind(owner_uuid)
+                .bind(target_account_id)
+                .bind(target_entity_id)
+                .fetch_one(database)
+                .await
+                .map_err(|error| {
+                    CopierWorkError::api(ApiError::database(
+                        "check pending-fill target order",
+                        error,
+                    ))
+                })?;
+                if still_pending {
+                    return Err(CopierWorkError::retryable(
+                        "COPY_PENDING_FILL_WAIT",
+                        "source pending order filled while the target pending order is still open",
+                    ));
+                }
+            }
+            let candidate = sqlx::query_scalar::<_, String>(
+                r#"
+                SELECT candidates.broker_position_id
+                FROM (
+                    SELECT events.payload->>'brokerPositionId' AS broker_position_id,
+                           0 AS priority, events.occurred_at AS observed_at
+                    FROM execution_events events
+                    WHERE events.user_id = $1 AND events.account_id = $2
+                      AND $3::text IS NOT NULL
+                      AND events.event_type = 'trade.transaction'
+                      AND events.payload->>'brokerOrderId' = $3
+                      AND NULLIF(events.payload->>'brokerPositionId', '') IS NOT NULL
+
+                    UNION ALL
+
+                    SELECT positions.broker_position_id,
+                           CASE WHEN positions.snapshot->>'comment' LIKE 'SMC:%'
+                                THEN 1 ELSE 2 END AS priority,
+                           positions.observed_at
+                    FROM execution_positions positions
+                    WHERE positions.user_id = $1 AND positions.account_id = $2
+                      AND upper(positions.snapshot->>'canonicalSymbol') = upper($4)
+                      AND positions.snapshot->>'side' = $5
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM execution_copy_links other
+                          WHERE other.user_id = $1
+                            AND other.target_account_id = $2
+                            AND other.target_entity_kind = 'position'
+                            AND other.target_entity_id = positions.broker_position_id
+                            AND other.id <> $6
+                            AND other.lifecycle_status NOT IN ('closed', 'cancelled', 'orphaned')
+                      )
+                ) candidates
+                ORDER BY candidates.priority, candidates.observed_at DESC,
+                         candidates.broker_position_id
+                LIMIT 1
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(target_account_id)
+            .bind(target_entity_id.as_deref())
+            .bind(&position.canonical_symbol)
+            .bind(expected_target_side)
+            .bind(link_id)
+            .fetch_optional(database)
+            .await
+            .map_err(|error| {
+                CopierWorkError::api(ApiError::database("reconcile pending-fill position", error))
+            })?
+            .ok_or_else(|| {
+                CopierWorkError::retryable(
+                    "COPY_PENDING_FILL_UNRESOLVED",
+                    "target pending fill has not appeared in its portfolio snapshot yet",
+                )
+            })?;
+            sqlx::query(
+                r#"
+                UPDATE execution_copy_links
+                SET source_entity_kind = 'position', source_entity_id = $4,
+                    target_entity_kind = 'position', target_entity_id = $3,
+                    target_leg = CASE
+                        WHEN EXISTS (
+                            SELECT 1
+                            FROM execution_copy_links other
+                            WHERE other.user_id = execution_copy_links.user_id
+                              AND other.group_id = execution_copy_links.group_id
+                              AND other.target_account_id = execution_copy_links.target_account_id
+                              AND other.source_entity_kind = 'position'
+                              AND other.source_entity_id = $4
+                              AND other.target_leg = execution_copy_links.target_leg
+                              AND other.id <> execution_copy_links.id
+                        ) THEN (
+                            SELECT COALESCE(max(other.target_leg), -1) + 1
+                            FROM execution_copy_links other
+                            WHERE other.user_id = execution_copy_links.user_id
+                              AND other.group_id = execution_copy_links.group_id
+                              AND other.target_account_id = execution_copy_links.target_account_id
+                              AND other.source_entity_kind = 'position'
+                              AND other.source_entity_id = $4
+                        )
+                        ELSE target_leg
+                    END,
+                    source_quantity = $5, last_source_event_id = 'pending.filled',
+                    metadata = metadata || jsonb_build_object(
+                        'originatingPendingOrderId', $6
+                    ),
+                    lifecycle_status = 'active', last_reconciled_at = now(),
+                    revision = revision + 1, updated_at = now()
+                WHERE user_id = $1 AND id = $2
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(link_id)
+            .bind(candidate)
+            .bind(&position.broker_position_id)
+            .bind(previous.quantity)
+            .bind(&previous.broker_order_id)
+            .execute(database)
+            .await
+            .map_err(|error| {
+                CopierWorkError::api(ApiError::database("bind pending-fill position", error))
+            })?;
+        }
+        self.complete_continuous_copier_work(
+            owner_uuid,
+            group_id,
+            work_id,
+            target_account_id,
+            None,
+            change,
+        )
+        .await
+    }
+
+    async fn fail_continuous_copier_work(
+        &self,
+        owner_uuid: Uuid,
+        group_id: Uuid,
+        work_id: Uuid,
+        target_account_id: &str,
+        attempt_count: i32,
+        failure: CopierWorkError,
+    ) -> Result<(), ApiError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(());
+        };
+        let will_retry = failure.retryable && attempt_count < 12;
+        let retry_seconds = 1_i64 << attempt_count.clamp(0, 8);
+        let mut transaction = database
+            .begin()
+            .await
+            .map_err(|error| ApiError::database("begin copier failure", error))?;
+        let work_update = sqlx::query(
+            r#"
+            UPDATE execution_copy_work_items
+            SET status = $3,
+                available_at = CASE WHEN $3 = 'retry'
+                    THEN now() + make_interval(secs => $4::double precision)
+                    ELSE available_at END,
+                last_error = $5,
+                lease_owner = NULL, lease_expires_at = NULL,
+                completed_at = CASE WHEN $3 = 'dead_letter' THEN now() ELSE NULL END,
+                updated_at = now()
+            WHERE user_id = $1 AND id = $2
+              AND status IN ('pending', 'leased', 'retry')
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(work_id)
+        .bind(if will_retry { "retry" } else { "dead_letter" })
+        .bind(retry_seconds)
+        .bind(&failure.message)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("fail copier work", error))?;
+        if work_update.rows_affected() == 0 {
+            transaction
+                .commit()
+                .await
+                .map_err(|error| ApiError::database("commit ignored copier failure", error))?;
+            return Ok(());
+        }
+        sqlx::query(
+            r#"
+            UPDATE execution_copy_command_outbox
+            SET status = CASE WHEN $3 THEN 'retry' ELSE 'dead_letter' END,
+                available_at = CASE WHEN $3
+                    THEN now() + make_interval(secs => $4::double precision)
+                    ELSE available_at END,
+                last_error = $5,
+                lease_owner = NULL, lease_expires_at = NULL,
+                updated_at = now()
+            WHERE user_id = $1 AND work_item_id = $2
+              AND status NOT IN ('published', 'acknowledged')
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(work_id)
+        .bind(will_retry)
+        .bind(retry_seconds)
+        .bind(&failure.message)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("fail copier outbox", error))?;
+        sqlx::query(
+            r#"
+            INSERT INTO execution_copy_errors (
+                user_id, group_id, target_account_id, work_item_id,
+                error_code, message, context, retryable
+            )
+            VALUES (
+                $1, $2, $3, $4, $5, $6,
+                jsonb_build_object('attemptCount', $7, 'willRetry', $8), $8
+            )
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_id)
+        .bind(target_account_id)
+        .bind(work_id)
+        .bind(&failure.code)
+        .bind(&failure.message)
+        .bind(attempt_count)
+        .bind(will_retry)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("record copier failure", error))?;
+        sqlx::query(
+            r#"
+            UPDATE execution_copy_targets
+            SET runtime_status = $4, status_message = $5,
+                last_error_at = now(), updated_at = now()
+            WHERE user_id = $1 AND group_id = $2 AND account_id = $3
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_id)
+        .bind(target_account_id)
+        .bind(if will_retry { "waiting" } else { "error" })
+        .bind(&failure.message)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("update copier target failure", error))?;
+        sqlx::query(
+            r#"
+            UPDATE execution_copy_groups
+            SET runtime_status = CASE WHEN $3 THEN 'degraded' ELSE 'error' END,
+                status_message = $4, updated_at = now()
+            WHERE user_id = $1 AND id = $2 AND runtime_status <> 'paused'
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_id)
+        .bind(will_retry)
+        .bind(&failure.message)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("update copier group failure", error))?;
+        transaction
+            .commit()
+            .await
+            .map_err(|error| ApiError::database("commit copier failure", error))
     }
 
     async fn load_route_target(
@@ -3732,6 +7544,145 @@ impl EaCommandQueue for GatewayState {
                     "SMCExecutionEA {}.{} or newer is required",
                     MIN_SUPPORTED_EA_VERSION.0, MIN_SUPPORTED_EA_VERSION.1
                 )));
+            }
+
+            // Continuous copier commands receive a second, atomic gate at the
+            // durable queue boundary. The target advisory lock also serializes
+            // enqueue against source close/cancel/fill supersession: whichever
+            // transaction wins is visible to the other's fresh SQL statement.
+            let copier_group_id = sqlx::query_scalar::<_, Uuid>(
+                r#"
+                SELECT outbox.group_id
+                FROM execution_copy_command_outbox outbox
+                WHERE outbox.user_id = $1
+                  AND outbox.target_account_id = $2
+                  AND COALESCE(
+                      outbox.command_payload #>> '{order,commandId}',
+                      outbox.command_payload #>> '{command,commandId}'
+                  ) = $3
+                ORDER BY outbox.created_at DESC
+                LIMIT 1
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(account_id.as_str())
+            .bind(command_id)
+            .fetch_optional(&mut *transaction)
+            .await
+            .map_err(|error| {
+                error!(%error, "failed to resolve copier enqueue group");
+                AdapterError::Transport("command repository unavailable".into())
+            })?;
+            if let Some(copier_group_id) = copier_group_id {
+                sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+                    .bind(format!(
+                        "continuous-copier-target:{owner_uuid}:{copier_group_id}:{}",
+                        account_id.as_str()
+                    ))
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(|error| {
+                        error!(%error, "failed to lock copier enqueue target");
+                        AdapterError::Transport("command repository unavailable".into())
+                    })?;
+                let copier_gate = sqlx::query(
+                    r#"
+                SELECT
+                    groups.enabled AS group_enabled,
+                    groups.runtime_status,
+                    targets.enabled AS target_enabled,
+                    work.status AS work_status,
+                    work.operation,
+                    work.payload->>'phase' AS phase
+                FROM execution_copy_command_outbox outbox
+                JOIN execution_copy_work_items work
+                  ON work.user_id = outbox.user_id
+                 AND work.group_id = outbox.group_id
+                 AND work.id = outbox.work_item_id
+                JOIN execution_copy_groups groups
+                  ON groups.user_id = outbox.user_id
+                 AND groups.id = outbox.group_id
+                JOIN execution_copy_targets targets
+                  ON targets.user_id = outbox.user_id
+                 AND targets.group_id = outbox.group_id
+                 AND targets.account_id = outbox.target_account_id
+                WHERE outbox.user_id = $1
+                  AND outbox.target_account_id = $2
+                  AND outbox.group_id = $4
+                  AND COALESCE(
+                      outbox.command_payload #>> '{order,commandId}',
+                      outbox.command_payload #>> '{command,commandId}'
+                  ) = $3
+                ORDER BY outbox.created_at DESC
+                LIMIT 1
+                FOR SHARE OF groups, targets, work
+                "#,
+                )
+                .bind(owner_uuid)
+                .bind(account_id.as_str())
+                .bind(command_id)
+                .bind(copier_group_id)
+                .fetch_optional(&mut *transaction)
+                .await
+                .map_err(|error| {
+                    error!(%error, "failed to validate copier enqueue gate");
+                    AdapterError::Transport("command repository unavailable".into())
+                })?
+                .ok_or_else(|| {
+                    AdapterError::Rejected(
+                        "continuous copier work disappeared before durable enqueue".into(),
+                    )
+                })?;
+                let group_enabled =
+                    copier_gate
+                        .try_get::<bool, _>("group_enabled")
+                        .map_err(|error| {
+                            error!(%error, "failed to decode copier group enqueue state");
+                            AdapterError::Transport("command repository unavailable".into())
+                        })?;
+                let target_enabled =
+                    copier_gate
+                        .try_get::<bool, _>("target_enabled")
+                        .map_err(|error| {
+                            error!(%error, "failed to decode copier target enqueue state");
+                            AdapterError::Transport("command repository unavailable".into())
+                        })?;
+                let runtime_status =
+                    copier_gate
+                        .try_get::<String, _>("runtime_status")
+                        .map_err(|error| {
+                            error!(%error, "failed to decode copier runtime enqueue state");
+                            AdapterError::Transport("command repository unavailable".into())
+                        })?;
+                let work_status =
+                    copier_gate
+                        .try_get::<String, _>("work_status")
+                        .map_err(|error| {
+                            error!(%error, "failed to decode copier work enqueue state");
+                            AdapterError::Transport("command repository unavailable".into())
+                        })?;
+                let operation = copier_gate
+                    .try_get::<String, _>("operation")
+                    .map_err(|error| {
+                        error!(%error, "failed to decode copier enqueue operation");
+                        AdapterError::Transport("command repository unavailable".into())
+                    })?;
+                let phase = copier_gate
+                    .try_get::<Option<String>, _>("phase")
+                    .map_err(|error| {
+                        error!(%error, "failed to decode copier enqueue phase");
+                        AdapterError::Transport("command repository unavailable".into())
+                    })?;
+                if !group_enabled || !target_enabled || work_status != "leased" {
+                    return Err(AdapterError::Rejected(
+                        "continuous copier work was superseded before durable enqueue".into(),
+                    ));
+                }
+                if matches!(runtime_status.as_str(), "paused" | "error")
+                    && !copier_operation_allowed_while_paused(&operation, phase.as_deref())
+                {
+                    return Err(AdapterError::Backpressure);
+                }
             }
 
             let pending_count = sqlx::query_scalar::<_, i64>(
@@ -5228,6 +9179,1231 @@ async fn upsert_symbol_mapping(
     }))
 }
 
+async fn list_copy_groups(
+    State(state): State<GatewayState>,
+    headers: HeaderMap,
+    Query(query): Query<CopyGroupQuery>,
+) -> Result<Json<Vec<CopyGroupView>>, ApiError> {
+    require_admin(&state, &headers)?;
+    let owner_uuid = parse_owner_id(&query.owner_id)?;
+    let database = state.inner.database.as_ref().ok_or_else(|| {
+        ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "PERSISTENT_STORE_REQUIRED",
+            "continuous copier settings require PostgreSQL",
+        )
+    })?;
+    let group_id = query
+        .group_id
+        .as_ref()
+        .map(|value| parse_copy_group_id(value))
+        .transpose()?;
+    Ok(Json(
+        load_copy_group_views(database, owner_uuid, &query.owner_id, group_id).await?,
+    ))
+}
+
+async fn upsert_copy_group(
+    State(state): State<GatewayState>,
+    headers: HeaderMap,
+    Json(request): Json<CopyGroupUpsertRequest>,
+) -> Result<(StatusCode, Json<CopyGroupView>), ApiError> {
+    require_admin(&state, &headers)?;
+    let owner_uuid = parse_owner_id(&request.owner_id)?;
+    validate_copy_group_write(&request)?;
+    if request.group.enabled {
+        require_copy_group_authorization(
+            &state,
+            owner_uuid,
+            request.authorization_token.as_deref(),
+            request.authorization_session_id.as_deref(),
+            "copyGroup",
+            copy_group_upsert_authorization_payload(&request),
+        )
+        .await?;
+    }
+    let database = state.inner.database.as_ref().ok_or_else(|| {
+        ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "PERSISTENT_STORE_REQUIRED",
+            "continuous copier settings require PostgreSQL",
+        )
+    })?;
+    let group_uuid = request
+        .group_id
+        .as_ref()
+        .map(parse_copy_group_id)
+        .transpose()?
+        .unwrap_or_else(Uuid::new_v4);
+    let is_new = request.group_id.is_none();
+    let account_ids = std::iter::once(request.group.source_account_id.as_str().to_owned())
+        .chain(
+            request
+                .targets
+                .iter()
+                .map(|target| target.account_id.as_str().to_owned()),
+        )
+        .collect::<Vec<_>>();
+    let group_configuration = serde_json::to_value(&request.group.config)
+        .map_err(|error| ApiError::internal("serialize copier group config", error))?;
+    let mut transaction = database
+        .begin()
+        .await
+        .map_err(|error| ApiError::database("begin copier group update", error))?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(format!("continuous-copier-owner:{owner_uuid}"))
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("lock owner copier configuration", error))?;
+    let owned_accounts = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT count(*)
+        FROM execution_accounts
+        WHERE user_id = $1 AND id = ANY($2)
+          AND venue_kind = 'metatrader5' AND status <> 'disabled'
+        "#,
+    )
+    .bind(owner_uuid)
+    .bind(&account_ids)
+    .fetch_one(&mut *transaction)
+    .await
+    .map_err(|error| ApiError::database("authorize copier accounts", error))?;
+    if owned_accounts != account_ids.len() as i64 {
+        return Err(ApiError::new(
+            StatusCode::NOT_FOUND,
+            "COPIER_ACCOUNT_NOT_FOUND",
+            "source and target accounts must be enabled MT5 accounts owned by this user",
+        ));
+    }
+    if request.group.enabled {
+        let enabled_target_ids = request
+            .targets
+            .iter()
+            .filter(|target| target.enabled)
+            .map(|target| target.account_id.as_str().to_owned())
+            .collect::<Vec<_>>();
+        let would_chain = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM execution_copy_groups groups
+                JOIN execution_copy_targets targets
+                  ON targets.user_id = groups.user_id
+                 AND targets.group_id = groups.id
+                 AND targets.enabled = true
+                WHERE groups.user_id = $1 AND groups.enabled = true
+                  AND groups.id <> $2
+                  AND (
+                      targets.account_id = $3 OR
+                      groups.source_account_id = ANY($4)
+                  )
+            )
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_uuid)
+        .bind(request.group.source_account_id.as_str())
+        .bind(&enabled_target_ids)
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("validate copier group graph", error))?;
+        if would_chain {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "COPY_GROUP_CHAIN_UNSUPPORTED",
+                "an account cannot be both an enabled copier target and an enabled copier source",
+            ));
+        }
+    }
+
+    let mut source_account_changed = false;
+    if !is_new {
+        let current_group = sqlx::query(
+            r#"
+            SELECT source_account_id, enabled
+            FROM execution_copy_groups
+            WHERE user_id = $1 AND id = $2
+            FOR UPDATE
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_uuid)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("lock copier group for update", error))?;
+        if let Some(current_group) = current_group {
+            let current_source_account_id = current_group
+                .try_get::<String, _>("source_account_id")
+                .map_err(|error| ApiError::database("decode current copier source", error))?;
+            let current_enabled = current_group
+                .try_get::<bool, _>("enabled")
+                .map_err(|error| {
+                    ApiError::database("decode current copier enabled state", error)
+                })?;
+            source_account_changed =
+                current_source_account_id != request.group.source_account_id.as_str();
+            let active_link_targets = sqlx::query_scalar::<_, String>(
+                r#"
+                SELECT DISTINCT target_account_id
+                FROM execution_copy_links
+                WHERE user_id = $1 AND group_id = $2
+                  AND lifecycle_status NOT IN ('closed', 'cancelled')
+                ORDER BY target_account_id
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(group_uuid)
+            .fetch_all(&mut *transaction)
+            .await
+            .map_err(|error| ApiError::database("load live copier links", error))?;
+            let requested_enabled_targets = request
+                .targets
+                .iter()
+                .filter(|target| target.enabled)
+                .map(|target| target.account_id.as_str())
+                .collect::<HashSet<_>>();
+            let current_enabled_targets = sqlx::query_scalar::<_, String>(
+                r#"
+                SELECT account_id
+                FROM execution_copy_targets
+                WHERE user_id = $1 AND group_id = $2 AND enabled = true
+                ORDER BY account_id
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(group_uuid)
+            .fetch_all(&mut *transaction)
+            .await
+            .map_err(|error| ApiError::database("load current copier targets", error))?
+            .into_iter()
+            .collect::<HashSet<_>>();
+            let active_link_target_set = active_link_targets
+                .iter()
+                .map(String::as_str)
+                .collect::<HashSet<_>>();
+            if let Some(message) = copy_group_transition_drain_reason(
+                &current_source_account_id,
+                current_enabled,
+                request.group.source_account_id.as_str(),
+                request.group.enabled,
+                &requested_enabled_targets,
+                &active_link_targets,
+            ) {
+                return Err(ApiError::new(
+                    StatusCode::CONFLICT,
+                    "COPY_GROUP_DRAIN_REQUIRED",
+                    message,
+                ));
+            }
+            if !active_link_targets.is_empty()
+                && requested_enabled_targets.iter().any(|account_id| {
+                    !current_enabled_targets.contains(*account_id)
+                        && !active_link_target_set.contains(*account_id)
+                })
+            {
+                return Err(ApiError::new(
+                    StatusCode::CONFLICT,
+                    "COPY_GROUP_BASELINE_REQUIRED",
+                    "a new enabled target cannot join while the group has live links; wait until flat or use a future baseline-sync workflow",
+                ));
+            }
+        }
+    }
+
+    let group_revision = if is_new {
+        sqlx::query_scalar::<_, i64>(
+            r#"
+            INSERT INTO execution_copy_groups (
+                id, user_id, name, source_account_id, enabled,
+                revision, applied_revision, runtime_status, configuration
+            )
+            VALUES (
+                $1, $2, $3, $4, $5, 1, 1,
+                CASE WHEN $5 THEN 'starting' ELSE 'paused' END,
+                $6
+            )
+            RETURNING revision
+            "#,
+        )
+        .bind(group_uuid)
+        .bind(owner_uuid)
+        .bind(request.group.name.trim())
+        .bind(request.group.source_account_id.as_str())
+        .bind(request.group.enabled)
+        .bind(sqlx::types::Json(group_configuration))
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("create copier group", error))?
+    } else {
+        let expected_revision = request.group.expected_revision.ok_or_else(|| {
+            ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "EXPECTED_REVISION_REQUIRED",
+                "updating a copier group requires expectedRevision",
+            )
+        })?;
+        sqlx::query_scalar::<_, i64>(
+            r#"
+            UPDATE execution_copy_groups
+            SET name = $4,
+                source_account_id = $5,
+                enabled = $6,
+                configuration = $7,
+                revision = revision + 1,
+                applied_revision = revision + 1,
+                runtime_status = CASE WHEN $6 THEN 'starting' ELSE 'paused' END,
+                status_message = NULL,
+                updated_at = now()
+            WHERE user_id = $1 AND id = $2 AND revision = $3
+            RETURNING revision
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_uuid)
+        .bind(expected_revision as i64)
+        .bind(request.group.name.trim())
+        .bind(request.group.source_account_id.as_str())
+        .bind(request.group.enabled)
+        .bind(sqlx::types::Json(group_configuration))
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("update copier group", error))?
+        .ok_or_else(copy_group_revision_conflict)?
+    };
+
+    let target_ids = request
+        .targets
+        .iter()
+        .map(|target| target.account_id.as_str().to_owned())
+        .collect::<Vec<_>>();
+    for target in &request.targets {
+        let (allocation_mode, multiplier, risk_basis_points, fixed_quantity, allocation_unit) =
+            copy_allocation_columns(&target.config.allocation);
+        let target_configuration = serde_json::to_value(&target.config)
+            .map_err(|error| ApiError::internal("serialize copier target config", error))?;
+        let symbol_mapping = serde_json::to_value(&target.config.symbol_mapping)
+            .map_err(|error| ApiError::internal("serialize copier symbol mapping", error))?;
+        let updated = sqlx::query_scalar::<_, i64>(
+            r#"
+            INSERT INTO execution_copy_targets (
+                user_id, group_id, account_id, enabled,
+                allocation_mode, multiplier, risk_basis_points, max_quantity,
+                fixed_quantity, allocation_unit,
+                revision, applied_revision, runtime_status,
+                configuration, symbol_mapping
+            )
+            VALUES (
+                $1, $2, $3, $4,
+                $5, $6, $7, $8, $9, $10,
+                1, 1, CASE WHEN $4 THEN 'connecting' ELSE 'inactive' END,
+                $11, $12
+            )
+            ON CONFLICT (group_id, account_id) DO UPDATE SET
+                enabled = EXCLUDED.enabled,
+                allocation_mode = EXCLUDED.allocation_mode,
+                multiplier = EXCLUDED.multiplier,
+                risk_basis_points = EXCLUDED.risk_basis_points,
+                max_quantity = EXCLUDED.max_quantity,
+                fixed_quantity = EXCLUDED.fixed_quantity,
+                allocation_unit = EXCLUDED.allocation_unit,
+                configuration = EXCLUDED.configuration,
+                symbol_mapping = EXCLUDED.symbol_mapping,
+                revision = execution_copy_targets.revision + 1,
+                applied_revision = execution_copy_targets.revision + 1,
+                runtime_status = CASE WHEN EXCLUDED.enabled THEN 'connecting' ELSE 'inactive' END,
+                status_message = NULL,
+                updated_at = now()
+            WHERE execution_copy_targets.user_id = EXCLUDED.user_id
+              AND ($13::bigint IS NULL OR execution_copy_targets.revision = $13)
+            RETURNING revision
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_uuid)
+        .bind(target.account_id.as_str())
+        .bind(target.enabled)
+        .bind(allocation_mode)
+        .bind(multiplier)
+        .bind(risk_basis_points)
+        .bind(target.config.max_quantity)
+        .bind(fixed_quantity)
+        .bind(allocation_unit)
+        .bind(sqlx::types::Json(target_configuration))
+        .bind(sqlx::types::Json(symbol_mapping))
+        .bind(target.expected_revision.map(|value| value as i64))
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("save copier target", error))?;
+        if updated.is_none() {
+            return Err(copy_group_revision_conflict());
+        }
+        for (canonical_symbol, venue_symbol) in &target.config.symbol_mapping {
+            let mapped = sqlx::query(
+                r#"
+                INSERT INTO execution_symbol_mappings (
+                    user_id, account_id, canonical_symbol, venue_symbol,
+                    mapping_source, enabled
+                )
+                SELECT $1, $2, upper($3), instruments.venue_symbol, 'user', true
+                FROM execution_instruments instruments
+                WHERE instruments.user_id = $1
+                  AND instruments.account_id = $2
+                  AND instruments.venue_symbol = $4
+                ON CONFLICT (user_id, account_id, canonical_symbol) DO UPDATE SET
+                    venue_symbol = EXCLUDED.venue_symbol,
+                    mapping_source = 'user',
+                    enabled = true,
+                    updated_at = now()
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(target.account_id.as_str())
+            .bind(canonical_symbol.trim())
+            .bind(venue_symbol.trim())
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| ApiError::database("save copier symbol mapping", error))?;
+            if mapped.rows_affected() == 0 {
+                return Err(ApiError::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "COPY_SYMBOL_MAPPING_UNAVAILABLE",
+                    format!(
+                        "target {} has not reported venue symbol {}",
+                        target.account_id, venue_symbol
+                    ),
+                ));
+            }
+        }
+    }
+    sqlx::query(
+        r#"
+        UPDATE execution_copy_targets
+        SET enabled = false,
+            runtime_status = 'inactive',
+            revision = revision + 1,
+            applied_revision = revision + 1,
+            status_message = 'Removed from the current group configuration',
+            updated_at = now()
+        WHERE user_id = $1 AND group_id = $2
+          AND NOT (account_id = ANY($3))
+          AND enabled = true
+        "#,
+    )
+    .bind(owner_uuid)
+    .bind(group_uuid)
+    .bind(&target_ids)
+    .execute(&mut *transaction)
+    .await
+    .map_err(|error| ApiError::database("disable removed copier targets", error))?;
+    let supersede_all_work = source_account_changed || !request.group.enabled;
+    sqlx::query(
+        r#"
+        WITH superseded_work AS (
+            UPDATE execution_copy_work_items work
+            SET status = 'superseded',
+                completed_at = COALESCE(completed_at, now()),
+                last_error = 'superseded by copier configuration revision',
+                lease_owner = NULL,
+                lease_expires_at = NULL,
+                updated_at = now()
+            FROM execution_copy_targets targets
+            WHERE work.user_id = $1 AND work.group_id = $2
+              AND targets.user_id = work.user_id
+              AND targets.group_id = work.group_id
+              AND targets.account_id = work.target_account_id
+              AND work.status IN ('pending', 'leased', 'retry')
+              AND ($3::boolean OR targets.enabled = false)
+            RETURNING work.id
+        )
+        UPDATE execution_copy_command_outbox outbox
+        SET status = 'dead_letter',
+            last_error = 'superseded by copier configuration revision',
+            lease_owner = NULL,
+            lease_expires_at = NULL,
+            updated_at = now()
+        FROM superseded_work
+        WHERE outbox.user_id = $1
+          AND outbox.work_item_id = superseded_work.id
+          AND outbox.status NOT IN ('published', 'acknowledged')
+        "#,
+    )
+    .bind(owner_uuid)
+    .bind(group_uuid)
+    .bind(supersede_all_work)
+    .execute(&mut *transaction)
+    .await
+    .map_err(|error| ApiError::database("supersede obsolete copier work", error))?;
+    if !request.group.enabled {
+        sqlx::query(
+            r#"
+            UPDATE execution_copy_targets
+            SET runtime_status = 'inactive',
+                status_message = 'Copier group disabled',
+                updated_at = now()
+            WHERE user_id = $1 AND group_id = $2
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_uuid)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("deactivate disabled copier targets", error))?;
+    }
+    sqlx::query(
+        r#"
+        INSERT INTO execution_audit_log (
+            user_id, actor_type, actor_id, action,
+            resource_type, resource_id, details
+        )
+        VALUES (
+            $1, 'user', $1::text, $2, 'execution_copy_group', $3,
+            jsonb_build_object(
+                'revision', $4,
+                'sourceAccountId', $5,
+                'targetCount', $6,
+                'enabled', $7
+            )
+        )
+        "#,
+    )
+    .bind(owner_uuid)
+    .bind(if is_new {
+        "copy_group.created"
+    } else {
+        "copy_group.updated"
+    })
+    .bind(group_uuid.to_string())
+    .bind(group_revision)
+    .bind(request.group.source_account_id.as_str())
+    .bind(request.targets.len() as i64)
+    .bind(request.group.enabled)
+    .execute(&mut *transaction)
+    .await
+    .map_err(|error| ApiError::database("audit copier group", error))?;
+    transaction
+        .commit()
+        .await
+        .map_err(|error| ApiError::database("commit copier group update", error))?;
+    let mut views =
+        load_copy_group_views(database, owner_uuid, &request.owner_id, Some(group_uuid)).await?;
+    let view = views.pop().ok_or_else(|| {
+        ApiError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "COPY_GROUP_NOT_FOUND_AFTER_WRITE",
+            "copier group could not be reloaded after saving",
+        )
+    })?;
+    Ok((
+        if is_new {
+            StatusCode::CREATED
+        } else {
+            StatusCode::OK
+        },
+        Json(view),
+    ))
+}
+
+async fn copy_group_action(
+    State(state): State<GatewayState>,
+    headers: HeaderMap,
+    Json(request): Json<CopyGroupActionRequest>,
+) -> Result<Json<CopyGroupView>, ApiError> {
+    require_admin(&state, &headers)?;
+    let owner_uuid = parse_owner_id(&request.owner_id)?;
+    let group_uuid = parse_copy_group_id(&request.group_id)?;
+    let database = state.inner.database.as_ref().ok_or_else(|| {
+        ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "PERSISTENT_STORE_REQUIRED",
+            "continuous copier actions require PostgreSQL",
+        )
+    })?;
+    if matches!(request.action, CopyGroupAction::Resume) {
+        require_copy_group_authorization(
+            &state,
+            owner_uuid,
+            request.authorization_token.as_deref(),
+            request.authorization_session_id.as_deref(),
+            "copyGroup",
+            copy_group_action_authorization_payload(&request),
+        )
+        .await?;
+    }
+    let mut transaction = database
+        .begin()
+        .await
+        .map_err(|error| ApiError::database("begin copier action", error))?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(format!("continuous-copier-owner:{owner_uuid}"))
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("lock owner copier action", error))?;
+    let group_row = sqlx::query(
+        r#"
+        SELECT source_account_id
+        FROM execution_copy_groups
+        WHERE user_id = $1 AND id = $2 AND revision = $3
+        FOR UPDATE
+        "#,
+    )
+    .bind(owner_uuid)
+    .bind(group_uuid)
+    .bind(request.expected_revision as i64)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(|error| ApiError::database("lock copier group for action", error))?
+    .ok_or_else(copy_group_revision_conflict)?;
+    let source_account_id = group_row
+        .try_get::<String, _>("source_account_id")
+        .map_err(|error| ApiError::database("decode copier action source", error))?;
+    if matches!(request.action, CopyGroupAction::Resume) {
+        let enabled_target_ids = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT account_id
+            FROM execution_copy_targets
+            WHERE user_id = $1 AND group_id = $2 AND enabled = true
+            ORDER BY account_id
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_uuid)
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("load copier resume targets", error))?;
+        if enabled_target_ids.is_empty() {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "COPY_TARGET_ENABLED_REQUIRED",
+                "resuming a copier group requires at least one enabled target",
+            ));
+        }
+        let account_ids = std::iter::once(source_account_id.clone())
+            .chain(enabled_target_ids.iter().cloned())
+            .collect::<Vec<_>>();
+        let enabled_account_count = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT count(*)
+            FROM execution_accounts
+            WHERE user_id = $1 AND id = ANY($2)
+              AND venue_kind = 'metatrader5' AND status <> 'disabled'
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(&account_ids)
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("validate copier resume accounts", error))?;
+        if enabled_account_count != account_ids.len() as i64 {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "COPIER_ACCOUNT_NOT_READY",
+                "source and enabled targets must remain enabled MT5 accounts before resume",
+            ));
+        }
+        let would_chain = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM execution_copy_groups groups
+                JOIN execution_copy_targets targets
+                  ON targets.user_id = groups.user_id
+                 AND targets.group_id = groups.id
+                 AND targets.enabled = true
+                WHERE groups.user_id = $1 AND groups.enabled = true
+                  AND groups.id <> $2
+                  AND (
+                      targets.account_id = $3 OR
+                      groups.source_account_id = ANY($4)
+                  )
+            )
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_uuid)
+        .bind(&source_account_id)
+        .bind(&enabled_target_ids)
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("validate copier resume graph", error))?;
+        if would_chain {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "COPY_GROUP_CHAIN_UNSUPPORTED",
+                "an account cannot be both an enabled copier target and an enabled copier source",
+            ));
+        }
+    }
+    if matches!(request.action, CopyGroupAction::Archive) {
+        let live_link_count = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT count(*)
+            FROM execution_copy_links
+            WHERE user_id = $1 AND group_id = $2
+              AND lifecycle_status NOT IN ('closed', 'cancelled')
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_uuid)
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("check copier archive links", error))?;
+        if live_link_count > 0 {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "COPY_GROUP_DRAIN_REQUIRED",
+                "archive is blocked while copier links remain open, pending, closing, orphaned, or in error",
+            ));
+        }
+    }
+    let (enabled, runtime_status, audit_action) = match request.action {
+        CopyGroupAction::Pause => (None, Some("paused"), "copy_group.paused"),
+        CopyGroupAction::Resume => (Some(true), Some("starting"), "copy_group.resumed"),
+        CopyGroupAction::Archive => (Some(false), Some("inactive"), "copy_group.archived"),
+        CopyGroupAction::Reconcile => (None, None, "copy_group.reconcile_requested"),
+    };
+    let revision = sqlx::query_scalar::<_, i64>(
+        r#"
+        UPDATE execution_copy_groups
+        SET enabled = COALESCE($4, enabled),
+            runtime_status = COALESCE($5, runtime_status),
+            status_message = NULL,
+            revision = revision + 1,
+            applied_revision = revision + 1,
+            updated_at = now()
+        WHERE user_id = $1 AND id = $2 AND revision = $3
+        RETURNING revision
+        "#,
+    )
+    .bind(owner_uuid)
+    .bind(group_uuid)
+    .bind(request.expected_revision as i64)
+    .bind(enabled)
+    .bind(runtime_status)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(|error| ApiError::database("apply copier action", error))?
+    .ok_or_else(copy_group_revision_conflict)?;
+    if matches!(request.action, CopyGroupAction::Archive) {
+        sqlx::query(
+            r#"
+            WITH superseded_work AS (
+                UPDATE execution_copy_work_items
+                SET status = 'superseded',
+                    completed_at = COALESCE(completed_at, now()),
+                    last_error = 'superseded because the copier group was archived',
+                    lease_owner = NULL,
+                    lease_expires_at = NULL,
+                    updated_at = now()
+                WHERE user_id = $1 AND group_id = $2
+                  AND status IN ('pending', 'leased', 'retry')
+                RETURNING id
+            )
+            UPDATE execution_copy_command_outbox outbox
+            SET status = 'dead_letter',
+                last_error = 'superseded because the copier group was archived',
+                lease_owner = NULL,
+                lease_expires_at = NULL,
+                updated_at = now()
+            FROM superseded_work
+            WHERE outbox.user_id = $1
+              AND outbox.work_item_id = superseded_work.id
+              AND outbox.status NOT IN ('published', 'acknowledged')
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_uuid)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("supersede archived copier work", error))?;
+        sqlx::query(
+            r#"
+            UPDATE execution_copy_targets
+            SET runtime_status = 'inactive',
+                status_message = 'Copier group archived',
+                updated_at = now()
+            WHERE user_id = $1 AND group_id = $2
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_uuid)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("deactivate archived copier targets", error))?;
+    } else if matches!(request.action, CopyGroupAction::Resume) {
+        sqlx::query(
+            r#"
+            UPDATE execution_copy_targets
+            SET runtime_status = CASE WHEN enabled THEN 'connecting' ELSE 'inactive' END,
+                status_message = NULL,
+                updated_at = now()
+            WHERE user_id = $1 AND group_id = $2
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_uuid)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("restart resumed copier targets", error))?;
+    }
+    if matches!(request.action, CopyGroupAction::Reconcile) {
+        sqlx::query(
+            r#"
+            INSERT INTO execution_copy_reconciliation_runs (
+                user_id, group_id, trigger_kind, group_revision
+            ) VALUES ($1, $2, 'manual', $3)
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_uuid)
+        .bind(revision)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("queue copier reconciliation", error))?;
+    }
+    sqlx::query(
+        r#"
+        INSERT INTO execution_audit_log (
+            user_id, actor_type, actor_id, action,
+            resource_type, resource_id, details
+        ) VALUES (
+            $1, 'user', $1::text, $2,
+            'execution_copy_group', $3,
+            jsonb_build_object('revision', $4)
+        )
+        "#,
+    )
+    .bind(owner_uuid)
+    .bind(audit_action)
+    .bind(group_uuid.to_string())
+    .bind(revision)
+    .execute(&mut *transaction)
+    .await
+    .map_err(|error| ApiError::database("audit copier action", error))?;
+    transaction
+        .commit()
+        .await
+        .map_err(|error| ApiError::database("commit copier action", error))?;
+    if matches!(request.action, CopyGroupAction::Reconcile) {
+        if let Err(error) = state
+            .process_continuous_copier_reconciliations(owner_uuid)
+            .await
+        {
+            warn!(%error.body.message, code = error.body.code, "manual copier reconciliation deferred");
+        }
+        if let Err(error) = state.process_continuous_copier_work(owner_uuid).await {
+            warn!(%error.body.message, code = error.body.code, "manual copier repair drain deferred");
+        }
+    }
+    let mut views =
+        load_copy_group_views(database, owner_uuid, &request.owner_id, Some(group_uuid)).await?;
+    views.pop().map(Json).ok_or_else(|| {
+        ApiError::new(
+            StatusCode::NOT_FOUND,
+            "COPY_GROUP_NOT_FOUND",
+            "copier group was not found for this owner",
+        )
+    })
+}
+
+async fn load_copy_group_views(
+    database: &PgPool,
+    owner_uuid: Uuid,
+    owner_id: &str,
+    group_id: Option<Uuid>,
+) -> Result<Vec<CopyGroupView>, ApiError> {
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            groups.id, groups.name, groups.source_account_id, groups.enabled,
+            groups.revision, groups.applied_revision, groups.runtime_status,
+            groups.configuration, groups.status_message,
+            floor(extract(epoch FROM groups.updated_at) * 1000)::bigint AS updated_at_ms,
+            (
+                SELECT count(*) FROM execution_copy_work_items work
+                WHERE work.user_id = groups.user_id AND work.group_id = groups.id
+                  AND work.status IN ('pending', 'leased', 'retry')
+            ) AS pending_work,
+            (
+                SELECT count(*) FROM execution_copy_errors errors
+                WHERE errors.user_id = groups.user_id AND errors.group_id = groups.id
+                  AND errors.resolved_at IS NULL
+            ) AS unresolved_errors,
+            (
+                SELECT count(*) FROM execution_copy_links links
+                WHERE links.user_id = groups.user_id AND links.group_id = groups.id
+                  AND links.lifecycle_status NOT IN ('closed', 'cancelled')
+            ) AS active_links
+        FROM execution_copy_groups groups
+        WHERE groups.user_id = $1 AND ($2::uuid IS NULL OR groups.id = $2)
+        ORDER BY groups.updated_at DESC, groups.id
+        "#,
+    )
+    .bind(owner_uuid)
+    .bind(group_id)
+    .fetch_all(database)
+    .await
+    .map_err(|error| ApiError::database("load copier groups", error))?;
+    let mut views = Vec::with_capacity(rows.len());
+    for row in rows {
+        let group_uuid: Uuid = row
+            .try_get("id")
+            .map_err(|error| ApiError::database("decode copier group id", error))?;
+        let target_rows = sqlx::query(
+            r#"
+            SELECT
+                group_id, account_id, enabled, revision, applied_revision,
+                runtime_status, configuration, symbol_mapping, status_message,
+                allocation_mode, multiplier, risk_basis_points, max_quantity,
+                fixed_quantity, allocation_unit,
+                floor(extract(epoch FROM updated_at) * 1000)::bigint AS updated_at_ms
+            FROM execution_copy_targets
+            WHERE user_id = $1 AND group_id = $2
+            ORDER BY created_at, account_id
+            "#,
+        )
+        .bind(owner_uuid)
+        .bind(group_uuid)
+        .fetch_all(database)
+        .await
+        .map_err(|error| ApiError::database("load copier targets", error))?;
+        let mut targets = Vec::with_capacity(target_rows.len());
+        for target_row in target_rows {
+            let config_value = target_row
+                .try_get::<sqlx::types::Json<serde_json::Value>, _>("configuration")
+                .map_err(|error| ApiError::database("decode copier target config", error))?
+                .0;
+            let config = serde_json::from_value::<ContinuousCopyTargetConfig>(config_value)
+                .unwrap_or_else(|_| legacy_copy_target_config(&target_row));
+            targets.push(CopyTargetDefinition {
+                group_id: CopyGroupId::new(group_uuid.to_string()),
+                account_id: AccountId::new(
+                    target_row
+                        .try_get::<String, _>("account_id")
+                        .map_err(|error| {
+                            ApiError::database("decode copier target account", error)
+                        })?,
+                ),
+                enabled: target_row
+                    .try_get("enabled")
+                    .map_err(|error| ApiError::database("decode copier target enabled", error))?,
+                revision: target_row
+                    .try_get::<i64, _>("revision")
+                    .map_err(|error| ApiError::database("decode copier target revision", error))?
+                    as u64,
+                applied_revision: target_row.try_get::<i64, _>("applied_revision").map_err(
+                    |error| ApiError::database("decode copier target applied revision", error),
+                )? as u64,
+                runtime_status: parse_copy_target_runtime_status(
+                    &target_row
+                        .try_get::<String, _>("runtime_status")
+                        .map_err(|error| {
+                            ApiError::database("decode copier target status", error)
+                        })?,
+                ),
+                config,
+                status_message: target_row.try_get("status_message").map_err(|error| {
+                    ApiError::database("decode copier target status message", error)
+                })?,
+                updated_at_ms: target_row
+                    .try_get::<i64, _>("updated_at_ms")
+                    .map_err(|error| ApiError::database("decode copier target timestamp", error))?
+                    .max(0) as u64,
+            });
+        }
+        let configuration = row
+            .try_get::<sqlx::types::Json<ContinuousCopyConfig>, _>("configuration")
+            .map_err(|error| ApiError::database("decode copier group config", error))?
+            .0;
+        views.push(CopyGroupView {
+            group: CopyGroupDefinition {
+                id: CopyGroupId::new(group_uuid.to_string()),
+                owner_id: owner_id.to_owned(),
+                name: row
+                    .try_get("name")
+                    .map_err(|error| ApiError::database("decode copier group name", error))?,
+                source_account_id: AccountId::new(
+                    row.try_get::<String, _>("source_account_id")
+                        .map_err(|error| {
+                            ApiError::database("decode copier source account", error)
+                        })?,
+                ),
+                enabled: row
+                    .try_get("enabled")
+                    .map_err(|error| ApiError::database("decode copier group enabled", error))?,
+                revision: row
+                    .try_get::<i64, _>("revision")
+                    .map_err(|error| ApiError::database("decode copier group revision", error))?
+                    as u64,
+                applied_revision: row.try_get::<i64, _>("applied_revision").map_err(|error| {
+                    ApiError::database("decode copier group applied revision", error)
+                })? as u64,
+                runtime_status: parse_copy_group_runtime_status(
+                    &row.try_get::<String, _>("runtime_status")
+                        .map_err(|error| ApiError::database("decode copier group status", error))?,
+                ),
+                config: configuration,
+                status_message: row.try_get("status_message").map_err(|error| {
+                    ApiError::database("decode copier group status message", error)
+                })?,
+                updated_at_ms: row
+                    .try_get::<i64, _>("updated_at_ms")
+                    .map_err(|error| ApiError::database("decode copier group timestamp", error))?
+                    .max(0) as u64,
+            },
+            targets,
+            pending_work: row
+                .try_get::<i64, _>("pending_work")
+                .map_err(|error| ApiError::database("decode copier pending work", error))?
+                .max(0) as u64,
+            unresolved_errors: row
+                .try_get::<i64, _>("unresolved_errors")
+                .map_err(|error| ApiError::database("decode copier error count", error))?
+                .max(0) as u64,
+            active_links: row
+                .try_get::<i64, _>("active_links")
+                .map_err(|error| ApiError::database("decode copier link count", error))?
+                .max(0) as u64,
+        });
+    }
+    Ok(views)
+}
+
+fn validate_copy_group_write(request: &CopyGroupUpsertRequest) -> Result<(), ApiError> {
+    validate_plain_text("name", request.group.name.trim(), 1, 80)?;
+    validate_identifier(
+        "sourceAccountId",
+        request.group.source_account_id.as_str(),
+        96,
+    )?;
+    request.group.config.validate().map_err(|message| {
+        ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "COPY_GROUP_CONFIG_INVALID",
+            message,
+        )
+    })?;
+    if request.targets.is_empty() || request.targets.len() > 20 {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "COPY_TARGET_COUNT_INVALID",
+            "a copier group must contain between 1 and 20 targets",
+        ));
+    }
+    if request.group.enabled && !request.targets.iter().any(|target| target.enabled) {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "COPY_TARGET_ENABLED_REQUIRED",
+            "an enabled copier group requires at least one enabled target",
+        ));
+    }
+    let mut account_ids = HashSet::with_capacity(request.targets.len());
+    for target in &request.targets {
+        validate_identifier("targetAccountId", target.account_id.as_str(), 96)?;
+        if target.account_id == request.group.source_account_id {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "COPY_TARGET_IS_SOURCE",
+                "the source account cannot also be a copier target",
+            ));
+        }
+        if !account_ids.insert(target.account_id.as_str()) {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "COPY_TARGET_DUPLICATE",
+                "each target account may appear only once",
+            ));
+        }
+        target.config.validate().map_err(|message| {
+            ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "COPY_TARGET_CONFIG_INVALID",
+                message,
+            )
+        })?;
+        if !request.group.config.copy_stop_loss_take_profit
+            && matches!(
+                &target.config.allocation,
+                CopyAllocation::RiskPercent { .. }
+            )
+        {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "COPY_TARGET_RISK_STOP_REQUIRED",
+                "risk-percent allocation requires copied stop-loss protection on the initial order",
+            ));
+        }
+        for (canonical_symbol, venue_symbol) in &target.config.symbol_mapping {
+            validate_plain_text("canonicalSymbol", canonical_symbol.trim(), 1, 64)?;
+            validate_plain_text("venueSymbol", venue_symbol.trim(), 1, 64)?;
+        }
+    }
+    Ok(())
+}
+
+fn copy_group_transition_drain_reason(
+    current_source_account_id: &str,
+    current_enabled: bool,
+    requested_source_account_id: &str,
+    requested_enabled: bool,
+    requested_enabled_targets: &HashSet<&str>,
+    active_link_targets: &[String],
+) -> Option<&'static str> {
+    if active_link_targets.is_empty() {
+        return None;
+    }
+    if current_source_account_id != requested_source_account_id {
+        return Some("the source account cannot change while copier links remain open");
+    }
+    if current_enabled && !requested_enabled {
+        return Some(
+            "an active copier group cannot be disabled while links remain open; pause it or close/cancel linked exposure first",
+        );
+    }
+    if active_link_targets
+        .iter()
+        .any(|account_id| !requested_enabled_targets.contains(account_id.as_str()))
+    {
+        return Some("targets with open copier links must remain present and enabled");
+    }
+    None
+}
+
+fn parse_copy_group_id(value: &CopyGroupId) -> Result<Uuid, ApiError> {
+    Uuid::parse_str(value.as_str()).map_err(|_| {
+        ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "COPY_GROUP_ID_INVALID",
+            "copy group id must be a UUID",
+        )
+    })
+}
+
+fn copy_group_revision_conflict() -> ApiError {
+    ApiError::new(
+        StatusCode::CONFLICT,
+        "COPY_GROUP_REVISION_CONFLICT",
+        "copier settings changed elsewhere; reload before saving",
+    )
+}
+
+fn copy_allocation_columns(
+    allocation: &CopyAllocation,
+) -> (
+    &'static str,
+    Decimal,
+    Option<i32>,
+    Option<Decimal>,
+    &'static str,
+) {
+    match allocation {
+        CopyAllocation::SameQuantity => ("same_quantity", Decimal::ONE, None, None, "lots"),
+        CopyAllocation::FixedQuantity { quantity, unit } => (
+            "fixed_quantity",
+            Decimal::ONE,
+            None,
+            Some(*quantity),
+            quantity_unit_storage(*unit),
+        ),
+        CopyAllocation::Multiplier { multiplier } => {
+            ("multiplier", *multiplier, None, None, "lots")
+        }
+        CopyAllocation::EquityProportional { multiplier } => {
+            ("equity_proportional", *multiplier, None, None, "lots")
+        }
+        CopyAllocation::RiskPercent { basis_points } => (
+            "risk_percent",
+            Decimal::ONE,
+            Some(*basis_points as i32),
+            None,
+            "lots",
+        ),
+    }
+}
+
+fn quantity_unit_storage(unit: QuantityUnit) -> &'static str {
+    match unit {
+        QuantityUnit::Lots => "lots",
+        QuantityUnit::BaseUnits => "base_units",
+        QuantityUnit::Contracts => "contracts",
+        QuantityUnit::QuoteNotional => "quote_notional",
+    }
+}
+
+fn legacy_copy_target_config(row: &sqlx_postgres::PgRow) -> ContinuousCopyTargetConfig {
+    let allocation_mode = row
+        .try_get::<String, _>("allocation_mode")
+        .unwrap_or_default();
+    let multiplier = row
+        .try_get::<Decimal, _>("multiplier")
+        .unwrap_or(Decimal::ONE);
+    let allocation = match allocation_mode.as_str() {
+        "fixed_quantity" => CopyAllocation::FixedQuantity {
+            quantity: row
+                .try_get::<Option<Decimal>, _>("fixed_quantity")
+                .ok()
+                .flatten()
+                .unwrap_or(Decimal::ONE),
+            unit: match row
+                .try_get::<String, _>("allocation_unit")
+                .unwrap_or_else(|_| "lots".into())
+                .as_str()
+            {
+                "base_units" => QuantityUnit::BaseUnits,
+                "contracts" => QuantityUnit::Contracts,
+                "quote_notional" => QuantityUnit::QuoteNotional,
+                _ => QuantityUnit::Lots,
+            },
+        },
+        "multiplier" => CopyAllocation::Multiplier { multiplier },
+        "equity_proportional" => CopyAllocation::EquityProportional { multiplier },
+        "risk_percent" => CopyAllocation::RiskPercent {
+            basis_points: row
+                .try_get::<Option<i32>, _>("risk_basis_points")
+                .ok()
+                .flatten()
+                .unwrap_or(50)
+                .max(1) as u32,
+        },
+        _ => CopyAllocation::SameQuantity,
+    };
+    let symbol_mapping = row
+        .try_get::<sqlx::types::Json<std::collections::BTreeMap<String, String>>, _>(
+            "symbol_mapping",
+        )
+        .ok()
+        .map(|value| value.0)
+        .unwrap_or_default();
+    ContinuousCopyTargetConfig {
+        allocation,
+        max_quantity: row.try_get("max_quantity").ok().flatten(),
+        reverse_trade: false,
+        symbol_mapping,
+        protection: Default::default(),
+    }
+}
+
+fn parse_copy_group_runtime_status(value: &str) -> CopyGroupRuntimeStatus {
+    match value {
+        "starting" => CopyGroupRuntimeStatus::Starting,
+        "active" => CopyGroupRuntimeStatus::Active,
+        "paused" => CopyGroupRuntimeStatus::Paused,
+        "degraded" => CopyGroupRuntimeStatus::Degraded,
+        "error" => CopyGroupRuntimeStatus::Error,
+        _ => CopyGroupRuntimeStatus::Inactive,
+    }
+}
+
+fn parse_copy_target_runtime_status(value: &str) -> CopyTargetRuntimeStatus {
+    match value {
+        "connecting" => CopyTargetRuntimeStatus::Connecting,
+        "active" => CopyTargetRuntimeStatus::Active,
+        "waiting" => CopyTargetRuntimeStatus::Waiting,
+        "degraded" => CopyTargetRuntimeStatus::Degraded,
+        "error" => CopyTargetRuntimeStatus::Error,
+        _ => CopyTargetRuntimeStatus::Inactive,
+    }
+}
+
 async fn issue_pairing_token(
     State(state): State<GatewayState>,
     headers: HeaderMap,
@@ -5604,6 +10780,42 @@ fn trade_authorization_rejected() -> ApiError {
         "TRADE_AUTHORIZATION_INVALID",
         "trade authorization is missing, expired, already used, or does not match the payload",
     )
+}
+
+async fn require_copy_group_authorization(
+    state: &GatewayState,
+    owner_uuid: Uuid,
+    raw_token: Option<&str>,
+    raw_session_id: Option<&str>,
+    operation: &str,
+    payload: serde_json::Value,
+) -> Result<(), ApiError> {
+    let token = raw_token.ok_or_else(trade_authorization_rejected)?;
+    let session_id = raw_session_id
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .ok_or_else(trade_authorization_rejected)?;
+    state
+        .consume_trade_authorization(owner_uuid, session_id, operation, payload, token)
+        .await
+}
+
+fn copy_group_upsert_authorization_payload(request: &CopyGroupUpsertRequest) -> serde_json::Value {
+    let mut payload = serde_json::json!({
+        "group": &request.group,
+        "targets": &request.targets,
+    });
+    if let Some(group_id) = &request.group_id {
+        payload["groupId"] = serde_json::Value::String(group_id.as_str().to_owned());
+    }
+    strip_json_nulls(payload)
+}
+
+fn copy_group_action_authorization_payload(request: &CopyGroupActionRequest) -> serde_json::Value {
+    strip_json_nulls(serde_json::json!({
+        "groupId": &request.group_id,
+        "expectedRevision": request.expected_revision,
+        "action": request.action,
+    }))
 }
 
 fn strip_json_nulls(mut value: serde_json::Value) -> serde_json::Value {
@@ -6540,6 +11752,493 @@ fn short_hash(value: &[u8]) -> String {
         .collect()
 }
 
+fn copy_change_source_attributes(change: &PortfolioChange) -> (i64, &str) {
+    match change {
+        PortfolioChange::PositionOpened { current }
+        | PortfolioChange::PositionIncreased { current, .. }
+        | PortfolioChange::PositionReduced { current, .. }
+        | PortfolioChange::PositionProtectionChanged { current, .. } => {
+            (current.magic, current.comment.as_str())
+        }
+        PortfolioChange::PositionClosed { previous } => (previous.magic, previous.comment.as_str()),
+        PortfolioChange::PendingCreated { current }
+        | PortfolioChange::PendingModified { current, .. }
+        | PortfolioChange::PendingReplaced { current, .. } => {
+            (current.magic, current.comment.as_str())
+        }
+        PortfolioChange::PendingCancelled { previous } => {
+            (previous.magic, previous.comment.as_str())
+        }
+        PortfolioChange::PendingFilled { previous, .. } => {
+            (previous.magic, previous.comment.as_str())
+        }
+    }
+}
+
+fn copy_change_allowed(change: &PortfolioChange, config: &ContinuousCopyConfig) -> bool {
+    let source_filter_matches = copy_source_filters_match(change, config);
+    match change {
+        PortfolioChange::PositionOpened { .. } => {
+            source_filter_matches && config.copy_market_orders
+        }
+        PortfolioChange::PositionIncreased { .. } => {
+            source_filter_matches && config.copy_market_orders && config.copy_modifications
+        }
+        PortfolioChange::PositionReduced { .. } => config.copy_partial_closes,
+        // Once exposure is linked, source filters and entry toggles never
+        // suppress the risk-reducing terminal lifecycle.
+        PortfolioChange::PositionClosed { .. } => true,
+        PortfolioChange::PositionProtectionChanged { .. } => {
+            config.copy_stop_loss_take_profit && config.copy_modifications
+        }
+        PortfolioChange::PendingCreated { .. } => {
+            source_filter_matches && config.copy_pending_orders
+        }
+        PortfolioChange::PendingModified { .. } | PortfolioChange::PendingReplaced { .. } => {
+            config.copy_pending_orders && config.copy_modifications
+        }
+        PortfolioChange::PendingCancelled { .. } => true,
+        PortfolioChange::PendingFilled { .. } => true,
+    }
+}
+
+fn copy_source_filters_match(change: &PortfolioChange, config: &ContinuousCopyConfig) -> bool {
+    let (magic, comment) = copy_change_source_attributes(change);
+    !config
+        .source_magic_filter
+        .is_some_and(|expected| expected != magic)
+        && !config
+            .source_comment_prefix
+            .as_deref()
+            .is_some_and(|prefix| !comment.starts_with(prefix))
+}
+
+fn copy_change_allowed_while_paused(change: &PortfolioChange) -> bool {
+    matches!(
+        change,
+        PortfolioChange::PositionReduced { .. }
+            | PortfolioChange::PositionClosed { .. }
+            | PortfolioChange::PendingCancelled { .. }
+            | PortfolioChange::PendingFilled { .. }
+    )
+}
+
+fn copy_source_entity_kind(change: &PortfolioChange) -> &'static str {
+    match change {
+        PortfolioChange::PositionOpened { .. }
+        | PortfolioChange::PositionIncreased { .. }
+        | PortfolioChange::PositionReduced { .. }
+        | PortfolioChange::PositionClosed { .. }
+        | PortfolioChange::PositionProtectionChanged { .. } => "position",
+        PortfolioChange::PendingCreated { .. }
+        | PortfolioChange::PendingModified { .. }
+        | PortfolioChange::PendingReplaced { .. }
+        | PortfolioChange::PendingCancelled { .. }
+        | PortfolioChange::PendingFilled { .. } => "pending_order",
+    }
+}
+
+fn copier_link_source_identity<'a>(
+    change: &'a PortfolioChange,
+    operation: &str,
+) -> (&'static str, &'a str) {
+    if operation == "open_market"
+        && let PortfolioChange::PendingFilled { position, .. } = change
+    {
+        ("position", position.broker_position_id.as_str())
+    } else {
+        (copy_source_entity_kind(change), change.source_resource_id())
+    }
+}
+
+fn copy_work_operations(
+    change: &PortfolioChange,
+    config: &ContinuousCopyConfig,
+) -> Vec<&'static str> {
+    match change {
+        PortfolioChange::PositionOpened { .. } if config.copy_market_orders => {
+            vec!["open_market"]
+        }
+        PortfolioChange::PositionIncreased { .. }
+            if config.copy_market_orders && config.copy_modifications =>
+        {
+            vec!["open_market"]
+        }
+        PortfolioChange::PositionReduced { .. } if config.copy_partial_closes => {
+            vec!["partial_close"]
+        }
+        PortfolioChange::PositionClosed { .. } => vec!["close_position"],
+        PortfolioChange::PositionProtectionChanged { .. }
+            if config.copy_stop_loss_take_profit && config.copy_modifications =>
+        {
+            vec!["modify_position"]
+        }
+        PortfolioChange::PendingCreated { .. } if config.copy_pending_orders => {
+            vec!["place_pending"]
+        }
+        PortfolioChange::PendingModified { .. }
+            if config.copy_pending_orders && config.copy_modifications =>
+        {
+            vec!["modify_pending"]
+        }
+        PortfolioChange::PendingReplaced { .. }
+            if config.copy_pending_orders && config.copy_modifications =>
+        {
+            vec!["cancel_pending", "place_pending"]
+        }
+        PortfolioChange::PendingCancelled { .. } => vec!["cancel_pending"],
+        PortfolioChange::PendingFilled { .. } if config.copy_market_orders => vec!["open_market"],
+        PortfolioChange::PendingFilled { .. } => vec!["reconcile"],
+        _ => Vec::new(),
+    }
+}
+
+fn copy_work_operations_for_runtime(
+    change: &PortfolioChange,
+    config: &ContinuousCopyConfig,
+    runtime_status: &str,
+) -> Vec<&'static str> {
+    if runtime_status == "paused" && matches!(change, PortfolioChange::PendingFilled { .. }) {
+        // A pending link that already exists may still be adopted while the
+        // group is paused, but an unlinked fill must not become new exposure.
+        vec!["reconcile"]
+    } else {
+        copy_work_operations(change, config)
+    }
+}
+
+fn copier_work_is_stale(
+    operation: &str,
+    observed_at_ms: u64,
+    current_time_ms: u64,
+    stale_after_ms: u64,
+) -> bool {
+    matches!(operation, "open_market" | "place_pending")
+        && current_time_ms.saturating_sub(observed_at_ms) > stale_after_ms
+}
+
+fn copier_operation_allowed_while_paused(operation: &str, phase: Option<&str>) -> bool {
+    matches!(
+        operation,
+        "partial_close" | "close_position" | "cancel_pending" | "reconcile"
+    ) || (operation == "modify_position" && phase == Some("target_protection"))
+}
+
+fn copier_side_name(side: Side) -> &'static str {
+    match side {
+        Side::Buy => "buy",
+        Side::Sell => "sell",
+    }
+}
+
+fn copier_expected_target_side(metadata: &serde_json::Value, source_side: Side) -> &str {
+    metadata
+        .get("side")
+        .and_then(serde_json::Value::as_str)
+        .filter(|side| matches!(*side, "buy" | "sell"))
+        .unwrap_or_else(|| copier_side_name(source_side))
+}
+
+fn copier_reverse_side(side: Side) -> Side {
+    match side {
+        Side::Buy => Side::Sell,
+        Side::Sell => Side::Buy,
+    }
+}
+
+fn copier_reverse_kind(kind: OrderKind) -> OrderKind {
+    match kind {
+        OrderKind::Market => OrderKind::Market,
+        OrderKind::Limit => OrderKind::Stop,
+        OrderKind::Stop => OrderKind::Limit,
+    }
+}
+
+fn copier_drawdown_breached(
+    balance: Option<Decimal>,
+    equity: Option<Decimal>,
+    limit_basis_points: u32,
+) -> bool {
+    let (Some(balance), Some(equity)) = (balance, equity) else {
+        return false;
+    };
+    if balance <= Decimal::ZERO || equity >= balance || limit_basis_points == 0 {
+        return false;
+    }
+    (balance - equity) * Decimal::from(10_000_u32) >= balance * Decimal::from(limit_basis_points)
+}
+
+fn copier_target_protection_stop(
+    position: &EaPositionSnapshot,
+    price_tick: Decimal,
+    protection: &CopyProtectionConfig,
+) -> Option<Decimal> {
+    if price_tick <= Decimal::ZERO {
+        return None;
+    }
+    let favorable_move = match position.side {
+        Side::Buy => position.current_price - position.open_price,
+        Side::Sell => position.open_price - position.current_price,
+    };
+    if favorable_move <= Decimal::ZERO {
+        return None;
+    }
+    let favorable_points = favorable_move / price_tick;
+    let mut candidates = Vec::<Decimal>::with_capacity(2);
+
+    if protection.trailing_stop_points > 0
+        && favorable_points >= Decimal::from(protection.trailing_start_points)
+    {
+        let distance = price_tick * Decimal::from(protection.trailing_stop_points);
+        let candidate = match position.side {
+            Side::Buy => position.current_price - distance,
+            Side::Sell => position.current_price + distance,
+        };
+        let step = price_tick * Decimal::from(protection.trailing_step_points.max(1));
+        let advances = position
+            .stop_loss
+            .is_none_or(|current| match position.side {
+                Side::Buy => candidate - current >= step,
+                Side::Sell => current - candidate >= step,
+            });
+        if advances {
+            candidates.push(candidate);
+        }
+    }
+
+    if protection.breakeven_trigger_points > 0
+        && favorable_points >= Decimal::from(protection.breakeven_trigger_points)
+    {
+        let offset = price_tick * Decimal::from(protection.breakeven_offset_points);
+        let candidate = match position.side {
+            Side::Buy => position.open_price + offset,
+            Side::Sell => position.open_price - offset,
+        };
+        let advances = position
+            .stop_loss
+            .is_none_or(|current| match position.side {
+                Side::Buy => candidate > current,
+                Side::Sell => candidate < current,
+            });
+        if advances {
+            candidates.push(candidate);
+        }
+    }
+
+    candidates
+        .into_iter()
+        .filter(|candidate| {
+            *candidate > Decimal::ZERO
+                && match position.side {
+                    Side::Buy => *candidate < position.current_price,
+                    Side::Sell => *candidate > position.current_price,
+                }
+        })
+        .reduce(|best, candidate| match position.side {
+            Side::Buy => best.max(candidate),
+            Side::Sell => best.min(candidate),
+        })
+}
+
+fn copier_source_quantity(change: &PortfolioChange) -> Option<Decimal> {
+    match change {
+        PortfolioChange::PositionOpened { current } => Some(current.quantity),
+        PortfolioChange::PositionIncreased { delta, .. } => Some(*delta),
+        PortfolioChange::PendingFilled { previous, .. } => Some(previous.quantity),
+        PortfolioChange::PendingCreated { current }
+        | PortfolioChange::PendingModified { current, .. }
+        | PortfolioChange::PendingReplaced { current, .. } => Some(current.quantity),
+        _ => None,
+    }
+}
+
+fn copier_position_protection(
+    change: &PortfolioChange,
+    reverse_trade: bool,
+) -> Result<(Option<Decimal>, Option<Decimal>), CopierWorkError> {
+    match change {
+        PortfolioChange::PositionProtectionChanged { current, .. } if reverse_trade => {
+            Ok((current.take_profit, current.stop_loss))
+        }
+        PortfolioChange::PositionProtectionChanged { current, .. } => {
+            Ok((current.stop_loss, current.take_profit))
+        }
+        _ => Err(CopierWorkError::permanent(
+            "COPY_PROTECTION_PAYLOAD_INVALID",
+            "position protection operation requires a position protection change",
+        )),
+    }
+}
+
+fn copier_pending_modification(
+    change: &PortfolioChange,
+    reverse_trade: bool,
+) -> Result<(Decimal, Option<Decimal>, Option<Decimal>), CopierWorkError> {
+    let current = copier_current_pending(change)?;
+    if reverse_trade {
+        Ok((current.price, current.take_profit, current.stop_loss))
+    } else {
+        Ok((current.price, current.stop_loss, current.take_profit))
+    }
+}
+
+fn copier_current_pending(
+    change: &PortfolioChange,
+) -> Result<&EaPendingOrderSnapshot, CopierWorkError> {
+    match change {
+        PortfolioChange::PendingModified { current, .. }
+        | PortfolioChange::PendingReplaced { current, .. }
+        | PortfolioChange::PendingCreated { current } => Ok(current),
+        _ => Err(CopierWorkError::permanent(
+            "COPY_PENDING_PAYLOAD_INVALID",
+            "pending-order operation requires a current pending snapshot",
+        )),
+    }
+}
+
+fn copier_partial_close_quantity(
+    change: &PortfolioChange,
+    target_quantity: Option<Decimal>,
+) -> Option<Decimal> {
+    match change {
+        PortfolioChange::PositionReduced {
+            previous, delta, ..
+        } if previous.quantity > Decimal::ZERO => {
+            let target = target_quantity?;
+            let scaled = (*delta * target / previous.quantity).min(target);
+            (scaled > Decimal::ZERO).then_some(scaled)
+        }
+        _ => None,
+    }
+}
+
+fn copier_order_intent(
+    change: &PortfolioChange,
+    target_config: &ContinuousCopyTargetConfig,
+    command_id: &execution_domain::CommandId,
+    idempotency_key: &IdempotencyKey,
+    operation: &str,
+    source_account_id: Option<AccountId>,
+    copy_stop_loss_take_profit: bool,
+) -> Result<OrderIntent, CopierWorkError> {
+    let (
+        canonical_symbol,
+        mut side,
+        mut kind,
+        quantity,
+        entry_price,
+        mut stop_loss,
+        mut take_profit,
+    ) = match (operation, change) {
+        ("open_market", PortfolioChange::PositionOpened { current }) => (
+            current.canonical_symbol.clone(),
+            current.side,
+            OrderKind::Market,
+            current.quantity,
+            None,
+            current.stop_loss,
+            current.take_profit,
+        ),
+        ("open_market", PortfolioChange::PositionIncreased { delta, current, .. }) => (
+            current.canonical_symbol.clone(),
+            current.side,
+            OrderKind::Market,
+            *delta,
+            None,
+            current.stop_loss,
+            current.take_profit,
+        ),
+        ("open_market", PortfolioChange::PendingFilled { previous, position }) => (
+            position.canonical_symbol.clone(),
+            position.side,
+            OrderKind::Market,
+            previous.quantity,
+            None,
+            position.stop_loss,
+            position.take_profit,
+        ),
+        ("place_pending", change) => {
+            let current = copier_current_pending(change)?;
+            (
+                current.canonical_symbol.clone(),
+                current.side,
+                current.kind,
+                current.quantity,
+                Some(current.price),
+                current.stop_loss,
+                current.take_profit,
+            )
+        }
+        _ => {
+            return Err(CopierWorkError::permanent(
+                "COPY_ORDER_PAYLOAD_INVALID",
+                "copy order operation does not contain an orderable source snapshot",
+            ));
+        }
+    };
+    if quantity <= Decimal::ZERO {
+        return Err(CopierWorkError::permanent(
+            "COPY_QUANTITY_INVALID",
+            "source quantity must be positive",
+        ));
+    }
+    if !copy_stop_loss_take_profit {
+        stop_loss = None;
+        take_profit = None;
+    }
+    if target_config.reverse_trade {
+        side = copier_reverse_side(side);
+        if kind != OrderKind::Market {
+            kind = copier_reverse_kind(kind);
+        }
+        std::mem::swap(&mut stop_loss, &mut take_profit);
+    }
+    // The EA requires the pending entry in the field matching the final
+    // (possibly reversed) order kind. Keeping a stop entry in `limitPrice`
+    // makes MT5 reject the command as an unsupported order type.
+    let (limit_price, stop_price) = match kind {
+        OrderKind::Market => (None, None),
+        OrderKind::Limit => (entry_price, None),
+        OrderKind::Stop => (None, entry_price),
+    };
+    // The source intent always carries the unallocated MT5 quantity. The
+    // route engine owns the target allocation policy; pre-applying it here
+    // would square multiplier/equity-proportional factors and bypass the
+    // target's fixed/risk sizing semantics.
+    let sizing = OrderSizing::Fixed {
+        quantity,
+        unit: QuantityUnit::Lots,
+    };
+    Ok(OrderIntent {
+        command_id: command_id.clone(),
+        idempotency_key: idempotency_key.clone(),
+        source_account_id,
+        canonical_symbol,
+        side,
+        kind,
+        sizing,
+        limit_price,
+        stop_price,
+        stop_loss,
+        take_profit,
+        metadata: BTreeMap::from([
+            ("copyTrade".into(), "continuous".into()),
+            ("operation".into(), operation.into()),
+        ]),
+    })
+}
+
+fn copier_command_type(command: &EaCommand) -> &'static str {
+    match command {
+        EaCommand::Place { .. } => "place",
+        EaCommand::ModifyPosition { .. } => "modify_position",
+        EaCommand::ModifyPendingOrder { .. } => "modify_pending",
+        EaCommand::ClosePosition { .. } => "close_position",
+        EaCommand::CancelOrder { .. } => "cancel_pending",
+        EaCommand::Sync => "sync",
+    }
+}
+
 fn sha256(value: &[u8]) -> [u8; 32] {
     Sha256::digest(value).into()
 }
@@ -6766,7 +12465,7 @@ mod tests {
             leverage: 100,
             trade_allowed: true,
             terminal_build: 5000,
-            ea_version: Some("1.24".into()),
+            ea_version: Some("1.25".into()),
         }
     }
 
@@ -6816,6 +12515,7 @@ mod tests {
                 stop_price: None,
                 stop_loss: Some(Decimal::new(109, 2)),
                 take_profit: Some(Decimal::new(112, 2)),
+                broker_margin_cap: None,
                 warnings: Vec::new(),
             },
         }
@@ -6981,11 +12681,421 @@ mod tests {
     #[test]
     fn ea_version_gate_accepts_current_and_future_releases_only() {
         assert!(!ea_version_supported(None));
-        assert!(!ea_version_supported(Some("1.23.9")));
+        assert!(!ea_version_supported(Some("1.24.9")));
         assert!(!ea_version_supported(Some("invalid")));
-        assert!(ea_version_supported(Some("1.24")));
-        assert!(ea_version_supported(Some("1.24.1")));
+        assert!(ea_version_supported(Some("1.25")));
+        assert!(ea_version_supported(Some("1.25.1")));
         assert!(ea_version_supported(Some("2.0.0")));
+    }
+
+    fn copier_test_position(
+        side: Side,
+        quantity: Decimal,
+        open_price: Decimal,
+        current_price: Decimal,
+        stop_loss: Option<Decimal>,
+    ) -> EaPositionSnapshot {
+        EaPositionSnapshot {
+            broker_position_id: "100001".into(),
+            canonical_symbol: "EURUSD".into(),
+            venue_symbol: "EURUSD".into(),
+            side,
+            quantity,
+            open_price,
+            current_price,
+            stop_loss,
+            take_profit: None,
+            profit: Decimal::ZERO,
+            swap: Decimal::ZERO,
+            commission: Decimal::ZERO,
+            magic: 42,
+            comment: "copier-test".into(),
+            opened_at_ms: 1_000,
+            observed_at_ms: 2_000,
+        }
+    }
+
+    #[test]
+    fn copier_drawdown_and_target_protection_are_directional_and_independent() {
+        assert!(copier_drawdown_breached(
+            Some(Decimal::new(10_000, 0)),
+            Some(Decimal::new(9_600, 0)),
+            400,
+        ));
+        assert!(!copier_drawdown_breached(
+            Some(Decimal::new(10_000, 0)),
+            Some(Decimal::new(9_601, 0)),
+            400,
+        ));
+
+        let protection = CopyProtectionConfig {
+            trailing_stop_points: 50,
+            trailing_step_points: 5,
+            trailing_start_points: 50,
+            breakeven_trigger_points: 50,
+            breakeven_offset_points: 5,
+            ..Default::default()
+        };
+        let tick = Decimal::new(1, 4);
+        let buy = copier_test_position(
+            Side::Buy,
+            Decimal::ONE,
+            Decimal::new(11_000, 4),
+            Decimal::new(11_100, 4),
+            None,
+        );
+        let sell = copier_test_position(
+            Side::Sell,
+            Decimal::ONE,
+            Decimal::new(11_000, 4),
+            Decimal::new(10_900, 4),
+            None,
+        );
+        assert_eq!(
+            copier_target_protection_stop(&buy, tick, &protection),
+            Some(Decimal::new(11_050, 4))
+        );
+        assert_eq!(
+            copier_target_protection_stop(&sell, tick, &protection),
+            Some(Decimal::new(10_950, 4))
+        );
+
+        let breakeven_only = CopyProtectionConfig {
+            trailing_stop_points: 0,
+            breakeven_trigger_points: 50,
+            breakeven_offset_points: 5,
+            ..Default::default()
+        };
+        assert_eq!(
+            copier_target_protection_stop(&buy, tick, &breakeven_only),
+            Some(Decimal::new(11_005, 4))
+        );
+    }
+
+    #[test]
+    fn copier_partial_close_scales_to_the_durable_target_leg() {
+        let previous = copier_test_position(
+            Side::Buy,
+            Decimal::new(10, 0),
+            Decimal::ONE,
+            Decimal::ONE,
+            None,
+        );
+        let current = copier_test_position(
+            Side::Buy,
+            Decimal::new(6, 0),
+            Decimal::ONE,
+            Decimal::ONE,
+            None,
+        );
+        let change = PortfolioChange::PositionReduced {
+            previous,
+            current,
+            delta: Decimal::new(4, 0),
+        };
+        assert_eq!(
+            copier_partial_close_quantity(&change, Some(Decimal::new(5, 0))),
+            Some(Decimal::new(2, 0))
+        );
+    }
+
+    #[test]
+    fn copier_pending_entry_uses_the_final_order_kind_price_field() {
+        let pending = EaPendingOrderSnapshot {
+            broker_order_id: "200001".into(),
+            canonical_symbol: "EURUSD".into(),
+            venue_symbol: "EURUSD".into(),
+            side: Side::Buy,
+            kind: OrderKind::Stop,
+            quantity: Decimal::ONE,
+            price: Decimal::new(11_100, 4),
+            stop_loss: Some(Decimal::new(10_900, 4)),
+            take_profit: Some(Decimal::new(11_300, 4)),
+            magic: 42,
+            comment: "copier-test".into(),
+            created_at_ms: 1_000,
+            observed_at_ms: 2_000,
+        };
+        let change = PortfolioChange::PendingCreated { current: pending };
+        let mut target = ContinuousCopyTargetConfig {
+            allocation: CopyAllocation::SameQuantity,
+            max_quantity: None,
+            reverse_trade: false,
+            symbol_mapping: BTreeMap::new(),
+            protection: CopyProtectionConfig::default(),
+        };
+        let command_id = CommandId::new("copier-test");
+        let idempotency_key = IdempotencyKey::new("copier-test");
+
+        let intent = copier_order_intent(
+            &change,
+            &target,
+            &command_id,
+            &idempotency_key,
+            "place_pending",
+            None,
+            true,
+        )
+        .expect("stop pending intent");
+        assert_eq!(intent.kind, OrderKind::Stop);
+        assert_eq!(intent.limit_price, None);
+        assert_eq!(intent.stop_price, Some(Decimal::new(11_100, 4)));
+
+        target.reverse_trade = true;
+        let reversed = copier_order_intent(
+            &change,
+            &target,
+            &command_id,
+            &idempotency_key,
+            "place_pending",
+            None,
+            true,
+        )
+        .expect("reversed pending intent");
+        assert_eq!(reversed.side, Side::Sell);
+        assert_eq!(reversed.kind, OrderKind::Limit);
+        assert_eq!(reversed.limit_price, Some(Decimal::new(11_100, 4)));
+        assert_eq!(reversed.stop_price, None);
+        assert_eq!(reversed.stop_loss, Some(Decimal::new(11_300, 4)));
+        assert_eq!(reversed.take_profit, Some(Decimal::new(10_900, 4)));
+        assert_eq!(
+            copier_pending_modification(&change, true).expect("reverse pending modification"),
+            (
+                Decimal::new(11_100, 4),
+                Some(Decimal::new(11_300, 4)),
+                Some(Decimal::new(10_900, 4)),
+            )
+        );
+
+        target.allocation = CopyAllocation::Multiplier {
+            multiplier: Decimal::new(3, 0),
+        };
+        let raw_sizing = copier_order_intent(
+            &change,
+            &target,
+            &command_id,
+            &idempotency_key,
+            "place_pending",
+            None,
+            true,
+        )
+        .expect("multiplier pending intent")
+        .sizing;
+        assert_eq!(
+            raw_sizing,
+            OrderSizing::Fixed {
+                quantity: Decimal::ONE,
+                unit: QuantityUnit::Lots,
+            }
+        );
+
+        let without_source_protection = copier_order_intent(
+            &change,
+            &target,
+            &command_id,
+            &idempotency_key,
+            "place_pending",
+            None,
+            false,
+        )
+        .expect("pending intent without copied source protection");
+        assert_eq!(without_source_protection.stop_loss, None);
+        assert_eq!(without_source_protection.take_profit, None);
+    }
+
+    #[test]
+    fn active_copier_links_block_destructive_group_transitions() {
+        let active_targets = vec!["target-a".to_owned()];
+        let keep_target = HashSet::from(["target-a"]);
+        let remove_target = HashSet::new();
+
+        assert_eq!(
+            copy_group_transition_drain_reason(
+                "source-a",
+                true,
+                "source-b",
+                true,
+                &keep_target,
+                &active_targets,
+            ),
+            Some("the source account cannot change while copier links remain open")
+        );
+        assert!(
+            copy_group_transition_drain_reason(
+                "source-a",
+                true,
+                "source-a",
+                false,
+                &keep_target,
+                &active_targets,
+            )
+            .is_some()
+        );
+        assert!(
+            copy_group_transition_drain_reason(
+                "source-a",
+                true,
+                "source-a",
+                true,
+                &remove_target,
+                &active_targets,
+            )
+            .is_some()
+        );
+        assert_eq!(
+            copy_group_transition_drain_reason(
+                "source-a",
+                true,
+                "source-a",
+                true,
+                &keep_target,
+                &active_targets,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn copier_staleness_only_supersedes_expired_risk_increases() {
+        assert!(copier_work_is_stale("open_market", 1_000, 2_001, 1_000));
+        assert!(copier_work_is_stale("place_pending", 1_000, 2_001, 1_000));
+        assert!(!copier_work_is_stale("open_market", 1_000, 2_000, 1_000));
+        assert!(!copier_work_is_stale(
+            "close_position",
+            1_000,
+            10_000,
+            1_000,
+        ));
+        assert!(!copier_work_is_stale(
+            "cancel_pending",
+            1_000,
+            10_000,
+            1_000,
+        ));
+        assert!(!copier_operation_allowed_while_paused("open_market", None));
+        assert!(!copier_operation_allowed_while_paused(
+            "modify_position",
+            None,
+        ));
+        assert!(copier_operation_allowed_while_paused(
+            "modify_position",
+            Some("target_protection"),
+        ));
+        assert!(copier_operation_allowed_while_paused(
+            "close_position",
+            None,
+        ));
+    }
+
+    #[test]
+    fn source_filters_never_suppress_terminal_lifecycle_for_existing_links() {
+        let position = copier_test_position(
+            Side::Buy,
+            Decimal::ONE,
+            Decimal::new(11_000, 4),
+            Decimal::new(11_100, 4),
+            Some(Decimal::new(10_900, 4)),
+        );
+        let pending = EaPendingOrderSnapshot {
+            broker_order_id: "200002".into(),
+            canonical_symbol: "EURUSD".into(),
+            venue_symbol: "EURUSD".into(),
+            side: Side::Buy,
+            kind: OrderKind::Limit,
+            quantity: Decimal::ONE,
+            price: Decimal::new(10_900, 4),
+            stop_loss: Some(Decimal::new(10_800, 4)),
+            take_profit: Some(Decimal::new(11_100, 4)),
+            magic: 42,
+            comment: "copier-test".into(),
+            created_at_ms: 1_000,
+            observed_at_ms: 2_000,
+        };
+        let mut config = ContinuousCopyConfig {
+            source_magic_filter: Some(7),
+            source_comment_prefix: Some("other".into()),
+            ..Default::default()
+        };
+
+        assert!(!copy_change_allowed(
+            &PortfolioChange::PositionOpened {
+                current: position.clone(),
+            },
+            &config,
+        ));
+        assert!(copy_change_allowed(
+            &PortfolioChange::PositionClosed {
+                previous: position.clone(),
+            },
+            &config,
+        ));
+        assert!(copy_change_allowed(
+            &PortfolioChange::PendingCancelled {
+                previous: pending.clone(),
+            },
+            &config,
+        ));
+
+        config.copy_pending_orders = false;
+        config.copy_market_orders = false;
+        let filled = PortfolioChange::PendingFilled {
+            previous: pending,
+            position,
+        };
+        assert!(copy_change_allowed(&filled, &config));
+        assert!(!copy_source_filters_match(&filled, &config));
+        assert_eq!(copy_work_operations(&filled, &config), vec!["reconcile"]);
+        assert_eq!(
+            copier_link_source_identity(&filled, "reconcile"),
+            ("pending_order", "200002")
+        );
+
+        config.copy_market_orders = true;
+        assert_eq!(copy_work_operations(&filled, &config), vec!["open_market"]);
+        assert_eq!(
+            copy_work_operations_for_runtime(&filled, &config, "paused"),
+            vec!["reconcile"]
+        );
+        assert_eq!(
+            copier_link_source_identity(&filled, "open_market"),
+            ("position", "100001")
+        );
+    }
+
+    #[test]
+    fn reverse_copier_swaps_source_protection_but_not_target_local_protection() {
+        let previous = copier_test_position(
+            Side::Buy,
+            Decimal::ONE,
+            Decimal::new(11_000, 4),
+            Decimal::new(11_100, 4),
+            Some(Decimal::new(10_900, 4)),
+        );
+        let mut current = previous.clone();
+        current.stop_loss = Some(Decimal::new(10_950, 4));
+        current.take_profit = Some(Decimal::new(11_300, 4));
+        let change = PortfolioChange::PositionProtectionChanged { previous, current };
+
+        assert_eq!(
+            copier_position_protection(&change, true).expect("reverse source protection"),
+            (Some(Decimal::new(11_300, 4)), Some(Decimal::new(10_950, 4)),)
+        );
+        assert_eq!(
+            copier_position_protection(&change, false).expect("target-local protection"),
+            (Some(Decimal::new(10_950, 4)), Some(Decimal::new(11_300, 4)),)
+        );
+    }
+
+    #[test]
+    fn pending_fill_reconciliation_prefers_the_linked_target_side() {
+        assert_eq!(
+            copier_expected_target_side(&serde_json::json!({ "side": "sell" }), Side::Buy),
+            "sell"
+        );
+        assert_eq!(
+            copier_expected_target_side(&serde_json::json!({ "side": "invalid" }), Side::Buy),
+            "buy"
+        );
     }
 
     #[test]
@@ -7492,6 +13602,28 @@ mod tests {
             )
             .await
             .expect("a different owner has an independent limit");
+    }
+
+    #[test]
+    fn admin_order_accepts_fixed_quantity_target_wire_shape() {
+        let target = serde_json::from_value::<AdminOrderTarget>(serde_json::json!({
+            "accountId": "account-a",
+            "allocation": {
+                "mode": "fixedQuantity",
+                "quantity": "0.25",
+                "unit": "lots"
+            }
+        }))
+        .expect("fixed target allocation must deserialize");
+        assert!(matches!(
+            &target.allocation,
+            CopyAllocation::FixedQuantity {
+                quantity,
+                unit: QuantityUnit::Lots
+            } if *quantity == Decimal::new(25, 2)
+        ));
+        validate_admin_order_request(&admin_order(vec![target]))
+            .expect("fixed target allocation must pass request validation");
     }
 
     #[test]

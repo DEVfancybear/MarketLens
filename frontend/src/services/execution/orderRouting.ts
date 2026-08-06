@@ -36,6 +36,7 @@ export interface ExecutionOrderWireRequest {
     accountId: string;
     allocation:
       | { mode: "sameQuantity" }
+      | { mode: "fixedQuantity"; quantity: string; unit: "lots" }
       | { mode: "multiplier"; multiplier: string }
       | { mode: "equityProportional"; multiplier: string }
       | { mode: "riskPercent"; basisPoints: number };
@@ -173,6 +174,12 @@ function allocationWire(
   target: CopyTargetDraft,
 ): ExecutionOrderWireRequest["targets"][number]["allocation"] {
   switch (target.allocationMode) {
+    case "fixedQuantity":
+      return {
+        mode: "fixedQuantity",
+        quantity: executionDecimal(target.fixedQuantity ?? 0),
+        unit: "lots",
+      };
     case "multiplier":
       return {
         mode: "multiplier",

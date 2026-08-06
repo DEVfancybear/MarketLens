@@ -18,6 +18,9 @@ func TestValidateOperationPayloadRejectsShapeChanges(t *testing.T) {
 	}{
 		{"order", `{"intent":{"side":"buy"},"targets":[{"accountId":"a"}]}`},
 		{"command", `{"command":{"type":"closePosition","accountId":"a"}}`},
+		{"copyGroup", `{"group":{"enabled":true},"targets":[{"accountId":"a","enabled":true}]}`},
+		{"copyGroup", `{"groupId":"33333333-3333-4333-8333-333333333333","group":{"enabled":true},"targets":[{"accountId":"a","enabled":true}]}`},
+		{"copyGroup", `{"groupId":"33333333-3333-4333-8333-333333333333","expectedRevision":7,"action":"resume"}`},
 	}
 	for _, testCase := range valid {
 		if err := validateOperationPayload(
@@ -41,6 +44,28 @@ func TestValidateOperationPayloadRejectsShapeChanges(t *testing.T) {
 		}
 		if err := validateOperationPayload(operation, json.RawMessage(payload)); err == nil {
 			t.Fatalf("invalid payload accepted: %s", payload)
+		}
+	}
+
+	invalidCopyGroups := []string{
+		`{"group":{"enabled":false},"targets":[{"accountId":"a","enabled":true}]}`,
+		`{"group":{"enabled":"true"},"targets":[{"accountId":"a","enabled":true}]}`,
+		`{"group":null,"targets":[{"accountId":"a","enabled":true}]}`,
+		`{"group":{"enabled":true},"targets":[]}`,
+		`{"group":{"enabled":true},"targets":[null]}`,
+		`{"group":{"enabled":true},"targets":[{"accountId":"a","enabled":false}]}`,
+		`{"groupId":null,"group":{"enabled":true},"targets":[{"accountId":"a","enabled":true}]}`,
+		`{"groupId":"g","expectedRevision":1,"action":"pause"}`,
+		`{"groupId":"g","expectedRevision":1,"action":"archive"}`,
+		`{"groupId":"g","expectedRevision":0,"action":"resume"}`,
+		`{"groupId":"g","expectedRevision":1.5,"action":"resume"}`,
+		`{"groupId":"g","expectedRevision":"1","action":"resume"}`,
+		`{"groupId":"g","expectedRevision":1,"action":"resume","ownerId":"attacker"}`,
+		`{"expectedRevision":1,"action":"resume"}`,
+	}
+	for _, payload := range invalidCopyGroups {
+		if err := validateOperationPayload("copyGroup", json.RawMessage(payload)); err == nil {
+			t.Fatalf("invalid copy-group payload accepted: %s", payload)
 		}
 	}
 }

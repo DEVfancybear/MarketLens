@@ -45,11 +45,12 @@ available:
    snapshots run at most ten seconds apart, so positions and pending orders
    should appear within about ten seconds after a healthy reconnect.
 
-Version 1.24 is required by the current gateway. It adds in-place pending-order
-entry/SL/TP modification and retains independent retries and lane-specific
-diagnostics for portfolio, command-outcome, and instrument uploads. Older
-releases are blocked before command creation so unsupported lifecycle commands
-cannot be silently ignored by a terminal.
+Version 1.25 is required by the current gateway. It retains in-place
+pending-order entry/SL/TP modification and independent upload retry lanes, adds
+enriched trade-transaction telemetry with atomic complete portfolio evidence,
+and enforces the optional broker margin cap with live `OrderCalcMargin` data.
+Older releases are blocked before command creation so unsupported lifecycle or
+margin-safety behavior cannot be silently ignored by a terminal.
 
 ## Safety and current boundary
 
@@ -59,7 +60,7 @@ cannot be silently ignored by a terminal.
 - Pairing tokens are single-use. The resulting revocable session is cached in
   the MT5 terminal sandbox, is bound to `login + server + GatewayUrl`, and is
   restored after a terminal restart.
-- EA 1.24 sends portfolio, command outcomes, and instrument discovery through
+- EA 1.25 sends portfolio, command outcomes, and instrument discovery through
   independent retry lanes. A rejected symbol metadata record or command event
   cannot roll back valid open positions and pending orders.
 - `modifyPendingOrder` uses `TRADE_ACTION_MODIFY` on the existing MT5 ticket;

@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { OrderTicket } from "@/components/trade/OrderTicket";
+import { CopyRoutingPanel } from "@/components/trade/TradeWorkspace";
 import { ExecutionModeSwitch } from "@/components/trade/ExecutionModeSwitch";
 import { ExecutionConnectionStatus } from "@/components/trade/ExecutionConnectionStatus";
 import { Mt5CommandLog } from "@/components/trade/Mt5CommandLog";
@@ -54,7 +55,7 @@ import { cn } from "@/utils/cn";
 import type { Position } from "@/types";
 import { usePlatformDialog, type PlatformConfirmOptions, type PlatformPromptOptions } from "@/components/ui/PlatformDialog";
 
-type TradeTab = "ticket" | "positions" | "activity";
+type TradeTab = "ticket" | "positions" | "copier" | "activity";
 
 export function MobileTradeScreen() {
   useSimTradingPersistence();
@@ -142,10 +143,16 @@ export function MobileTradeScreen() {
       {executionMode === "simulator" && <button type="button" onClick={resetAccount}><RotateCcw size={17} />Reset account</button>}
       {replayMode && <button type="button" onClick={() => void exportReplayReport()}><Download size={17} />Export replay report</button>}
     </div>
-    <div className="mobile-segmented mobile-segmented--three"><button type="button" onClick={() => setTab("ticket")} className={cn(tab === "ticket" && "is-active")}>Order ticket</button><button type="button" onClick={() => setTab("positions")} className={cn(tab === "positions" && "is-active")}>Positions</button><button type="button" onClick={() => setTab("activity")} className={cn(tab === "activity" && "is-active")}>Activity</button></div>
+    <div className="mobile-segmented mobile-segmented--four" role="tablist" aria-label="Trade workspace">
+      <MobileTradeTab active={tab === "ticket"} onClick={() => setTab("ticket")}>Ticket</MobileTradeTab>
+      <MobileTradeTab active={tab === "positions"} onClick={() => setTab("positions")}>Positions</MobileTradeTab>
+      <MobileTradeTab active={tab === "copier"} onClick={() => setTab("copier")}>Copier</MobileTradeTab>
+      <MobileTradeTab active={tab === "activity"} onClick={() => setTab("activity")}>Activity</MobileTradeTab>
+    </div>
     <div className="mobile-trade-content">
       {tab === "ticket" && <OrderTicket variant="mobile" />}
       {tab === "positions" && <MobilePositionList simulatorPositions={simulatorOpen} requestPrompt={requestPrompt} requestConfirm={requestConfirm} />}
+      {tab === "copier" && <CopyRoutingPanel />}
       {tab === "activity" && <div className="mobile-bridge-workspace"><ExecutionConnectionStatus /><Mt5CommandLog />{executionMode !== "mt5" && <div className="mobile-empty-state"><strong>Simulator mode is active</strong><span>Select an execution account to inspect account-scoped events.</span></div>}</div>}
     </div>
     <Mt5EaSetupGuide
@@ -170,6 +177,28 @@ export function MobileTradeScreen() {
     />
     {dialog}
   </section>;
+}
+
+function MobileTradeTab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={cn(active && "is-active")}
+    >
+      {children}
+    </button>
+  );
 }
 
 function MobilePositionList({

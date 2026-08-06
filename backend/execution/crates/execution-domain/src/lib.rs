@@ -63,6 +63,7 @@ macro_rules! string_id {
 
 string_id!(AccountId);
 string_id!(CommandId);
+string_id!(CopyGroupId);
 string_id!(IdempotencyKey);
 string_id!(SessionId);
 
@@ -136,6 +137,11 @@ pub enum OrderSizing {
 #[serde(tag = "mode", rename_all = "camelCase")]
 pub enum CopyAllocation {
     SameQuantity,
+    FixedQuantity {
+        #[serde(with = "rust_decimal::serde::str")]
+        quantity: Decimal,
+        unit: QuantityUnit,
+    },
     Multiplier {
         #[serde(with = "rust_decimal::serde::str")]
         multiplier: Decimal,
@@ -157,6 +163,288 @@ pub struct CopyTarget {
     pub allocation: CopyAllocation,
     #[serde(default, with = "nullable_decimal_string")]
     pub max_quantity: Option<Decimal>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BrokerMarginBasis {
+    Equity,
+    Balance,
+}
+
+/// A final broker-side margin gate for place commands.
+///
+/// The EA must estimate the order margin using the broker's live contract
+/// specification, divide it by the selected live account value and reject the
+/// order when the result exceeds `basis_points`. Server-side sizing and risk
+/// checks still run first; this cap protects against broker-specific leverage
+/// and symbol-margin rules that only the terminal can evaluate accurately.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BrokerMarginCap {
+    pub basis: BrokerMarginBasis,
+    pub basis_points: u32,
+    #[serde(default)]
+    pub alert: bool,
+}
+
+impl BrokerMarginCap {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if !(1..=10_000).contains(&self.basis_points) {
+            return Err("broker margin cap must be between 1 and 10000 basis points");
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CopyGroupRuntimeStatus {
+    Inactive,
+    Starting,
+    Active,
+    Paused,
+    Degraded,
+    Error,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CopyTargetRuntimeStatus {
+    Inactive,
+    Connecting,
+    Active,
+    Waiting,
+    Degraded,
+    Error,
+}
+
+const fn default_true() -> bool {
+    true
+}
+
+const fn default_max_slippage_points() -> u32 {
+    30
+}
+
+const fn default_stale_after_ms() -> u64 {
+    30_000
+}
+
+const fn default_reconciliation_interval_ms() -> u64 {
+    5_000
+}
+
+/// Versioned continuous-copy behavior owned by a copy group.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ContinuousCopyConfig {
+    #[serde(default = "default_true")]
+    pub copy_market_orders: bool,
+    #[serde(default = "default_true")]
+    pub copy_pending_orders: bool,
+    #[serde(default = "default_true")]
+    pub copy_stop_loss_take_profit: bool,
+    #[serde(default = "default_true")]
+    pub copy_modifications: bool,
+    #[serde(default = "default_true")]
+    pub copy_partial_closes: bool,
+    #[serde(default)]
+    pub source_magic_filter: Option<i64>,
+    #[serde(default)]
+    pub source_comment_prefix: Option<String>,
+    #[serde(default = "default_max_slippage_points")]
+    pub max_slippage_points: u32,
+    #[serde(default = "default_stale_after_ms")]
+    pub stale_after_ms: u64,
+    #[serde(default = "default_reconciliation_interval_ms")]
+    pub reconciliation_interval_ms: u64,
+}
+
+impl Default for ContinuousCopyConfig {
+    fn default() -> Self {
+        Self {
+            copy_market_orders: true,
+            copy_pending_orders: true,
+            copy_stop_loss_take_profit: true,
+            copy_modifications: true,
+            copy_partial_closes: true,
+            source_magic_filter: None,
+            source_comment_prefix: None,
+            max_slippage_points: default_max_slippage_points(),
+            stale_after_ms: default_stale_after_ms(),
+            reconciliation_interval_ms: default_reconciliation_interval_ms(),
+        }
+    }
+}
+
+impl ContinuousCopyConfig {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.stale_after_ms == 0 {
+            return Err("copier stale event window must be positive");
+        }
+        if self.reconciliation_interval_ms == 0 {
+            return Err("copier reconciliation interval must be positive");
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CopyProtectionConfig {
+    #[serde(default)]
+    pub broker_margin_cap: Option<BrokerMarginCap>,
+    #[serde(default)]
+    pub max_drawdown_basis_points: Option<u32>,
+    #[serde(default)]
+    pub trailing_stop_points: u32,
+    #[serde(default)]
+    pub trailing_step_points: u32,
+    #[serde(default)]
+    pub trailing_start_points: u32,
+    #[serde(default)]
+    pub breakeven_trigger_points: u32,
+    #[serde(default)]
+    pub breakeven_offset_points: u32,
+}
+
+impl Default for CopyProtectionConfig {
+    fn default() -> Self {
+        Self {
+            // Match the copier's broker-side safety baseline: a target may use
+            // at most 35% of balance as estimated margin unless the user
+            // explicitly changes the reviewed configuration.
+            broker_margin_cap: Some(BrokerMarginCap {
+                basis: BrokerMarginBasis::Balance,
+                basis_points: 3_500,
+                alert: false,
+            }),
+            max_drawdown_basis_points: None,
+            trailing_stop_points: 0,
+            trailing_step_points: 5,
+            trailing_start_points: 0,
+            breakeven_trigger_points: 0,
+            breakeven_offset_points: 1,
+        }
+    }
+}
+
+impl CopyProtectionConfig {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if let Some(cap) = &self.broker_margin_cap {
+            cap.validate()?;
+        }
+        if self
+            .max_drawdown_basis_points
+            .is_some_and(|basis_points| !(1..=10_000).contains(&basis_points))
+        {
+            return Err("copy target maximum drawdown must be between 1 and 10000 basis points");
+        }
+        if self.trailing_stop_points > 0 && self.trailing_step_points == 0 {
+            return Err("copy target trailing step must be positive when trailing is enabled");
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ContinuousCopyTargetConfig {
+    pub allocation: CopyAllocation,
+    #[serde(default, with = "nullable_decimal_string")]
+    pub max_quantity: Option<Decimal>,
+    #[serde(default)]
+    pub reverse_trade: bool,
+    #[serde(default)]
+    pub symbol_mapping: BTreeMap<String, String>,
+    #[serde(default)]
+    pub protection: CopyProtectionConfig,
+}
+
+impl ContinuousCopyTargetConfig {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self
+            .max_quantity
+            .is_some_and(|quantity| quantity <= Decimal::ZERO)
+        {
+            return Err("copy target maximum quantity must be positive");
+        }
+        match &self.allocation {
+            CopyAllocation::SameQuantity => {}
+            CopyAllocation::FixedQuantity { quantity, .. } if *quantity > Decimal::ZERO => {}
+            CopyAllocation::Multiplier { multiplier }
+            | CopyAllocation::EquityProportional { multiplier }
+                if *multiplier > Decimal::ZERO => {}
+            CopyAllocation::RiskPercent { basis_points } if (1..=10_000).contains(basis_points) => {
+            }
+            CopyAllocation::FixedQuantity { .. } => {
+                return Err("fixed copy quantity must be positive");
+            }
+            CopyAllocation::Multiplier { .. } | CopyAllocation::EquityProportional { .. } => {
+                return Err("copy allocation multiplier must be positive");
+            }
+            CopyAllocation::RiskPercent { .. } => {
+                return Err("copy risk allocation must be between 1 and 10000 basis points");
+            }
+        }
+        self.protection.validate()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CopyGroupWriteRequest {
+    #[serde(default)]
+    pub expected_revision: Option<u64>,
+    pub name: String,
+    pub source_account_id: AccountId,
+    pub enabled: bool,
+    #[serde(default)]
+    pub config: ContinuousCopyConfig,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CopyTargetWriteRequest {
+    #[serde(default)]
+    pub expected_revision: Option<u64>,
+    pub account_id: AccountId,
+    pub enabled: bool,
+    pub config: ContinuousCopyTargetConfig,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CopyGroupDefinition {
+    pub id: CopyGroupId,
+    pub owner_id: String,
+    pub name: String,
+    pub source_account_id: AccountId,
+    pub enabled: bool,
+    pub revision: u64,
+    pub applied_revision: u64,
+    pub runtime_status: CopyGroupRuntimeStatus,
+    #[serde(default)]
+    pub config: ContinuousCopyConfig,
+    #[serde(default)]
+    pub status_message: Option<String>,
+    pub updated_at_ms: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CopyTargetDefinition {
+    pub group_id: CopyGroupId,
+    pub account_id: AccountId,
+    pub enabled: bool,
+    pub revision: u64,
+    pub applied_revision: u64,
+    pub runtime_status: CopyTargetRuntimeStatus,
+    pub config: ContinuousCopyTargetConfig,
+    #[serde(default)]
+    pub status_message: Option<String>,
+    pub updated_at_ms: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -542,6 +830,8 @@ pub struct RoutedOrder {
     pub stop_loss: Option<Decimal>,
     #[serde(default, with = "nullable_decimal_string")]
     pub take_profit: Option<Decimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub broker_margin_cap: Option<BrokerMarginCap>,
     #[serde(default)]
     pub warnings: Vec<RouteWarning>,
 }
@@ -818,10 +1108,77 @@ pub enum EaEvent {
         occurred_at_ms: u64,
     },
     TradeTransaction {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        external_event_id: Option<String>,
+        #[serde(
+            default,
+            alias = "transactionSequence",
+            skip_serializing_if = "Option::is_none"
+        )]
+        event_sequence: Option<u64>,
         broker_order_id: Option<String>,
         broker_deal_id: Option<String>,
         broker_position_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        broker_position_by_id: Option<String>,
         transaction_type: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        transaction_time_ms: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        order_state: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        order_type: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        deal_entry: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        deal_type: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        canonical_symbol: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        venue_symbol: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        side: Option<Side>,
+        #[serde(
+            default,
+            alias = "volume",
+            with = "nullable_decimal_string",
+            skip_serializing_if = "Option::is_none"
+        )]
+        quantity: Option<Decimal>,
+        #[serde(
+            default,
+            with = "nullable_decimal_string",
+            skip_serializing_if = "Option::is_none"
+        )]
+        remaining_quantity: Option<Decimal>,
+        #[serde(
+            default,
+            with = "nullable_decimal_string",
+            skip_serializing_if = "Option::is_none"
+        )]
+        price: Option<Decimal>,
+        #[serde(
+            default,
+            with = "nullable_decimal_string",
+            skip_serializing_if = "Option::is_none"
+        )]
+        stop_loss: Option<Decimal>,
+        #[serde(
+            default,
+            with = "nullable_decimal_string",
+            skip_serializing_if = "Option::is_none"
+        )]
+        take_profit: Option<Decimal>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        magic: Option<i64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        comment: Option<String>,
+        #[serde(
+            default,
+            alias = "orderReason",
+            skip_serializing_if = "Option::is_none"
+        )]
+        reason: Option<String>,
         occurred_at_ms: u64,
     },
 }
@@ -895,6 +1252,176 @@ mod tests {
     fn command_tag_is_version_stable() {
         let value = serde_json::to_value(EaCommand::Sync).expect("serialize command");
         assert_eq!(value, serde_json::json!({ "type": "sync" }));
+    }
+
+    #[test]
+    fn fixed_quantity_copy_allocation_uses_strict_camel_case_wire_shape() {
+        let allocation = CopyAllocation::FixedQuantity {
+            quantity: Decimal::new(25, 2),
+            unit: QuantityUnit::Lots,
+        };
+        let value = serde_json::to_value(&allocation).expect("serialize fixed allocation");
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "mode": "fixedQuantity",
+                "quantity": "0.25",
+                "unit": "lots"
+            })
+        );
+        assert_eq!(
+            serde_json::from_value::<CopyAllocation>(value).expect("deserialize fixed allocation"),
+            allocation
+        );
+        assert!(
+            serde_json::from_value::<CopyAllocation>(serde_json::json!({
+                "mode": "fixedQuantity",
+                "quantity": 0.25,
+                "unit": "lots"
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn broker_margin_cap_has_explicit_basis_and_validates_basis_points() {
+        let cap = BrokerMarginCap {
+            basis: BrokerMarginBasis::Equity,
+            basis_points: 3_500,
+            alert: true,
+        };
+        assert_eq!(cap.validate(), Ok(()));
+        assert_eq!(
+            serde_json::to_value(&cap).expect("serialize broker margin cap"),
+            serde_json::json!({
+                "basis": "equity",
+                "basisPoints": 3500,
+                "alert": true
+            })
+        );
+
+        let invalid = BrokerMarginCap {
+            basis: BrokerMarginBasis::Balance,
+            basis_points: 10_001,
+            alert: false,
+        };
+        assert_eq!(
+            invalid.validate(),
+            Err("broker margin cap must be between 1 and 10000 basis points")
+        );
+    }
+
+    #[test]
+    fn continuous_copy_config_uses_safe_lifecycle_defaults() {
+        let config = serde_json::from_value::<ContinuousCopyConfig>(serde_json::json!({}))
+            .expect("deserialize default continuous copier config");
+        assert_eq!(config, ContinuousCopyConfig::default());
+        assert!(config.copy_market_orders);
+        assert!(config.copy_pending_orders);
+        assert!(config.copy_modifications);
+        assert!(config.copy_partial_closes);
+        assert_eq!(config.max_slippage_points, 30);
+        assert_eq!(config.reconciliation_interval_ms, 5_000);
+    }
+
+    #[test]
+    fn legacy_trade_transaction_remains_wire_compatible() {
+        let legacy = serde_json::json!({
+            "type": "tradeTransaction",
+            "brokerOrderId": "order-1",
+            "brokerDealId": null,
+            "brokerPositionId": "position-1",
+            "transactionType": "dealAdd",
+            "occurredAtMs": 123
+        });
+        let event = serde_json::from_value::<EaEvent>(legacy).expect("deserialize legacy event");
+        let value = serde_json::to_value(event).expect("serialize legacy event");
+        assert_eq!(value["transactionType"], "dealAdd");
+        assert_eq!(value["occurredAtMs"], 123);
+        assert!(value.get("externalEventId").is_none());
+        assert!(value.get("quantity").is_none());
+    }
+
+    #[test]
+    fn enriched_trade_transaction_uses_strict_decimal_strings() {
+        let enriched = serde_json::json!({
+            "type": "tradeTransaction",
+            "externalEventId": "123:456:dealAdd",
+            "brokerOrderId": "123",
+            "brokerDealId": "456",
+            "brokerPositionId": "789",
+            "transactionType": "dealAdd",
+            "dealEntry": "in",
+            "canonicalSymbol": "XAUUSD",
+            "venueSymbol": "XAUUSD.a",
+            "side": "buy",
+            "quantity": "0.25",
+            "remainingQuantity": "0",
+            "price": "2375.50",
+            "stopLoss": "2360",
+            "takeProfit": "2400",
+            "magic": 42,
+            "comment": "master",
+            "occurredAtMs": 456
+        });
+        let event = serde_json::from_value::<EaEvent>(enriched.clone())
+            .expect("deserialize enriched event");
+        assert_eq!(
+            serde_json::to_value(event).expect("serialize enriched event"),
+            enriched
+        );
+
+        let mut numeric_quantity = enriched;
+        numeric_quantity["quantity"] = serde_json::json!(0.25);
+        assert!(serde_json::from_value::<EaEvent>(numeric_quantity).is_err());
+    }
+
+    #[test]
+    fn compiled_ea_trade_transaction_aliases_decode_without_duplicate_fields() {
+        let payload = serde_json::json!({
+            "type": "tradeTransaction",
+            "brokerOrderId": "123",
+            "brokerDealId": "456",
+            "brokerPositionId": "789",
+            "brokerPositionById": "790",
+            "transactionType": "TRADE_TRANSACTION_DEAL_ADD",
+            "transactionSequence": 7,
+            "transactionTimeMs": 450,
+            "venueSymbol": "EURUSD.a",
+            "side": "buy",
+            "orderType": "ORDER_TYPE_BUY",
+            "orderState": null,
+            "orderReason": "ORDER_REASON_EXPERT",
+            "dealType": "DEAL_TYPE_BUY",
+            "volume": "0.25",
+            "price": "1.10500",
+            "stopLoss": null,
+            "takeProfit": "1.12000",
+            "occurredAtMs": 456
+        });
+        let event = serde_json::from_value::<EaEvent>(payload)
+            .expect("compiled EA payload must deserialize");
+        match event {
+            EaEvent::TradeTransaction {
+                event_sequence,
+                broker_position_id,
+                broker_position_by_id,
+                transaction_time_ms,
+                quantity,
+                reason,
+                occurred_at_ms,
+                ..
+            } => {
+                assert_eq!(event_sequence, Some(7));
+                assert_eq!(broker_position_id.as_deref(), Some("789"));
+                assert_eq!(broker_position_by_id.as_deref(), Some("790"));
+                assert_eq!(transaction_time_ms, Some(450));
+                assert_eq!(quantity, Some(Decimal::new(25, 2)));
+                assert_eq!(reason.as_deref(), Some("ORDER_REASON_EXPERT"));
+                assert_eq!(occurred_at_ms, 456);
+            }
+            _ => panic!("expected trade transaction"),
+        }
     }
 
     #[test]

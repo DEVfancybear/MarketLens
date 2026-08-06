@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
   Activity,
+  AlertTriangle,
   BookOpen,
   Check,
   CircleOff,
@@ -13,11 +14,13 @@ import {
   Download,
   FileCheck2,
   GripVertical,
+  Gauge,
   KeyRound,
   LoaderCircle,
   Plus,
   Radio,
   Server,
+  Save,
   Settings2,
   ShieldCheck,
 } from "lucide-react";
@@ -43,16 +46,23 @@ import {
 } from "@/store/mt5Store";
 import {
   copyTargetsAtom,
+  copyRoutesAtom,
+  copyRoutesHydratedAtom,
   executionAccountLayoutAtom,
   executionAccountLayoutPendingAtom,
   executionAccountsAtom,
   selectedExecutionAccountAtom,
   selectedExecutionAccountIdAtom,
+  applyCopyRoutesAtom,
   setCopyTargetAtom,
 } from "@/store/executionRegistryStore";
 import { cn } from "@/utils/cn";
 import { fmtMoney } from "@/utils/format";
-import type { ExecutionAccountSummary } from "@/types/execution";
+import type {
+  CopyRoutePreview,
+  CopyTargetDraft,
+  ExecutionAccountSummary,
+} from "@/types/execution";
 import {
   getExecutionInstruments,
   getExecutionAccountLayout,
@@ -62,8 +72,15 @@ import {
 } from "@/services/api/resources/executionApi";
 import { symbolAtom } from "@/store/chartStore";
 import { executionEaDistribution } from "@/services/execution/eaDistribution";
-import { copyTargetAvailability } from "@/services/execution/copyRouting";
+import {
+  copyTargetAvailability,
+  previewCopyRoutes,
+} from "@/services/execution/copyRouting";
 import { useExecutionPairingToken } from "@/hooks/useExecutionPairingToken";
+import {
+  loadTradeCopierPreferences,
+  saveTradeCopierPreferences,
+} from "@/services/execution/copierPreferences";
 import {
   executionAccountDropEdge,
   mergeExecutionAccountLayout,
@@ -72,6 +89,7 @@ import {
   type AccountDropEdge,
 } from "@/services/execution/accountLayout";
 import { pushToastAtom } from "@/store/toastStore";
+import { ContinuousCopierPanel } from "./ContinuousCopierPanel";
 
 type WorkspaceTab = "positions" | "copy" | "activity";
 
@@ -162,7 +180,7 @@ export function TradeWorkspace() {
             icon={<Copy size={13} />}
             onClick={() => setTab("copy")}
           >
-            Copy routing
+            MT5 Copier
           </WorkspaceTabButton>
           <WorkspaceTabButton
             active={tab === "activity"}
@@ -748,39 +766,250 @@ function ExecutionAccountRail() {
   );
 }
 
-function CopyRoutingPanel() {
+export function CopyRoutingPanel() {
+  const [mode, setMode] = useState<"continuous" | "oneShot">("continuous");
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div
+        className="flex min-h-11 shrink-0 items-center gap-1 border-b border-terminal-border bg-terminal-panel-2/30 px-3"
+        role="tablist"
+        aria-label="Copier mode"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === "continuous"}
+          onClick={() => setMode("continuous")}
+          className={cn(
+            "min-h-9 rounded-lg px-3 text-[10px] font-semibold focus-ring",
+            mode === "continuous"
+              ? "bg-brand/10 text-brand"
+              : "text-ink-muted hover:text-ink",
+          )}
+        >
+          Continuous lifecycle
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === "oneShot"}
+          onClick={() => setMode("oneShot")}
+          className={cn(
+            "min-h-9 rounded-lg px-3 text-[10px] font-semibold focus-ring",
+            mode === "oneShot"
+              ? "bg-brand/10 text-brand"
+              : "text-ink-muted hover:text-ink",
+          )}
+        >
+          One-shot web order
+        </button>
+      </div>
+      <div className="min-h-0 flex-1">
+        {mode === "continuous" ? <ContinuousCopierPanel /> : <OneShotCopyRoutingPanel />}
+      </div>
+    </div>
+  );
+}
+
+function OneShotCopyRoutingPanel() {
   const accounts = useAtomValue(executionAccountsAtom);
   const selectedId = useAtomValue(selectedExecutionAccountIdAtom);
   const canonicalSymbol = useAtomValue(symbolAtom);
   const targets = useAtomValue(copyTargetsAtom);
+  const routes = useAtomValue(copyRoutesAtom);
+  const routesHydrated = useAtomValue(copyRoutesHydratedAtom);
   const setTarget = useSetAtom(setCopyTargetAtom);
+  const applyRoutes = useSetAtom(applyCopyRoutesAtom);
+  const pushToast = useSetAtom(pushToastAtom);
+  const [persistenceStatus, setPersistenceStatus] = useState<
+    "loading" | "ready" | "saving" | "saved" | "error"
+  >("loading");
+  const [persistedSignature, setPersistedSignature] = useState<string | null>(
+    null,
+  );
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const source = accounts.find((account) => account.id === selectedId);
   const available = accounts.filter((account) => account.id !== selectedId);
   const eligibleTargetCount = available.filter(
     (account) => copyTargetAvailability(account).eligible,
   ).length;
+  const enabledTargetCount = available.filter(
+    (account) => targets[account.id]?.enabled,
+  ).length;
+  const routePreviews = useMemo(
+    () =>
+      previewCopyRoutes({
+        sourceAccountId: selectedId ?? "",
+        sourceQuantity: 1,
+        sourceEquity: source?.equity,
+        accounts,
+        targets: available.map(
+          (account) =>
+            targets[account.id] ?? {
+              accountId: account.id,
+              enabled: false,
+              allocationMode: "sameQuantity" as const,
+              multiplier: 1,
+            },
+        ),
+      }),
+    [accounts, available, selectedId, source?.equity, targets],
+  );
+  const previewByAccount = useMemo(
+    () => new Map(routePreviews.map((preview) => [preview.accountId, preview])),
+    [routePreviews],
+  );
+  const routesSignature = useMemo(() => JSON.stringify(routes), [routes]);
+  const hasInvalidEnabledTarget = available.some((account) => {
+    const target = targets[account.id];
+    return Boolean(target?.enabled && copyTargetConfigError(target));
+  });
+  const routesDirty =
+    routesHydrated && persistedSignature !== null && routesSignature !== persistedSignature;
+
+  useEffect(() => {
+    if (routesHydrated) return;
+    let cancelled = false;
+    setPersistenceStatus("loading");
+    void loadTradeCopierPreferences()
+      .then((nextRoutes) => {
+        if (cancelled) return;
+        applyRoutes(nextRoutes);
+        setPersistedSignature(JSON.stringify(nextRoutes));
+        setPersistenceStatus("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setPersistenceStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [applyRoutes, loadAttempt, routesHydrated]);
+
+  useEffect(() => {
+    if (!routesHydrated) return;
+    setPersistedSignature((current) => current ?? routesSignature);
+    setPersistenceStatus((current) =>
+      current === "loading" ? "ready" : current,
+    );
+  }, [routesHydrated, routesSignature]);
+
+  const saveRoutes = async () => {
+    if (!routesHydrated || hasInvalidEnabledTarget) return;
+    setPersistenceStatus("saving");
+    try {
+      await saveTradeCopierPreferences(routes);
+      setPersistedSignature(routesSignature);
+      setPersistenceStatus("saved");
+      pushToast({
+        title: "Copier routes saved",
+        message: "Allocation and max-lot rules now follow this user on every device.",
+        variant: "success",
+      });
+    } catch {
+      setPersistenceStatus("error");
+      pushToast({
+        title: "Copier routes were not saved",
+        message: "Your current drafts remain on this device. Reconnect and try again.",
+        variant: "error",
+      });
+    }
+  };
 
   return (
     <div className="min-h-0 flex-1 overflow-auto p-4">
       <div className="mx-auto max-w-3xl">
-        <div className="flex items-start justify-between gap-5">
+        <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:gap-5">
           <div>
-            <h2 className="text-sm font-bold text-ink">Copy routing</h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-sm font-bold text-ink">MT5 Trade Copier</h2>
+              <span className="rounded-md border border-brand/25 bg-brand/10 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wide text-brand">
+                Web orders
+              </span>
+            </div>
             <p className="mt-1 max-w-xl text-[11px] leading-5 text-ink-muted">
-              Select targets and allocation rules. Every target is validated
-              independently by Rust; one rejected account does not hide fills on
-              the others.
+              Configure each follower from the selected source account. Rust
+              sizes, caps, maps, and validates every target independently.
             </p>
           </div>
-          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-terminal-border bg-terminal-panel-2 px-2.5 py-1.5 text-[10px] text-ink-muted">
-            <Copy size={12} />
-            {eligibleTargetCount} eligible
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-terminal-border bg-terminal-panel-2 px-2.5 py-1.5 text-[10px] text-ink-muted">
+              <Copy size={12} />
+              {enabledTargetCount} on · {eligibleTargetCount} eligible
+            </span>
+            <button
+              type="button"
+              onClick={() => void saveRoutes()}
+              disabled={
+                !routesHydrated ||
+                persistenceStatus === "saving" ||
+                !routesDirty ||
+                hasInvalidEnabledTarget
+              }
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-brand px-3 text-[10px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              {persistenceStatus === "loading" || persistenceStatus === "saving" ? (
+                <LoaderCircle size={12} className="animate-spin" aria-hidden="true" />
+              ) : (
+                <Save size={12} aria-hidden="true" />
+              )}
+              {persistenceStatus === "saving"
+                ? "Saving…"
+                : persistenceStatus === "saved" && !routesDirty
+                  ? "Saved"
+                  : "Save routes"}
+            </button>
+          </div>
+        </div>
+
+        {persistenceStatus === "error" && (
+          <p role="alert" className="mt-2 text-[9px] leading-4 text-bear">
+            {routesHydrated ? (
+              "Save failed; current drafts remain available in this session."
+            ) : (
+              <>
+                Saved settings are unavailable. {" "}
+                <button
+                  type="button"
+                  onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+                  className="font-semibold underline underline-offset-2"
+                >
+                  Retry loading
+                </button>
+              </>
+            )}
+          </p>
+        )}
+        {hasInvalidEnabledTarget && (
+          <p role="alert" className="mt-2 text-[9px] leading-4 text-bear">
+            Fix the highlighted sizing value before saving. Rust rejects invalid targets independently on send.
+          </p>
+        )}
+
+        <div
+          role="note"
+          className="mt-4 flex gap-2.5 rounded-xl border border-sky-500/25 bg-sky-500/5 p-3"
+        >
+          <AlertTriangle
+            size={15}
+            aria-hidden="true"
+            className="mt-0.5 shrink-0 text-sky-400"
+          />
+          <div>
+            <strong className="block text-[10px] text-ink">
+              New-order routing is active
+            </strong>
+            <p className="mt-0.5 text-[9px] leading-4 text-ink-muted">
+              These rules fan out orders submitted from this web ticket. Trades
+              opened manually or by another EA, plus later close, cancel, or
+              SL/TP changes, are not mirrored yet.
+            </p>
+          </div>
         </div>
 
         {source && (
           <div className="mt-4 rounded-xl border border-brand/25 bg-brand/5 p-3">
-            <div className="grid grid-cols-[minmax(0,1fr)_minmax(180px,280px)] items-center gap-3">
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(180px,280px)] lg:items-center">
               <div>
                 <strong className="block text-[11px] text-ink">
                   Source symbol · {source.label}
@@ -842,12 +1071,14 @@ function CopyRoutingPanel() {
                 allocationMode: "sameQuantity" as const,
                 multiplier: 1,
               };
+              const configError = copyTargetConfigError(target);
+              const preview = previewByAccount.get(account.id);
               return (
                 <div
                   key={account.id}
-                  className="grid grid-cols-[minmax(0,1fr)_150px_112px] items-center gap-3 rounded-xl border border-terminal-border bg-terminal-panel-2/45 p-3"
+                  className="grid grid-cols-1 items-center gap-3 rounded-xl border border-terminal-border bg-terminal-panel-2/45 p-3 lg:grid-cols-[minmax(150px,1fr)_145px_112px_112px]"
                 >
-                  <label className="flex min-w-0 items-center gap-3">
+                  <label className="flex min-h-11 min-w-0 items-center gap-3">
                     <input
                       type="checkbox"
                       checked={target.enabled && availability.eligible}
@@ -888,55 +1119,102 @@ function CopyRoutingPanel() {
                   <select
                     aria-label={`Allocation for ${account.label}`}
                     value={target.allocationMode}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const allocationMode = event.target
+                        .value as typeof target.allocationMode;
                       setTarget({
                         accountId: account.id,
-                        allocationMode: event.target
-                          .value as typeof target.allocationMode,
-                      })
-                    }
-                    className="h-8 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-[10px] text-ink outline-none focus:border-brand"
+                        allocationMode,
+                        ...(allocationMode === "fixedQuantity" &&
+                        !(target.fixedQuantity && target.fixedQuantity > 0)
+                          ? { fixedQuantity: 0.1 }
+                          : {}),
+                      });
+                    }}
+                    className="h-11 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-[11px] text-ink outline-none focus:border-brand"
                   >
                     <option value="sameQuantity">Same quantity</option>
+                    <option value="fixedQuantity">Fixed lot</option>
                     <option value="multiplier">Multiplier</option>
                     <option value="equityProportional">Equity proportional</option>
                     <option value="riskPercent">Risk percent</option>
                   </select>
-                  <label className="flex items-center gap-2 text-[9px] text-ink-faint">
-                    {target.allocationMode === "riskPercent" ? "Risk %" : "Mult."}
-                    <input
-                      inputMode="decimal"
-                      value={
-                        target.allocationMode === "riskPercent"
-                          ? (target.riskBasisPoints ?? 50) / 100
-                          : target.multiplier
-                      }
-                      onChange={(event) =>
-                        target.allocationMode === "riskPercent"
-                          ? setTarget({
+                  {target.allocationMode === "sameQuantity" ? (
+                    <div className="flex h-11 items-center rounded-lg border border-terminal-border bg-terminal-panel px-2 text-[9px] text-ink-faint">
+                      Uses source lot
+                    </div>
+                  ) : (
+                    <label className="grid gap-1 text-[9px] text-ink-faint">
+                      <span>
+                        {target.allocationMode === "riskPercent"
+                          ? "Risk %"
+                          : target.allocationMode === "fixedQuantity"
+                            ? "Fixed lot"
+                            : "Multiplier"}
+                      </span>
+                      <input
+                        aria-label={`${target.allocationMode} value for ${account.label}`}
+                        inputMode="decimal"
+                        min={target.allocationMode === "riskPercent" ? 0.01 : 0.00000001}
+                        max={target.allocationMode === "riskPercent" ? 100 : undefined}
+                        step={target.allocationMode === "riskPercent" ? 0.01 : 0.01}
+                        value={
+                          target.allocationMode === "riskPercent"
+                            ? (target.riskBasisPoints ?? 50) / 100
+                            : target.allocationMode === "fixedQuantity"
+                              ? (target.fixedQuantity ?? 0.1)
+                              : target.multiplier
+                        }
+                        onChange={(event) => {
+                          const value = Number(event.target.value);
+                          if (target.allocationMode === "riskPercent") {
+                            setTarget({
                               accountId: account.id,
                               riskBasisPoints: Math.max(
                                 1,
-                                Math.min(
-                                  10_000,
-                                  Math.round(
-                                    Number(event.target.value) * 100,
-                                  ),
-                                ),
+                                Math.min(10_000, Math.round(value * 100)),
                               ),
-                            })
-                          : setTarget({
+                            });
+                          } else if (target.allocationMode === "fixedQuantity") {
+                            setTarget({
                               accountId: account.id,
-                              multiplier: Number(event.target.value),
-                            })
+                              fixedQuantity: value,
+                            });
+                          } else {
+                            setTarget({
+                              accountId: account.id,
+                              multiplier: value,
+                            });
+                          }
+                        }}
+                        className="h-11 min-w-0 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-base text-ink outline-none focus:border-brand lg:text-[11px]"
+                      />
+                    </label>
+                  )}
+                  <label className="grid gap-1 text-[9px] text-ink-faint">
+                    <span>Max lot</span>
+                    <input
+                      aria-label={`Maximum lot for ${account.label}`}
+                      inputMode="decimal"
+                      min="0.00000001"
+                      step="0.01"
+                      placeholder="Broker max"
+                      value={target.maxQuantity ?? ""}
+                      onChange={(event) =>
+                        setTarget({
+                          accountId: account.id,
+                          maxQuantity: event.target.value
+                            ? Number(event.target.value)
+                            : undefined,
+                        })
                       }
-                      className="h-8 min-w-0 flex-1 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-[10px] text-ink outline-none focus:border-brand"
+                      className="h-11 min-w-0 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-base text-ink outline-none placeholder:text-ink-faint focus:border-brand lg:text-[11px]"
                     />
                   </label>
                   <p
                     id={`copy-target-status-${account.id}`}
                     className={cn(
-                      "col-span-3 flex items-start gap-1.5 text-[9px] leading-4",
+                      "flex items-start gap-1.5 text-[9px] leading-4 lg:col-span-4",
                       availability.mode === "waiting"
                         ? "text-amber-300"
                         : availability.mode === "blocked"
@@ -953,14 +1231,21 @@ function CopyRoutingPanel() {
                     )}
                     {availability.detail}
                   </p>
-                  <div className="col-span-3 grid grid-cols-[minmax(0,1fr)_minmax(180px,280px)] items-center gap-3 border-t border-terminal-border pt-2">
-                    <span className="text-[9px] text-ink-faint">
-                      {canonicalSymbol} broker symbol
-                    </span>
-                    <SymbolMappingSelector
-                      account={account}
-                      canonicalSymbol={canonicalSymbol}
+                  <div className="grid gap-3 border-t border-terminal-border pt-2 lg:col-span-4 lg:grid-cols-[minmax(0,1fr)_minmax(180px,280px)] lg:items-center">
+                    <TargetRoutePreview
+                      target={target}
+                      preview={preview}
+                      error={configError}
                     />
+                    <div className="grid gap-1">
+                      <span className="text-[9px] text-ink-faint">
+                        {canonicalSymbol} broker symbol
+                      </span>
+                      <SymbolMappingSelector
+                        account={account}
+                        canonicalSymbol={canonicalSymbol}
+                      />
+                    </div>
                   </div>
                 </div>
               );
@@ -970,6 +1255,89 @@ function CopyRoutingPanel() {
       </div>
     </div>
   );
+}
+
+function TargetRoutePreview({
+  target,
+  preview,
+  error,
+}: {
+  target: CopyTargetDraft;
+  preview?: CopyRoutePreview;
+  error: string | null;
+}) {
+  let detail = "Route disabled";
+  let tone = "text-ink-faint";
+  if (target.enabled) {
+    if (error) {
+      detail = error;
+      tone = "text-bear";
+    } else if (target.allocationMode === "riskPercent") {
+      detail = "Sized by Rust from stop distance and account risk";
+      tone = "text-brand";
+    } else if (preview?.status === "ready") {
+      detail = `1.00 source lot → ${formatLot(preview.quantity)} lot`;
+      tone = "text-bull";
+    } else if (preview?.status === "waiting") {
+      detail = "Preview ready; delivery waits for the EA";
+      tone = "text-amber-300";
+    } else if (preview?.status === "blocked") {
+      detail = preview.reason.replaceAll("_", " ").toLowerCase();
+      tone = "text-bear";
+    }
+  }
+
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand/10 text-brand">
+        <Gauge size={14} aria-hidden="true" />
+      </span>
+      <span className="min-w-0">
+        <strong className="block text-[9px] uppercase tracking-wide text-ink-faint">
+          Live sizing preview
+        </strong>
+        <span className={cn("mt-0.5 block text-[10px] font-semibold", tone)}>
+          {detail}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+function copyTargetConfigError(target: CopyTargetDraft): string | null {
+  if (
+    target.allocationMode === "fixedQuantity" &&
+    !isPositiveNumber(target.fixedQuantity)
+  ) {
+    return "Fixed lot must be greater than zero";
+  }
+  if (
+    (target.allocationMode === "multiplier" ||
+      target.allocationMode === "equityProportional") &&
+    !isPositiveNumber(target.multiplier)
+  ) {
+    return "Multiplier must be greater than zero";
+  }
+  if (
+    target.allocationMode === "riskPercent" &&
+    (!Number.isInteger(target.riskBasisPoints) ||
+      (target.riskBasisPoints ?? 0) < 1 ||
+      (target.riskBasisPoints ?? 0) > 10_000)
+  ) {
+    return "Risk must be between 0.01% and 100%";
+  }
+  if (target.maxQuantity != null && !isPositiveNumber(target.maxQuantity)) {
+    return "Max lot must be greater than zero";
+  }
+  return null;
+}
+
+function isPositiveNumber(value: number | undefined): value is number {
+  return value != null && Number.isFinite(value) && value > 0;
+}
+
+function formatLot(value: number): string {
+  return value.toFixed(4).replace(/\.?0+$/, "");
 }
 
 function SymbolMappingSelector({
@@ -1046,7 +1414,7 @@ function SymbolMappingSelector({
         value={value}
         disabled={status === "loading" || status === "saving"}
         onChange={(event) => void save(event.target.value)}
-        className="h-8 min-w-0 flex-1 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-[10px] text-ink outline-none focus:border-brand disabled:opacity-60"
+        className="h-11 min-w-0 flex-1 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-base text-ink outline-none focus:border-brand disabled:opacity-60 lg:h-8 lg:text-[10px]"
       >
         <option value="">
           {status === "loading"

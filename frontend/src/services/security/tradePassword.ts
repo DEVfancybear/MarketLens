@@ -3,7 +3,7 @@
 import { deleteJson, getJson, postJson, putJson } from "@/services/api/client";
 import { ApiError } from "@/services/api/errors";
 
-export type TradeAuthorizationOperation = "order" | "command";
+export type TradeAuthorizationOperation = "order" | "command" | "copyGroup";
 
 export type TradeSecurityStatus = {
   enabled: boolean;

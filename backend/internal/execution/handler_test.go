@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/smc-trading-terminal/backend/internal/auth"
 )
+
+const testCopyGroupID = "33333333-3333-4333-8333-333333333333"
 
 type fakeGateway struct {
 	accountsOwner        string
@@ -40,7 +43,31 @@ type fakeGateway struct {
 	instrumentAccount    string
 	mappingOwner         string
 	mappingRequest       SymbolMappingRequest
+	copyGroupsOwner      string
+	copyGroupsGroupID    string
+	copyGroupUpsertOwner string
+	copyGroupUpsert      CopyGroupUpsertRequest
+	copyGroupActionOwner string
+	copyGroupAction      CopyGroupActionRequest
 	err                  error
+}
+
+func (f *fakeGateway) ListCopyGroups(_ context.Context, ownerID, groupID string) ([]CopyGroupView, error) {
+	f.copyGroupsOwner = ownerID
+	f.copyGroupsGroupID = groupID
+	return []CopyGroupView{{Group: CopyGroupDefinition{ID: "group-1", OwnerID: ownerID}}}, f.err
+}
+
+func (f *fakeGateway) UpsertCopyGroup(_ context.Context, ownerID string, request CopyGroupUpsertRequest) (CopyGroupView, error) {
+	f.copyGroupUpsertOwner = ownerID
+	f.copyGroupUpsert = request
+	return CopyGroupView{Group: CopyGroupDefinition{ID: "group-1", OwnerID: ownerID}}, f.err
+}
+
+func (f *fakeGateway) ApplyCopyGroupAction(_ context.Context, ownerID string, request CopyGroupActionRequest) (CopyGroupView, error) {
+	f.copyGroupActionOwner = ownerID
+	f.copyGroupAction = request
+	return CopyGroupView{Group: CopyGroupDefinition{ID: request.GroupID, OwnerID: ownerID}}, f.err
 }
 
 func (f *fakeGateway) PropRisk(
@@ -196,6 +223,43 @@ func testAppWithoutTradeAuthorization(gateway Gateway) *fiber.App {
 	return app
 }
 
+func copyGroupRequestBody(groupEnabled, targetEnabled bool) string {
+	return fmt.Sprintf(`{
+		"group":{
+			"name":"Main",
+			"sourceAccountId":"source",
+			"enabled":%t,
+			"config":{
+				"copyMarketOrders":true,
+				"copyPendingOrders":true,
+				"copyStopLossTakeProfit":true,
+				"copyModifications":true,
+				"copyPartialCloses":true,
+				"maxSlippagePoints":30,
+				"staleAfterMs":30000,
+				"reconciliationIntervalMs":5000
+			}
+		},
+		"targets":[{
+			"accountId":"target",
+			"enabled":%t,
+			"config":{
+				"allocation":{"mode":"sameQuantity"},
+				"reverseTrade":false,
+				"symbolMapping":{},
+				"protection":{
+					"brokerMarginCap":{"basis":"balance","basisPoints":3500,"alert":false},
+					"trailingStopPoints":0,
+					"trailingStepPoints":5,
+					"trailingStartPoints":0,
+					"breakevenTriggerPoints":0,
+					"breakevenOffsetPoints":1
+				}
+			}
+		}]
+	}`, groupEnabled, targetEnabled)
+}
+
 func TestEveryExecutionRouteRequiresActiveServerSession(t *testing.T) {
 	gateway := &fakeGateway{}
 	app := fiber.New()
@@ -253,6 +317,171 @@ func TestEveryExecutionRouteRequiresActiveServerSession(t *testing.T) {
 	}
 	if gateway.orderOwner != "" {
 		t.Fatal("revoked session must never reach the execution gateway")
+	}
+
+	copierResponse, err := app.Test(httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/execution/copy-groups",
+		nil,
+	))
+	if err != nil {
+		t.Fatalf("copier request: %v", err)
+	}
+	copierResponse.Body.Close()
+	if copierResponse.StatusCode != http.StatusUnauthorized || activeChecks != 3 {
+		t.Fatalf("copier status=%d active checks=%d", copierResponse.StatusCode, activeChecks)
+	}
+	if gateway.copyGroupsOwner != "" {
+		t.Fatal("revoked session must not read copier groups")
+	}
+}
+
+func TestCopyGroupRoutesInjectAuthenticatedOwner(t *testing.T) {
+	gateway := &fakeGateway{}
+	app := testApp(gateway)
+	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/execution/copy-groups?groupId="+testCopyGroupID, nil))
+	if err != nil || response.StatusCode != http.StatusOK {
+		t.Fatalf("GET copy groups: status=%d err=%v", response.StatusCode, err)
+	}
+	response.Body.Close()
+	if gateway.copyGroupsOwner != "11111111-1111-4111-8111-111111111111" ||
+		gateway.copyGroupsGroupID != testCopyGroupID {
+		t.Fatalf("unexpected list scope: owner=%q group=%q", gateway.copyGroupsOwner, gateway.copyGroupsGroupID)
+	}
+	body := copyGroupRequestBody(true, true)
+	response, err = app.Test(httptest.NewRequest(http.MethodPost, "/api/v1/execution/copy-groups", strings.NewReader(body)))
+	if err != nil || response.StatusCode != http.StatusOK {
+		t.Fatalf("POST copy groups: status=%d err=%v", response.StatusCode, err)
+	}
+	response.Body.Close()
+	if gateway.copyGroupUpsertOwner != "11111111-1111-4111-8111-111111111111" ||
+		gateway.copyGroupUpsert.Group.Name != "Main" ||
+		gateway.copyGroupUpsert.AuthorizationToken != "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" ||
+		gateway.copyGroupUpsert.AuthorizationSessionID != "22222222-2222-4222-8222-222222222222" {
+		t.Fatalf("unexpected upsert scope: owner=%q request=%+v", gateway.copyGroupUpsertOwner, gateway.copyGroupUpsert)
+	}
+	action := `{"groupId":"` + testCopyGroupID + `","expectedRevision":1,"action":"pause"}`
+	response, err = app.Test(httptest.NewRequest(http.MethodPost, "/api/v1/execution/copy-groups/actions", strings.NewReader(action)))
+	if err != nil || response.StatusCode != http.StatusOK {
+		t.Fatalf("POST copy-group action: status=%d err=%v", response.StatusCode, err)
+	}
+	response.Body.Close()
+	if gateway.copyGroupActionOwner != "11111111-1111-4111-8111-111111111111" ||
+		gateway.copyGroupAction.Action != CopyGroupActionPause ||
+		gateway.copyGroupAction.AuthorizationToken != "" {
+		t.Fatalf("unexpected action scope: owner=%q request=%+v", gateway.copyGroupActionOwner, gateway.copyGroupAction)
+	}
+	resume := `{"groupId":"` + testCopyGroupID + `","expectedRevision":2,"action":"resume"}`
+	response, err = app.Test(httptest.NewRequest(http.MethodPost, "/api/v1/execution/copy-groups/actions", strings.NewReader(resume)))
+	if err != nil || response.StatusCode != http.StatusOK {
+		t.Fatalf("POST resume copy-group action: status=%d err=%v", response.StatusCode, err)
+	}
+	response.Body.Close()
+	if gateway.copyGroupAction.AuthorizationToken != "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" ||
+		gateway.copyGroupAction.AuthorizationSessionID != "22222222-2222-4222-8222-222222222222" {
+		t.Fatalf("unexpected resume authorization: %+v", gateway.copyGroupAction)
+	}
+}
+
+func TestCopyGroupRiskIncreasingMutationsRequireAuthorization(t *testing.T) {
+	gateway := &fakeGateway{}
+	app := testAppWithoutTradeAuthorization(gateway)
+
+	response, err := app.Test(httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/execution/copy-groups",
+		strings.NewReader(copyGroupRequestBody(true, true)),
+	))
+	if err != nil {
+		t.Fatalf("enabled upsert: %v", err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusPreconditionRequired || gateway.copyGroupUpsertOwner != "" {
+		t.Fatalf("enabled upsert status=%d gateway owner=%q", response.StatusCode, gateway.copyGroupUpsertOwner)
+	}
+
+	response, err = app.Test(httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/execution/copy-groups/actions",
+		strings.NewReader(`{"groupId":"`+testCopyGroupID+`","expectedRevision":1,"action":"resume"}`),
+	))
+	if err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusPreconditionRequired || gateway.copyGroupActionOwner != "" {
+		t.Fatalf("resume status=%d gateway owner=%q", response.StatusCode, gateway.copyGroupActionOwner)
+	}
+
+	response, err = app.Test(httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/execution/copy-groups",
+		strings.NewReader(copyGroupRequestBody(false, false)),
+	))
+	if err != nil {
+		t.Fatalf("disabled upsert: %v", err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || gateway.copyGroupUpsert.AuthorizationToken != "" {
+		t.Fatalf("disabled upsert status=%d authorization=%q", response.StatusCode, gateway.copyGroupUpsert.AuthorizationToken)
+	}
+}
+
+func TestCopyGroupRoutesRejectClientScopeAndIncompleteConfiguration(t *testing.T) {
+	valid := copyGroupRequestBody(true, true)
+	invalidBodies := []string{
+		strings.Replace(valid, `{`, `{"ownerId":"attacker",`, 1),
+		strings.Replace(valid, `{`, `{"authorizationToken":"attacker",`, 1),
+		copyGroupRequestBody(true, false),
+		`{"group":{"name":"Main","sourceAccountId":"source","enabled":true},"targets":[]}`,
+		strings.Replace(valid, `{`, `{"groupId":"`+testCopyGroupID+`",`, 1),
+		strings.Replace(valid, `"group":{`, `"group":{"expectedRevision":1,`, 1),
+		strings.Replace(
+			valid,
+			`"allocation":{"mode":"sameQuantity"}`,
+			`"allocation":{"mode":"fixedQuantity","quantity":"00.10","unit":"lots"}`,
+			1,
+		),
+	}
+	for _, body := range invalidBodies {
+		gateway := &fakeGateway{}
+		response, err := testApp(gateway).Test(httptest.NewRequest(
+			http.MethodPost,
+			"/api/v1/execution/copy-groups",
+			strings.NewReader(body),
+		))
+		if err != nil {
+			t.Fatalf("invalid upsert: %v", err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusBadRequest || gateway.copyGroupUpsertOwner != "" {
+			t.Fatalf("body=%s status=%d gateway owner=%q", body, response.StatusCode, gateway.copyGroupUpsertOwner)
+		}
+	}
+}
+
+func TestCopyGroupActionsRejectInvalidIdentityRevisionAndScope(t *testing.T) {
+	invalidActions := []string{
+		`{"groupId":"group-1","expectedRevision":1,"action":"pause"}`,
+		`{"groupId":"` + testCopyGroupID + `","expectedRevision":0,"action":"pause"}`,
+		`{"groupId":"` + testCopyGroupID + `","expectedRevision":1,"action":"start"}`,
+		`{"ownerId":"attacker","groupId":"` + testCopyGroupID + `","expectedRevision":1,"action":"pause"}`,
+		`{"authorizationToken":"attacker","groupId":"` + testCopyGroupID + `","expectedRevision":1,"action":"resume"}`,
+	}
+	for _, body := range invalidActions {
+		gateway := &fakeGateway{}
+		response, err := testApp(gateway).Test(httptest.NewRequest(
+			http.MethodPost,
+			"/api/v1/execution/copy-groups/actions",
+			strings.NewReader(body),
+		))
+		if err != nil {
+			t.Fatalf("invalid action: %v", err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusBadRequest || gateway.copyGroupActionOwner != "" {
+			t.Fatalf("body=%s status=%d gateway owner=%q", body, response.StatusCode, gateway.copyGroupActionOwner)
+		}
 	}
 }
 

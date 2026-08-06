@@ -5,6 +5,10 @@ import type {
   CopyTargetDraft,
   ExecutionAccountSummary,
 } from "@/types/execution";
+import {
+  normalizeCopyRoutes,
+  type CopyRoutes,
+} from "../services/execution/copierPreferences";
 
 /** Broker-neutral projection populated from the Rust execution API. */
 export const executionAccountsAtom = atom<ExecutionAccountSummary[]>([]);
@@ -37,7 +41,38 @@ export const selectedExecutionAccountAtom = atom((get) => {
     null
   );
 });
-export const copyTargetsAtom = atom<Record<string, CopyTargetDraft>>({});
+export const copyRoutesAtom = atom<CopyRoutes>({});
+export const copyRoutesHydratedAtom = atom(false);
+
+/** Copy drafts for the currently selected source account. */
+export const copyTargetsAtom = atom(
+  (get): Record<string, CopyTargetDraft> => {
+    const sourceId = get(selectedExecutionAccountIdAtom);
+    if (!sourceId) return {};
+    return get(copyRoutesAtom)[sourceId] ?? {};
+  },
+  (get, set, targets: Record<string, CopyTargetDraft>) => {
+    const sourceId = get(selectedExecutionAccountIdAtom);
+    if (!sourceId) return;
+    const routes = { ...get(copyRoutesAtom) };
+    if (Object.keys(targets).length === 0) {
+      delete routes[sourceId];
+    } else {
+      routes[sourceId] = targets;
+    }
+    set(copyRoutesAtom, routes);
+  },
+);
+
+export const applyCopyRoutesAtom = atom(null, (_get, set, routes: unknown) => {
+  set(copyRoutesAtom, normalizeCopyRoutes(routes));
+  set(copyRoutesHydratedAtom, true);
+});
+
+export const resetCopyRoutesAtom = atom(null, (_get, set) => {
+  set(copyRoutesAtom, {});
+  set(copyRoutesHydratedAtom, false);
+});
 
 /** Clears every execution-registry projection owned by the current user. */
 export const resetExecutionRegistryAtom = atom(null, (_get, set) => {
@@ -45,7 +80,8 @@ export const resetExecutionRegistryAtom = atom(null, (_get, set) => {
   set(executionAccountLayoutAtom, { itemIds: [], revision: 0 });
   set(executionAccountLayoutPendingAtom, false);
   set(selectedExecutionAccountIdAtom, null);
-  set(copyTargetsAtom, {});
+  set(copyRoutesAtom, {});
+  set(copyRoutesHydratedAtom, false);
 });
 
 export const applyExecutionAccountsAtom = atom(
@@ -73,6 +109,8 @@ export const setCopyTargetAtom = atom(
     set,
     patch: Pick<CopyTargetDraft, "accountId"> & Partial<CopyTargetDraft>,
   ) => {
+    const sourceId = get(selectedExecutionAccountIdAtom);
+    if (!sourceId || patch.accountId === sourceId) return;
     const previous = get(copyTargetsAtom)[patch.accountId] ?? {
       accountId: patch.accountId,
       enabled: false,

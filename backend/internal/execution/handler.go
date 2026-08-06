@@ -27,6 +27,9 @@ type Gateway interface {
 	AccountInstruments(ctx context.Context, ownerID string, accountID string) (json.RawMessage, error)
 	UpsertSymbolMapping(ctx context.Context, ownerID string, request SymbolMappingRequest) (json.RawMessage, error)
 	QueueCommand(ctx context.Context, ownerID string, request CommandRequest) (json.RawMessage, error)
+	ListCopyGroups(ctx context.Context, ownerID string, groupID string) ([]CopyGroupView, error)
+	UpsertCopyGroup(ctx context.Context, ownerID string, request CopyGroupUpsertRequest) (CopyGroupView, error)
+	ApplyCopyGroupAction(ctx context.Context, ownerID string, request CopyGroupActionRequest) (CopyGroupView, error)
 }
 
 const tradeAuthorizationHeader = "X-Trade-Authorization"
@@ -86,9 +89,93 @@ func (h *Handler) Register(router fiber.Router) {
 	router.Post("/execution/accounts/:accountId/disconnect", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.disconnectAccount)
 	router.Delete("/execution/accounts/:accountId", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.removeAccount)
 	router.Post("/execution/symbol-mappings", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.upsertSymbolMapping)
+	router.Get("/execution/copy-groups", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.listCopyGroups)
+	router.Post("/execution/copy-groups", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.upsertCopyGroup)
+	router.Post("/execution/copy-groups/actions", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.applyCopyGroupAction)
 	router.Post("/execution/pairing-tokens", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.pairingRateLimit, h.issuePairingToken)
 	router.Post("/execution/orders", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.tradingRateLimit, h.routeOrder)
 	router.Post("/execution/commands", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.tradingRateLimit, h.queueCommand)
+}
+
+func (h *Handler) listCopyGroups(c fiber.Ctx) error {
+	groupID := strings.TrimSpace(c.Query("groupId"))
+	if groupID != "" && !validExecutionIdentifier(groupID, 96) {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid groupId")
+	}
+	groups, err := h.gateway.ListCopyGroups(
+		c.Context(),
+		authenticatedUserID(c),
+		groupID,
+	)
+	if err != nil {
+		return copyGroupGatewayHTTPError(err)
+	}
+	c.Set(fiber.HeaderCacheControl, "no-store")
+	return c.JSON(groups)
+}
+
+func (h *Handler) upsertCopyGroup(c fiber.Ctx) error {
+	var request CopyGroupUpsertRequest
+	if err := decodeStrict(c.Body(), &request); err != nil || !validCopyGroupUpsert(request) {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	if request.Group.Enabled {
+		if err := attachCopyGroupTradeAuthorization(c, &request); err != nil {
+			return err
+		}
+	}
+	group, err := h.gateway.UpsertCopyGroup(
+		c.Context(),
+		authenticatedUserID(c),
+		request,
+	)
+	if err != nil {
+		return copyGroupGatewayHTTPError(err)
+	}
+	c.Set(fiber.HeaderCacheControl, "no-store")
+	return c.JSON(group)
+}
+
+func (h *Handler) applyCopyGroupAction(c fiber.Ctx) error {
+	var request CopyGroupActionRequest
+	if err := decodeStrict(c.Body(), &request); err != nil || !validCopyGroupAction(request) {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	if request.Action == CopyGroupActionResume {
+		if err := attachCopyGroupActionTradeAuthorization(c, &request); err != nil {
+			return err
+		}
+	}
+	group, err := h.gateway.ApplyCopyGroupAction(
+		c.Context(),
+		authenticatedUserID(c),
+		request,
+	)
+	if err != nil {
+		return copyGroupGatewayHTTPError(err)
+	}
+	c.Set(fiber.HeaderCacheControl, "no-store")
+	return c.JSON(group)
+}
+
+func attachCopyGroupTradeAuthorization(c fiber.Ctx, request *CopyGroupUpsertRequest) error {
+	token := strings.TrimSpace(c.Get(tradeAuthorizationHeader))
+	if !validTradeAuthorizationToken(token) {
+		return fiber.NewError(fiber.StatusPreconditionRequired, "trade authorization required")
+	}
+	request.AuthorizationToken = token
+	request.AuthorizationSessionID = authenticatedSessionID(c)
+	return nil
+}
+
+func attachCopyGroupActionTradeAuthorization(c fiber.Ctx, request *CopyGroupActionRequest) error {
+	token := strings.TrimSpace(c.Get(tradeAuthorizationHeader))
+	if !validTradeAuthorizationToken(token) {
+		return fiber.NewError(fiber.StatusPreconditionRequired, "trade authorization required")
+	}
+	request.AuthorizationToken = token
+	request.AuthorizationSessionID = authenticatedSessionID(c)
+	return nil
 }
 
 func (h *Handler) RegisterPublic(router fiber.Router) {
@@ -525,5 +612,30 @@ func gatewayHTTPError(err error) error {
 		}
 	}
 	log.Error().Err(err).Msg("execution gateway request failed")
+	return fiber.NewError(fiber.StatusServiceUnavailable, "execution service unavailable")
+}
+
+func copyGroupGatewayHTTPError(err error) error {
+	var gatewayErr *GatewayError
+	if errors.As(err, &gatewayErr) {
+		switch gatewayErr.Status {
+		case fiber.StatusBadRequest:
+			return fiber.NewError(fiber.StatusBadRequest, "copy group request was rejected")
+		case fiber.StatusForbidden:
+			return fiber.NewError(fiber.StatusForbidden, "copy group action was rejected")
+		case fiber.StatusNotFound:
+			return fiber.NewError(fiber.StatusNotFound, "copy group was not found")
+		case fiber.StatusConflict:
+			return fiber.NewError(fiber.StatusConflict, "copy group revision conflict")
+		case fiber.StatusUnprocessableEntity:
+			return fiber.NewError(
+				fiber.StatusUnprocessableEntity,
+				"copy group configuration was rejected",
+			)
+		case fiber.StatusTooManyRequests:
+			return fiber.NewError(fiber.StatusTooManyRequests, "too many copy group requests")
+		}
+	}
+	log.Error().Err(err).Msg("execution copier gateway request failed")
 	return fiber.NewError(fiber.StatusServiceUnavailable, "execution service unavailable")
 }

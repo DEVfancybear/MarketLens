@@ -385,6 +385,7 @@ function targetDraft(
 function allocationLabel(target: CopyTargetDraft): string {
   const labels: Record<CopyAllocationMode, string> = {
     sameQuantity: "Same quantity",
+    fixedQuantity: `${target.fixedQuantity ?? 0} lots fixed`,
     multiplier: `${target.multiplier}×`,
     equityProportional: `Equity × ${target.multiplier}`,
     riskPercent: `${((target.riskBasisPoints ?? 50) / 100).toFixed(2)}% risk`,

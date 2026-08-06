@@ -203,6 +203,7 @@ mod tests {
             stop_price: None,
             stop_loss: Some(Decimal::new(108_000, 5)),
             take_profit: None,
+            broker_margin_cap: None,
             warnings: Vec::<RouteWarning>::new(),
         }
     }

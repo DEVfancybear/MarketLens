@@ -120,6 +120,7 @@ export interface PropRiskGuard {
 
 export type CopyAllocationMode =
   | "sameQuantity"
+  | "fixedQuantity"
   | "multiplier"
   | "equityProportional"
   | "riskPercent";
@@ -129,6 +130,7 @@ export interface CopyTargetDraft {
   enabled: boolean;
   allocationMode: CopyAllocationMode;
   multiplier: number;
+  fixedQuantity?: number;
   riskBasisPoints?: number;
   maxQuantity?: number;
 }
@@ -166,3 +168,130 @@ export type CopyRoutePreview =
         | "TARGET_EQUITY_REQUIRED"
         | "INVALID_QUANTITY";
     };
+
+export type ContinuousCopyGroupRuntimeStatus =
+  | "inactive"
+  | "starting"
+  | "active"
+  | "paused"
+  | "degraded"
+  | "error";
+
+export type ContinuousCopyTargetRuntimeStatus =
+  | "inactive"
+  | "connecting"
+  | "active"
+  | "waiting"
+  | "degraded"
+  | "error";
+
+export interface ContinuousCopyConfig {
+  copyMarketOrders: boolean;
+  copyPendingOrders: boolean;
+  copyStopLossTakeProfit: boolean;
+  copyModifications: boolean;
+  copyPartialCloses: boolean;
+  sourceMagicFilter?: number;
+  sourceCommentPrefix?: string;
+  maxSlippagePoints: number;
+  staleAfterMs: number;
+  reconciliationIntervalMs: number;
+}
+
+export type ContinuousCopyAllocation =
+  | { mode: "sameQuantity" }
+  | { mode: "fixedQuantity"; quantity: string; unit: "lots" }
+  | { mode: "multiplier"; multiplier: string }
+  | { mode: "equityProportional"; multiplier: string }
+  | { mode: "riskPercent"; basisPoints: number };
+
+export interface BrokerMarginCap {
+  basis: "equity" | "balance";
+  basisPoints: number;
+  alert: boolean;
+}
+
+export interface ContinuousCopyProtectionConfig {
+  brokerMarginCap?: BrokerMarginCap;
+  maxDrawdownBasisPoints?: number;
+  trailingStopPoints: number;
+  trailingStepPoints: number;
+  trailingStartPoints: number;
+  breakevenTriggerPoints: number;
+  breakevenOffsetPoints: number;
+}
+
+export interface ContinuousCopyTargetConfig {
+  allocation: ContinuousCopyAllocation;
+  maxQuantity?: string;
+  reverseTrade: boolean;
+  symbolMapping: Record<string, string>;
+  protection: ContinuousCopyProtectionConfig;
+}
+
+export interface ContinuousCopyGroupDefinition {
+  id: string;
+  ownerId: string;
+  name: string;
+  sourceAccountId: string;
+  enabled: boolean;
+  revision: number;
+  appliedRevision: number;
+  runtimeStatus: ContinuousCopyGroupRuntimeStatus;
+  config: ContinuousCopyConfig;
+  statusMessage?: string;
+  updatedAtMs: number;
+}
+
+export interface ContinuousCopyTargetDefinition {
+  groupId: string;
+  accountId: string;
+  enabled: boolean;
+  revision: number;
+  appliedRevision: number;
+  runtimeStatus: ContinuousCopyTargetRuntimeStatus;
+  config: ContinuousCopyTargetConfig;
+  statusMessage?: string;
+  updatedAtMs: number;
+}
+
+export interface ContinuousCopyGroupView {
+  group: ContinuousCopyGroupDefinition;
+  targets: ContinuousCopyTargetDefinition[];
+  pendingWork: number;
+  unresolvedErrors: number;
+  activeLinks: number;
+}
+
+export interface ContinuousCopyGroupWrite {
+  expectedRevision?: number;
+  name: string;
+  sourceAccountId: string;
+  enabled: boolean;
+  config: ContinuousCopyConfig;
+}
+
+export interface ContinuousCopyTargetWrite {
+  expectedRevision?: number;
+  accountId: string;
+  enabled: boolean;
+  config: ContinuousCopyTargetConfig;
+}
+
+export interface ContinuousCopyGroupUpsertInput {
+  groupId?: string;
+  group: ContinuousCopyGroupWrite;
+  targets: ContinuousCopyTargetWrite[];
+}
+
+export type ContinuousCopyGroupAction =
+  | "pause"
+  | "resume"
+  | "reconcile"
+  | "archive";
+
+export interface ContinuousCopyGroupActionInput {
+  groupId: string;
+  expectedRevision: number;
+  action: ContinuousCopyGroupAction;
+}

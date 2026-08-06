@@ -91,6 +91,36 @@ test("risk-percent copy serializes basis points, not a floating percent", () => 
   assert.equal(wire.intent.limitPrice, "2400");
 });
 
+test("fixed-quantity copy serializes target lots independently of source size", () => {
+  const wire = buildExecutionOrderRequest({
+    order: {
+      clientOrderId: "mt5_ord_fixed",
+      chartSymbol: "XAUUSD",
+      brokerSymbol: "XAUUSD",
+      side: "buy",
+      type: "market",
+      volume: 2,
+    },
+    selected: source,
+    accounts: [source, target],
+    copyTargets: {
+      mt5_target: {
+        accountId: "mt5_target",
+        enabled: true,
+        allocationMode: "fixedQuantity",
+        fixedQuantity: 0.15,
+        multiplier: 1,
+      },
+    },
+  });
+
+  assert.deepEqual(wire.targets[1]?.allocation, {
+    mode: "fixedQuantity",
+    quantity: "0.15",
+    unit: "lots",
+  });
+});
+
 test("keeps offline MT5 copy targets but excludes targets that cannot become executable", () => {
   const offline = { ...target, status: "offline" as const };
   const blocked = {

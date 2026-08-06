@@ -1,6 +1,9 @@
 import { deleteJson, getJson, postJson } from "@/services/api/client";
 import type {
   ExecutionAccountSummary,
+  ContinuousCopyGroupActionInput,
+  ContinuousCopyGroupUpsertInput,
+  ContinuousCopyGroupView,
   PropRiskActions,
   PropRiskAssignment,
   PropRiskEvaluation,
@@ -15,6 +18,12 @@ import {
   type ExecutionTargetSubmission,
 } from "@/services/execution/orderResponse";
 import { authorizeTradeTransaction } from "@/services/security/tradePassword";
+import {
+  continuousCopyActionAuthorizationPayload,
+  continuousCopyActionRequiresTradeAuthorization,
+  continuousCopyGroupAuthorizationPayload,
+  continuousCopyGroupRequiresTradeAuthorization,
+} from "@/services/execution/continuousCopier";
 
 export type { ExecutionOrderResponse, ExecutionTargetSubmission };
 
@@ -181,6 +190,54 @@ export const getExecutionAccountState = (
     `execution/account-state?accountId=${encodeURIComponent(accountId)}`,
     { retry: { limit: 1, methods: ["get"] } },
   );
+
+export const getContinuousCopyGroups = (
+  groupId?: string,
+): Promise<ContinuousCopyGroupView[]> =>
+  getJson<ContinuousCopyGroupView[]>(
+    groupId
+      ? `execution/copy-groups?groupId=${encodeURIComponent(groupId)}`
+      : "execution/copy-groups",
+    { retry: { limit: 1, methods: ["get"] }, cache: "no-store" },
+  );
+
+export const saveContinuousCopyGroup = (
+  input: ContinuousCopyGroupUpsertInput,
+): Promise<ContinuousCopyGroupView> => {
+  const request = () =>
+    postJson<ContinuousCopyGroupView>("execution/copy-groups", input, {
+      retry: { limit: 0 },
+      timeout: 15_000,
+    });
+  if (!continuousCopyGroupRequiresTradeAuthorization(input)) return request();
+  return authorizeTradeTransaction("copyGroup", continuousCopyGroupAuthorizationPayload(input)).then(
+    (authorization) =>
+      postJson<ContinuousCopyGroupView>("execution/copy-groups", input, {
+        headers: { "X-Trade-Authorization": authorization },
+        retry: { limit: 0 },
+        timeout: 15_000,
+      }),
+  );
+};
+
+export const runContinuousCopyGroupAction = (
+  input: ContinuousCopyGroupActionInput,
+): Promise<ContinuousCopyGroupView> => {
+  const request = () =>
+    postJson<ContinuousCopyGroupView>("execution/copy-groups/actions", input, {
+      retry: { limit: 0 },
+      timeout: 15_000,
+    });
+  if (!continuousCopyActionRequiresTradeAuthorization(input)) return request();
+  return authorizeTradeTransaction("copyGroup", continuousCopyActionAuthorizationPayload(input)).then(
+    (authorization) =>
+      postJson<ContinuousCopyGroupView>("execution/copy-groups/actions", input, {
+        headers: { "X-Trade-Authorization": authorization },
+        retry: { limit: 0 },
+        timeout: 15_000,
+      }),
+  );
+};
 
 interface PropRiskEvaluationWire
   extends Omit<

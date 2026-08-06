@@ -801,6 +801,7 @@ body {
 .mobile-trade-account-actions { display: flex; gap: 7px; overflow-x: auto; margin-bottom: 10px; }
 .mobile-trade-account-actions button { display: flex; min-height: 44px; flex: none; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); padding: 0 10px; color: var(--text-muted); font-size: 10px; font-weight: 700; }
 .mobile-segmented--three { grid-template-columns: repeat(3,1fr); }
+.mobile-segmented--four { grid-template-columns: repeat(4,minmax(0,1fr)); }
 .mobile-position-card { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
 .mobile-position-identity { grid-column: 1 / -1; display: grid !important; grid-template-columns: auto minmax(0,1fr); align-items: center; column-gap: 8px; }
 .mobile-position-identity small { grid-column: 2; }

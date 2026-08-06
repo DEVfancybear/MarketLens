@@ -554,7 +554,7 @@ func passwordLockDuration(failedAttempts int) time.Duration {
 }
 
 func validateOperationPayload(operation string, payload json.RawMessage) error {
-	if operation != "order" && operation != "command" {
+	if operation != "order" && operation != "command" && operation != "copyGroup" {
 		return fmt.Errorf("%w: invalid operation", ErrAuthorizationRejected)
 	}
 	if len(payload) == 0 || len(payload) > maxTransactionPayloadBytes || !json.Valid(payload) {
@@ -568,10 +568,80 @@ func validateOperationPayload(operation string, payload json.RawMessage) error {
 		if len(object) != 2 || len(object["intent"]) == 0 || len(object["targets"]) == 0 {
 			return fmt.Errorf("%w: invalid order payload", ErrAuthorizationRejected)
 		}
+	} else if operation == "copyGroup" {
+		if !validCopyGroupAuthorizationPayload(object) {
+			return fmt.Errorf("%w: invalid copy-group payload", ErrAuthorizationRejected)
+		}
 	} else if len(object) != 1 || len(object["command"]) == 0 {
 		return fmt.Errorf("%w: invalid command payload", ErrAuthorizationRejected)
 	}
 	return nil
+}
+
+func validCopyGroupAuthorizationPayload(object map[string]json.RawMessage) bool {
+	// Only activation writes and resume actions increase copier risk. Keeping
+	// those semantics strict prevents callers from minting a generic copier
+	// token and preserves the one-operation/one-payload authorization model.
+	if _, hasGroup := object["group"]; hasGroup {
+		return validCopyGroupUpsertAuthorizationPayload(object)
+	}
+	return validCopyGroupResumeAuthorizationPayload(object)
+}
+
+func validCopyGroupUpsertAuthorizationPayload(object map[string]json.RawMessage) bool {
+	if len(object) != 2 && len(object) != 3 {
+		return false
+	}
+	if len(object) == 3 {
+		var groupID string
+		if err := json.Unmarshal(object["groupId"], &groupID); err != nil || groupID == "" {
+			return false
+		}
+	}
+	var group map[string]json.RawMessage
+	if err := json.Unmarshal(object["group"], &group); err != nil || len(group) == 0 {
+		return false
+	}
+	var enabled bool
+	if err := json.Unmarshal(group["enabled"], &enabled); err != nil || !enabled {
+		return false
+	}
+	var targets []json.RawMessage
+	if err := json.Unmarshal(object["targets"], &targets); err != nil ||
+		len(targets) == 0 || len(targets) > 20 {
+		return false
+	}
+	enabledTargets := 0
+	for _, rawTarget := range targets {
+		var target map[string]json.RawMessage
+		if err := json.Unmarshal(rawTarget, &target); err != nil || len(target) == 0 {
+			return false
+		}
+		var enabled bool
+		if err := json.Unmarshal(target["enabled"], &enabled); err != nil {
+			return false
+		}
+		if enabled {
+			enabledTargets++
+		}
+	}
+	return enabledTargets > 0
+}
+
+func validCopyGroupResumeAuthorizationPayload(object map[string]json.RawMessage) bool {
+	if len(object) != 3 {
+		return false
+	}
+	var groupID, action string
+	var expectedRevision uint64
+	if err := json.Unmarshal(object["groupId"], &groupID); err != nil || groupID == "" {
+		return false
+	}
+	if err := json.Unmarshal(object["expectedRevision"], &expectedRevision); err != nil ||
+		expectedRevision == 0 {
+		return false
+	}
+	return json.Unmarshal(object["action"], &action) == nil && action == "resume"
 }
 
 func generateAuthorizationToken() (raw string, hash []byte, err error) {

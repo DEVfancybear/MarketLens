@@ -103,7 +103,9 @@ export function previewCopyRoutes(
     }
 
     let quantity = input.sourceQuantity;
-    if (target.allocationMode === "multiplier") {
+    if (target.allocationMode === "fixedQuantity") {
+      quantity = target.fixedQuantity ?? Number.NaN;
+    } else if (target.allocationMode === "multiplier") {
       quantity *= target.multiplier;
     } else if (target.allocationMode === "equityProportional") {
       if (!isPositive(input.sourceEquity)) {
