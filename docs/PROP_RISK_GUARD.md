@@ -75,8 +75,8 @@ Rates are stored as basis points (`100 bp = 1%`) and calculated from
 daily_loss_limit = initial_balance × daily_loss_limit_bp / 10,000
 max_loss_limit   = initial_balance × max_loss_limit_bp / 10,000
 
-daily_floor = day_start_balance - daily_loss_limit
-max_floor   = initial_balance   - max_loss_limit
+daily_floor = initial_balance - daily_loss_limit
+max_floor   = initial_balance - max_loss_limit
 
 daily_remaining = equity - daily_floor
 max_remaining   = equity - max_floor

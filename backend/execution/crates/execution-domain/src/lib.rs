@@ -384,7 +384,7 @@ pub fn evaluate_prop_risk(
     let daily_loss_limit =
         prop_risk_money(input.initial_balance, rules.daily_loss_limit_basis_points);
     let max_loss_limit = prop_risk_money(input.initial_balance, rules.max_loss_limit_basis_points);
-    let daily_floor = input.day_start_balance - daily_loss_limit;
+    let daily_floor = input.initial_balance - daily_loss_limit;
     let max_floor = input.initial_balance - max_loss_limit;
     let daily_loss_used = positive(input.day_start_balance - input.equity);
     let max_loss_used = positive(input.initial_balance - input.equity);
@@ -1014,8 +1014,8 @@ mod tests {
         );
         assert_eq!(result.daily_loss_limit, Decimal::new(5_000, 0));
         assert_eq!(result.daily_loss_used, Decimal::new(4_000, 0));
-        assert_eq!(result.daily_loss_remaining, Decimal::new(1_000, 0));
-        assert_eq!(result.status, PropRiskStatus::Warning);
+        assert_eq!(result.daily_loss_remaining, Decimal::new(5_000, 0));
+        assert_eq!(result.status, PropRiskStatus::Protected);
     }
 
     #[test]
@@ -1034,10 +1034,11 @@ mod tests {
             },
         );
         assert_eq!(result.daily_loss_limit, Decimal::new(2_500, 0));
-        assert_eq!(result.daily_loss_remaining, Decimal::new(2_500, 0));
+        assert_eq!(result.daily_loss_remaining, Decimal::new(-1_801, -93));
         assert_eq!(result.max_loss_limit, Decimal::new(5_000, 0));
-        assert_eq!(result.max_loss_remaining, Decimal::new(69_807, 2));
-        assert_eq!(result.status, PropRiskStatus::Protected);
+        assert_eq!(result.max_loss_remaining, Decimal::new(698, 07));
+        assert_eq!(result.status, PropRiskStatus::Breached);
+        assert_eq!(result.reason, Some(PropRiskReason::DailyLossLimitBreached));
     }
 
     #[test]
