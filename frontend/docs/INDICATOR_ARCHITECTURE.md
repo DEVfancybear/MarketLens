@@ -1,6 +1,6 @@
 # Indicator architecture
 
-_Updated: 2026-07-29._
+_Updated: 2026-08-10._
 
 Indicators are backend-defined and backend-executed. The browser does not own
 an indicator catalog, formulas, defaults, input schemas, style schemas, or
@@ -168,6 +168,14 @@ under forex point semantics cannot be reused for a crypto or index symbol.
 - Cache keys include the complete dynamic config, symbol metadata, timeframe,
   and OHLCV content, so forming-bar corrections or market-context changes
   invalidate every indicator consistently.
+- Active chart scopes are resolved on every render because a live-history
+  generation is mutable policy state, not part of the React config/context
+  object identity. The resolved snapshot preserves its Set identity while the
+  effective keys are unchanged, but changes immediately after authoritative
+  MT5 history invalidation. Scope retention, request cancellation, cache reads,
+  and completion-notification filtering must all use that same snapshot; a new
+  result must never be dropped merely because the previous generation was
+  memoized before the history replacement.
 - Live tick bursts are latest-only per indicator scope: one request may run,
   one newest snapshot may wait, and superseded waiting snapshots are discarded.
   The browser runs at most four indicator requests globally to match the backend
@@ -220,6 +228,7 @@ cd backend && go test ./...
 cd frontend && npm run typecheck
 cd frontend && npm run test:chart
 cd frontend && npm run check:pine-indicator
+cd frontend && npm run test:chart-browser -- chartViewportSync.spec.ts
 ```
 
 `check:pine-indicator` fails if the split caches/default service return or if

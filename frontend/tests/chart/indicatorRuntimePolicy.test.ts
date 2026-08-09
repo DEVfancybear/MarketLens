@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  bumpLiveHistoryVersion,
   canUseLatestIndicatorRuntimeResult,
   indicatorRuntimeCacheKey,
   indicatorRuntimeScopeKey,
   normalizeReplayCutoff,
   replayCutoffFromVisibleThrough,
+  resolveIndicatorRuntimeScopeSnapshot,
   stableIndicatorRuntimeJSON,
 } from "../../src/services/indicatorRuntimePolicy";
 import type { Candle, IndicatorConfig } from "../../src/types";
@@ -52,6 +54,22 @@ test("latest runtime fallback is scoped by symbol, timeframe, and dynamic config
       { ...indicator, inputValues: { period: 20 } },
       { symbol: "EURUSD", timeframe: "15m" },
     ),
+  );
+});
+
+test("active runtime scopes refresh after live history invalidation without identity churn", () => {
+  const context = { symbol: "SCOPE-SNAPSHOT-TEST", timeframe: "15m" as const };
+  const initial = resolveIndicatorRuntimeScopeSnapshot([indicator], context);
+  const unchanged = resolveIndicatorRuntimeScopeSnapshot([indicator], context, initial);
+  assert.strictEqual(unchanged, initial);
+
+  bumpLiveHistoryVersion(context.symbol, context.timeframe);
+  const refreshed = resolveIndicatorRuntimeScopeSnapshot([indicator], context, initial);
+  assert.notStrictEqual(refreshed, initial);
+  assert.notDeepEqual([...refreshed.scopes], [...initial.scopes]);
+  assert.strictEqual(
+    resolveIndicatorRuntimeScopeSnapshot([indicator], context, refreshed),
+    refreshed,
   );
 });
 

@@ -74,13 +74,17 @@ import { getChartOptimizationDecision } from "@/services/chartOptimizationRollou
 import {
   computeIndicator,
   ensureIndicatorRuntimeResult,
+  invalidateIndicatorHistoryContext,
   retainIndicatorRuntimeScopes,
   subscribeIndicatorRuntimeCache,
 } from "@/services/indicatorRuntimeCache";
-import type { IndicatorRuntimeContext } from "@/services/indicatorRuntimePolicy";
+import type {
+  IndicatorRuntimeContext,
+  IndicatorRuntimeScopeSnapshot,
+} from "@/services/indicatorRuntimePolicy";
 import {
-  indicatorRuntimeScopeKey,
   replayCutoffFromVisibleThrough,
+  resolveIndicatorRuntimeScopeSnapshot,
 } from "@/services/indicatorRuntimePolicy";
 import { resolveRealtimeSeriesUpdatePlan, type RealtimeSeriesUpdatePlan } from "@/services/market-data/candleSeries";
 import { useCountdown } from "@/hooks/useCountdown";
@@ -388,6 +392,8 @@ export function PriceChart({
     timeframe,
     timeZone,
   ]);
+  const indicatorRuntimeContextRef = useRef(indicatorRuntimeContext);
+  indicatorRuntimeContextRef.current = indicatorRuntimeContext;
   const storedIndicators = useAtomValue(activeIndicatorsAtom);
   const indicators = indicatorsOverride ?? storedIndicators;
   const setCrosshair = useSetAtom(setCrosshairAtom);
@@ -614,6 +620,12 @@ export function PriceChart({
           candleCount: () => candlesRef.current.length,
           firstCandleTime: () => candlesRef.current[0]?.time ?? null,
           lastCrosshairTime: () => lastCrosshairTimeRef.current,
+          invalidateIndicatorHistory: () => {
+            const context = indicatorRuntimeContextRef.current;
+            if (context.symbol && context.timeframe) {
+              invalidateIndicatorHistoryContext(context.symbol, context.timeframe);
+            }
+          },
         })
       : () => undefined;
 
@@ -1206,21 +1218,16 @@ export function PriceChart({
     [paneIndicators],
   );
   const overlayLegendIndicators = useMemo(() => indicators.filter((i) => !i.separatePane), [indicators]);
-  const activeIndicatorRuntimeScopes = useMemo(
-    () =>
-      new Set(
-        [...overlayIndicators, ...visiblePaneIndicators].map((cfg) =>
-          indicatorRuntimeScopeKey(cfg, indicatorRuntimeContext),
-        ),
-      ),
-    [
-      indicatorRuntimeContext,
-      overlayIndicators,
-      visiblePaneIndicators,
-    ],
+  const activeIndicatorRuntimeScopeSnapshotRef = useRef<
+    IndicatorRuntimeScopeSnapshot | undefined
+  >(undefined);
+  const activeIndicatorRuntimeScopeSnapshot = resolveIndicatorRuntimeScopeSnapshot(
+    [...overlayIndicators, ...visiblePaneIndicators],
+    indicatorRuntimeContext,
+    activeIndicatorRuntimeScopeSnapshotRef.current,
   );
-  const activeIndicatorRuntimeScopesRef = useRef<ReadonlySet<string>>(new Set());
-  activeIndicatorRuntimeScopesRef.current = activeIndicatorRuntimeScopes;
+  activeIndicatorRuntimeScopeSnapshotRef.current = activeIndicatorRuntimeScopeSnapshot;
+  const activeIndicatorRuntimeScopes = activeIndicatorRuntimeScopeSnapshot.scopes;
   useEffect(
     () => retainIndicatorRuntimeScopes(activeIndicatorRuntimeScopes),
     [activeIndicatorRuntimeScopes],
@@ -1229,7 +1236,7 @@ export function PriceChart({
     const onRuntimeUpdate = (scope?: string) => {
       if (
         scope == null ||
-        activeIndicatorRuntimeScopesRef.current.has(scope)
+        activeIndicatorRuntimeScopeSnapshotRef.current?.scopes.has(scope)
       ) {
         setPineRuntimeVersion((value) => value + 1);
       }

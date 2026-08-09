@@ -1,5 +1,14 @@
 # Current Progress
 
+- Indicator runtime pane recovery (2026-08-10): live-history invalidation now
+  refreshes the common active scope snapshot used by every backend indicator.
+  Completion notifications from the new history generation can no longer be
+  filtered against a memoized previous scope, so RSI and future separate-pane
+  scripts render their line, levels, right scale, and dynamic legend value on
+  the first non-empty result even when no later market tick arrives. Regression
+  coverage exercises the full empty -> invalidate -> non-empty browser path and
+  inspects native series points plus pane price ranges.
+
 - Continuous MT5 copier production foundation (2026-08-06): migration
   `0035_execution_continuous_copier` is applied in production and the canonical
   runner completed its Go/Rust build, restart, and local/public health gates.
@@ -55,7 +64,7 @@
 > milestones below are historical. Current implementation and remaining native
 > venue work are tracked in `TRADE_EXECUTION_ARCHITECTURE.md`.
 
-Last updated: 2026-08-06
+Last updated: 2026-08-10
 
 - Chart drag/symbol-switch stability (2026-07-30): the production chart path
   now uses granular market-data subscriptions, revision-safe deferred viewport

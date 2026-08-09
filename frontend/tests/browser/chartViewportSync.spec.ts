@@ -37,6 +37,8 @@ async function expectPaneLegendsAligned(page: Page) {
 }
 
 test("crosshair, zoom, resize, and prepend stay synchronized", async ({ page }) => {
+  const computeAttempts = new Map<string, number>();
+  let completedInitialComputes = 0;
   await page.route("**/api/v1/mt5/symbols", async (route) => {
     await route.fulfill({
       status: 200,
@@ -89,15 +91,36 @@ test("crosshair, zoom, resize, and prepend stay synchronized", async ({ page }) 
       });
       return;
     }
-    const payload = request.postDataJSON() as { indicatorId?: string };
+    const payload = request.postDataJSON() as {
+      indicatorId?: string;
+      indicatorType?: string;
+      candles?: Array<{ time: number; close: number }>;
+    };
+    const indicatorId = payload.indicatorId ?? "fixture";
+    const attempt = (computeAttempts.get(indicatorId) ?? 0) + 1;
+    computeAttempts.set(indicatorId, attempt);
+    const paneSeries = payload.indicatorType?.includes("pane") ?? false;
+    const series = attempt === 1
+      ? []
+      : [{
+          key: `${indicatorId}:value`,
+          color: paneSeries ? "#f8fafc" : "#818cf8",
+          data: (payload.candles ?? []).map((candle, index) => ({
+            time: candle.time,
+            value: paneSeries ? 40 + (index % 21) : candle.close,
+          })),
+          type: "line",
+          precision: paneSeries ? 1 : 5,
+        }];
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        result: { id: payload.indicatorId ?? "fixture", series: [] },
+        result: { id: indicatorId, series },
         errors: [],
       }),
     });
+    if (attempt === 1) completedInitialComputes += 1;
   });
   const hydrationErrors: string[] = [];
   page.on("console", (message) => {
@@ -118,6 +141,25 @@ test("crosshair, zoom, resize, and prepend stay synchronized", async ({ page }) 
   );
   expect(hydrationErrors).toEqual([]);
   await expectPaneLegendsAligned(page);
+
+  await test.step("indicator panes recover after live history invalidation", async () => {
+    await expect.poll(() => completedInitialComputes).toBe(3);
+    expect((await snapshot(page)).paneSeriesPointCounts.slice(1)).toEqual([[], []]);
+    await page.evaluate(() =>
+      window.__chartInteractionTest?.invalidateIndicatorHistory()
+    );
+    await expect.poll(() =>
+      [...computeAttempts.values()].filter((attempt) => attempt >= 2).length
+    ).toBe(3);
+    await expect.poll(async () => {
+      const current = await snapshot(page);
+      return current.paneSeriesPointCounts
+        .slice(1)
+        .every((counts) => counts.some((count) => count > 0));
+    }).toBe(true);
+    const recovered = await snapshot(page);
+    expect(recovered.priceScaleRanges.slice(1).every(Boolean)).toBe(true);
+  });
 
   await test.step("initial candle density matches the TradingView visual profile", async () => {
     await expect.poll(async () => (await snapshot(page)).barSpacing).toBeCloseTo(16, 1);

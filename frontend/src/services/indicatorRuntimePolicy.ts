@@ -15,6 +15,11 @@ export interface IndicatorRuntimeContext {
   replayCutoff?: number;
 }
 
+export interface IndicatorRuntimeScopeSnapshot {
+  signature: string;
+  scopes: ReadonlySet<string>;
+}
+
 const liveHistoryVersions = new Map<string, number>();
 const candleSignatureCache = new WeakMap<readonly Candle[], string>();
 
@@ -151,6 +156,25 @@ export function indicatorRuntimeScopeKey(
     runtimeMode,
     ...(historyVersion != null ? [`history:${historyVersion}`] : []),
   ].join("|");
+}
+
+/**
+ * Resolve the currently active runtime scopes while preserving Set identity
+ * until a scope key actually changes. Live history generations are global
+ * policy state, so callers must evaluate this on every render rather than
+ * memoizing only from config/context object identity.
+ */
+export function resolveIndicatorRuntimeScopeSnapshot(
+  configs: readonly IndicatorConfig[],
+  context?: IndicatorRuntimeContext,
+  previous?: IndicatorRuntimeScopeSnapshot,
+): IndicatorRuntimeScopeSnapshot {
+  const keys = [...new Set(
+    configs.map((config) => indicatorRuntimeScopeKey(config, context)),
+  )].sort();
+  const signature = JSON.stringify(keys);
+  if (previous?.signature === signature) return previous;
+  return { signature, scopes: new Set(keys) };
 }
 
 export function indicatorRuntimeCacheKey(

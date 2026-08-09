@@ -4,6 +4,25 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Indicator panes recover after live history invalidation (2026-08-10)
+
+- Fixed a common runtime-scope race that could leave RSI or any other backend
+  indicator pane empty after MT5 replaced or hydrated its live history window.
+  The pane itself had the correct native height, but the chart still retained
+  the previous history-generation scope and filtered out the new compute
+  result, removing the line, reference levels, right scale, and dynamic legend
+  value until another market render happened.
+- Recompute the active scope snapshot on every chart render so global live
+  history generations are observed immediately, while preserving the same Set
+  identity when the effective scopes have not changed. Runtime retention,
+  cancellation, cache reads, and completion notifications therefore agree on
+  one current scope without restarting stable requests.
+- Extended the browser harness to expose native series point counts and added a
+  regression that starts with empty indicator results, invalidates live
+  history, then requires both separate panes to receive non-empty series and a
+  native price range. Typecheck, all 187 chart tests, and the focused browser
+  interaction spec pass.
+
 ### Fixed - Replay session replacement keeps candlesticks visible (2026-08-10)
 
 - Fixed an intermittent blank main chart when selecting a new Replay point

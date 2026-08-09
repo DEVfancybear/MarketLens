@@ -15,6 +15,7 @@ export interface ChartInteractionSnapshot {
   rightPriceScaleWidths: number[];
   priceScaleRanges: Array<IRange<number> | null>;
   priceScaleAutoScale: boolean[];
+  paneSeriesPointCounts: number[][];
 }
 
 declare global {
@@ -23,6 +24,7 @@ declare global {
       snapshot: () => ChartInteractionSnapshot;
       prependHistory: (count: number) => void;
       setBarSpacing: (barSpacing: number) => void;
+      invalidateIndicatorHistory: () => void;
     };
   }
 }
@@ -34,12 +36,14 @@ export function installChartInteractionTestHarness({
   candleCount,
   firstCandleTime,
   lastCrosshairTime,
+  invalidateIndicatorHistory,
 }: {
   chart: IChartApi;
   viewport: ChartViewportController;
   candleCount: () => number;
   firstCandleTime: () => number | null;
   lastCrosshairTime: () => number | null;
+  invalidateIndicatorHistory: () => void;
 }) {
   if (process.env.NODE_ENV === "production") return () => {};
   window.__chartInteractionTest = {
@@ -67,6 +71,9 @@ export function installChartInteractionTestHarness({
       priceScaleAutoScale: chart.panes().map((_pane, index) =>
         chart.priceScale("right", index).options().autoScale
       ),
+      paneSeriesPointCounts: chart.panes().map((pane) =>
+        pane.getSeries().map((series) => series.data().length)
+      ),
     }),
     prependHistory: (count) => {
       window.dispatchEvent(new CustomEvent("chart-benchmark-prepend", {
@@ -77,6 +84,7 @@ export function installChartInteractionTestHarness({
       if (!Number.isFinite(barSpacing) || barSpacing <= 0) return;
       chart.timeScale().applyOptions({ barSpacing });
     },
+    invalidateIndicatorHistory,
   };
   return () => {
     delete window.__chartInteractionTest;
