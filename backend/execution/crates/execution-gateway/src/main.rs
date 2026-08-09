@@ -20,7 +20,8 @@ use execution_domain::{
     EaInstrumentSnapshot, EaPendingOrderSnapshot, EaPositionSnapshot, EaSessionRequest,
     EaSessionResponse, ExecutionAccount, IdempotencyKey, InstrumentSpec, ModifyPendingOrderCommand,
     ModifyPositionCommand, OrderIntent, OrderKind, OrderSizing, PropRiskActions,
-    PropRiskEvaluation, PropRiskEvaluationInput, PropRiskReason, PropRiskRules, PropRiskStatus,
+    PropRiskDailyLossReference, PropRiskEvaluation, PropRiskEvaluationInput,
+    PropRiskHistoryQuality, PropRiskMaxLossMode, PropRiskReason, PropRiskRules, PropRiskStatus,
     QuantityUnit, RiskPolicy, RouteRejectCode, RouteTargetContext, RouteWarning, RoutedOrder,
     SessionId, Side, TargetRouteResult, VenueKind, evaluate_prop_risk, prop_risk_money,
     should_repair_legacy_prop_risk_daily_lock,
@@ -183,6 +184,10 @@ struct PropRiskProfileTemplate {
     reference_balances: Vec<u64>,
     rules: PropRiskRules,
     actions: PropRiskActions,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    official_source_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    verified_at: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -248,85 +253,130 @@ struct PropRiskRuntimeConfig {
     actions: PropRiskActions,
     trading_day: String,
     day_start_balance: Decimal,
+    max_loss_reference_balance: Decimal,
+    current_day_min_equity: Option<Decimal>,
+    historical_max_loss_result: Decimal,
+    prior_positive_days_profit: Decimal,
+    prior_best_day_profit: Decimal,
     previously_locked_reason: Option<PropRiskReason>,
     state_exists: bool,
 }
 
-fn prop_risk_profiles() -> Vec<PropRiskProfileTemplate> {
-    let actions = PropRiskActions {
-        block_new_orders: true,
-        cancel_pending_orders: true,
-        close_open_positions: true,
-        lock_after_profit_target: false,
-        fail_closed_on_stale_data: true,
-    };
-    let ftmo_rules = PropRiskRules {
-        daily_loss_limit_basis_points: 500,
-        max_loss_limit_basis_points: 1_000,
-        max_risk_per_trade_basis_points: 100,
-        max_total_open_risk_basis_points: 300,
-        require_stop_loss: true,
-        warning_buffer_basis_points: 100,
-        emergency_buffer_basis_points: 50,
-        daily_profit_target_basis_points: None,
-    };
-    let ftmo_reference_balances = vec![10_000, 25_000, 50_000, 100_000, 200_000];
-    vec![
-        PropRiskProfileTemplate {
-            id: "ftmo_2_step_step_1".into(),
-            version: 1,
-            provider_code: "ftmo".into(),
-            program_code: "two_step_step_1".into(),
-            display_name: "FTMO 2-Step · Step 1".into(),
-            timezone: "Europe/Prague".into(),
-            rules_locked: true,
-            capital_mode: PropRiskCapitalMode::ReferenceBalances,
-            reference_balances: ftmo_reference_balances.clone(),
-            rules: ftmo_rules.clone(),
-            actions: actions.clone(),
-        },
-        PropRiskProfileTemplate {
-            id: "ftmo_2_step_step_2".into(),
-            version: 1,
-            provider_code: "ftmo".into(),
-            program_code: "two_step_step_2".into(),
-            display_name: "FTMO 2-Step · Step 2".into(),
-            timezone: "Europe/Prague".into(),
-            rules_locked: true,
-            capital_mode: PropRiskCapitalMode::ReferenceBalances,
-            reference_balances: ftmo_reference_balances,
-            rules: ftmo_rules,
-            actions: actions.clone(),
-        },
-        PropRiskProfileTemplate {
-            id: "custom_prop_firm".into(),
-            version: 1,
-            provider_code: "custom".into(),
-            program_code: "custom".into(),
-            display_name: "Quỹ tùy chỉnh".into(),
-            timezone: "UTC".into(),
-            rules_locked: false,
-            capital_mode: PropRiskCapitalMode::Manual,
-            reference_balances: Vec::new(),
-            rules: PropRiskRules {
-                daily_loss_limit_basis_points: 500,
-                max_loss_limit_basis_points: 1_000,
-                max_risk_per_trade_basis_points: 100,
-                max_total_open_risk_basis_points: 300,
-                require_stop_loss: true,
-                warning_buffer_basis_points: 100,
-                emergency_buffer_basis_points: 50,
-                daily_profit_target_basis_points: None,
-            },
-            actions,
-        },
-    ]
+async fn prop_risk_profiles(database: &PgPool) -> Result<Vec<PropRiskProfileTemplate>, ApiError> {
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            profile_id, profile_version, provider_code, program_code,
+            display_name, timezone, rules_locked, capital_mode,
+            reference_balances, rules, actions, official_source_url,
+            verified_at::text AS verified_at, sort_order
+        FROM (
+            SELECT DISTINCT ON (profile_id) *
+            FROM execution_prop_risk_profiles
+            WHERE active = true
+            ORDER BY profile_id, profile_version DESC
+        ) active_profiles
+        ORDER BY sort_order, provider_code, program_code, display_name
+        "#,
+    )
+    .fetch_all(database)
+    .await
+    .map_err(|error| ApiError::database("load prop risk profile catalog", error))?;
+    let profiles = rows
+        .into_iter()
+        .map(decode_prop_risk_profile)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(profiles)
 }
 
-fn prop_risk_profile(profile_id: &str) -> Option<PropRiskProfileTemplate> {
-    prop_risk_profiles()
-        .into_iter()
-        .find(|profile| profile.id == profile_id)
+async fn prop_risk_profile(
+    database: &PgPool,
+    profile_id: &str,
+    profile_version: Option<u32>,
+) -> Result<Option<PropRiskProfileTemplate>, ApiError> {
+    let row = sqlx::query(
+        r#"
+        SELECT
+            profile_id, profile_version, provider_code, program_code,
+            display_name, timezone, rules_locked, capital_mode,
+            reference_balances, rules, actions, official_source_url,
+            verified_at::text AS verified_at, sort_order
+        FROM execution_prop_risk_profiles
+        WHERE profile_id = $1
+          AND ($2::integer IS NULL OR profile_version = $2)
+          AND ($2::integer IS NOT NULL OR active = true)
+        ORDER BY profile_version DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(profile_id)
+    .bind(profile_version.map(|version| version as i32))
+    .fetch_optional(database)
+    .await
+    .map_err(|error| ApiError::database("load prop risk profile", error))?;
+    row.map(decode_prop_risk_profile).transpose()
+}
+
+fn decode_prop_risk_profile(
+    row: sqlx_postgres::PgRow,
+) -> Result<PropRiskProfileTemplate, ApiError> {
+    let capital_mode = match row
+        .try_get::<String, _>("capital_mode")
+        .map_err(|error| ApiError::database("decode prop risk capital mode", error))?
+        .as_str()
+    {
+        "reference_balances" => PropRiskCapitalMode::ReferenceBalances,
+        "manual" => PropRiskCapitalMode::Manual,
+        _ => {
+            return Err(ApiError::internal(
+                "decode prop risk capital mode",
+                "catalog contains an unsupported capital mode",
+            ));
+        }
+    };
+    Ok(PropRiskProfileTemplate {
+        id: row
+            .try_get("profile_id")
+            .map_err(|error| ApiError::database("decode prop risk profile id", error))?,
+        version: row
+            .try_get::<i32, _>("profile_version")
+            .map_err(|error| ApiError::database("decode prop risk profile version", error))?
+            .max(0) as u32,
+        provider_code: row
+            .try_get("provider_code")
+            .map_err(|error| ApiError::database("decode prop risk provider", error))?,
+        program_code: row
+            .try_get("program_code")
+            .map_err(|error| ApiError::database("decode prop risk program", error))?,
+        display_name: row
+            .try_get("display_name")
+            .map_err(|error| ApiError::database("decode prop risk display name", error))?,
+        timezone: row
+            .try_get("timezone")
+            .map_err(|error| ApiError::database("decode prop risk timezone", error))?,
+        rules_locked: row
+            .try_get("rules_locked")
+            .map_err(|error| ApiError::database("decode prop risk edit policy", error))?,
+        capital_mode,
+        reference_balances: row
+            .try_get::<sqlx::types::Json<Vec<u64>>, _>("reference_balances")
+            .map_err(|error| ApiError::database("decode prop risk reference balances", error))?
+            .0,
+        rules: row
+            .try_get::<sqlx::types::Json<PropRiskRules>, _>("rules")
+            .map_err(|error| ApiError::database("decode prop risk catalog rules", error))?
+            .0,
+        actions: row
+            .try_get::<sqlx::types::Json<PropRiskActions>, _>("actions")
+            .map_err(|error| ApiError::database("decode prop risk catalog actions", error))?
+            .0,
+        official_source_url: row
+            .try_get("official_source_url")
+            .map_err(|error| ApiError::database("decode prop risk source", error))?,
+        verified_at: row
+            .try_get("verified_at")
+            .map_err(|error| ApiError::database("decode prop risk verification date", error))?,
+    })
 }
 
 fn resolve_profile_initial_balance(
@@ -1755,10 +1805,11 @@ impl GatewayState {
     ) -> Result<PropRiskGuardView, ApiError> {
         let Some(database) = &self.inner.database else {
             return Ok(PropRiskGuardView {
-                profiles: prop_risk_profiles(),
+                profiles: Vec::new(),
                 assignment: None,
             });
         };
+        let profiles = prop_risk_profiles(database).await?;
         let row = sqlx::query(
             r#"
             SELECT
@@ -1794,6 +1845,18 @@ impl GatewayState {
         .fetch_optional(database)
         .await
         .map_err(|error| ApiError::database("load prop risk settings", error))?;
+        let assignment_profile = if let Some(stored) = row.as_ref() {
+            let profile_id = stored
+                .try_get::<String, _>("profile_id")
+                .map_err(|error| ApiError::database("decode prop risk profile", error))?;
+            let profile_version = stored
+                .try_get::<i32, _>("profile_version")
+                .map_err(|error| ApiError::database("decode prop risk profile version", error))?
+                .max(0) as u32;
+            prop_risk_profile(database, &profile_id, Some(profile_version)).await?
+        } else {
+            None
+        };
         let assignment = row
             .map(|row| -> Result<PropRiskAssignmentView, ApiError> {
                 let profile_id = row
@@ -1808,9 +1871,10 @@ impl GatewayState {
                         .map_err(|error| {
                             ApiError::database("decode prop risk initial balance", error)
                         })?;
-                let initial_balance = if let Some(profile) = prop_risk_profile(&profile_id)
-                    .filter(|profile| profile.version == profile_version)
-                {
+                let initial_balance = if let Some(profile) =
+                    assignment_profile.as_ref().filter(|profile| {
+                        profile.id == profile_id && profile.version == profile_version
+                    }) {
                     resolve_profile_initial_balance(&profile, stored_initial_balance).map_err(
                         |error| ApiError::internal("resolve prop risk initial balance", error),
                     )?
@@ -1830,8 +1894,12 @@ impl GatewayState {
                     .map_err(|error| ApiError::database("decode prop risk evaluation", error))?
                     .map(|value| value.0)
                     .filter(|value| {
-                        value.daily_loss_limit
-                            == prop_risk_money(initial_balance, rules.daily_loss_limit_basis_points)
+                        value.model_version == 2
+                            && value.daily_loss_limit
+                                == prop_risk_money(
+                                    initial_balance,
+                                    rules.daily_loss_limit_basis_points,
+                                )
                             && value.max_loss_limit
                                 == prop_risk_money(
                                     initial_balance,
@@ -1872,7 +1940,7 @@ impl GatewayState {
             })
             .transpose()?;
         Ok(PropRiskGuardView {
-            profiles: prop_risk_profiles(),
+            profiles,
             assignment,
         })
     }
@@ -1906,6 +1974,11 @@ impl GatewayState {
                 state.locked,
                 state.evaluation,
                 state.evaluated_at > assignment.updated_at AS state_fresh,
+                history.highest_prior_eod_balance,
+                history.prior_positive_days_profit,
+                history.prior_best_day_profit,
+                history.historical_static_max_loss_result,
+                history.historical_eod_max_loss_result,
                 lock_audit.locked_equity,
                 lock_audit.occurred_at >= assignment.updated_at
                     AS lock_policy_matches
@@ -1915,6 +1988,47 @@ impl GatewayState {
              AND state.account_id = assignment.account_id
              AND state.trading_day =
                  (now() AT TIME ZONE assignment.timezone)::date
+            LEFT JOIN LATERAL (
+                SELECT
+                    MAX(day.last_balance) FILTER (
+                        WHERE day.trading_day <
+                            (now() AT TIME ZONE assignment.timezone)::date
+                    ) AS highest_prior_eod_balance,
+                    COALESCE(SUM(GREATEST(
+                        day.last_balance - day.day_start_balance,
+                        0
+                    )) FILTER (
+                        WHERE day.trading_day <
+                            (now() AT TIME ZONE assignment.timezone)::date
+                    ), 0) AS prior_positive_days_profit,
+                    COALESCE(MAX(GREATEST(
+                        day.last_balance - day.day_start_balance,
+                        0
+                    )) FILTER (
+                        WHERE day.trading_day <
+                            (now() AT TIME ZONE assignment.timezone)::date
+                    ), 0) AS prior_best_day_profit,
+                    COALESCE(MIN(
+                        day.min_equity - assignment.initial_balance
+                    ), 0) AS historical_static_max_loss_result,
+                    COALESCE(MIN(
+                        day.min_equity - GREATEST(
+                            assignment.initial_balance,
+                            COALESCE(day.prior_eod_high, assignment.initial_balance)
+                        )
+                    ), 0) AS historical_eod_max_loss_result
+                FROM (
+                    SELECT
+                        historical.*,
+                        MAX(historical.last_balance) OVER (
+                            ORDER BY historical.trading_day
+                            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                        ) AS prior_eod_high
+                    FROM execution_prop_risk_daily_state historical
+                    WHERE historical.user_id = assignment.user_id
+                      AND historical.account_id = assignment.account_id
+                ) day
+            ) history ON true
             LEFT JOIN LATERAL (
                 SELECT
                     audit.details->>'equity' AS locked_equity,
@@ -2001,14 +2115,41 @@ impl GatewayState {
             .try_get::<sqlx::types::Json<PropRiskActions>, _>("actions")
             .map_err(|error| ApiError::database("decode prop risk actions", error))?
             .0;
-        let initial_balance = if let Some(profile) =
-            prop_risk_profile(&profile_id).filter(|profile| profile.version == profile_version)
+        let catalog_profile =
+            prop_risk_profile(database, &profile_id, Some(profile_version)).await?;
+        let initial_balance = if let Some(profile) = catalog_profile
+            .as_ref()
+            .filter(|profile| profile.version == profile_version)
         {
             resolve_profile_initial_balance(&profile, stored_initial_balance)
                 .map_err(|error| ApiError::internal("resolve prop risk initial balance", error))?
         } else {
             stored_initial_balance
         };
+        let highest_prior_eod_balance = row
+            .try_get::<Option<Decimal>, _>("highest_prior_eod_balance")
+            .map_err(|error| ApiError::database("decode prop risk EOD high-water", error))?;
+        let max_loss_reference_balance = match rules.max_loss_mode {
+            PropRiskMaxLossMode::Static => initial_balance,
+            PropRiskMaxLossMode::EndOfDayTrailing => highest_prior_eod_balance
+                .filter(|balance| *balance > initial_balance)
+                .unwrap_or(initial_balance),
+        };
+        let historical_max_loss_result = match rules.max_loss_mode {
+            PropRiskMaxLossMode::Static => {
+                row.try_get::<Decimal, _>("historical_static_max_loss_result")
+            }
+            PropRiskMaxLossMode::EndOfDayTrailing => {
+                row.try_get::<Decimal, _>("historical_eod_max_loss_result")
+            }
+        }
+        .map_err(|error| ApiError::database("decode prop risk maximum-loss result", error))?;
+        let prior_positive_days_profit = row
+            .try_get::<Decimal, _>("prior_positive_days_profit")
+            .map_err(|error| ApiError::database("decode prop risk positive-days profit", error))?;
+        let prior_best_day_profit = row
+            .try_get::<Decimal, _>("prior_best_day_profit")
+            .map_err(|error| ApiError::database("decode prop risk best-day profit", error))?;
         let trading_day = row
             .try_get::<String, _>("trading_day")
             .map_err(|error| ApiError::database("decode prop risk trading day", error))?;
@@ -2052,7 +2193,7 @@ impl GatewayState {
                 ApiError::database("commit prop risk capital reconciliation", error)
             })?;
         }
-        let mut previously_locked_reason = if locked {
+        let mut previously_locked_reason = if locked && state_fresh {
             Some(
                 prior
                     .as_ref()
@@ -2194,6 +2335,11 @@ impl GatewayState {
             actions,
             trading_day,
             day_start_balance,
+            max_loss_reference_balance,
+            current_day_min_equity: min_equity,
+            historical_max_loss_result,
+            prior_positive_days_profit,
+            prior_best_day_profit,
             previously_locked_reason,
             state_exists: stored_day_start_balance.is_some() && !initial_balance_reconciled,
         }))
@@ -2261,6 +2407,14 @@ impl GatewayState {
             &PropRiskEvaluationInput {
                 initial_balance: runtime.initial_balance,
                 day_start_balance: runtime.day_start_balance,
+                max_loss_reference_balance: runtime.max_loss_reference_balance,
+                current_day_min_equity: runtime.current_day_min_equity.unwrap_or(equity),
+                historical_max_loss_result: runtime.historical_max_loss_result,
+                prior_positive_days_profit: runtime.prior_positive_days_profit,
+                prior_best_day_profit: runtime.prior_best_day_profit,
+                history_quality: PropRiskHistoryQuality::TrackedSinceGuardEnabled,
+                trading_days: None,
+                has_open_positions: false,
                 balance,
                 equity,
                 previously_locked_reason: runtime.previously_locked_reason,
@@ -2497,6 +2651,16 @@ impl GatewayState {
                 &PropRiskEvaluationInput {
                     initial_balance: runtime.initial_balance,
                     day_start_balance: runtime.day_start_balance,
+                    max_loss_reference_balance: runtime.max_loss_reference_balance,
+                    current_day_min_equity: runtime
+                        .current_day_min_equity
+                        .unwrap_or(account.equity),
+                    historical_max_loss_result: runtime.historical_max_loss_result,
+                    prior_positive_days_profit: runtime.prior_positive_days_profit,
+                    prior_best_day_profit: runtime.prior_best_day_profit,
+                    history_quality: PropRiskHistoryQuality::TrackedSinceGuardEnabled,
+                    trading_days: None,
+                    has_open_positions: !positions.is_empty(),
                     balance: account.balance,
                     equity: account.equity,
                     previously_locked_reason: runtime.previously_locked_reason,
@@ -8618,81 +8782,75 @@ async fn update_prop_risk_guard(
             "prop risk settings require PostgreSQL",
         ));
     };
-    let catalog_profile = prop_risk_profile(request.profile_id.trim());
-    let (
-        profile_id,
-        profile_version,
-        provider_code,
-        program_code,
-        display_name,
-        timezone,
-        initial_balance,
-        rules,
-        actions,
-    ) = if let Some(profile) = catalog_profile {
-        let initial_balance = resolve_profile_initial_balance(&profile, request.initial_balance)
-            .map_err(|error| ApiError::internal("resolve prop risk initial balance", error))?;
-        let (timezone, rules, actions) = if profile.rules_locked {
-            (profile.timezone, profile.rules, profile.actions)
-        } else {
+    let catalog_profile = prop_risk_profile(database, request.profile_id.trim(), None).await?;
+    let Some(profile) = catalog_profile else {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "PROP_RISK_PROFILE_UNKNOWN",
+            "profile must reference an active catalog entry",
+        ));
+    };
+    let initial_balance = resolve_profile_initial_balance(&profile, request.initial_balance)
+        .map_err(|error| ApiError::internal("resolve prop risk initial balance", error))?;
+    let profile_id = profile.id;
+    let profile_version = profile.version;
+    let (provider_code, program_code, display_name, timezone, rules, actions) =
+        if profile.rules_locked {
+            // Firm objectives are immutable catalog data. Risk sizing, safety
+            // buffers and automated responses are local guard policy and stay
+            // configurable per account without weakening the firm objective.
+            let mut rules = profile.rules;
+            rules.max_risk_per_trade_basis_points = request.rules.max_risk_per_trade_basis_points;
+            rules.max_total_open_risk_basis_points = request.rules.max_total_open_risk_basis_points;
+            rules.require_stop_loss = request.rules.require_stop_loss;
+            rules.warning_buffer_basis_points = request.rules.warning_buffer_basis_points;
+            rules.emergency_buffer_basis_points = request.rules.emergency_buffer_basis_points;
+            rules.daily_profit_target_basis_points = request.rules.daily_profit_target_basis_points;
             (
+                profile.provider_code,
+                profile.program_code,
+                profile.display_name,
+                profile.timezone,
+                rules,
+                request.actions.clone(),
+            )
+        } else {
+            let provider_code = request
+                .provider_code
+                .as_deref()
+                .unwrap_or(profile.provider_code.as_str())
+                .trim()
+                .to_lowercase();
+            let program_code = request
+                .program_code
+                .as_deref()
+                .unwrap_or(profile.program_code.as_str())
+                .trim()
+                .to_lowercase();
+            if !valid_prop_identifier(&provider_code, 2, 32)
+                || !valid_prop_identifier(&program_code, 2, 64)
+            {
+                return Err(ApiError::new(
+                    StatusCode::BAD_REQUEST,
+                    "PROP_RISK_PROFILE_INVALID",
+                    "profile identifiers contain unsupported characters",
+                ));
+            }
+            let display_name = request
+                .display_name
+                .as_deref()
+                .unwrap_or(profile.display_name.as_str())
+                .trim();
+            validate_plain_text("displayName", display_name, 1, 120)?;
+            (
+                provider_code,
+                program_code,
+                display_name.to_owned(),
                 request.timezone.trim().to_owned(),
                 request.rules.clone(),
                 request.actions.clone(),
             )
         };
-        (
-            profile.id,
-            profile.version,
-            profile.provider_code,
-            profile.program_code,
-            profile.display_name,
-            timezone,
-            initial_balance,
-            rules,
-            actions,
-        )
-    } else {
-        let provider_code = request
-            .provider_code
-            .as_deref()
-            .unwrap_or("custom")
-            .trim()
-            .to_lowercase();
-        let program_code = request
-            .program_code
-            .as_deref()
-            .unwrap_or("custom")
-            .trim()
-            .to_lowercase();
-        if !valid_prop_identifier(request.profile_id.trim(), 3, 64)
-            || !valid_prop_identifier(&provider_code, 2, 32)
-            || !valid_prop_identifier(&program_code, 2, 64)
-        {
-            return Err(ApiError::new(
-                StatusCode::BAD_REQUEST,
-                "PROP_RISK_PROFILE_INVALID",
-                "profile identifiers contain unsupported characters",
-            ));
-        }
-        let display_name = request
-            .display_name
-            .as_deref()
-            .unwrap_or("Quỹ tùy chỉnh")
-            .trim();
-        validate_plain_text("displayName", display_name, 1, 120)?;
-        (
-            request.profile_id.trim().to_owned(),
-            1,
-            provider_code,
-            program_code,
-            display_name.to_owned(),
-            request.timezone.trim().to_owned(),
-            request.initial_balance,
-            request.rules.clone(),
-            request.actions.clone(),
-        )
-    };
     rules.validate().map_err(|message| {
         ApiError::new(StatusCode::BAD_REQUEST, "PROP_RISK_RULES_INVALID", message)
     })?;
@@ -12740,9 +12898,47 @@ mod tests {
     const PAIR_TOKEN: &str = "pairing-token-with-at-least-32-characters";
     const EXPIRED_PAIR_TOKEN: &str = "expired-pairing-token-at-least-32-chars";
 
+    fn test_prop_risk_profile() -> PropRiskProfileTemplate {
+        PropRiskProfileTemplate {
+            id: "test_profile".into(),
+            version: 1,
+            provider_code: "test".into(),
+            program_code: "test_stage".into(),
+            display_name: "Test profile".into(),
+            timezone: "UTC".into(),
+            rules_locked: true,
+            capital_mode: PropRiskCapitalMode::ReferenceBalances,
+            reference_balances: vec![10_000, 25_000, 50_000, 100_000],
+            rules: PropRiskRules {
+                daily_loss_limit_basis_points: 500,
+                max_loss_limit_basis_points: 1_000,
+                daily_loss_reference: PropRiskDailyLossReference::StartOfDayBalance,
+                max_loss_mode: PropRiskMaxLossMode::Static,
+                max_risk_per_trade_basis_points: 100,
+                max_total_open_risk_basis_points: 300,
+                require_stop_loss: true,
+                warning_buffer_basis_points: 100,
+                emergency_buffer_basis_points: 50,
+                daily_profit_target_basis_points: None,
+                profit_target_basis_points: None,
+                best_day_limit_basis_points: None,
+                minimum_trading_days: None,
+            },
+            actions: PropRiskActions {
+                block_new_orders: true,
+                cancel_pending_orders: true,
+                close_open_positions: true,
+                lock_after_profit_target: false,
+                fail_closed_on_stale_data: true,
+            },
+            official_source_url: None,
+            verified_at: None,
+        }
+    }
+
     #[test]
     fn reference_balance_resolution_is_profile_driven_and_fail_safe() {
-        let mut profile = prop_risk_profiles().remove(0);
+        let mut profile = test_prop_risk_profile();
         profile.reference_balances = vec![25_000, 50_000, 100_000];
 
         assert_eq!(
@@ -12784,7 +12980,7 @@ mod tests {
 
     #[test]
     fn legacy_daily_floor_match_requires_the_buggy_persisted_metrics() {
-        let profile = prop_risk_profiles().remove(0);
+        let profile = test_prop_risk_profile();
         let initial_balance = Decimal::new(50_000, 0);
         let last_equity = Decimal::new(4_594_647, 2);
         let mut evaluation = evaluate_prop_risk(
@@ -12793,6 +12989,14 @@ mod tests {
             &PropRiskEvaluationInput {
                 initial_balance,
                 day_start_balance: Decimal::new(4_667_594, 2),
+                max_loss_reference_balance: initial_balance,
+                current_day_min_equity: last_equity,
+                historical_max_loss_result: Decimal::ZERO,
+                prior_positive_days_profit: Decimal::ZERO,
+                prior_best_day_profit: Decimal::ZERO,
+                history_quality: PropRiskHistoryQuality::TrackedSinceGuardEnabled,
+                trading_days: None,
+                has_open_positions: false,
                 balance: Decimal::new(4_569_807, 2),
                 equity: last_equity,
                 previously_locked_reason: None,
@@ -12819,7 +13023,7 @@ mod tests {
 
     #[test]
     fn legacy_lock_audit_match_uses_exact_reason_boundaries() {
-        let profile = prop_risk_profiles().remove(0);
+        let profile = test_prop_risk_profile();
         let initial_balance = Decimal::new(50_000, 0);
         let legacy_floor = Decimal::new(47_500, 0);
         let legacy_emergency_ceiling = Decimal::new(47_750, 0);
@@ -13623,7 +13827,7 @@ mod tests {
 
     #[test]
     fn prop_risk_lifecycle_edits_may_only_keep_or_reduce_committed_risk() {
-        let profile = prop_risk_profiles().remove(0);
+        let profile = test_prop_risk_profile();
         let instrument = instrument_snapshot().spec;
         let current_price = Decimal::new(110_000, 5);
         let current_stop = Some(Decimal::new(109_000, 5));

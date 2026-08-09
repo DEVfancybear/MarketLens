@@ -33,15 +33,26 @@ export interface ExecutionAccountSummary {
   statusReason?: "ea_update_required" | "broker_trading_disabled";
 }
 
+export type PropRiskDailyLossReference =
+  | "startOfDayBalance"
+  | "initialBalance";
+
+export type PropRiskMaxLossMode = "static" | "endOfDayTrailing";
+
 export interface PropRiskRules {
   dailyLossLimitBasisPoints: number;
   maxLossLimitBasisPoints: number;
+  dailyLossReference: PropRiskDailyLossReference;
+  maxLossMode: PropRiskMaxLossMode;
   maxRiskPerTradeBasisPoints: number;
   maxTotalOpenRiskBasisPoints: number;
   requireStopLoss: boolean;
   warningBufferBasisPoints: number;
   emergencyBufferBasisPoints: number;
   dailyProfitTargetBasisPoints?: number | null;
+  profitTargetBasisPoints?: number | null;
+  bestDayLimitBasisPoints?: number | null;
+  minimumTradingDays?: number | null;
 }
 
 export interface PropRiskActions {
@@ -53,6 +64,10 @@ export interface PropRiskActions {
 }
 
 export type PropRiskStatus = "protected" | "warning" | "locked" | "breached";
+
+export type PropRiskHistoryQuality =
+  | "trackedSinceGuardEnabled"
+  | "authoritative";
 
 export type PropRiskReason =
   | "DAILY_LOSS_WARNING"
@@ -67,6 +82,8 @@ export type PropRiskReason =
   | "STATE_UNAVAILABLE";
 
 export interface PropRiskEvaluation {
+  modelVersion: number;
+  historyQuality: PropRiskHistoryQuality;
   status: PropRiskStatus;
   reason?: PropRiskReason;
   canOpenNewOrders: boolean;
@@ -78,8 +95,21 @@ export interface PropRiskEvaluation {
   maxLossLimit: number;
   maxLossUsed: number;
   maxLossRemaining: number;
+  maxLossReferenceBalance: number;
+  dailyLossResult: number;
+  maxLossResult: number;
   dailyProfitTarget?: number | null;
   dailyProfitRemaining?: number | null;
+  profitTarget?: number | null;
+  profitTargetResult?: number | null;
+  profitTargetRemaining?: number | null;
+  profitTargetMet?: boolean | null;
+  positiveDaysProfit?: number | null;
+  bestDayProfit?: number | null;
+  bestDayRatioBasisPoints?: number | null;
+  bestDayMet?: boolean | null;
+  minimumTradingDays?: number | null;
+  tradingDays?: number | null;
   balance: number;
   equity: number;
 }
@@ -96,6 +126,8 @@ export interface PropRiskProfile {
   referenceBalances: number[];
   rules: PropRiskRules;
   actions: PropRiskActions;
+  officialSourceUrl?: string;
+  verifiedAt?: string;
 }
 
 export interface PropRiskAssignment

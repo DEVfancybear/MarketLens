@@ -9,8 +9,16 @@ export interface PropRiskEvaluationWire
     | "maxLossLimit"
     | "maxLossUsed"
     | "maxLossRemaining"
+    | "maxLossReferenceBalance"
+    | "dailyLossResult"
+    | "maxLossResult"
     | "dailyProfitTarget"
     | "dailyProfitRemaining"
+    | "profitTarget"
+    | "profitTargetResult"
+    | "profitTargetRemaining"
+    | "positiveDaysProfit"
+    | "bestDayProfit"
     | "balance"
     | "equity"
   > {
@@ -20,8 +28,16 @@ export interface PropRiskEvaluationWire
   maxLossLimit: string;
   maxLossUsed: string;
   maxLossRemaining: string;
+  maxLossReferenceBalance: string;
+  dailyLossResult: string;
+  maxLossResult: string;
   dailyProfitTarget?: string | null;
   dailyProfitRemaining?: string | null;
+  profitTarget?: string | null;
+  profitTargetResult?: string | null;
+  profitTargetRemaining?: string | null;
+  positiveDaysProfit?: string | null;
+  bestDayProfit?: string | null;
   balance: string;
   equity: string;
 }
@@ -43,17 +59,47 @@ export function normalizePropRiskEvaluation(
       value.maxLossRemaining,
       "maxLossRemaining",
     ),
-    dailyProfitTarget:
-      value.dailyProfitTarget == null
-        ? value.dailyProfitTarget
-        : propRiskDecimal(value.dailyProfitTarget, "dailyProfitTarget"),
-    dailyProfitRemaining:
-      value.dailyProfitRemaining == null
-        ? value.dailyProfitRemaining
-        : propRiskDecimal(value.dailyProfitRemaining, "dailyProfitRemaining"),
+    maxLossReferenceBalance: propRiskDecimal(
+      value.maxLossReferenceBalance,
+      "maxLossReferenceBalance",
+    ),
+    dailyLossResult: propRiskDecimal(value.dailyLossResult, "dailyLossResult"),
+    maxLossResult: propRiskDecimal(value.maxLossResult, "maxLossResult"),
+    dailyProfitTarget: optionalPropRiskDecimal(
+      value.dailyProfitTarget,
+      "dailyProfitTarget",
+    ),
+    dailyProfitRemaining: optionalPropRiskDecimal(
+      value.dailyProfitRemaining,
+      "dailyProfitRemaining",
+    ),
+    profitTarget: optionalPropRiskDecimal(value.profitTarget, "profitTarget"),
+    profitTargetResult: optionalPropRiskDecimal(
+      value.profitTargetResult,
+      "profitTargetResult",
+    ),
+    profitTargetRemaining: optionalPropRiskDecimal(
+      value.profitTargetRemaining,
+      "profitTargetRemaining",
+    ),
+    positiveDaysProfit: optionalPropRiskDecimal(
+      value.positiveDaysProfit,
+      "positiveDaysProfit",
+    ),
+    bestDayProfit: optionalPropRiskDecimal(
+      value.bestDayProfit,
+      "bestDayProfit",
+    ),
     balance: propRiskDecimal(value.balance, "balance"),
     equity: propRiskDecimal(value.equity, "equity"),
   };
+}
+
+function optionalPropRiskDecimal(
+  value: string | null | undefined,
+  field: string,
+): number | null | undefined {
+  return value == null ? value : propRiskDecimal(value, field);
 }
 
 export function propRiskDecimal(value: string, field: string): number {

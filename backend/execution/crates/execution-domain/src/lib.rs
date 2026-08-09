@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
 
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 
 /// Strict JSON codec for optional monetary values.
@@ -526,13 +527,48 @@ pub struct RiskPolicy {
 
 pub const PROP_RISK_BASIS_POINTS_DENOMINATOR: u32 = 10_000;
 
-/// Broker-neutral prop-firm rules. Profiles such as FTMO are versioned
-/// presets of this structure; the evaluator never branches on a firm name.
+/// Selects the balance anchor used by a daily-loss objective. The evaluator
+/// branches on this data strategy, never on a prop-firm/provider name.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PropRiskDailyLossReference {
+    #[default]
+    StartOfDayBalance,
+    InitialBalance,
+}
+
+/// Selects how the maximum-loss floor moves between trading days.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PropRiskMaxLossMode {
+    #[default]
+    Static,
+    EndOfDayTrailing,
+}
+
+/// Describes how much historical evidence backs aggregate objectives. The
+/// current MT5 transport can only prove samples observed after the guard was
+/// enabled; callers must not present those aggregates as authoritative firm
+/// history.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PropRiskHistoryQuality {
+    #[default]
+    TrackedSinceGuardEnabled,
+    Authoritative,
+}
+
+/// Broker-neutral prop-firm rules. Provider profiles are versioned presets of
+/// this structure; the evaluator never branches on a firm name.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PropRiskRules {
     pub daily_loss_limit_basis_points: u32,
     pub max_loss_limit_basis_points: u32,
+    #[serde(default)]
+    pub daily_loss_reference: PropRiskDailyLossReference,
+    #[serde(default)]
+    pub max_loss_mode: PropRiskMaxLossMode,
     pub max_risk_per_trade_basis_points: u32,
     pub max_total_open_risk_basis_points: u32,
     pub require_stop_loss: bool,
@@ -540,6 +576,15 @@ pub struct PropRiskRules {
     pub emergency_buffer_basis_points: u32,
     #[serde(default)]
     pub daily_profit_target_basis_points: Option<u32>,
+    /// Overall evaluation target measured from initial capital. This is
+    /// deliberately separate from the optional per-day safety lock above.
+    #[serde(default)]
+    pub profit_target_basis_points: Option<u32>,
+    /// Maximum share of positive-days profit that the best day may represent.
+    #[serde(default)]
+    pub best_day_limit_basis_points: Option<u32>,
+    #[serde(default)]
+    pub minimum_trading_days: Option<u32>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -580,6 +625,20 @@ pub enum PropRiskReason {
 pub struct PropRiskEvaluationInput {
     pub initial_balance: Decimal,
     pub day_start_balance: Decimal,
+    /// Highest eligible loss reference for the current day. Static profiles
+    /// ignore this value; EOD-trailing profiles clamp it to initial capital.
+    pub max_loss_reference_balance: Decimal,
+    /// Lowest equity already observed for the current trading day.
+    pub current_day_min_equity: Decimal,
+    /// Worst maximum-loss result observed before the current live sample.
+    pub historical_max_loss_result: Decimal,
+    /// Closed positive-day totals from completed prior trading days.
+    pub prior_positive_days_profit: Decimal,
+    pub prior_best_day_profit: Decimal,
+    pub history_quality: PropRiskHistoryQuality,
+    /// `None` means the transport cannot prove the firm's trading-day count.
+    pub trading_days: Option<u32>,
+    pub has_open_positions: bool,
     pub balance: Decimal,
     pub equity: Decimal,
     pub previously_locked_reason: Option<PropRiskReason>,
@@ -590,6 +649,12 @@ pub struct PropRiskEvaluationInput {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PropRiskEvaluation {
+    /// Allows persisted JSON produced by an older evaluator to be rejected
+    /// without guessing whether newly added objective fields are trustworthy.
+    #[serde(default)]
+    pub model_version: u32,
+    #[serde(default)]
+    pub history_quality: PropRiskHistoryQuality,
     pub status: PropRiskStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<PropRiskReason>,
@@ -608,10 +673,36 @@ pub struct PropRiskEvaluation {
     pub max_loss_used: Decimal,
     #[serde(with = "rust_decimal::serde::str")]
     pub max_loss_remaining: Decimal,
+    #[serde(default, with = "rust_decimal::serde::str")]
+    pub max_loss_reference_balance: Decimal,
+    #[serde(default, with = "rust_decimal::serde::str")]
+    pub daily_loss_result: Decimal,
+    #[serde(default, with = "rust_decimal::serde::str")]
+    pub max_loss_result: Decimal,
     #[serde(default, with = "nullable_decimal_string")]
     pub daily_profit_target: Option<Decimal>,
     #[serde(default, with = "nullable_decimal_string")]
     pub daily_profit_remaining: Option<Decimal>,
+    #[serde(default, with = "nullable_decimal_string")]
+    pub profit_target: Option<Decimal>,
+    #[serde(default, with = "nullable_decimal_string")]
+    pub profit_target_result: Option<Decimal>,
+    #[serde(default, with = "nullable_decimal_string")]
+    pub profit_target_remaining: Option<Decimal>,
+    #[serde(default)]
+    pub profit_target_met: Option<bool>,
+    #[serde(default, with = "nullable_decimal_string")]
+    pub positive_days_profit: Option<Decimal>,
+    #[serde(default, with = "nullable_decimal_string")]
+    pub best_day_profit: Option<Decimal>,
+    #[serde(default)]
+    pub best_day_ratio_basis_points: Option<u32>,
+    #[serde(default)]
+    pub best_day_met: Option<bool>,
+    #[serde(default)]
+    pub minimum_trading_days: Option<u32>,
+    #[serde(default)]
+    pub trading_days: Option<u32>,
     #[serde(with = "rust_decimal::serde::str")]
     pub balance: Decimal,
     #[serde(with = "rust_decimal::serde::str")]
@@ -652,6 +743,24 @@ impl PropRiskRules {
             .is_some_and(|value| value == 0 || value > PROP_RISK_BASIS_POINTS_DENOMINATOR)
         {
             return Err("daily profit target must be between 1 and 10000 basis points");
+        }
+        if self
+            .profit_target_basis_points
+            .is_some_and(|value| value == 0 || value > PROP_RISK_BASIS_POINTS_DENOMINATOR)
+        {
+            return Err("profit target must be between 1 and 10000 basis points");
+        }
+        if self
+            .best_day_limit_basis_points
+            .is_some_and(|value| value == 0 || value > PROP_RISK_BASIS_POINTS_DENOMINATOR)
+        {
+            return Err("best-day limit must be between 1 and 10000 basis points");
+        }
+        if self
+            .minimum_trading_days
+            .is_some_and(|value| value == 0 || value > 365)
+        {
+            return Err("minimum trading days must be between 1 and 365");
         }
         Ok(())
     }
@@ -702,22 +811,87 @@ pub fn evaluate_prop_risk(
     let daily_loss_limit =
         prop_risk_money(input.initial_balance, rules.daily_loss_limit_basis_points);
     let max_loss_limit = prop_risk_money(input.initial_balance, rules.max_loss_limit_basis_points);
-    let daily_floor = input.day_start_balance - daily_loss_limit;
-    let max_floor = input.initial_balance - max_loss_limit;
-    let daily_loss_used = positive(input.day_start_balance - input.equity);
-    let max_loss_used = positive(input.initial_balance - input.equity);
+    let daily_loss_reference = match rules.daily_loss_reference {
+        PropRiskDailyLossReference::StartOfDayBalance => input.day_start_balance,
+        PropRiskDailyLossReference::InitialBalance => input.initial_balance,
+    };
+    let max_loss_reference_balance = match rules.max_loss_mode {
+        PropRiskMaxLossMode::Static => input.initial_balance,
+        PropRiskMaxLossMode::EndOfDayTrailing => {
+            if input.max_loss_reference_balance > input.initial_balance {
+                input.max_loss_reference_balance
+            } else {
+                input.initial_balance
+            }
+        }
+    };
+    let daily_floor = daily_loss_reference - daily_loss_limit;
+    let max_floor = max_loss_reference_balance - max_loss_limit;
+    let daily_loss_used = positive(daily_loss_reference - input.equity);
+    let max_loss_used = positive(max_loss_reference_balance - input.equity);
     let daily_loss_remaining = input.equity - daily_floor;
     let max_loss_remaining = input.equity - max_floor;
+    let observed_min_equity = if input.current_day_min_equity < input.equity {
+        input.current_day_min_equity
+    } else {
+        input.equity
+    };
+    let daily_loss_result = non_positive(observed_min_equity - daily_loss_reference);
+    let live_max_loss_result = non_positive(observed_min_equity - max_loss_reference_balance);
+    let max_loss_result = if input.historical_max_loss_result < live_max_loss_result {
+        input.historical_max_loss_result
+    } else {
+        live_max_loss_result
+    };
     let daily_profit_target = rules
         .daily_profit_target_basis_points
         .map(|basis_points| prop_risk_money(input.initial_balance, basis_points));
     let daily_profit_remaining = daily_profit_target
         .map(|target| positive(target - (input.equity - input.day_start_balance)));
+    let profit_target = rules
+        .profit_target_basis_points
+        .map(|basis_points| prop_risk_money(input.initial_balance, basis_points));
+    let profit_result = input.balance - input.initial_balance;
+    let profit_target_result = profit_target.map(|_| profit_result);
+    let profit_target_remaining = profit_target.map(|target| positive(target - profit_result));
+    let profit_target_met =
+        profit_target.map(|target| profit_result >= target && !input.has_open_positions);
+    let current_positive_day_profit = positive(input.balance - input.day_start_balance);
+    let positive_days_profit = rules
+        .best_day_limit_basis_points
+        .map(|_| input.prior_positive_days_profit + current_positive_day_profit);
+    let best_day_profit = rules.best_day_limit_basis_points.map(|_| {
+        if input.prior_best_day_profit > current_positive_day_profit {
+            input.prior_best_day_profit
+        } else {
+            current_positive_day_profit
+        }
+    });
+    let best_day_ratio_basis_points =
+        best_day_profit
+            .zip(positive_days_profit)
+            .map(|(best_day, positive_days)| {
+                if positive_days <= Decimal::ZERO {
+                    0
+                } else {
+                    (best_day * Decimal::from(PROP_RISK_BASIS_POINTS_DENOMINATOR) / positive_days)
+                        .round_dp(0)
+                        .to_u32()
+                        .unwrap_or(PROP_RISK_BASIS_POINTS_DENOMINATOR)
+                        .min(PROP_RISK_BASIS_POINTS_DENOMINATOR)
+                }
+            });
+    let best_day_met = rules.best_day_limit_basis_points.map(|limit| {
+        positive_days_profit.is_some_and(|profit| profit > Decimal::ZERO)
+            && best_day_ratio_basis_points.is_some_and(|ratio| ratio <= limit)
+    });
     let warning_buffer = prop_risk_money(input.initial_balance, rules.warning_buffer_basis_points);
     let emergency_buffer =
         prop_risk_money(input.initial_balance, rules.emergency_buffer_basis_points);
 
     let locked = |status: PropRiskStatus, reason: PropRiskReason| PropRiskEvaluation {
+        model_version: 2,
+        history_quality: input.history_quality,
         status,
         reason: Some(reason),
         can_open_new_orders: !actions.block_new_orders,
@@ -729,8 +903,21 @@ pub fn evaluate_prop_risk(
         max_loss_limit,
         max_loss_used,
         max_loss_remaining,
+        max_loss_reference_balance,
+        daily_loss_result,
+        max_loss_result,
         daily_profit_target,
         daily_profit_remaining,
+        profit_target,
+        profit_target_result,
+        profit_target_remaining,
+        profit_target_met,
+        positive_days_profit,
+        best_day_profit,
+        best_day_ratio_basis_points,
+        best_day_met,
+        minimum_trading_days: rules.minimum_trading_days,
+        trading_days: input.trading_days,
         balance: input.balance,
         equity: input.equity,
     };
@@ -783,6 +970,8 @@ pub fn evaluate_prop_risk(
         None
     };
     PropRiskEvaluation {
+        model_version: 2,
+        history_quality: input.history_quality,
         status: if warning_reason.is_some() {
             PropRiskStatus::Warning
         } else {
@@ -798,8 +987,21 @@ pub fn evaluate_prop_risk(
         max_loss_limit,
         max_loss_used,
         max_loss_remaining,
+        max_loss_reference_balance,
+        daily_loss_result,
+        max_loss_result,
         daily_profit_target,
         daily_profit_remaining,
+        profit_target,
+        profit_target_result,
+        profit_target_remaining,
+        profit_target_met,
+        positive_days_profit,
+        best_day_profit,
+        best_day_ratio_basis_points,
+        best_day_met,
+        minimum_trading_days: rules.minimum_trading_days,
+        trading_days: input.trading_days,
         balance: input.balance,
         equity: input.equity,
     }
@@ -807,6 +1009,14 @@ pub fn evaluate_prop_risk(
 
 fn positive(value: Decimal) -> Decimal {
     if value > Decimal::ZERO {
+        value
+    } else {
+        Decimal::ZERO
+    }
+}
+
+fn non_positive(value: Decimal) -> Decimal {
+    if value < Decimal::ZERO {
         value
     } else {
         Decimal::ZERO
@@ -1539,12 +1749,17 @@ mod tests {
         PropRiskRules {
             daily_loss_limit_basis_points: 500,
             max_loss_limit_basis_points: 1_000,
+            daily_loss_reference: PropRiskDailyLossReference::StartOfDayBalance,
+            max_loss_mode: PropRiskMaxLossMode::Static,
             max_risk_per_trade_basis_points: 100,
             max_total_open_risk_basis_points: 300,
             require_stop_loss: true,
             warning_buffer_basis_points: 100,
             emergency_buffer_basis_points: 25,
             daily_profit_target_basis_points: None,
+            profit_target_basis_points: None,
+            best_day_limit_basis_points: None,
+            minimum_trading_days: None,
         }
     }
 
@@ -1566,6 +1781,14 @@ mod tests {
             &PropRiskEvaluationInput {
                 initial_balance: Decimal::new(100_000, 0),
                 day_start_balance: Decimal::new(104_000, 0),
+                max_loss_reference_balance: Decimal::new(100_000, 0),
+                current_day_min_equity: Decimal::new(100_000, 0),
+                historical_max_loss_result: Decimal::ZERO,
+                prior_positive_days_profit: Decimal::ZERO,
+                prior_best_day_profit: Decimal::ZERO,
+                history_quality: PropRiskHistoryQuality::TrackedSinceGuardEnabled,
+                trading_days: None,
+                has_open_positions: false,
                 balance: Decimal::new(104_000, 0),
                 equity: Decimal::new(100_000, 0),
                 previously_locked_reason: None,
@@ -1588,6 +1811,14 @@ mod tests {
             &PropRiskEvaluationInput {
                 initial_balance: Decimal::new(50_000, 0),
                 day_start_balance: Decimal::new(4_569_807, 2),
+                max_loss_reference_balance: Decimal::new(50_000, 0),
+                current_day_min_equity: Decimal::new(4_569_807, 2),
+                historical_max_loss_result: Decimal::ZERO,
+                prior_positive_days_profit: Decimal::ZERO,
+                prior_best_day_profit: Decimal::ZERO,
+                history_quality: PropRiskHistoryQuality::TrackedSinceGuardEnabled,
+                trading_days: None,
+                has_open_positions: false,
                 balance: Decimal::new(4_569_807, 2),
                 equity: Decimal::new(4_569_807, 2),
                 previously_locked_reason: None,
@@ -1611,6 +1842,14 @@ mod tests {
             &PropRiskEvaluationInput {
                 initial_balance: Decimal::new(50_000, 0),
                 day_start_balance: Decimal::new(4_667_594, 2),
+                max_loss_reference_balance: Decimal::new(50_000, 0),
+                current_day_min_equity: Decimal::new(4_594_647, 2),
+                historical_max_loss_result: Decimal::ZERO,
+                prior_positive_days_profit: Decimal::ZERO,
+                prior_best_day_profit: Decimal::ZERO,
+                history_quality: PropRiskHistoryQuality::TrackedSinceGuardEnabled,
+                trading_days: None,
+                has_open_positions: false,
                 balance: Decimal::new(4_569_807, 2),
                 equity: Decimal::new(4_594_647, 2),
                 previously_locked_reason: None,
@@ -1624,6 +1863,98 @@ mod tests {
         assert_eq!(result.max_loss_remaining, Decimal::new(94_647, 2));
         assert_eq!(result.status, PropRiskStatus::Protected);
         assert_eq!(result.reason, None);
+    }
+
+    #[test]
+    fn generic_eod_trailing_objectives_match_the_reported_one_step_vector() {
+        let mut rules = prop_rules();
+        rules.daily_loss_limit_basis_points = 300;
+        rules.max_loss_mode = PropRiskMaxLossMode::EndOfDayTrailing;
+        rules.profit_target_basis_points = Some(1_000);
+        rules.best_day_limit_basis_points = Some(5_000);
+        rules.minimum_trading_days = None;
+        let mut actions = prop_actions();
+        actions.lock_after_profit_target = false;
+
+        let result = evaluate_prop_risk(
+            &rules,
+            &actions,
+            &PropRiskEvaluationInput {
+                initial_balance: Decimal::new(50_000, 0),
+                day_start_balance: Decimal::new(4_683_885, 2),
+                max_loss_reference_balance: Decimal::new(5_018_567, 2),
+                current_day_min_equity: Decimal::new(4_586_098, 2),
+                historical_max_loss_result: Decimal::new(-432_469, 2),
+                prior_positive_days_profit: Decimal::new(244_954, 2),
+                prior_best_day_profit: Decimal::new(67_246, 2),
+                history_quality: PropRiskHistoryQuality::Authoritative,
+                trading_days: None,
+                has_open_positions: false,
+                balance: Decimal::new(4_586_098, 2),
+                equity: Decimal::new(4_586_098, 2),
+                previously_locked_reason: None,
+                telemetry_stale: false,
+                unprotected_exposure: false,
+            },
+        );
+
+        assert_eq!(result.daily_loss_limit, Decimal::new(1_500, 0));
+        assert_eq!(result.daily_loss_result, Decimal::new(-97_787, 2));
+        assert_eq!(result.daily_loss_remaining, Decimal::new(52_213, 2));
+        assert_eq!(
+            result.max_loss_reference_balance,
+            Decimal::new(5_018_567, 2)
+        );
+        assert_eq!(result.max_loss_result, Decimal::new(-432_469, 2));
+        assert_eq!(result.max_loss_remaining, Decimal::new(67_531, 2));
+        assert_eq!(result.profit_target, Some(Decimal::new(5_000, 0)));
+        assert_eq!(result.profit_target_result, Some(Decimal::new(-413_902, 2)));
+        assert_eq!(
+            result.profit_target_remaining,
+            Some(Decimal::new(913_902, 2))
+        );
+        assert_eq!(result.best_day_ratio_basis_points, Some(2_745));
+        assert_eq!(result.best_day_met, Some(true));
+        assert_eq!(
+            result.history_quality,
+            PropRiskHistoryQuality::Authoritative
+        );
+    }
+
+    #[test]
+    fn overall_profit_target_requires_closed_positions() {
+        let mut rules = prop_rules();
+        rules.profit_target_basis_points = Some(1_000);
+        let input = PropRiskEvaluationInput {
+            initial_balance: Decimal::new(50_000, 0),
+            day_start_balance: Decimal::new(55_000, 0),
+            max_loss_reference_balance: Decimal::new(50_000, 0),
+            current_day_min_equity: Decimal::new(55_000, 0),
+            historical_max_loss_result: Decimal::ZERO,
+            prior_positive_days_profit: Decimal::ZERO,
+            prior_best_day_profit: Decimal::ZERO,
+            history_quality: PropRiskHistoryQuality::TrackedSinceGuardEnabled,
+            trading_days: None,
+            has_open_positions: true,
+            balance: Decimal::new(55_000, 0),
+            equity: Decimal::new(55_000, 0),
+            previously_locked_reason: None,
+            telemetry_stale: false,
+            unprotected_exposure: false,
+        };
+
+        let open_result = evaluate_prop_risk(&rules, &prop_actions(), &input);
+        assert_eq!(open_result.profit_target_met, Some(false));
+
+        let closed_result = evaluate_prop_risk(
+            &rules,
+            &prop_actions(),
+            &PropRiskEvaluationInput {
+                has_open_positions: false,
+                ..input
+            },
+        );
+        assert_eq!(closed_result.profit_target_met, Some(true));
     }
 
     #[test]
@@ -1727,6 +2058,14 @@ mod tests {
             &PropRiskEvaluationInput {
                 initial_balance: Decimal::new(100_000, 0),
                 day_start_balance: Decimal::new(100_000, 0),
+                max_loss_reference_balance: Decimal::new(100_000, 0),
+                current_day_min_equity: Decimal::new(95_200, 0),
+                historical_max_loss_result: Decimal::ZERO,
+                prior_positive_days_profit: Decimal::ZERO,
+                prior_best_day_profit: Decimal::ZERO,
+                history_quality: PropRiskHistoryQuality::TrackedSinceGuardEnabled,
+                trading_days: None,
+                has_open_positions: false,
                 balance: Decimal::new(100_000, 0),
                 equity: Decimal::new(95_200, 0),
                 previously_locked_reason: None,
@@ -1749,6 +2088,14 @@ mod tests {
             &PropRiskEvaluationInput {
                 initial_balance: Decimal::new(100_000, 0),
                 day_start_balance: Decimal::new(100_000, 0),
+                max_loss_reference_balance: Decimal::new(100_000, 0),
+                current_day_min_equity: Decimal::new(95_200, 0),
+                historical_max_loss_result: Decimal::ZERO,
+                prior_positive_days_profit: Decimal::ZERO,
+                prior_best_day_profit: Decimal::ZERO,
+                history_quality: PropRiskHistoryQuality::TrackedSinceGuardEnabled,
+                trading_days: None,
+                has_open_positions: false,
                 balance: Decimal::new(100_000, 0),
                 equity: Decimal::new(99_000, 0),
                 previously_locked_reason: Some(PropRiskReason::DailyLossSafetyBuffer),
@@ -1768,6 +2115,14 @@ mod tests {
             &PropRiskEvaluationInput {
                 initial_balance: Decimal::new(100_000, 0),
                 day_start_balance: Decimal::new(100_000, 0),
+                max_loss_reference_balance: Decimal::new(100_000, 0),
+                current_day_min_equity: Decimal::new(100_000, 0),
+                historical_max_loss_result: Decimal::ZERO,
+                prior_positive_days_profit: Decimal::ZERO,
+                prior_best_day_profit: Decimal::ZERO,
+                history_quality: PropRiskHistoryQuality::TrackedSinceGuardEnabled,
+                trading_days: None,
+                has_open_positions: false,
                 balance: Decimal::new(100_000, 0),
                 equity: Decimal::new(100_000, 0),
                 previously_locked_reason: None,

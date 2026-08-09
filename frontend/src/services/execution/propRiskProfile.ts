@@ -1,3 +1,21 @@
+import type { PropRiskProfile } from "@/types/execution";
+
+/**
+ * Returns an assignment's exact versioned catalog entry. Deliberately does not
+ * fall back to the latest version or the first profile: product/stage cannot be
+ * inferred safely from broker account metadata.
+ */
+export function findExactPropRiskProfile(
+  profiles: readonly PropRiskProfile[],
+  profileId: string,
+  profileVersion: number,
+): PropRiskProfile | undefined {
+  return profiles.find(
+    (profile) =>
+      profile.id === profileId && profile.version === profileVersion,
+  );
+}
+
 export function resolveProfileInitialBalance(
   capitalMode: "referenceBalances" | "manual",
   referenceBalances: readonly number[],

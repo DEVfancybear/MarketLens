@@ -4,6 +4,27 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Provider-neutral prop-account stage profiles (2026-08-10)
+
+- Replaced the in-process FTMO preset list with a validated, versioned
+  PostgreSQL profile catalog. Official FTMO profiles are seed rows, while the
+  evaluator, API, and UI operate on generic rule strategies and never branch
+  on a provider name.
+- Added distinct selectable profiles for FTMO 1-Step Challenge and Account,
+  2-Step Challenge, Verification, and Account. Account configuration now
+  requires an explicit per-account profile/stage choice; broker name, server,
+  login, and balance are never used to guess a stage or silently save a default.
+- Added generic data strategies for static and end-of-day-trailing maximum
+  loss, overall profit targets, Best Day limits, and Minimum Trading Days while
+  retaining versioned assignment snapshots and common safety actions.
+- Kept challenge capital resolution on declared reference tiers and required
+  manual confirmed capital for funded/account profiles, where scaling, merging,
+  rollover, rewards, or account replacement can invalidate a fixed tier.
+- Documented history quality explicitly: EOD high-water and daily results begin
+  with observed guard state, Best Day is currently based on observed daily
+  balance deltas, and MT5 telemetry cannot yet prove Minimum Trading Days.
+  Official provider reporting remains authoritative for pass/breach status.
+
 ### Fixed - Indicator panes recover after live history invalidation (2026-08-10)
 
 - Fixed a common runtime-scope race that could leave RSI or any other backend

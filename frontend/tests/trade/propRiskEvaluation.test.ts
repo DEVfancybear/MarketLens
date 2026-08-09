@@ -8,6 +8,8 @@ import {
 } from "../../src/services/execution/propRiskEvaluation";
 
 const evaluationWire: PropRiskEvaluationWire = {
+  modelVersion: 2,
+  historyQuality: "trackedSinceGuardEnabled",
   status: "breached",
   reason: "DAILY_LOSS_LIMIT_BREACHED",
   canOpenNewOrders: false,
@@ -19,6 +21,9 @@ const evaluationWire: PropRiskEvaluationWire = {
   maxLossLimit: "5000",
   maxLossUsed: "4053.53",
   maxLossRemaining: "946.47",
+  maxLossReferenceBalance: "50000",
+  dailyLossResult: "-4053.53",
+  maxLossResult: "-4324.69",
   dailyProfitTarget: null,
   dailyProfitRemaining: null,
   balance: "45698.07",
@@ -34,8 +39,16 @@ test("normalizes finite prop-risk decimal strings without clamping signed headro
     maxLossLimit: 5000,
     maxLossUsed: 4053.53,
     maxLossRemaining: 946.47,
+    maxLossReferenceBalance: 50000,
+    dailyLossResult: -4053.53,
+    maxLossResult: -4324.69,
     dailyProfitTarget: null,
     dailyProfitRemaining: null,
+    profitTarget: undefined,
+    profitTargetResult: undefined,
+    profitTargetRemaining: undefined,
+    positiveDaysProfit: undefined,
+    bestDayProfit: undefined,
     balance: 45698.07,
     equity: 45946.47,
   });
