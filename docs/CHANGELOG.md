@@ -4,6 +4,19 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Replay session replacement keeps candlesticks visible (2026-08-10)
+
+- Fixed an intermittent blank main chart when selecting a new Replay point
+  while the previous Replay session still had a candle animation frame in
+  flight. The paused replacement session now installs its own candlestick batch
+  and viewport instead of freezing the previous session's presentation.
+- Restricted Pause-frame preservation to the exact same Replay session and
+  authoritative candle-array identity. Fork, seek, restart, and other data
+  replacements therefore continue through the normal full-series write path.
+- Added regression coverage for both session replacement and same-session
+  candle-window replacement, then verified the complete chart suite and the
+  active-Replay First day browser flow.
+
 ### Fixed - Continuous copier production migration (2026-08-06)
 
 - Fixed PostgreSQL check-constraint name collisions in

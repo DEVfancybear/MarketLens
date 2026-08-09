@@ -1,7 +1,8 @@
-# Replay Control Incidents: Pause Race and Input Latency
+# Replay Control Incidents: Pause Races and Input Latency
 
-_Resolved 2026-07-11. This note documents the two related Replay control bugs,
-their failure modes, and the invariants that future changes must preserve._
+_Resolved 2026-07-11 and updated 2026-08-10. This note documents the related
+Replay control races, their failure modes, and the invariants that future
+changes must preserve._
 
 ## Scope
 
@@ -129,6 +130,50 @@ Reconciliation rules are:
 These rules let users manipulate controls freely without allowing local input
 to become Replay market-time authority.
 
+## Incident 3: A paused replacement session could lose its candlesticks
+
+### User-visible symptoms
+
+- Selecting another Replay point could leave the main price pane blank while
+  pane indicators, the current-price marker, and Replay controls remained
+  visible.
+- The failure was intermittent and depended on whether the previous Replay
+  session still had a candle animation frame pending.
+
+### Root cause
+
+Reselecting an earlier point forks the active backend session. The existing
+session remains visible while the new projection is prepared, and the fork is
+published atomically with a paused snapshot and its authoritative bars. The
+problematic transition was therefore:
+
+```text
+session A: playing + candle RAF pending
+session B: paused  + replacement candle batch published
+```
+
+`PriceChart` canceled the old RAF and treated every paused render with a
+pending animation as an ordinary Pause. It returned before writing session B's
+candlestick series, rebuilding the candle lookup, or initializing B's viewport.
+Indicator effects still reconciled against B, so the chart could show the new
+indicator timeline without its price candles. Because B was stable and paused,
+no later effect was guaranteed to repair the missed series write.
+
+### Presentation ownership rule
+
+A Pause may preserve the interrupted rendered frame only when both of these
+identities still match:
+
+1. the active Replay session ID is the session whose series was initialized;
+2. the authoritative candle array is the exact batch that started the
+   animation.
+
+A new session ID forces replacement even when both batches have the same
+length. A new candle-array identity also forces replacement within one session,
+covering seek, restart, reset/hydration, and corrected data windows. This rule
+keeps ordinary optimistic Pause visually immediate without allowing an old RAF
+to consume a session or data-window replacement.
+
 ## Implementation map
 
 | File | Responsibility |
@@ -140,6 +185,7 @@ to become Replay market-time authority.
 | `components/replay/ReplayControls.tsx` | Bottom Replay panel integration |
 | `hooks/useHotkeys.ts` | Keyboard integration using the same control APIs |
 | `components/chart/PriceChart.tsx` | Freeze interrupted candle presentation at the rendered frame |
+| `components/chart/replayCandlePresentation.ts` | Pure session/batch identity policy for deciding whether an interrupted frame may freeze |
 | `backend/internal/replay/runtime_repo.go` | Stale-version exception for idempotent Pause only |
 
 ## Regression coverage and verification
@@ -152,6 +198,8 @@ Automated coverage includes:
 - rapid Step presses combine into one count;
 - Replay client boundary permits the dedicated input-debounce module but still
   rejects browser-owned market timers elsewhere;
+- a normal Pause freezes the same session and candle batch, while a fork or
+  same-session replacement must continue to the full-series write path;
 - high-speed candle presentation and viewport tests remain green.
 
 Run the focused verification suite:
@@ -177,3 +225,5 @@ go test ./internal/replay ./internal/httpserver
 - Route the floating toolbar, bottom panel, and hotkeys through the same APIs.
 - Preserve command serialization after debounce so every request uses a current
   authoritative version.
+- Freeze an interrupted candle animation only when both the Replay session ID
+  and authoritative candle-array identity still match the rendered batch.

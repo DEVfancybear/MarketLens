@@ -52,6 +52,38 @@ export function replayCandleAnimationStart(
   };
 }
 
+/**
+ * A pause may freeze an in-flight candle only when it belongs to the exact
+ * Replay session and authoritative candle batch that started the animation.
+ * A fork/seek can publish a paused replacement while the previous session's
+ * animation frame is still pending; freezing that frame would leave the old
+ * candlestick series installed on the replacement session's timeline.
+ */
+export function shouldFreezeReplayCandleAnimation({
+  replayActive,
+  replayPlaying,
+  animationWasRunning,
+  activeSessionId,
+  renderedSessionId,
+  candles,
+  renderedCandles,
+}: {
+  replayActive: boolean;
+  replayPlaying: boolean;
+  animationWasRunning: boolean;
+  activeSessionId: string | null;
+  renderedSessionId: string | null;
+  candles: readonly Candle[];
+  renderedCandles: readonly Candle[];
+}): boolean {
+  return replayActive &&
+    !replayPlaying &&
+    animationWasRunning &&
+    activeSessionId !== null &&
+    activeSessionId === renderedSessionId &&
+    candles === renderedCandles;
+}
+
 export function interpolateReplayCandle(
   start: Candle,
   target: Candle,

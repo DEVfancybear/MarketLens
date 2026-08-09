@@ -8,6 +8,7 @@ import {
   replayCandleAnimationDuration,
   replayCandleAnimationStart,
   replaySeriesOrLive,
+  shouldFreezeReplayCandleAnimation,
 } from "../../src/components/chart/replayCandlePresentation";
 
 function bar(overrides: Partial<ReplayBar> = {}): ReplayBar {
@@ -72,6 +73,35 @@ test("3x replay animation fits inside one backend clock period", () => {
   const duration = replayCandleAnimationDuration(3);
   assert.ok(duration >= 250);
   assert.ok(duration < 1000 / 3);
+});
+
+test("pausing freezes only the animation for the same Replay session and candle batch", () => {
+  const candles = [createReplayCandleProjector()(bar())];
+  const base = {
+    replayActive: true,
+    replayPlaying: false,
+    animationWasRunning: true,
+    activeSessionId: "replay-a",
+    renderedSessionId: "replay-a",
+    candles,
+    renderedCandles: candles,
+  };
+
+  assert.equal(shouldFreezeReplayCandleAnimation(base), true);
+  assert.equal(
+    shouldFreezeReplayCandleAnimation({
+      ...base,
+      activeSessionId: "replay-b",
+    }),
+    false,
+  );
+  assert.equal(
+    shouldFreezeReplayCandleAnimation({
+      ...base,
+      renderedCandles: [...candles],
+    }),
+    false,
+  );
 });
 
 test("high-speed replay recognizes an authoritative appended batch", () => {

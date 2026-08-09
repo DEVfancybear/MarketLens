@@ -108,6 +108,7 @@ import {
   replayCandleAnimationDuration,
   replayCandleAnimationStart,
   replayCandlesEqual,
+  shouldFreezeReplayCandleAnimation,
 } from "./replayCandlePresentation";
 import {
   incrementChartPerformanceCounter,
@@ -873,7 +874,15 @@ export function PriceChart({
     // Pause means freeze the candle exactly where the user pressed the button.
     // The authoritative candle batch is already in `candles`, so applying it
     // here would make the remaining candles appear after playback was paused.
-    if (replayActive && !replayPlaying && animationWasRunning) {
+    if (shouldFreezeReplayCandleAnimation({
+      replayActive,
+      replayPlaying,
+      animationWasRunning,
+      activeSessionId: replaySessionId,
+      renderedSessionId: initializedReplaySessionRef.current,
+      candles,
+      renderedCandles: prevCandlesRef.current,
+    })) {
       const renderedCount = Math.min(renderedCandleCountRef.current, candles.length);
       const renderedLatest = renderedLatestCandleRef.current;
       if (renderedCount > 0 && renderedLatest) {
