@@ -12,6 +12,7 @@ import {
   indicatorSeriesPriceFormatOptions,
   timeScaleDefaults,
   timeScaleOptions,
+  timeScaleRuntimeOptions,
   volumeAutoscaleInfo,
   volumeScaleCeiling,
 } from "../../src/components/chart/chartVisualProfile";
@@ -56,6 +57,15 @@ test("whitespace replacement does not auto-shift a user-panned viewport", () => 
     timeScaleOptions("dark", "15m").allowShiftVisibleRangeOnWhitespaceReplacement,
     false,
   );
+});
+
+test("runtime time-scale updates cannot perform an untracked viewport write", () => {
+  const runtime = timeScaleRuntimeOptions("dark", "UTC");
+
+  assert.equal("barSpacing" in runtime, false);
+  assert.equal("rightOffset" in runtime, false);
+  assert.equal("minBarSpacing" in runtime, false);
+  assert.equal(runtime.allowShiftVisibleRangeOnWhitespaceReplacement, false);
 });
 
 test("runtime volume format uses the shared volume formatter", () => {

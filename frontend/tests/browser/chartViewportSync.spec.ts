@@ -1,6 +1,20 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const FIXTURE_URL = "/?chartFixture=900&chartFixtureTail=500&chartBenchmarkProfile=phase2";
+const TIMEFRAME_TRANSITION_MATRIX = [
+  "5m",
+  "15m",
+  "30m",
+  "15m",
+  "1m",
+  "3m",
+  "1H",
+  "2H",
+  "4H",
+  "1D",
+  "1W",
+  "1M",
+] as const;
 
 async function snapshot(page: Page) {
   return page.evaluate(() => {
@@ -34,6 +48,36 @@ async function expectPaneLegendsAligned(page: Page) {
     return alignment.length === 2 &&
       alignment.every(({ delta }) => Math.abs(delta - 4) <= 1);
   }).toBe(true);
+}
+
+function logicalRangesMatch(
+  actual: { from: number; to: number } | null,
+  tracked: { from: number; to: number } | null,
+) {
+  if (!actual || !tracked) return actual === tracked;
+  return Math.abs(Number(actual.from) - Number(tracked.from)) < 0.001 &&
+    Math.abs(Number(actual.to) - Number(tracked.to)) < 0.001;
+}
+
+async function captureTimeframeTransition(
+  page: Page,
+  timeframe: (typeof TIMEFRAME_TRANSITION_MATRIX)[number],
+) {
+  return page.evaluate(async (nextTimeframe) => {
+    const chartHarness = window.__chartInteractionTest;
+    const drawingHarness = window.__drawingInteractionTest;
+    if (!chartHarness || !drawingHarness) {
+      throw new Error("Chart timeframe test harness unavailable");
+    }
+    const before = chartHarness.snapshot();
+    drawingHarness.changeTimeframe(nextTimeframe);
+    const frames = [];
+    for (let index = 0; index < 24; index += 1) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      frames.push(chartHarness.snapshot());
+    }
+    return { before, frames, after: chartHarness.snapshot() };
+  }, timeframe);
 }
 
 test("crosshair, zoom, resize, and prepend stay synchronized", async ({ page }) => {
@@ -190,6 +234,47 @@ test("crosshair, zoom, resize, and prepend stay synchronized", async ({ page }) 
       Number(after.viewport.logicalRange!.from);
     expect(afterSpan).not.toBe(beforeSpan);
     expect(after.viewport.cause).toBe("user");
+  });
+
+  await test.step("all timeframe changes use one indicator-safe viewport transaction", async () => {
+    for (const timeframe of TIMEFRAME_TRANSITION_MATRIX) {
+      await page.evaluate(() => window.__chartInteractionTest?.setBarSpacing(7));
+      await expect.poll(async () => (await snapshot(page)).barSpacing).toBeCloseTo(7, 1);
+
+      const transition = await captureTimeframeTransition(page, timeframe);
+      await expect.poll(async () => (await snapshot(page)).viewport.cause)
+        .toBe("market-change");
+      await expect.poll(async () => (await snapshot(page)).barSpacing)
+        .toBeCloseTo(16, 1);
+
+      const settled = await snapshot(page);
+      expect(settled.viewport.programmaticWrites)
+        .toBe(transition.before.viewport.programmaticWrites + 1);
+      expect(settled.paneMetrics.paneCount).toBe(3);
+      expect(settled.paneMetrics.widthDrift).toBeLessThanOrEqual(1);
+      expect(settled.priceScaleAutoScale.every(Boolean)).toBe(true);
+      expect(settled.paneSeriesPointCounts.slice(1).every((counts) =>
+        counts.some((count) => count > 0)
+      )).toBe(true);
+
+      const committedFrames = transition.frames.filter((frame) =>
+        frame.viewport.programmaticWrites > transition.before.viewport.programmaticWrites
+      );
+      expect(committedFrames.length).toBeGreaterThan(0);
+      expect(committedFrames.every((frame) =>
+        frame.viewport.cause === "market-change" &&
+        frame.viewport.programmaticWrites ===
+          transition.before.viewport.programmaticWrites + 1 &&
+        logicalRangesMatch(frame.actualLogicalRange, frame.viewport.logicalRange) &&
+        frame.paneMetrics.paneCount === 3 &&
+        frame.paneMetrics.widthDrift <= 1
+      )).toBe(true);
+      expect(logicalRangesMatch(
+        settled.actualLogicalRange,
+        settled.viewport.logicalRange,
+      )).toBe(true);
+    }
+    await expectPaneLegendsAligned(page);
   });
 
   await test.step("repeated vertical plot drags stay responsive", async () => {

@@ -4,6 +4,28 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Edge chart jitter during timeframe changes (2026-08-10)
+
+- Reproduced the production issue in the user's active Edge session on AUDJPY
+  while cycling `5m`, `15m`, and `30m`, with Fair Value Gap on the main chart
+  and Better RSI in a native pane. The settled chart and repeated AUDJPY `15m`
+  backend snapshots were stable; the visible shake occurred only during the
+  frontend transition window.
+- Removed the competing live time-scale write that reapplied default spacing
+  and right offset before the candle and indicator series had reconciled.
+  Theme, grid, locale, and timeframe-format refreshes now apply presentation-only
+  time-scale options, while `ChartViewportController` owns the single deferred
+  market reset for every symbol and supported timeframe.
+- Market changes now cancel an unfinished price gesture without autoscaling the
+  outgoing series. Candle, runtime-indicator, pane, and current-price writes run
+  in layout effects so Lightweight Charts receives one coherent native frame
+  before the controller restores latest-bar alignment and all-pane autoscale.
+- Extended the chart harness and browser regression across all 11 supported
+  timeframes, including the reported `5m -> 15m -> 30m -> 15m` sequence, with
+  overlay and pane indicators. Every transition requires exactly one
+  programmatic viewport write, controller/native logical-range agreement, fixed
+  pane geometry, and restored autoscale. Typecheck and all 188 chart tests pass.
+
 ### Fixed - MT5 EA readiness version drift (2026-08-10)
 
 - Made the Rust execution gateway publish its active minimum EA version through

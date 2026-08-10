@@ -1,5 +1,16 @@
 # Current Progress
 
+- Edge timeframe-transition stability (2026-08-10): the AUDJPY production
+  shake seen while cycling `5m`, `15m`, and `30m` was isolated to two frontend
+  viewport writes surrounding asynchronous overlay/pane indicator reconciliation;
+  repeated backend `15m` snapshots and the settled chart were stable. Runtime
+  option refreshes can no longer write viewport defaults, market boundaries no
+  longer autoscale the outgoing series, and native candle/indicator mutations
+  complete before the controller's single market reset. The regression harness
+  now checks controller/native logical-range agreement, pane geometry, autoscale,
+  and one programmatic write across all 11 supported timeframes, including a
+  repeat of the reported `5m -> 15m -> 30m -> 15m` sequence.
+
 - Indicator runtime pane recovery (2026-08-10): live-history invalidation now
   refreshes the common active scope snapshot used by every backend indicator.
   Completion notifications from the new history generation can no longer be

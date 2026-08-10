@@ -2,6 +2,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -52,7 +53,7 @@ import {
   indicatorSeriesDataForCandles,
   indicatorSeriesDataThroughCutoff,
 } from "@/services/indicatorSeriesProjection";
-import { chartColors, makeTickMarkFormatter, makeTimeFormatter } from "./chartTheme";
+import { chartColors, makeTimeFormatter } from "./chartTheme";
 import {
   INDICATOR_PANE_HEIGHT,
   RIGHT_OFFSET_BARS,
@@ -66,6 +67,7 @@ import {
   panePriceScaleOptions,
   timeScaleDefaults,
   timeScaleOptions,
+  timeScaleRuntimeOptions,
   volumeAutoscaleInfo,
   volumeScaleCeiling,
 } from "./chartVisualProfile";
@@ -463,7 +465,7 @@ export function PriceChart({
     });
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     loadMoreGenerationRef.current += 1;
     loadMoreInFlightRef.current = false;
     lastLoadMoreFirstTimeRef.current = null;
@@ -483,7 +485,10 @@ export function PriceChart({
     pendingCrosshairRef.current = null;
     setCrosshair(null);
     const chart = chartRef.current;
-    if (chart) resetPriceScalePan(chart);
+    // Cancel an in-flight gesture without re-enabling autoscale against the
+    // previous market. The deferred controller reset below owns the one price
+    // and time viewport transaction after candles and indicators reconcile.
+    if (chart) endPriceScalePan(chart);
     if (autoFitRafRef.current !== null) {
       cancelAnimationFrame(autoFitRafRef.current);
       autoFitRafRef.current = null;
@@ -499,7 +504,7 @@ export function PriceChart({
     setIndicatorViewport(null);
   }, [setCrosshair, symbol, timeframe]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     candlesRef.current = candles;
   }, [candles]);
 
@@ -809,7 +814,7 @@ export function PriceChart({
   }, [candles.length, onLoadMoreHistory, ready, symbol, timeframe]);
 
   // ---- Re-theme / grid toggle / timeframe-aware time format ----
-  useEffect(() => {
+  useLayoutEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
     const c = chartColors(theme);
@@ -830,18 +835,10 @@ export function PriceChart({
       },
       grid: gridOptions(theme, gridVisible),
       rightPriceScale: mainPriceScaleOptions(theme),
-      timeScale: {
-        ...(timeframeChanged
-          ? timeScaleOptions(theme, timeframe, timeZone)
-          : {
-              borderColor: c.border,
-              tickMarkFormatter: makeTickMarkFormatter(timeZone),
-            }),
-        ...(timeframeChanged ? defaultViewport : {}),
-        rightBarStaysOnScroll: true,
-        shiftVisibleRangeOnNewBar: true,
-        allowShiftVisibleRangeOnWhitespaceReplacement: false,
-      },
+      // Never write viewport defaults from an option-refresh effect. The
+      // controller applies spacing, offset, realtime alignment, and price
+      // autoscale together after the new market series has reconciled.
+      timeScale: timeScaleRuntimeOptions(theme, timeZone),
       localization: { timeFormatter: makeTimeFormatter(timeframe, timeZone) },
       crosshair: drawingCursorCrosshairOptions(theme, activeDrawingTool),
     });
@@ -849,7 +846,7 @@ export function PriceChart({
   }, [activeDrawingTool, gridVisible, precision, registerAsMain, theme, timeZone, timeframe]);
 
   // ---- Push candle data ----
-  useEffect(() => {
+  useLayoutEffect(() => {
     const cs = candleSeriesRef.current;
     if (!cs) return;
     const setCandleData = (source: readonly Candle[]) => {
@@ -1305,7 +1302,7 @@ export function PriceChart({
     [paneResults],
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const chart = chartRef.current;
     if (!chart || !ready) return;
     const store = indSeriesRef.current;
@@ -1674,7 +1671,7 @@ export function PriceChart({
   };
 
   // ---- Current price marker (symbol + price + countdown) ----
-  useEffect(() => {
+  useLayoutEffect(() => {
     const chart = chartRef.current;
     const series = candleSeriesRef.current;
     const container = containerRef.current;

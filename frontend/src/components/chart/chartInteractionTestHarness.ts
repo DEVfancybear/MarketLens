@@ -1,4 +1,4 @@
-import type { IChartApi, IRange, Time } from "lightweight-charts";
+import type { IChartApi, IRange, LogicalRange, Time } from "lightweight-charts";
 import type { ChartViewportController } from "./chartViewportController";
 import { measureChartPaneMetrics } from "./chartPaneMetrics";
 
@@ -9,6 +9,7 @@ export interface ChartInteractionSnapshot {
   paneBoxes: Array<{ x: number; y: number; width: number; height: number }>;
   paneMetrics: ReturnType<typeof measureChartPaneMetrics>;
   visibleTimeRange: IRange<Time> | null;
+  actualLogicalRange: LogicalRange | null;
   viewport: ReturnType<ChartViewportController["snapshot"]>;
   barSpacing: number;
   maxBarSpacing: number;
@@ -59,6 +60,7 @@ export function installChartInteractionTestHarness({
       }),
       paneMetrics: measureChartPaneMetrics(chart),
       visibleTimeRange: chart.timeScale().getVisibleRange(),
+      actualLogicalRange: chart.timeScale().getVisibleLogicalRange(),
       viewport: viewport.snapshot(),
       barSpacing: chart.timeScale().options().barSpacing,
       maxBarSpacing: chart.timeScale().options().maxBarSpacing,

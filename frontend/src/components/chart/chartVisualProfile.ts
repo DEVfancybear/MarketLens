@@ -125,6 +125,24 @@ export function timeScaleOptions(
   timeframe: Timeframe,
   timeZone?: string,
 ): DeepPartial<TimeScaleOptions> {
+  return {
+    ...timeScaleRuntimeOptions(theme, timeZone),
+    ...timeScaleDefaults(timeframe),
+  };
+}
+
+/**
+ * Time-scale presentation options that are safe to reapply to a live chart.
+ *
+ * Viewport defaults deliberately live in `timeScaleOptions()` for chart
+ * creation and in `ChartViewportController.reset()` for market changes. A
+ * runtime theme/time-format update must not mutate bar spacing or right offset
+ * ahead of the controller's single market-change transaction.
+ */
+export function timeScaleRuntimeOptions(
+  theme: Theme,
+  timeZone?: string,
+): DeepPartial<TimeScaleOptions> {
   const colors = chartColors(theme);
   return {
     borderColor: colors.border,
@@ -132,7 +150,6 @@ export function timeScaleOptions(
     timeVisible: true,
     secondsVisible: false,
     tickMarkFormatter: makeTickMarkFormatter(timeZone),
-    ...timeScaleDefaults(timeframe),
     fixLeftEdge: false,
     fixRightEdge: false,
     lockVisibleTimeRangeOnResize: true,

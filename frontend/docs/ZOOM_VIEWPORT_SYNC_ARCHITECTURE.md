@@ -1,6 +1,6 @@
 # Zoom And Viewport Sync Architecture
 
-_Last updated: 2026-07-31_
+_Last updated: 2026-08-10_
 
 This document is the maintenance guide for TradingView-style zoom/pan behavior
 and overlay synchronization. Read this before changing `PriceChart`,
@@ -59,7 +59,7 @@ candles/grid move first and drawings/labels follow later.
 | SMC overlay | `src/components/smc/SmcLayer.tsx` | Repaints from `ChartContext.version` |
 | Indicator panes | `src/components/chart/PriceChart.tsx` | Owns native LWC panes and their series |
 | Replay viewport | `src/components/chart/replayViewport.ts`, `src/components/chart/PriceChart.tsx` | Presentation-only realignment after server reset/upsert windows |
-| Browser guard | `tests/browser/chartViewportSync.spec.ts` | Crosshair, zoom, pane-width, resize, and prepend interactions |
+| Browser guard | `tests/browser/chartViewportSync.spec.ts` | Crosshair, zoom, timeframe transition, indicator-pane width, resize, and prepend interactions |
 
 ## 4. Source Of Truth
 
@@ -143,6 +143,13 @@ Programmatic viewport behavior:
   controller's `market-change` reset. This restores default spacing, scrolls to
   real time, and re-enables price auto-scale so a new market opens around its
   current price instead of inheriting an offscreen/manual viewport.
+- A market identity change first cancels any active price gesture with
+  `endPriceScalePan()`, without enabling autoscale against the outgoing market.
+  Candle and native indicator series then reconcile in layout effects before
+  the controller performs the one deferred `market-change` transaction.
+- Runtime theme, grid, locale, and time-format updates may apply only
+  `timeScaleRuntimeOptions()`. They must not contain `barSpacing`, `rightOffset`,
+  or `minBarSpacing`; those values are viewport state, not presentation state.
 - The controller records `revision`, `programmaticWrites`, `cause`, and the
   current logical range. Equal targets are acknowledged without incrementing
   the write count.
@@ -197,10 +204,10 @@ Desktop pan behavior:
 - Keep native axis double-click reset enabled. It restores auto-scale after a
   manual price-axis range, while `resetPriceScalePan()` remains the
   application-driven reset for all panes.
-- Symbol/timeframe changes and the chart Reset action must call
-  `resetPriceScalePan()` to restore auto-scale on every pane. This preserves
-  initial fitting for new data while retaining manual vertical position after
-  an ordinary user drag.
+- The chart Reset action calls `resetPriceScalePan()` to restore auto-scale on
+  every pane. Symbol/timeframe changes must only cancel an unfinished gesture
+  at their boundary; their later controller-owned `market-change` reset restores
+  auto-scale after the new candle and indicator series have reconciled.
 - Secondary mouse buttons and non-primary pointers must not change price-scale
   mode. Overlay interactions outside the native pane must also remain ignored.
 - `kineticScroll.mouse` must stay disabled. TradingView-style desktop pan stops
@@ -208,9 +215,11 @@ Desktop pan behavior:
   feels like the chart is "trôi tuột".
 - `kineticScroll.touch` can stay enabled for mobile/tablet gestures, where
   kinetic scrolling is expected.
-- Do not re-apply default `barSpacing` / `rightOffset` during theme/grid-only
-  option updates. Apply those defaults on chart creation and timeframe changes,
-  otherwise the viewport can shift while the user is interacting.
+- Do not re-apply default `barSpacing` / `rightOffset` from live chart option
+  refreshes, including the render that observes a new timeframe. Apply defaults
+  on chart creation, then only through `ChartViewportController.reset()` for a
+  market change. A direct `timeScale.applyOptions()` write can emit an
+  unattributed logical-range callback and create a second visible scale step.
 
 ## 7. Drawing Render Loop
 
@@ -413,6 +422,8 @@ Do not call `fitContent()` from individual replay controls.
 11. Drag the time axis horizontally to scale time.
 12. Double-click axes to reset scale.
 13. Start replay and jump to a date in the past.
+14. Add one overlay and one separate-pane indicator, then repeatedly switch
+    `5m -> 15m -> 30m -> 15m` on the same symbol.
 
 Expected:
 
@@ -424,6 +435,8 @@ Expected:
 - every price-axis drag changes the visible range without requiring a refresh;
 - an interrupted drag never blocks the next drag, and double-click restores auto-scale;
 - replay jump does not show an empty chart;
+- timeframe transitions perform one latest-market reset without a transient
+  candle/indicator scale pulse;
 - drawing selection handles remain aligned after zoom/pan.
 
 ## 15. Required Checks
