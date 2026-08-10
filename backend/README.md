@@ -62,11 +62,13 @@ The same EA binary is used for all brokers. The derived account identity is
 tenant-bound and stable for `owner + server + login`; raw credentials are never
 stored.
 
-The production minimum is `SMCExecutionEA 1.22`. The EA reports its version in
+The production minimum is `SMCExecutionEA 1.25`. The EA reports its version in
 the account heartbeat, while Rust records a separate successful command-poll
-timestamp. The Trade workspace reports `READY` only when the EA version is
-supported and the last successful poll is at most 15 seconds old. A terminal
-that can send heartbeats but cannot poll commands is therefore not executable.
+timestamp. Rust publishes the active minimum through the account registry so
+the Go BFF and browser use the same compatibility gate. The Trade workspace
+reports `READY` only when the EA version is supported and the last successful
+poll is at most 15 seconds old. A terminal that can send heartbeats but cannot
+poll commands is therefore not executable.
 
 After an EA release, replace the `.ex5` in every terminal, refresh the
 Navigator, remove the old EA instance from its chart, and attach the new one.

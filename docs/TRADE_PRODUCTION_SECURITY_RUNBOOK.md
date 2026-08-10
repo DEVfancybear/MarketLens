@@ -181,7 +181,7 @@ Do not use recovery switches during a normal release.
 
 Migration `0028_execution_ea_poll_liveness` intentionally leaves existing
 sessions with `last_poll_at=NULL`. After restart, each healthy EA establishes
-readiness on its first successful poll. Existing EA releases below 1.24 remain
+readiness on its first successful poll. Existing EA releases below 1.25 remain
 blocked until their `.ex5` is replaced; do not bypass this gate by editing
 account status in PostgreSQL.
 
@@ -192,9 +192,10 @@ Deploy portfolio synchronization changes in this order:
 1. Run the canonical backend deployment with
    `.\run-backend-production.ps1`.
 2. Deploy the frontend.
-3. Upgrade `SMCExecutionEA` one terminal at a time. EA 1.24 is required because
-   it supports `modifyPendingOrder` and sends portfolio, command-event, and
-   instrument batches through independent retry lanes.
+3. Upgrade `SMCExecutionEA` one terminal at a time. EA 1.25 is required because
+   it retains `modifyPendingOrder` and the independent portfolio, command-event,
+   and instrument lanes while adding the current copier telemetry and broker
+   margin-cap safety contract.
 
 Detaching or restarting the EA does not close broker positions or cancel
 pending orders. During each terminal upgrade, stop submitting new web commands
@@ -210,7 +211,7 @@ positions and pending orders to appear before treating the state as stale.
 | Experts log or observation | Meaning | Production action |
 | --- | --- | --- |
 | `portfolio sync failed, HTTP=...` | The positions/pending-orders lane was rejected or unavailable | Inspect the sanitized response code/message and gateway logs. The last committed portfolio remains authoritative until a complete valid snapshot succeeds |
-| `instrument sync failed, HTTP=...` | Symbol discovery or metadata was rejected | Fix symbol metadata/routing independently. On EA 1.24 this must not suppress portfolio synchronization |
+| `instrument sync failed, HTTP=...` | Symbol discovery or metadata was rejected | Fix symbol metadata/routing independently. On EA 1.25 this must not suppress portfolio synchronization |
 | `command event sync failed, HTTP=...` | Outcome telemetry is delayed | Do not resend an order. Reconcile the command ID against MT5 and the target-command row, then allow retry or late acknowledgement to finalize it |
 | No EA error, account `READY`, web portfolio empty | Transport is healthy but account selection, ownership, or persistence may be wrong | Confirm the selected execution account, inspect the authenticated account-state response, then compare its account ID with PostgreSQL portfolio rows |
 

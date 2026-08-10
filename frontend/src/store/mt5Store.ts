@@ -10,6 +10,7 @@ import {
   shouldAppendExecutionActivity,
 } from "@/services/execution/activityLog";
 import { isVolumeOnStep } from "@/services/mt5/symbolMapping";
+import { executionAccountBlockReason } from "@/services/execution/eaCompatibility";
 import { selectedExecutionAccountAtom } from "./executionRegistryStore";
 import { uid } from "@/utils/id";
 import type {
@@ -74,14 +75,7 @@ export const resetMt5SessionAtom = atom(null, (_get, set) => {
 });
 
 export const mt5ExecutionBlockReasonAtom = atom((get): string | null => {
-  const account = get(selectedExecutionAccountAtom);
-  if (!account || account.venueKind !== "metatrader5")
-    return "Select an MT5 account registered by the common EA.";
-  if (account.status !== "ready")
-    return `${account.label} is ${account.status}.`;
-  if (!account.tradeAllowed)
-    return `${account.label} is not allowed to trade.`;
-  return null;
+  return executionAccountBlockReason(get(selectedExecutionAccountAtom));
 });
 
 export const setExecutionModeAtom = atom(
@@ -157,7 +151,7 @@ export const addMt5LogAtom = atom(
 export const placeMt5OrderAtom = atom(
   null,
   (get, set, order: Mt5OrderRequest): boolean => {
-    const error = validateMt5OrderState({
+    const error = get(mt5ExecutionBlockReasonAtom) ?? validateMt5OrderState({
       enabled: get(mt5EnabledAtom),
       executionMode: get(executionModeAtom),
       status: get(mt5StatusAtom),

@@ -30,6 +30,7 @@ export interface ExecutionAccountSummary {
   tradeAllowed: boolean;
   updatedAt?: number;
   eaVersion?: string;
+  requiredEaVersion?: string;
   statusReason?: "ea_update_required" | "broker_trading_disabled";
 }
 

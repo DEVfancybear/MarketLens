@@ -36,15 +36,48 @@ func TestClientAcceptsLoopbackAdminURL(t *testing.T) {
 }
 
 func TestEAVersionGateFailsClosedForMissingAndOldAgents(t *testing.T) {
-	for _, value := range []string{"", "1.21", "invalid", "1.22.0.1"} {
-		if eaVersionSupported(value) {
+	const minimum = "1.25"
+	for _, value := range []string{"", "1.24.9", "invalid", "1.25.0.1"} {
+		if eaVersionSupported(value, minimum) {
 			t.Fatalf("eaVersionSupported(%q) = true, want false", value)
 		}
 	}
-	for _, value := range []string{"1.22", "1.22.1", "1.23.0", "2.0.0"} {
-		if !eaVersionSupported(value) {
+	for _, value := range []string{"1.25", "1.25.1", "1.26.0", "2.0.0"} {
+		if !eaVersionSupported(value, minimum) {
 			t.Fatalf("eaVersionSupported(%q) = false, want true", value)
 		}
+	}
+	if eaVersionSupported("1.25", "") {
+		t.Fatal("missing gateway minimum must fail closed")
+	}
+}
+
+func TestListAccountsUsesGatewayMinimumEAVersion(t *testing.T) {
+	const token = "admin-token-with-at-least-32-characters"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{
+			"accountId":"mt5_account","connected":true,"lastSeenAtMs":123,
+			"minimumEaVersion":"1.25",
+			"account":{"login":"1","broker":"Broker","server":"Broker-Live",
+			"mode":"live","currency":"USD","balance":"10000","equity":"10000",
+			"tradeAllowed":true,"eaVersion":"1.24"}
+		}]`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(server.URL, token)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	accounts, err := client.ListAccounts(t.Context(), "11111111-1111-4111-8111-111111111111")
+	if err != nil {
+		t.Fatalf("ListAccounts: %v", err)
+	}
+	if len(accounts) != 1 || accounts[0].Status != "blocked" ||
+		accounts[0].StatusReason != "ea_update_required" ||
+		accounts[0].RequiredEAVersion != "1.25" {
+		t.Fatalf("unexpected compatibility projection: %+v", accounts)
 	}
 }
 

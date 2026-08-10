@@ -72,6 +72,7 @@ import {
 } from "@/services/api/resources/executionApi";
 import { symbolAtom } from "@/store/chartStore";
 import { executionEaDistribution } from "@/services/execution/eaDistribution";
+import { eaUpgradeLabel } from "@/services/execution/eaCompatibility";
 import {
   copyTargetAvailability,
   previewCopyRoutes,
@@ -708,7 +709,7 @@ function ExecutionAccountRail() {
                   </span>
                   {account.statusReason === "ea_update_required" && (
                     <span className="mt-1 block text-[9px] font-semibold text-bear">
-                      Update SMCExecutionEA to 1.22+
+                      {eaUpgradeLabel(account)}
                     </span>
                   )}
                   <span className="mt-2 flex items-center justify-between gap-2">

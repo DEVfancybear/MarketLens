@@ -4,6 +4,17 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - MT5 EA readiness version drift (2026-08-10)
+
+- Made the Rust execution gateway publish its active minimum EA version through
+  the account registry, and made the Go BFF compare the observed EA against that
+  value instead of the obsolete hard-coded `1.22` threshold.
+- Accounts on an older EA now appear blocked with the required version instead
+  of incorrectly showing `READY` and failing later as `target account is not
+  ready` when a web Limit order is routed.
+- Added client-side order blocking with actionable upgrade guidance, updated the
+  current production contract to EA `1.25`, and added Go/TypeScript regressions.
+
 ### Fixed - Provider-neutral prop-account stage profiles (2026-08-10)
 
 - Replaced the in-process FTMO preset list with a validated, versioned

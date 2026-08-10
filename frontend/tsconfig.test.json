@@ -82,6 +82,7 @@
     "src/services/execution/copyRouting.ts",
     "src/services/execution/activityLog.ts",
     "src/services/execution/eaDistribution.ts",
+    "src/services/execution/eaCompatibility.ts",
     "src/services/execution/instrumentProjection.ts",
     "src/services/execution/outcomePresentation.ts",
     "src/services/execution/propRiskEvaluation.ts",

@@ -32,10 +32,11 @@ func (e *GatewayError) Error() string {
 }
 
 type gatewayAccount struct {
-	AccountID    string          `json:"accountId"`
-	Connected    bool            `json:"connected"`
-	LastSeenAtMS int64           `json:"lastSeenAtMs"`
-	Account      gatewaySnapshot `json:"account"`
+	AccountID        string          `json:"accountId"`
+	Connected        bool            `json:"connected"`
+	LastSeenAtMS     int64           `json:"lastSeenAtMs"`
+	MinimumEAVersion string          `json:"minimumEaVersion"`
+	Account          gatewaySnapshot `json:"account"`
 }
 
 type gatewaySnapshot struct {
@@ -65,6 +66,7 @@ type Account struct {
 	TradeAllowed       bool     `json:"tradeAllowed"`
 	UpdatedAt          int64    `json:"updatedAt"`
 	EAVersion          string   `json:"eaVersion,omitempty"`
+	RequiredEAVersion  string   `json:"requiredEaVersion,omitempty"`
 	StatusReason       string   `json:"statusReason,omitempty"`
 }
 
@@ -169,7 +171,7 @@ func (c *Client) ListAccounts(ctx context.Context, ownerID string) ([]Account, e
 	for _, item := range raw {
 		status := "offline"
 		statusReason := ""
-		if item.Connected && !eaVersionSupported(item.Account.EAVersion) {
+		if item.Connected && !eaVersionSupported(item.Account.EAVersion, item.MinimumEAVersion) {
 			status = "blocked"
 			statusReason = "ea_update_required"
 		} else if item.Connected && item.Account.TradeAllowed {
@@ -193,6 +195,7 @@ func (c *Client) ListAccounts(ctx context.Context, ownerID string) ([]Account, e
 			TradeAllowed:       item.Account.TradeAllowed,
 			UpdatedAt:          item.LastSeenAtMS,
 			EAVersion:          item.Account.EAVersion,
+			RequiredEAVersion:  item.MinimumEAVersion,
 			StatusReason:       statusReason,
 		})
 	}
@@ -284,27 +287,38 @@ func (c *Client) UpdateAccountLayout(
 	return layout, err
 }
 
-func eaVersionSupported(value string) bool {
+func eaVersionSupported(value, minimum string) bool {
+	current, currentOK := parseEAVersion(value)
+	required, requiredOK := parseEAVersion(minimum)
+	if !currentOK || !requiredOK {
+		return false
+	}
+	for index := range current {
+		if current[index] != required[index] {
+			return current[index] > required[index]
+		}
+	}
+	return true
+}
+
+func parseEAVersion(value string) ([3]int, bool) {
 	core := strings.TrimSpace(value)
 	if index := strings.IndexAny(core, "-+"); index >= 0 {
 		core = core[:index]
 	}
 	parts := strings.Split(core, ".")
 	if len(parts) < 2 || len(parts) > 3 {
-		return false
+		return [3]int{}, false
 	}
 	version := [3]int{}
 	for index, part := range parts {
 		parsed, err := strconv.Atoi(part)
 		if err != nil || parsed < 0 {
-			return false
+			return [3]int{}, false
 		}
 		version[index] = parsed
 	}
-	if version[0] != 1 {
-		return version[0] > 1
-	}
-	return version[1] >= 22
+	return version, true
 }
 
 func (c *Client) IssuePairingToken(

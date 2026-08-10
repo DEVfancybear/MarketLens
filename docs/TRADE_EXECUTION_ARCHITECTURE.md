@@ -103,15 +103,18 @@ Consequently, event heartbeats or portfolio snapshots cannot hide a broken
 command channel.
 
 Each account snapshot also includes the common EA release version. The current
-minimum is `1.24`; a missing, malformed, or older version is blocked before
-command creation. EA 1.24 is required because it adds in-place pending-order
-entry/SL/TP modification. The additive version field prevents a gateway from
-delivering a command that an older terminal would silently ignore.
+minimum is `1.25`; a missing, malformed, or older version is blocked before
+command creation. The gateway publishes this minimum to the Go BFF so the
+account registry and order router cannot disagree about readiness. EA 1.25
+retains in-place pending-order entry/SL/TP modification and adds the current
+copier telemetry and broker-margin safety contract. The additive version field
+prevents a gateway from delivering a command that an older terminal would
+silently ignore.
 
 Portfolio synchronization is isolated from auxiliary telemetry. Rust commits
 validated open positions and pending orders before it validates/persists
 instrument discovery and command events, so an unrelated metadata failure
-cannot roll back user-visible money state. EA 1.24 retains the independent
+cannot roll back user-visible money state. EA 1.25 retains the independent
 portfolio, command-outcome, and instrument lanes introduced in 1.23, each with
 bounded backoff and lane-specific diagnostics.
 
@@ -292,7 +295,7 @@ An enum or trait stub is not considered production Binance support.
 | Demo and Live | implemented | identical path; no mode block |
 | Multi-target order copy | implemented | independent Rust risk and outcome per target |
 | Persistent commands/events/audit | implemented | PostgreSQL required; no in-memory production |
-| EA poll liveness/version gate | implemented | successful poll within 15 seconds; EA 1.24+ |
+| EA poll liveness/version gate | implemented | successful poll within 15 seconds; EA 1.25+ |
 | Modify/close/cancel | implemented | open SL/TP and pending entry/SL/TP; owner/resource validation before queue |
 | Native Binance | disabled | signing, secure secret storage, clock sync, filters, rate limits, portfolio sync, reconciliation, and sandbox/live certification required |
 

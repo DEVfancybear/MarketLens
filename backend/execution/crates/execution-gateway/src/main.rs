@@ -114,6 +114,7 @@ struct EaAccountView {
     owner_id: String,
     connected: bool,
     last_seen_at_ms: u64,
+    minimum_ea_version: String,
     account: EaAccountSnapshot,
 }
 
@@ -1453,6 +1454,7 @@ impl GatewayState {
                 owner_id: grant.owner_id,
                 connected: true,
                 last_seen_at_ms: now,
+                minimum_ea_version: minimum_supported_ea_version(),
                 account: request.account,
             },
         );
@@ -9031,6 +9033,7 @@ async fn list_accounts(
                         .map_err(|error| ApiError::database("decode EA session heartbeat", error))?
                         .map(|value| value as u64),
                 ),
+                minimum_ea_version: minimum_supported_ea_version(),
                 account: row
                     .try_get::<sqlx::types::Json<EaAccountSnapshot>, _>("metadata")
                     .map_err(|error| ApiError::database("decode account snapshot", error))?
@@ -12785,6 +12788,15 @@ fn ea_version_supported(value: Option<&str>) -> bool {
         .is_some_and(|version| version >= MIN_SUPPORTED_EA_VERSION)
 }
 
+fn minimum_supported_ea_version() -> String {
+    let (major, minor, patch) = MIN_SUPPORTED_EA_VERSION;
+    if patch == 0 {
+        format!("{major}.{minor}")
+    } else {
+        format!("{major}.{minor}.{patch}")
+    }
+}
+
 fn effective_last_seen_at_ms(
     account_last_seen_at_ms: u64,
     session_last_seen_at_ms: Option<u64>,
@@ -13289,6 +13301,7 @@ mod tests {
 
     #[test]
     fn ea_version_gate_accepts_current_and_future_releases_only() {
+        assert_eq!(minimum_supported_ea_version(), "1.25");
         assert!(!ea_version_supported(None));
         assert!(!ea_version_supported(Some("1.24.9")));
         assert!(!ea_version_supported(Some("invalid")));

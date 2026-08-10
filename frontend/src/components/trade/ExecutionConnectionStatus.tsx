@@ -8,6 +8,7 @@ import {
 } from "@/store/executionRegistryStore";
 import { cn } from "@/utils/cn";
 import { fmtMoney } from "@/utils/format";
+import { eaUpgradeLabel } from "@/services/execution/eaCompatibility";
 
 const STATUS_STYLE = {
   disabled: "bg-terminal-hover text-ink-faint",
@@ -51,7 +52,7 @@ export function ExecutionConnectionStatus() {
       <span className="text-ink-faint">{selected.brokerCode}</span>
       {selected.statusReason === "ea_update_required" && (
         <span className="font-semibold text-bear">
-          {selected.eaVersion ? `EA ${selected.eaVersion} → ` : ""}Update 1.22+
+          {eaUpgradeLabel(selected)}
         </span>
       )}
       {selected.equity != null && (
