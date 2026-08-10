@@ -43,8 +43,18 @@ export function resolveCandleViewport(
   if (previous) {
     const leftBuffer = previous.visible.first - previous.overscan.first;
     const rightBuffer = previous.overscan.last - previous.visible.last;
-    const safeFirst = previous.overscan.first + Math.max(1, Math.floor(leftBuffer * 0.25));
-    const safeLast = previous.overscan.last - Math.max(1, Math.floor(rightBuffer * 0.25));
+    // A clamped overscan edge has no buffer beyond the dataset. Requiring a
+    // one-bar inset there makes every live-tail range notification miss the
+    // hysteresis window. Reference indicators that extend into right-side
+    // whitespace then re-project their synthetic endpoint, which changes the
+    // Lightweight Charts timeline and feeds another one-bar range change back
+    // into this function indefinitely.
+    const safeFirst = previous.overscan.first === 0
+      ? 0
+      : previous.overscan.first + Math.max(1, Math.floor(leftBuffer * 0.25));
+    const safeLast = previous.overscan.last === maxIndex
+      ? maxIndex
+      : previous.overscan.last - Math.max(1, Math.floor(rightBuffer * 0.25));
     if (visible.first >= safeFirst && visible.last <= safeLast) {
       return {
         visible,

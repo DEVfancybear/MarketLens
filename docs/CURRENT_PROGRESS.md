@@ -1,5 +1,17 @@
 # Current Progress
 
+- Live-tail indicator viewport stability (2026-08-10): post-deploy Edge probes
+  separated the remaining shake from MT5 ingress and controller resets. The
+  chart held 903 candles, each refresh changed only the forming candle, and the
+  controller write count stayed fixed, but Better RSI reference series moved
+  their future endpoint by one `5m` slot and made the native logical range
+  alternate by one bar more than 1,200 times in 104 seconds. The clamped-edge
+  overscan hysteresis now treats the first/last dataset index as a valid safe
+  boundary, so synthetic right-whitespace guides cannot recursively invalidate
+  their own viewport. The exact production range values are covered by a unit
+  regression; 190 chart tests, focused browser regressions, typecheck, and the
+  production frontend build pass.
+
 - MT5 warm-up publication stability (2026-08-10): a second live Edge
   reproduction proved that the remaining chart shake was data-driven rather
   than another viewport-controller write. Production `AUDJPY 3m/5m` returned a

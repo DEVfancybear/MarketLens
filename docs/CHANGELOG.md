@@ -4,6 +4,27 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Live-tail indicator feedback loop no longer shakes the chart (2026-08-10)
+
+- Re-ran the production symbol/timeframe stress sequence in the user's Edge
+  session after the MT5 publication fix and confirmed that a separate one-bar
+  shake remained. A React/LWC probe showed 903 stable candles, one changed
+  forming-candle reference per MT5 refresh, and no new programmatic viewport
+  writes while the logical range still alternated by exactly one bar.
+- Traced the loop to pane reference guides such as Better RSI levels. Their
+  `extendToVisibleRange` endpoints occupy synthetic future timestamps on the
+  native Lightweight Charts timeline. At the live tail, the indicator viewport
+  hysteresis incorrectly required a one-bar safety inset beyond the clamped
+  dataset edge, so every range callback rebuilt the window, moved the guide
+  endpoint by one timeframe, and triggered the opposite range callback.
+- Clamped dataset edges are now valid hysteresis boundaries. A live-tail window
+  reuses its overscan revision through one-bar synthetic range jitter, stopping
+  indicator projection from feeding its own future endpoint back into the time
+  scale while preserving normal viewport shifts and right-whitespace guides.
+- Added the captured 903-candle/one-bar range matrix as a unit regression.
+  All 190 chart tests, the focused viewport/MT5 browser regressions, TypeScript
+  typechecking, and the production frontend build pass.
+
 ### Fixed - MT5 stale warm-up windows no longer shake the live chart (2026-08-10)
 
 - Reproduced the remaining production shake directly in the user's Edge session

@@ -363,6 +363,21 @@ Pane ownership rules:
 - every separate pane applies the shared price-scale visual profile and fixed
   initial height, while the LWC separator remains user-resizable.
 
+Indicator viewport hysteresis rules:
+
+- `extendToVisibleRange` reference guides can place synthetic future timestamps
+  in right-offset whitespace. Those timestamps participate in Lightweight
+  Charts' shared logical timeline, so their projection must never recursively
+  rebuild itself from the range change that the same endpoint produced.
+- `resolveCandleViewport()` owns the overscan hysteresis. When overscan is
+  clamped to candle index `0` or the latest candle index, that dataset edge is a
+  valid safe boundary; do not require a one-bar inset outside the available
+  data. Doing so makes every live-tail notification create a new revision and
+  can oscillate the native range by exactly one bar indefinitely.
+- A viewport revision changes only after the visible candle window leaves the
+  retained overscan safety area. Small logical-range settling or synthetic
+  guide jitter at a clamped live edge must retain the existing revision.
+
 The old separate-chart `IndicatorPane` and transparent time-anchor bridge were
 deleted after the native-pane browser regression suite passed. Do not restore
 them as a fallback.

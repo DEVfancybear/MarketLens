@@ -20,6 +20,29 @@ test("candle viewport retains its window inside hysteresis", () => {
   assert.equal(next?.direction, "right");
 });
 
+test("live-tail viewport jitter stays inside clamped-edge hysteresis", () => {
+  const first = resolveCandleViewport(903, {
+    from: 873.3748453055417,
+    to: 912.9998453055417,
+  });
+  assert.deepEqual(first?.visible, { first: 873, last: 902 });
+  assert.equal(first?.overscan.last, 902);
+
+  const shiftedLeft = resolveCandleViewport(903, {
+    from: 871.3748453055417,
+    to: 910.9998453055417,
+  }, first);
+  const shiftedRight = resolveCandleViewport(903, {
+    from: 872.3748453055417,
+    to: 911.9998453055417,
+  }, shiftedLeft);
+
+  assert.deepEqual(shiftedLeft?.overscan, first?.overscan);
+  assert.deepEqual(shiftedRight?.overscan, first?.overscan);
+  assert.equal(shiftedLeft?.revision, first?.revision);
+  assert.equal(shiftedRight?.revision, first?.revision);
+});
+
 test("candle viewport biases a shifted window toward history", () => {
   const first = resolveCandleViewport(5_000, { from: 3_000, to: 3_100 });
   const shifted = resolveCandleViewport(5_000, { from: 2_500, to: 2_600 }, first);
