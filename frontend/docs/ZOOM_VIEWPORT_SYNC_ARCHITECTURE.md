@@ -150,6 +150,16 @@ Programmatic viewport behavior:
 - Runtime theme, grid, locale, and time-format updates may apply only
   `timeScaleRuntimeOptions()`. They must not contain `barSpacing`, `rightOffset`,
   or `minBarSpacing`; those values are viewport state, not presentation state.
+- A latest MT5 history page may reach the browser as an explicitly stale or
+  `refreshPending` cache while the native timeframe is warming. Never publish
+  that page to `marketDataStore`, even as a temporary first paint. It can omit
+  the current bar, causing Lightweight Charts to shift one bar and recalculate
+  price autoscale when the authoritative page replaces it. Keep the exact cold
+  key loading and publish only `canPublishMt5HistoryPage(page) === true`; this
+  rule applies to the active chart and inactive layout-pane previews.
+- If a pending MT5 cache completes without becoming publishable, clear the
+  pending-poll mode and escalate the next attempt to an explicit full refresh.
+  Do not display or poll an unverified cache indefinitely.
 - The controller records `revision`, `programmaticWrites`, `cause`, and the
   current logical range. Equal targets are acknowledged without incrementing
   the write count.

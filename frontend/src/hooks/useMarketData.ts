@@ -27,6 +27,10 @@ import { getHistoricalDataService } from "@/services/market-data/HistoricalDataS
 import { invalidateIndicatorHistoryContext } from "@/services/indicatorRuntimeCache";
 import { TF_SECONDS, type Candle, type LoadMoreHistoryResult, type Timeframe } from "@/types";
 import { findRecentCandleGap, hasDiscontinuousHistoryTail } from "@/services/market-data/candleSeries";
+import {
+  canPublishMt5HistoryPage,
+  mt5HistoryFreshnessError,
+} from "@/services/market-data/mt5HistoryFreshness";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { marketSymbolCatalogStatusAtom, marketSymbolsAtom } from "@/store/marketSymbolStore";
 import {
@@ -184,22 +188,30 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
         .then((page) => {
           if (cancelled || activeSelectionRef.current !== key) return;
           const hist = page.candles;
+          const publishable = meta.provider !== "mt5" || canPublishMt5HistoryPage(page);
           if (meta.provider === "mt5") {
-            // An ordinary cold read may intentionally paint a stale/unknown
-            // window. Make the immediately-following authoritative request use
-            // the full initial limit as well, so the backend's cancellation of
-            // its lower-priority background read cannot leave us with a tiny
-            // tail-only replacement.
+            // A cold read may expose a stale/unknown window while its native
+            // refresh is pending. Remember the recovery mode, but never publish
+            // that intermediate window: it can be missing the current bar and
+            // visibly shift both the time and price scales when replaced.
             mt5NeedsFullRefreshRef.current =
-              page.authoritative === false || page.stale === true || page.refreshPending === true
+              !publishable
                 ? key
                 : null;
             mt5BackfillPendingRef.current = page.refreshPending === true ? key : null;
           }
+          getMarketDataState().selectMarket(symbol, timeframe);
+          if (!publishable) {
+            // Mark the selection ready so the active MT5 refresh effect below
+            // can poll/refresh it. Keep loading (and the keyed series empty)
+            // until a coherent authoritative window is available.
+            setHistoryReadyKey(key);
+            setLoading(true);
+            return;
+          }
           // Seed history before subscribing. For MT5, candles must come from
           // MT5 rates/history; ticks are used only for quotes/watchlist.
           getMarketDataState().setCandles(symbol, timeframe, hist);
-          getMarketDataState().selectMarket(symbol, timeframe);
           const nextCandles = getMarketDataState().getCandles(symbol, timeframe) as Candle[];
           setCandles(nextCandles);
           setHistoryReadyKey(key);
@@ -289,6 +301,15 @@ export function useMarketData({ enabled = true }: { enabled?: boolean } = {}) {
             }, MT5_PENDING_BACKFILL_POLL_MS);
           }
           return;
+        }
+        if (!canPublishMt5HistoryPage(page)) {
+          // A pending cache can finish without becoming authoritative (for
+          // example after a bounded backend refresh is exhausted). Escalate the
+          // next attempt to an explicit full refresh instead of committing the
+          // stale window or polling it forever.
+          mt5BackfillPendingRef.current = null;
+          mt5NeedsFullRefreshRef.current = activeKey;
+          throw new Error(mt5HistoryFreshnessError(page, symbol, timeframe));
         }
         const hist = page.candles;
         const marketData = getMarketDataState();

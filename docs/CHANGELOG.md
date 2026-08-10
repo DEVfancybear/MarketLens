@@ -4,6 +4,28 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - MT5 stale warm-up windows no longer shake the live chart (2026-08-10)
+
+- Reproduced the remaining production shake directly in the user's Edge session
+  on `tradingterminal.io.vn` while rapidly alternating `AUDJPY` timeframes and
+  symbols. Frame capture showed the whole candle/FVG projection moving by about
+  one bar while the price scale expanded and contracted; it was not normal tick
+  movement or an overlay-only repaint.
+- Sampled the production MT5 history endpoint during the same incident. The
+  first `3m`/`5m` response was explicitly `stale` and `refreshPending`, omitted
+  the current bar, and was followed in under a second by an authoritative window
+  containing the new bar. The frontend was publishing both windows, so the
+  market reset ran against the stale bar count before the authoritative append
+  shifted time and price projection again.
+- Added an explicit MT5 history publication gate. The active chart and inactive
+  pane previews now keep a cold key empty/loading while a stale or pending cache
+  warms, publish only an explicitly authoritative latest window, and escalate a
+  completed-but-still-unverified cache to a full refresh instead of polling or
+  displaying it indefinitely.
+- Added unit coverage for the publication contract plus a browser regression
+  that holds an authoritative response after a stale/pending first page and
+  requires the canvas to remain empty until the coherent window arrives.
+
 ### Fixed - Edge chart jitter during timeframe changes (2026-08-10)
 
 - Reproduced the production issue in the user's active Edge session on AUDJPY

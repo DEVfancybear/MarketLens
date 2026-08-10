@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  canPublishMt5HistoryPage,
   isAuthoritativeMt5HistorySnapshot,
   mt5HistoryFreshnessError,
 } from "../../src/services/market-data/mt5HistoryFreshness";
@@ -40,6 +41,29 @@ test("explicit stale, pending, exhausted and errored responses are non-authorita
 test("omitted legacy evidence stays compatible but explicit unknown evidence is rejected", () => {
   assert.equal(isAuthoritativeMt5HistorySnapshot({}), true);
   assert.equal(isAuthoritativeMt5HistorySnapshot({ freshnessKnown: false }), false);
+});
+
+test("the chart publishes only an explicitly authoritative MT5 latest window", () => {
+  assert.equal(canPublishMt5HistoryPage({ authoritative: true }), true);
+  assert.equal(canPublishMt5HistoryPage({ authoritative: false }), false);
+  assert.equal(canPublishMt5HistoryPage({}), false);
+  assert.equal(
+    canPublishMt5HistoryPage({ authoritative: true, stale: true }),
+    false,
+  );
+  assert.equal(
+    canPublishMt5HistoryPage({ authoritative: true, refreshPending: true }),
+    false,
+  );
+  assert.equal(
+    canPublishMt5HistoryPage({
+      authoritative: true,
+      freshnessKnown: true,
+      lastBarTime: 1_999,
+      minimumFreshBarTime: 2_000,
+    }),
+    false,
+  );
 });
 
 test("freshness errors retain a useful timeframe-specific reason", () => {

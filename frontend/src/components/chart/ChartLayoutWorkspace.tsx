@@ -40,6 +40,10 @@ import { getMarketDataService } from "@/services/market-data/MarketDataService";
 import { getHistoricalDataService } from "@/services/market-data/HistoricalDataService";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { initialHistoryBars } from "@/services/market-data/historyPolicy";
+import {
+  canPublishMt5HistoryPage,
+  mt5HistoryFreshnessError,
+} from "@/services/market-data/mt5HistoryFreshness";
 import { cn } from "@/utils/cn";
 import type { Candle } from "@/types";
 import { selectIndicatorsForChart } from "./indicators/indicatorChartScope";
@@ -484,7 +488,7 @@ function usePaneMarketData(pane: ChartPaneState, enabled: boolean): {
             const loadHistory = async () => {
               const cached = marketData.getCandles(pane.symbol, pane.timeframe) as Candle[];
               if (cached.length > 0) return cached;
-              return getHistoricalDataService().loadHistory(
+              const page = await getHistoricalDataService().loadHistoryPage(
                 {
                   symbol: pane.symbol,
                   timeframe: pane.timeframe,
@@ -492,6 +496,12 @@ function usePaneMarketData(pane: ChartPaneState, enabled: boolean): {
                 },
                 { signal: controller.signal },
               );
+              if (market.provider === "mt5" && !canPublishMt5HistoryPage(page)) {
+                throw new Error(
+                  mt5HistoryFreshnessError(page, pane.symbol, pane.timeframe),
+                );
+              }
+              return page.candles;
             };
             const history =
               market.provider === "mt5"

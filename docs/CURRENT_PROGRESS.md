@@ -1,5 +1,15 @@
 # Current Progress
 
+- MT5 warm-up publication stability (2026-08-10): a second live Edge
+  reproduction proved that the remaining chart shake was data-driven rather
+  than another viewport-controller write. Production `AUDJPY 3m/5m` returned a
+  stale/pending cache without the current bar, followed by an authoritative
+  window with that bar; rendering both moved the logical range by one candle and
+  recalculated price autoscale. Main-chart and pane-preview ingress now publish
+  only explicitly authoritative latest MT5 pages, keep cold keys loading during
+  backend warm-up, and escalate an unverified completed cache to a full refresh.
+  The publication policy has unit and browser regression coverage.
+
 - Edge timeframe-transition stability (2026-08-10): the AUDJPY production
   shake seen while cycling `5m`, `15m`, and `30m` was isolated to two frontend
   viewport writes surrounding asynchronous overlay/pane indicator reconciliation;
