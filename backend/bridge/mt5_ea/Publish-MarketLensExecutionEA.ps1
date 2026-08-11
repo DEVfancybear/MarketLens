@@ -7,13 +7,13 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-$sourcePath = Join-Path $PSScriptRoot "SMCExecutionEA.mq5"
-$compiledPath = Join-Path $PSScriptRoot "SMCExecutionEA.ex5"
+$sourcePath = Join-Path $PSScriptRoot "MarketLensExecutionEA.mq5"
+$compiledPath = Join-Path $PSScriptRoot "MarketLensExecutionEA.ex5"
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\.."))
 $releaseDirectory = Join-Path $repoRoot "frontend\public\downloads"
-$releasePath = Join-Path $releaseDirectory "SMCExecutionEA.ex5"
-$checksumPath = Join-Path $releaseDirectory "SMCExecutionEA.sha256.txt"
-$manifestPath = Join-Path $releaseDirectory "SMCExecutionEA.release.json"
+$releasePath = Join-Path $releaseDirectory "MarketLensExecutionEA.ex5"
+$checksumPath = Join-Path $releaseDirectory "MarketLensExecutionEA.sha256.txt"
+$manifestPath = Join-Path $releaseDirectory "MarketLensExecutionEA.release.json"
 
 function Get-Sha256([string]$Path) {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToUpperInvariant()
@@ -40,14 +40,14 @@ function Assert-Release {
         throw "Unsupported EA release manifest schema."
     }
     if ($manifest.sourceSha256 -ne $sourceHash) {
-        throw "Published EA is stale. Run backend\bridge\mt5_ea\Publish-SMCExecutionEA.ps1 on a trusted Windows build host."
+        throw "Published EA is stale. Run backend\bridge\mt5_ea\Publish-MarketLensExecutionEA.ps1 on a trusted Windows build host."
     }
     if ($manifest.binarySha256 -ne $binaryHash) {
         throw "Published EA hash does not match its release manifest."
     }
 
     $checksum = (Get-Content -LiteralPath $checksumPath -Raw).Trim()
-    $expectedChecksum = "$binaryHash  SMCExecutionEA.ex5"
+    $expectedChecksum = "$binaryHash  MarketLensExecutionEA.ex5"
     if ($checksum -cne $expectedChecksum) {
         throw "Published EA checksum file does not match the binary."
     }
@@ -101,7 +101,7 @@ if ($VerifyOnly) {
 }
 
 $metaEditor = Resolve-MetaEditor
-$compileLog = Join-Path $PSScriptRoot "SMCExecutionEA.compile.log"
+$compileLog = Join-Path $PSScriptRoot "MarketLensExecutionEA.compile.log"
 Remove-Item -LiteralPath $compileLog -Force -ErrorAction SilentlyContinue
 
 Write-Host "Compiling the common MT5 EA..." -ForegroundColor Cyan
@@ -123,11 +123,11 @@ Copy-Item -LiteralPath $compiledPath -Destination $releasePath -Force
 
 $sourceHash = Get-Sha256 $sourcePath
 $binaryHash = Get-Sha256 $releasePath
-"$binaryHash  SMCExecutionEA.ex5" |
+"$binaryHash  MarketLensExecutionEA.ex5" |
     Set-Content -LiteralPath $checksumPath -Encoding ascii -NoNewline
 [ordered]@{
     schemaVersion = 1
-    fileName = "SMCExecutionEA.ex5"
+    fileName = "MarketLensExecutionEA.ex5"
     sourceSha256 = $sourceHash
     binarySha256 = $binaryHash
 } |
@@ -135,4 +135,4 @@ $binaryHash = Get-Sha256 $releasePath
     Set-Content -LiteralPath $manifestPath -Encoding utf8
 
 Assert-Release
-Write-Host "Published EA: frontend\public\downloads\SMCExecutionEA.ex5" -ForegroundColor Green
+Write-Host "Published EA: frontend\public\downloads\MarketLensExecutionEA.ex5" -ForegroundColor Green

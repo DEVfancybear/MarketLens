@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/smc-trading-terminal/backend/internal/mt5stream"
+	"github.com/marketlens/backend/internal/mt5stream"
 )
 
 func TestNormalizeCandlesSortsAndDeduplicatesDeterministically(t *testing.T) {

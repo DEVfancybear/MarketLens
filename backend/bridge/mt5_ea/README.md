@@ -9,7 +9,7 @@ transactions.
 ## Install
 
 1. In the Trade workspace, select **Add → Download MT5 EA**.
-2. Copy `SMCExecutionEA.ex5` into `MQL5/Experts/SMC/`, refresh the Navigator,
+2. Copy `MarketLensExecutionEA.ex5` into `MQL5/Experts/SMC/`, refresh the Navigator,
    and attach it to one chart in each terminal.
 3. In MT5, add the gateway origin under **Tools → Options → Expert Advisors →
    Allow WebRequest for listed URL**.
@@ -24,7 +24,7 @@ gateway derives a stable account ID from `server + login`.
 ## Upgrade without closing broker positions
 
 Open positions and pending orders belong to the MT5 account, not to the EA
-process. Replacing or restarting `SMCExecutionEA` does not close or cancel them.
+process. Replacing or restarting `MarketLensExecutionEA` does not close or cancel them.
 Upgrade one terminal at a time so the other execution accounts remain
 available:
 
@@ -34,7 +34,7 @@ available:
    temporarily empty.
 3. Download the current EA and its `.sha256` file from the Trade workspace,
    verify the checksum, and replace
-   `MQL5\Experts\SMC\SMCExecutionEA.ex5` in that terminal's data folder.
+   `MQL5\Experts\SMC\MarketLensExecutionEA.ex5` in that terminal's data folder.
 4. In Navigator, select **Refresh**, then remove and reattach the EA or restart
    that terminal so MT5 loads the new binary.
 5. Keep `GatewayUrl` unchanged. The paired session is normally restored because
@@ -88,7 +88,7 @@ Maintainers compile and publish the downloadable artifact on a trusted Windows
 host:
 
 ```powershell
-.\backend\bridge\mt5_ea\Publish-SMCExecutionEA.ps1
+.\backend\bridge\mt5_ea\Publish-MarketLensExecutionEA.ps1
 ```
 
 The publisher requires MetaEditor to report `0 errors, 0 warnings`, then writes

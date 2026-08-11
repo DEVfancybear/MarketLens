@@ -1,6 +1,6 @@
 # CHANGELOG
 
-All notable changes to the SMC Trading Terminal. Dates are UTC.
+All notable changes to the MarketLens. Dates are UTC.
 
 ## [Unreleased]
 
@@ -250,7 +250,7 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   `SUBMITTING`, `PENDING`, `LIVE`, `REJECTED`, or `CLOSED` identity.
 - Added ticket-qualified `LIVE` and `PENDING` chart price lines so real broker
   resources remain distinguishable when multiple unlinked risk drawings exist.
-- Released and verified `SMCExecutionEA 1.24`; older EA releases are blocked
+- Released and verified `MarketLensExecutionEA 1.24`; older EA releases are blocked
   from command routing because they do not understand pending-order mutation.
 - Added regression coverage for command wire shapes, drawing-link
   reconciliation, and drawing-codec persistence.
@@ -567,7 +567,7 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 - Rust now commits the money-sensitive portfolio lane before independently
   validating and persisting instrument discovery and command telemetry. This
   also protects existing EA 1.22 terminals during a rolling deployment.
-- Released `SMCExecutionEA 1.23` with independent portfolio, command-event, and
+- Released `MarketLensExecutionEA 1.23` with independent portfolio, command-event, and
   instrument retry/backoff lanes. Portfolio snapshots are sent first, and EA
   logs now identify the exact failing lane without exposing credentials.
 - Recompiled and verified the downloadable `.ex5` with MetaEditor reporting
@@ -719,7 +719,7 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
   has completed a command poll within the last 15 seconds; event heartbeats
   alone can no longer make a non-polling terminal appear `READY`.
 - Added fail-closed EA release telemetry and minimum-version gating.
-  `SMCExecutionEA 1.22` reports `eaVersion` in every account snapshot. Missing
+  `MarketLensExecutionEA 1.22` reports `eaVersion` in every account snapshot. Missing
   or older versions appear blocked with an actionable update message and
   cannot receive Place, modify, close, or cancel commands.
 - Distinguished commands that were never delivered

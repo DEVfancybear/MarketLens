@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/smc-trading-terminal/backend/internal/config"
+	"github.com/marketlens/backend/internal/config"
 )
 
 type mappedVerifier map[string]Identity

@@ -1,6 +1,6 @@
-# SMC Trading Terminal Design System
+# MarketLens Design System
 
-> **Canonical design contract:** This directory describes the implemented SMC Trading Terminal experience. It is manually curated for a professional trading product and must not be replaced with generic landing-page output.
+> **Canonical design contract:** This directory describes the implemented MarketLens experience. It is manually curated for a professional trading product and must not be replaced with generic landing-page output.
 >
 > **Hierarchy:** Read this file first. Then apply the matching file in `pages/` as a platform-specific override. A page override may change density, layout, and interaction behavior, but never the semantic meaning of a shared token.
 

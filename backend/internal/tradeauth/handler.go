@@ -11,8 +11,8 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/rs/zerolog/log"
 
-	"github.com/smc-trading-terminal/backend/internal/auth"
-	"github.com/smc-trading-terminal/backend/internal/config"
+	"github.com/marketlens/backend/internal/auth"
+	"github.com/marketlens/backend/internal/config"
 )
 
 type Handler struct {

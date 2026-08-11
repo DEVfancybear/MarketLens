@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/smc-trading-terminal/backend/internal/auth"
-	objectstorage "github.com/smc-trading-terminal/backend/internal/storage"
+	"github.com/marketlens/backend/internal/auth"
+	objectstorage "github.com/marketlens/backend/internal/storage"
 )
 
 type handlerStore struct {

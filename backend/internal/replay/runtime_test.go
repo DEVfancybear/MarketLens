@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/smc-trading-terminal/backend/internal/db/gen"
+	"github.com/marketlens/backend/internal/db/gen"
 )
 
 type fakeRuntimeBars struct{ bars []gen.ReplayDatasetBar }

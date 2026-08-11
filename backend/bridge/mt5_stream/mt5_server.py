@@ -779,7 +779,7 @@ def resolve_market_status_path(cfg: Config) -> Path | None:
     common_path = str(getattr(terminal, "commondata_path", "") or "").strip()
     if not common_path:
         return None
-    return Path(common_path) / "Files" / "SMCTradingTerminal" / "market_sessions.json"
+    return Path(common_path) / "Files" / "MarketLens" / "market_sessions.json"
 
 
 def read_market_status_file(

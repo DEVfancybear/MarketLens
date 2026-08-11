@@ -11,7 +11,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 
-	"github.com/smc-trading-terminal/backend/internal/auth"
+	"github.com/marketlens/backend/internal/auth"
 )
 
 // fakeStore is an in-memory Store keyed by user id.

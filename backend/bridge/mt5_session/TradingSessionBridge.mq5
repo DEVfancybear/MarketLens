@@ -1,9 +1,9 @@
-#property copyright "SMC Trading Terminal"
+#property copyright "MarketLens"
 #property version   "1.00"
 #property strict
 
 input int RefreshSeconds = 5;
-input string OutputFile = "SMCTradingTerminal\\market_sessions.json";
+input string OutputFile = "MarketLens\\market_sessions.json";
 
 const long DAY_SECONDS = 86400;
 
@@ -286,7 +286,7 @@ bool PublishStatuses()
      }
    payload+="]}";
 
-   FolderCreate("SMCTradingTerminal",FILE_COMMON);
+   FolderCreate("MarketLens",FILE_COMMON);
    const int handle=FileOpen(
       OutputFile,
       FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON,

@@ -49,7 +49,7 @@ const nextConfig = {
   async headers() {
     return [
       {
-        source: "/downloads/SMCExecutionEA.ex5",
+        source: "/downloads/MarketLensExecutionEA.ex5",
         headers: [
           {
             key: "Content-Type",
@@ -57,7 +57,7 @@ const nextConfig = {
           },
           {
             key: "Content-Disposition",
-            value: 'attachment; filename="SMCExecutionEA.ex5"',
+            value: 'attachment; filename="MarketLensExecutionEA.ex5"',
           },
           {
             key: "Cache-Control",

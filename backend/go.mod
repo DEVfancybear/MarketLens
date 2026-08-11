@@ -1,4 +1,4 @@
-module github.com/smc-trading-terminal/backend
+module github.com/marketlens/backend
 
 go 1.26.5
 

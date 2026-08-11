@@ -11,7 +11,7 @@ import (
 	fbauth "firebase.google.com/go/v4/auth"
 	"google.golang.org/api/option"
 
-	"github.com/smc-trading-terminal/backend/internal/config"
+	"github.com/marketlens/backend/internal/config"
 )
 
 // idTokenVerifier is the revocation-aware slice of the Firebase auth client

@@ -25,7 +25,7 @@ test("shows the gateway-required EA version in compatibility guidance", () => {
   assert.equal(eaUpgradeLabel(outdatedAccount), "EA 1.24 → Update 1.25+");
   assert.match(
     executionAccountBlockReason(outdatedAccount) ?? "",
-    /Install SMCExecutionEA 1\.25 or newer/,
+    /Install MarketLensExecutionEA 1\.25 or newer/,
   );
 });
 

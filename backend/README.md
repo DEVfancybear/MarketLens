@@ -1,4 +1,8 @@
-# SMC Trading Terminal Backend
+# MarketLens Backend
+
+MarketLens provides a production-grade charting and trading workspace with market replay,
+risk-aware MT5 execution, alerts, and analytics. Its backend owns the secure runtime boundaries
+that make those workflows dependable.
 
 The production backend has four deliberately separated surfaces:
 
@@ -51,7 +55,7 @@ directly or place `EXECUTION_ADMIN_TOKEN` in the browser or EA.
 ## MT5 account setup
 
 1. In the Trade workspace, select **Add → Download MT5 EA** and copy the
-   downloaded `SMCExecutionEA.ex5` into the terminal's Experts folder.
+   downloaded `MarketLensExecutionEA.ex5` into the terminal's Experts folder.
 2. Add the public EA URL to MT5's WebRequest allow-list.
 3. Attach the EA to one chart and enter the five-minute one-time pairing token
    generated in the Trade workspace.
@@ -62,7 +66,7 @@ The same EA binary is used for all brokers. The derived account identity is
 tenant-bound and stable for `owner + server + login`; raw credentials are never
 stored.
 
-The production minimum is `SMCExecutionEA 1.25`. The EA reports its version in
+The production minimum is `MarketLensExecutionEA 1.25`. The EA reports its version in
 the account heartbeat, while Rust records a separate successful command-poll
 timestamp. Rust publishes the active minimum through the account registry so
 the Go BFF and browser use the same compatibility gate. The Trade workspace
@@ -86,7 +90,7 @@ go test ./internal/execution ./internal/settings ./internal/config ./internal/ht
 cargo test --manifest-path execution/Cargo.toml --workspace --all-targets
 ```
 
-Publish the EA with `bridge/mt5_ea/Publish-SMCExecutionEA.ps1`. It requires
+Publish the EA with `bridge/mt5_ea/Publish-MarketLensExecutionEA.ps1`. It requires
 MetaEditor to report `0 errors, 0 warnings` and produces a verified frontend
 download plus SHA-256 checksum.
 

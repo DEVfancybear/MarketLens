@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/smc-trading-terminal/backend/internal/config"
+	"github.com/marketlens/backend/internal/config"
 )
 
 // ErrSessionReuse is returned when an already-revoked refresh token is

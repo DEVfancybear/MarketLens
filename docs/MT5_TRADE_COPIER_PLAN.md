@@ -168,7 +168,7 @@ when trailing is disabled. The target EA tests must prove both properties.
 | --- | --- |
 | Security boundary | The authenticated Go BFF injects the owner identity. Rust admin port `8791` and EA port `8790` stay on loopback; Go exposes only the EA route allow-list. |
 | Account registry | `execution_accounts`, EA pairing/sessions, liveness, capabilities, account state, instruments, and symbol mappings exist. |
-| EA transport | `SMCExecutionEA.mq5` v1.25 sends account/instrument/position/pending snapshots and enriched transaction events over HTTPS polling. A buffered trade event is uploaded only with the complete portfolio snapshot it caused. |
+| EA transport | `MarketLensExecutionEA.mq5` v1.25 sends account/instrument/position/pending snapshots and enriched transaction events over HTTPS polling. A buffered trade event is uploaded only with the complete portfolio snapshot it caused. |
 | EA submit safety | The EA persists the ambiguous `submitting` boundary before `OrderSend`, replays recorded outcomes, and now applies optional `brokerMarginCap` with `OrderCalcMargin` before risk-increasing place commands. |
 | Lifecycle commands | The domain and EA protocol support place, modify position, modify pending, partial/full close, cancel, and sync commands. |
 | Durable execution | `execution_commands`, `execution_target_commands`, and `execution_events` record owner- and target-scoped work and outcomes. |
@@ -259,14 +259,14 @@ terminal-to-terminal transport:
 flowchart LR
     U["Desktop / mobile Copier UI"] -->|"authenticated group API"| G["Go API / BFF"]
     G -->|"owner-injected admin calls"| R["Rust execution gateway"]
-    S["Source MT5 + SMCExecutionEA"] -->|"transactions + complete snapshots"| G
+    S["Source MT5 + MarketLensExecutionEA"] -->|"transactions + complete snapshots"| G
     G -->|"strict EA relay"| R
     R --> I["Durable event inbox"]
     I --> O["Copier coordinator"]
     O --> L["Link ledger + lifecycle intents"]
     O --> E["Sizing / reverse / risk engine"]
     E --> C["Existing command ledger"]
-    C -->|"per-account poll"| T["Target MT5 + SMCExecutionEA"]
+    C -->|"per-account poll"| T["Target MT5 + MarketLensExecutionEA"]
     T -->|"acks, transactions, snapshots, protection evidence"| G
     R --> Q["Pending-fill + scheduled/manual snapshot reconciler"]
     Q --> L
@@ -1471,7 +1471,7 @@ cargo clippy --manifest-path backend/execution/Cargo.toml --workspace --all-targ
 Publish and verify the EA from the repository root:
 
 ```powershell
-.\backend\bridge\mt5_ea\Publish-SMCExecutionEA.ps1
+.\backend\bridge\mt5_ea\Publish-MarketLensExecutionEA.ps1
 ```
 
 Publishing requires MetaEditor to report zero errors and zero warnings and

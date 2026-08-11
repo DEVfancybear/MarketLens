@@ -60,7 +60,7 @@ export function Mt5EaSetupGuide({
       open={open}
       onClose={onClose}
       size="large"
-      title="Hướng dẫn cài SMCExecutionEA"
+      title="Hướng dẫn cài MarketLensExecutionEA"
       description="Một EA dùng chung cho FTMO, Exness và các broker MT5. Hoàn tất khoảng 5 phút."
       closeLabel="Đóng hướng dẫn cài EA"
       footer={
@@ -115,15 +115,15 @@ export function Mt5EaSetupGuide({
           <div className="mt-3 flex flex-wrap gap-2">
             <a
               href={downloadUrl}
-              download="SMCExecutionEA.ex5"
+              download="MarketLensExecutionEA.ex5"
               className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-brand px-3 text-[11px] font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover focus-ring"
             >
               <Download size={13} aria-hidden="true" />
-              Tải SMCExecutionEA.ex5
+              Tải MarketLensExecutionEA.ex5
             </a>
             <a
               href={checksumUrl}
-              download="SMCExecutionEA.sha256.txt"
+              download="MarketLensExecutionEA.sha256.txt"
               className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-terminal-border-strong px-3 text-[11px] font-semibold text-ink hover:bg-terminal-hover focus-ring"
             >
               <FileCheck2 size={13} aria-hidden="true" />
@@ -141,7 +141,7 @@ export function Mt5EaSetupGuide({
             <li>Trong MT5 chọn File → Open Data Folder.</li>
             <li>
               Chép file vào{" "}
-              <InlineCode>MQL5\Experts\SMC\SMCExecutionEA.ex5</InlineCode>.
+              <InlineCode>MQL5\Experts\SMC\MarketLensExecutionEA.ex5</InlineCode>.
             </li>
             <li>
               Mở Navigator → Expert Advisors, bấm chuột phải → Refresh. Nếu
@@ -243,7 +243,7 @@ export function Mt5EaSetupGuide({
           title="Gắn EA vào chart và kết nối"
         >
           <ol className="list-decimal space-y-1 pl-4">
-            <li>Kéo SMCExecutionEA vào đúng một chart trong terminal.</li>
+            <li>Kéo MarketLensExecutionEA vào đúng một chart trong terminal.</li>
             <li>
               Trong tab Inputs, nhập các giá trị dưới đây. Giữ nguyên các thông
               số còn lại.

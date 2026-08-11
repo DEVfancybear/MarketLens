@@ -11,7 +11,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 
-	"github.com/smc-trading-terminal/backend/internal/config"
+	"github.com/marketlens/backend/internal/config"
 )
 
 // fakeGoogleVerifier returns a fixed identity for the token "good-token".

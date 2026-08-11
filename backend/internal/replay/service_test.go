@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/smc-trading-terminal/backend/internal/mt5stream"
+	"github.com/marketlens/backend/internal/mt5stream"
 )
 
 type fakeHistory struct {

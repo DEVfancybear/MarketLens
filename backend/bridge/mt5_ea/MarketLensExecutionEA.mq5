@@ -1,4 +1,4 @@
-#property copyright "SMC Trading Terminal"
+#property copyright "MarketLens"
 #property version   "1.25"
 #property strict
 #property description "Broker-neutral MT5 execution agent for the Rust execution gateway."
@@ -44,12 +44,12 @@ int OnInit()
 {
    if(StringLen(GatewayUrl) == 0)
    {
-      Print("SMCExecutionEA: GatewayUrl is required.");
+      Print("MarketLensExecutionEA: GatewayUrl is required.");
       return INIT_PARAMETERS_INCORRECT;
    }
    if(!IsSecureGatewayUrl(GatewayUrl))
    {
-      Print("SMCExecutionEA: public GatewayUrl must use HTTPS. Plain HTTP is allowed only for loopback development.");
+      Print("MarketLensExecutionEA: public GatewayUrl must use HTTPS. Plain HTTP is allowed only for loopback development.");
       return INIT_PARAMETERS_INCORRECT;
    }
 
@@ -63,18 +63,18 @@ int OnInit()
    LoadSessionCache();
    if(g_session_token == "" && StringLen(PairingToken) == 0)
    {
-      Print("SMCExecutionEA: a one-time PairingToken is required for the first connection.");
+      Print("MarketLensExecutionEA: a one-time PairingToken is required for the first connection.");
       return INIT_PARAMETERS_INCORRECT;
    }
 
    int interval = MathMax(250, MathMin(PollIntervalMs, 5000));
    if(!EventSetMillisecondTimer(interval))
    {
-      PrintFormat("SMCExecutionEA: cannot start timer, error=%d", GetLastError());
+      PrintFormat("MarketLensExecutionEA: cannot start timer, error=%d", GetLastError());
       return INIT_FAILED;
    }
 
-   Print("SMCExecutionEA: started. Add GatewayUrl to Tools > Options > Expert Advisors > Allow WebRequest.");
+   Print("MarketLensExecutionEA: started. Add GatewayUrl to Tools > Options > Expert Advisors > Allow WebRequest.");
    return INIT_SUCCEEDED;
 }
 
@@ -373,7 +373,7 @@ bool RegisterSession()
    int status = HttpJson("POST", "/v1/ea/sessions", body, "", response);
    if(status < 200 || status >= 300)
    {
-      PrintFormat("SMCExecutionEA: pairing failed, HTTP=%d", status);
+      PrintFormat("MarketLensExecutionEA: pairing failed, HTTP=%d", status);
       return false;
    }
 
@@ -385,7 +385,7 @@ bool RegisterSession()
       !JsonString(response, "sessionToken", session_token) ||
       !JsonString(response, "accountId", account_id))
    {
-      Print("SMCExecutionEA: invalid session response.");
+      Print("MarketLensExecutionEA: invalid session response.");
       return false;
    }
 
@@ -396,11 +396,11 @@ bool RegisterSession()
    {
       g_session_token = "";
       g_account_id = "";
-      Print("SMCExecutionEA: paired session could not be persisted; refusing ephemeral execution.");
+      Print("MarketLensExecutionEA: paired session could not be persisted; refusing ephemeral execution.");
       return false;
    }
    g_last_snapshot_at = 0;
-   PrintFormat("SMCExecutionEA: paired account %s.", g_account_id);
+   PrintFormat("MarketLensExecutionEA: paired account %s.", g_account_id);
    return true;
 }
 
@@ -429,7 +429,7 @@ void PollCommands()
       string type;
       if(!JsonString(command, "type", type))
       {
-         Print("SMCExecutionEA: ignored command without a type.");
+         Print("MarketLensExecutionEA: ignored command without a type.");
          continue;
       }
       if(type == "place")
@@ -445,11 +445,11 @@ void PollCommands()
       else if(type == "sync")
          g_last_snapshot_at = 0;
       else
-         PrintFormat("SMCExecutionEA: ignored unsupported command type '%s'.",
+         PrintFormat("MarketLensExecutionEA: ignored unsupported command type '%s'.",
                      type);
    }
    if(command_count > 0)
-      PrintFormat("SMCExecutionEA: processed %d gateway command(s).",
+      PrintFormat("MarketLensExecutionEA: processed %d gateway command(s).",
                   command_count);
 }
 
@@ -605,10 +605,10 @@ bool RejectBrokerMarginCap(const string command_id, const ulong retcode,
 {
    RecordCommandState(command_id, "rejected", 0, 0, retcode, message);
    BufferRejected(command_id, retcode, message);
-   PrintFormat("SMCExecutionEA: command %s rejected before broker submission: %s",
+   PrintFormat("MarketLensExecutionEA: command %s rejected before broker submission: %s",
                command_id, message);
    if(alert_enabled)
-      Alert("SMCExecutionEA margin protection: ", message);
+      Alert("MarketLensExecutionEA margin protection: ", message);
    return false;
 }
 
@@ -1328,7 +1328,7 @@ int HttpJson(const string method, const string path, const string body,
                            response_data, response_headers);
    response = CharArrayToString(response_data, 0, -1, CP_UTF8);
    if(status == -1)
-      PrintFormat("SMCExecutionEA: WebRequest failed, error=%d. Check the allowed URL list.",
+      PrintFormat("MarketLensExecutionEA: WebRequest failed, error=%d. Check the allowed URL list.",
                   GetLastError());
    return status;
 }
@@ -1349,7 +1349,7 @@ void BufferEvent(const string event_json)
          g_events[index - 1] = g_events[index];
       ArrayResize(g_events, size - 1);
       size--;
-      Print("SMCExecutionEA: event buffer full; oldest event dropped.");
+      Print("MarketLensExecutionEA: event buffer full; oldest event dropped.");
    }
    ArrayResize(g_events, size + 1);
    g_events[size] = event_json;
@@ -1421,7 +1421,7 @@ int FindCommandRecord(const string command_id)
 
 string CommandJournalFile()
 {
-   return StringFormat("SMCExecutionEA-%I64d.journal.tsv",
+   return StringFormat("MarketLensExecutionEA-%I64d.journal.tsv",
                        AccountInfoInteger(ACCOUNT_LOGIN));
 }
 
@@ -1510,7 +1510,7 @@ bool RecordCommandState(const string command_id, const string state,
                          '\t', CP_UTF8);
    if(handle == INVALID_HANDLE)
    {
-      PrintFormat("SMCExecutionEA: cannot persist command journal, error=%d",
+      PrintFormat("MarketLensExecutionEA: cannot persist command journal, error=%d",
                   GetLastError());
       return false;
    }
@@ -1631,7 +1631,7 @@ bool FindBrokerOutcome(const string command_id, ulong &order_id,
 
 void ResetSession(const string reason)
 {
-   PrintFormat("SMCExecutionEA: %s; pairing again.", reason);
+   PrintFormat("MarketLensExecutionEA: %s; pairing again.", reason);
    g_session_token = "";
    g_account_id = "";
    g_gateway_time_at_sync_ms = 0;
@@ -1649,7 +1649,7 @@ void ResetSession(const string reason)
 
 string SessionCacheFile()
 {
-   return StringFormat("SMCExecutionEA-%I64d.session.tsv",
+   return StringFormat("MarketLensExecutionEA-%I64d.session.tsv",
                        AccountInfoInteger(ACCOUNT_LOGIN));
 }
 
@@ -1660,7 +1660,7 @@ bool SaveSessionCache()
                          '\t', CP_UTF8);
    if(handle == INVALID_HANDLE)
    {
-      PrintFormat("SMCExecutionEA: cannot persist session cache, error=%d",
+      PrintFormat("MarketLensExecutionEA: cannot persist session cache, error=%d",
                   GetLastError());
       return false;
    }
@@ -1698,7 +1698,7 @@ void LoadSessionCache()
    }
    g_account_id = account_id;
    g_session_token = session_token;
-   PrintFormat("SMCExecutionEA: restored paired session for account %s.",
+   PrintFormat("MarketLensExecutionEA: restored paired session for account %s.",
                g_account_id);
 }
 
@@ -2004,8 +2004,8 @@ void LogHttpFailure(const string operation, const int status,
    if(StringLen(safe) > 512)
       safe = StringSubstr(safe, 0, 512) + "...";
    if(safe == "")
-      PrintFormat("SMCExecutionEA: %s failed, HTTP=%d", operation, status);
+      PrintFormat("MarketLensExecutionEA: %s failed, HTTP=%d", operation, status);
    else
-      PrintFormat("SMCExecutionEA: %s failed, HTTP=%d, response=%s",
+      PrintFormat("MarketLensExecutionEA: %s failed, HTTP=%d, response=%s",
                   operation, status, safe);
 }

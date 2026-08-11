@@ -54,7 +54,7 @@ export function copyTargetAvailability(
       eligible: false,
       mode: "blocked",
       label: "EA update required",
-      detail: "Install the latest SMCExecutionEA before copying to this account.",
+      detail: "Install the latest MarketLensExecutionEA before copying to this account.",
     };
   }
   if (!account.tradeAllowed) {

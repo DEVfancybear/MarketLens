@@ -71,10 +71,10 @@ request-rate limits, connection limits, and public path filtering.
 
 One MT5 terminal can have one active login. Multi-account support therefore
 runs one terminal instance per account and attaches the same
-`SMCExecutionEA.ex5` to each instance.
+`MarketLensExecutionEA.ex5` to each instance.
 
 Users download the common compiled EA directly from the authenticated Trade
-workspace. The same-origin `/downloads/SMCExecutionEA.ex5` release is packaged
+workspace. The same-origin `/downloads/MarketLensExecutionEA.ex5` release is packaged
 with a SHA-256 checksum and a manifest binding the compiled binary to the
 current `.mq5` source. Repository or backend filesystem paths are never exposed
 as installation instructions.

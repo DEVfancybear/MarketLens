@@ -297,7 +297,7 @@ both sides executable:
 2. Install the Exness MT5 terminal into a different Windows installation
    directory and log it into the target account. A second PC or VPS is also
    supported.
-3. In each terminal, copy the published `SMCExecutionEA.ex5` to that terminal's
+3. In each terminal, copy the published `MarketLensExecutionEA.ex5` to that terminal's
    own `MQL5\Experts` data directory and attach it to exactly one chart.
 4. Enable Algo Trading and allow the WebRequest origin shown by the in-app EA
    setup guide.

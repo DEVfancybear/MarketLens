@@ -1,5 +1,5 @@
-const DEFAULT_DOWNLOAD_URL = "/downloads/SMCExecutionEA.ex5";
-const DEFAULT_CHECKSUM_URL = "/downloads/SMCExecutionEA.sha256.txt";
+const DEFAULT_DOWNLOAD_URL = "/downloads/MarketLensExecutionEA.ex5";
+const DEFAULT_CHECKSUM_URL = "/downloads/MarketLensExecutionEA.sha256.txt";
 const LOCAL_API_ORIGIN = "http://localhost:8080";
 export const EXECUTION_EA_RELEASE_VERSION = "1.24";
 

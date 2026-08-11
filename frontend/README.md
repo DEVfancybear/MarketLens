@@ -1,8 +1,8 @@
-# SMC Trading Terminal - Frontend
+# MarketLens - Frontend
 
-TradingView-style web terminal focused on Smart Money Concept backtesting, multi-chart saved
-layouts, synchronized replay, chart drawing, Pine-like indicators, alerting, simulated trading,
-journaling, and analytics.
+MarketLens is a TradingView-inspired web terminal for Smart Money Concept backtesting,
+multi-chart saved layouts, synchronized replay, chart drawing, Pine-like indicators, alerts,
+simulated trading, journaling, and analytics.
 
 ## Current Stack
 

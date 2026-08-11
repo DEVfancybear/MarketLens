@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/smc-trading-terminal/backend/internal/mt5stream"
+	"github.com/marketlens/backend/internal/mt5stream"
 )
 
 var timeframeSeconds = map[string]int{

@@ -21,7 +21,7 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5" // registers the "pgx5" scheme
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/joho/godotenv"
-	"github.com/smc-trading-terminal/backend/migrations"
+	"github.com/marketlens/backend/migrations"
 )
 
 func main() {

@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/smc-trading-terminal/backend/internal/db/gen"
+	"github.com/marketlens/backend/internal/db/gen"
 )
 
 type Repo struct {

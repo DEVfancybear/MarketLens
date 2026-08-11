@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/smc-trading-terminal/backend/internal/auth"
+	"github.com/marketlens/backend/internal/auth"
 )
 
 const testCopyGroupID = "33333333-3333-4333-8333-333333333333"

@@ -5,7 +5,7 @@
 > `../../docs/TRADE_PRODUCTION_SECURITY_RUNBOOK.md`. Older verifier/Connector
 > references in phase snapshots are historical and are not runtime guidance.
 
-Documentation for the SMC Trading Terminal Go API server.
+Documentation for the MarketLens Go API server.
 
 Backend framework decision: Fiber. Current code includes health/readiness,
 auth, settings/bootstrap, watchlists, drawings, indicators, Pine scripts/runtime,

@@ -12,7 +12,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 
-	"github.com/smc-trading-terminal/backend/internal/auth"
+	"github.com/marketlens/backend/internal/auth"
 )
 
 type fakeDrawingStore struct {

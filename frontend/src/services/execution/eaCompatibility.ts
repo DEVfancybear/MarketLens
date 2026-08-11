@@ -15,7 +15,7 @@ export function executionAccountBlockReason(
   if (account.statusReason === "ea_update_required") {
     const current = account.eaVersion ? `EA ${account.eaVersion}` : "This EA";
     const required = account.requiredEaVersion ?? "the latest version";
-    return `${current} is outdated. Install SMCExecutionEA ${required} or newer, then refresh and reattach it in MT5.`;
+    return `${current} is outdated. Install MarketLensExecutionEA ${required} or newer, then refresh and reattach it in MT5.`;
   }
   if (account.status !== "ready") {
     return `${account.label} is ${account.status}.`;

@@ -6,7 +6,7 @@
 > current execution topology and gates are in
 > `../../docs/TRADE_PRODUCTION_SECURITY_RUNBOOK.md`.
 
-This is the repeatable checklist for the production SMC Trading Terminal. The frontend is hosted
+This is the repeatable checklist for the production MarketLens. The frontend is hosted
 by Vercel; the Go API, Python MT5 helpers/sidecars, and logged-in MetaTrader 5 terminal run on a
 Windows host.
 

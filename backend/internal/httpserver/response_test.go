@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/smc-trading-terminal/backend/internal/apierror"
+	"github.com/marketlens/backend/internal/apierror"
 )
 
 func TestErrorHandlerPreservesTypedAPIErrorCode(t *testing.T) {

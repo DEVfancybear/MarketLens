@@ -1,8 +1,8 @@
 {
-  "name": "smc-trading-terminal",
+  "name": "marketlens",
   "version": "1.0.0",
   "private": true,
-  "description": "Professional TradingView-style trading platform with Replay Mode, Smart Money Concepts, backtesting, journaling and analytics.",
+  "description": "MarketLens is a production-grade TradingView-inspired workspace for charting, replay, risk-aware MT5 execution, alerts, journaling, and analytics.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

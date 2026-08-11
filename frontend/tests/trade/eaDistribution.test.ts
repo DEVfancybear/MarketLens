@@ -15,29 +15,29 @@ test("EA distribution advertises the compiled portfolio-sync release", () => {
 test("EA release uses same-origin public assets by default", () => {
   assert.equal(
     resolveExecutionEaDownloadUrl(),
-    "/downloads/SMCExecutionEA.ex5",
+    "/downloads/MarketLensExecutionEA.ex5",
   );
   assert.equal(
     resolveExecutionEaChecksumUrl(),
-    "/downloads/SMCExecutionEA.sha256.txt",
+    "/downloads/MarketLensExecutionEA.sha256.txt",
   );
 });
 
 test("EA download rejects unsafe configured protocols", () => {
   assert.equal(
     resolveExecutionEaDownloadUrl("javascript:alert(1)"),
-    "/downloads/SMCExecutionEA.ex5",
+    "/downloads/MarketLensExecutionEA.ex5",
   );
   assert.equal(
     resolveExecutionEaDownloadUrl("//attacker.example/ea.ex5"),
-    "/downloads/SMCExecutionEA.ex5",
+    "/downloads/MarketLensExecutionEA.ex5",
   );
 });
 
 test("EA download accepts an HTTPS release CDN", () => {
   assert.equal(
-    resolveExecutionEaDownloadUrl("https://cdn.example.com/SMCExecutionEA.ex5"),
-    "https://cdn.example.com/SMCExecutionEA.ex5",
+    resolveExecutionEaDownloadUrl("https://cdn.example.com/MarketLensExecutionEA.ex5"),
+    "https://cdn.example.com/MarketLensExecutionEA.ex5",
   );
 });
 

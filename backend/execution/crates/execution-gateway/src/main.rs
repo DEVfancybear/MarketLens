@@ -8036,7 +8036,7 @@ impl EaCommandQueue for GatewayState {
                 })?;
             if !ea_version_supported(ea_version.as_deref()) {
                 return Err(AdapterError::Rejected(format!(
-                    "SMCExecutionEA {}.{} or newer is required",
+                    "MarketLensExecutionEA {}.{} or newer is required",
                     MIN_SUPPORTED_EA_VERSION.0, MIN_SUPPORTED_EA_VERSION.1
                 )));
             }

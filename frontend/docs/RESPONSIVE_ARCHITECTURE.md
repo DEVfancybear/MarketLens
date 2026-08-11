@@ -27,7 +27,7 @@ This deliberately gives tablets and wide touch-first devices the touch platform.
 - Keyboard-operable resizers and dense data rows.
 - Desktop dialogs and floating menus.
 
-See `PLATFORM_UI_ARCHITECTURE.md` and `../design-system/smc-trading-terminal/pages/desktop-terminal.md`.
+See `PLATFORM_UI_ARCHITECTURE.md` and `../design-system/marketlens/pages/desktop-terminal.md`.
 
 ## Mobile contract
 
@@ -41,7 +41,7 @@ See `PLATFORM_UI_ARCHITECTURE.md` and `../design-system/smc-trading-terminal/pag
 - Full-screen/partial sheets, browser-Back dismissal and safe-area layout.
 - 44x44px minimum product touch target.
 
-See `MOBILE_TOUCH_GESTURES.md`, `MOBILE_DESKTOP_FEATURE_PARITY.md` and `../design-system/smc-trading-terminal/pages/mobile-terminal.md`.
+See `MOBILE_TOUCH_GESTURES.md`, `MOBILE_DESKTOP_FEATURE_PARITY.md` and `../design-system/marketlens/pages/mobile-terminal.md`.
 
 ## Styling rule
 

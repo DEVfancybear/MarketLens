@@ -507,7 +507,7 @@ function ExecutionAccountRail() {
           </strong>
           <span className="mt-1 block">
             Open one MT5 terminal per account, attach the common
-            SMCExecutionEA, allow the execution URL in WebRequest, then
+            MarketLensExecutionEA, allow the execution URL in WebRequest, then
             enter a one-time pairing token. The account appears here
             automatically.
           </span>
@@ -518,7 +518,7 @@ function ExecutionAccountRail() {
               </span>
               <span className="min-w-0">
                 <strong className="block truncate text-[10px] text-ink">
-                  SMCExecutionEA.ex5
+                  MarketLensExecutionEA.ex5
                 </strong>
                 <span className="block text-[8px] text-ink-faint">
                   Version {eaDistribution.releaseVersion} · all MT5 brokers
@@ -527,7 +527,7 @@ function ExecutionAccountRail() {
             </div>
             <a
               href={eaDistribution.downloadUrl}
-              download="SMCExecutionEA.ex5"
+              download="MarketLensExecutionEA.ex5"
               className="mx-2 mb-2 flex h-8 items-center justify-center gap-1.5 rounded-lg bg-brand px-2.5 text-[10px] font-semibold text-white transition-colors hover:bg-brand/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 focus-visible:ring-offset-1 focus-visible:ring-offset-terminal-bg"
             >
               <Download size={12} aria-hidden="true" />
@@ -537,7 +537,7 @@ function ExecutionAccountRail() {
               <span>Compiled release</span>
               <a
                 href={eaDistribution.checksumUrl}
-                download="SMCExecutionEA.sha256.txt"
+                download="MarketLensExecutionEA.sha256.txt"
                 className="inline-flex items-center gap-1 font-semibold text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
               >
                 <FileCheck2 size={10} aria-hidden="true" />

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/smc-trading-terminal/backend/internal/config"
+	"github.com/marketlens/backend/internal/config"
 )
 
 // fakeSessionStore is an in-memory SessionStore for testing the service logic.

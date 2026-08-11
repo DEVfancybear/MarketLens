@@ -2,12 +2,12 @@
 
 🇻🇳 **Tiếng Việt** · [🇬🇧 English](README.en.md)
 
-# ✦ SMC Trading Terminal ✦
+# ✦ MarketLens ✦
 
 ### Thấu thị trường. Thử mọi ý tưởng. Giao dịch vững tin.
 
-**Không gian giao dịch chuẩn production lấy cảm hứng từ TradingView—nơi biểu đồ chuyên sâu,**<br>
-**phát lại thị trường, thực thi có kiểm soát rủi ro, cảnh báo và dữ liệu thông minh hội tụ trong một terminal.**
+**MarketLens là không gian giao dịch chuẩn production lấy cảm hứng từ TradingView—nơi biểu đồ chuyên sâu,**<br>
+**phát lại thị trường, thực thi MT5 có kiểm soát rủi ro, cảnh báo và dữ liệu thông minh hội tụ trong một terminal.**
 
 [![Production](https://img.shields.io/badge/Production-Live-00C853?style=for-the-badge&logo=vercel&logoColor=white)](https://tradingterminal.io.vn)
 ![Next.js](https://img.shields.io/badge/Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)
@@ -25,7 +25,7 @@
 
 ## Một không gian. Trọn vẹn hành trình giao dịch.
 
-SMC Trading Terminal dành cho những nhà giao dịch muốn sự mượt mà của một nền
+MarketLens dành cho những nhà giao dịch muốn sự mượt mà của một nền
 tảng biểu đồ hiện đại mà không phải chia nhỏ nghiên cứu, luyện tập, thực thi và
 đánh giá trên nhiều công cụ rời rạc. Từ lần quan sát thị trường đầu tiên đến bản
 ghi giao dịch cuối cùng, mọi giai đoạn đều nằm trong một không gian liền mạch và
@@ -39,7 +39,7 @@ trên một terminal riêng rồi quay lại thêm một công cụ nữa để 
 giá. Mỗi lần chuyển đổi là một lần ngữ cảnh bị mất, thao tác bị lặp lại và rủi ro
 sai lệch tăng lên.
 
-SMC Trading Terminal bắt đầu từ một câu hỏi đầy tham vọng:
+MarketLens bắt đầu từ một câu hỏi đầy tham vọng:
 
 > **Điều gì sẽ xảy ra nếu một nét vẽ trên biểu đồ không kết thúc ở biểu đồ?**
 
@@ -80,7 +80,7 @@ khi quay lại, journal và analytics giúp biến kết quả thành kinh nghi�
 - **Một trải nghiệm nhất quán** — xuyên suốt desktop, mobile, tiếng Anh, tiếng
   Việt, cảnh báo trực tiếp và cài đặt đồng bộ với backend.
 
-> **SMC Trading Terminal biến biểu đồ thành hệ điều hành cho toàn bộ hành trình
+> **MarketLens biến biểu đồ thành hệ điều hành cho toàn bộ hành trình
 > giao dịch—lung linh ở bề mặt, kỷ luật trong từng lớp vận hành.**
 
 ## Kiến trúc vận hành

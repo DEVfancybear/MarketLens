@@ -29,7 +29,7 @@ Architecture and maintenance documentation for the TradingView-style frontend.
 | `LOCALIZATION_ARCHITECTURE.md` | English/Vietnamese locale state, TradingView terminology, compatibility boundary, and QA |
 | `MOBILE_TOUCH_GESTURES.md` | Pointer Events, drag alternatives, sheet state machine and test matrix |
 | `MOBILE_DESKTOP_FEATURE_PARITY.md` | Maintained desktop-to-mobile capability matrix, shared-code rules and regression gate |
-| `../design-system/smc-trading-terminal/MASTER.md` | Canonical Institutional Command Center design system |
+| `../design-system/marketlens/MASTER.md` | Canonical Institutional Command Center design system |
 | `SETTTING_ARCHITECTURE.md` | Settings dialog architecture |
 | `WATCHLIST_ARCHITECTURE.md` | Watchlist lists, sections, and persistence |
 | `ZOOM_VIEWPORT_SYNC_ARCHITECTURE.md` | Zoom / viewport synchronization |

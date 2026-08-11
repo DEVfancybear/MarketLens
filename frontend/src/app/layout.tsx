@@ -4,9 +4,9 @@ import './globals.css';
 import { Providers } from './providers';
 
 export const metadata: Metadata = {
-  title: 'SMC Trading Terminal',
+  title: 'MarketLens',
   description:
-    'Institutional charting and execution workspace with replay, Smart Money Concepts, journaling and analytics.',
+    'MarketLens is an institutional charting and risk-aware MT5 execution workspace with replay, Smart Money Concepts, journaling, alerts, and analytics.',
 };
 
 export const viewport: Viewport = {

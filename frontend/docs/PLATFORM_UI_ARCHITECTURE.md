@@ -58,7 +58,7 @@ Rules for new mobile interactions:
 - Keep system back edges clear and respect safe-area insets.
 - Respect `prefers-reduced-motion` and never block browser zoom.
 
-See `design-system/smc-trading-terminal/pages/mobile-terminal.md` for the full mobile contract.
+See `design-system/marketlens/pages/mobile-terminal.md` for the full mobile contract.
 
 ## Mobile chart popup contract
 

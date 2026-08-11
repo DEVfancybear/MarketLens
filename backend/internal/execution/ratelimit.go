@@ -5,7 +5,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/limiter"
-	"github.com/smc-trading-terminal/backend/internal/auth"
+	"github.com/marketlens/backend/internal/auth"
 )
 
 const (

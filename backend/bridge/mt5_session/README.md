@@ -6,7 +6,7 @@ native `SymbolInfoSessionTrade` API and publishes expiring per-symbol status to
 the terminal common-files directory:
 
 ```text
-<MT5 common data>\Files\SMCTradingTerminal\market_sessions.json
+<MT5 common data>\Files\MarketLens\market_sessions.json
 ```
 
 It never calls `OrderSend`, does not require live-trading permission, and writes
@@ -24,7 +24,7 @@ cd backend\bridge\mt5_session
 .\Install-TradingSessionBridge.ps1
 ```
 
-Then attach `SMCTradingTerminal\TradingSessionBridge` to any chart. It uses an
+Then attach `MarketLens\TradingSessionBridge` to any chart. It uses an
 `OnTimer` callback, so session updates continue while the selected symbol has no
 ticks. Alternatively, close MT5 and run:
 

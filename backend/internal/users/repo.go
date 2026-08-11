@@ -13,8 +13,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/smc-trading-terminal/backend/internal/auth"
-	"github.com/smc-trading-terminal/backend/internal/db/gen"
+	"github.com/marketlens/backend/internal/auth"
+	"github.com/marketlens/backend/internal/db/gen"
 )
 
 // Repo persists users and their linked auth identities.

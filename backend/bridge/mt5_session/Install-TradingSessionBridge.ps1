@@ -31,7 +31,7 @@ if (-not $dataDirectory) {
 }
 
 $source = Join-Path $PSScriptRoot "TradingSessionBridge.mq5"
-$expertDirectory = Join-Path $dataDirectory.FullName "MQL5\Experts\SMCTradingTerminal"
+$expertDirectory = Join-Path $dataDirectory.FullName "MQL5\Experts\MarketLens"
 $expertSource = Join-Path $expertDirectory "TradingSessionBridge.mq5"
 $compileLog = Join-Path $PSScriptRoot "TradingSessionBridge.compile.log"
 New-Item -ItemType Directory -Path $expertDirectory -Force | Out-Null
@@ -61,5 +61,5 @@ if ($LaunchWithHelper) {
     Start-Process -FilePath $terminal.FullName -ArgumentList "/config:`"$startupConfig`""
     Write-Host "MT5 launched with TradingSessionBridge attached to a non-trading chart."
 } else {
-    Write-Host "Attach SMCTradingTerminal\TradingSessionBridge to one chart, or rerun with -LaunchWithHelper after closing MT5."
+    Write-Host "Attach MarketLens\TradingSessionBridge to one chart, or rerun with -LaunchWithHelper after closing MT5."
 }

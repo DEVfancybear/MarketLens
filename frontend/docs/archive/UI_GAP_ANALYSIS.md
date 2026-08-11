@@ -1,6 +1,6 @@
 # UI GAP ANALYSIS — TradingView Parity
 
-_Audit date: 2026-06-25. Comparing the current SMC Trading Terminal UI against
+_Audit date: 2026-06-25. Comparing the current MarketLens UI against
 TradingView.com's production interface. Scope: visual only (layout, typography,
 colors, spacing, interactions). Not data/engine features._
 

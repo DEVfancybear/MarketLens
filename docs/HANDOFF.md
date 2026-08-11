@@ -154,7 +154,7 @@ Recent post-split work:
 - Watchlist section/order rules now live in `frontend/src/store/watchlistLayout.ts`; keep future
   UI/backend sync paths using those helpers. Guard with `npm run test:watchlist`.
 
-_Engineer handoff for the SMC Trading Terminal. Last updated 2026-07-03 (Pine Editor + source-code indicators)._
+_Engineer handoff for the MarketLens. Last updated 2026-07-03 (Pine Editor + source-code indicators)._
 
 You are taking over a **TradingView/FXReplay/TradeZella-style** web terminal for Smart Money
 Concept backtesting. **All 11 Zustand stores have been migrated to Jotai atoms** for fine-grained

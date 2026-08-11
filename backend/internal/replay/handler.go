@@ -9,8 +9,8 @@ import (
 
 	"github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
-	"github.com/smc-trading-terminal/backend/internal/apierror"
-	"github.com/smc-trading-terminal/backend/internal/auth"
+	"github.com/marketlens/backend/internal/apierror"
+	"github.com/marketlens/backend/internal/auth"
 )
 
 type SessionService interface {

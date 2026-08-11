@@ -2,12 +2,12 @@
 
 [🇻🇳 Tiếng Việt](README.md) · 🇬🇧 **English**
 
-# ✦ SMC Trading Terminal ✦
+# ✦ MarketLens ✦
 
 ### See the market clearly. Rehearse every idea. Execute with confidence.
 
-**A production-grade, TradingView-inspired workspace that brings advanced charting,**<br>
-**market replay, risk-aware execution, alerts, and trading intelligence into one terminal.**
+**MarketLens is a production-grade, TradingView-inspired workspace that brings advanced charting,**<br>
+**market replay, risk-aware MT5 execution, alerts, and trading intelligence into one terminal.**
 
 [![Production](https://img.shields.io/badge/Production-Live-00C853?style=for-the-badge&logo=vercel&logoColor=white)](https://tradingterminal.io.vn)
 ![Next.js](https://img.shields.io/badge/Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)
@@ -25,7 +25,7 @@
 
 ## One workspace. The complete trading loop.
 
-SMC Trading Terminal is built for traders who want the fluidity of a modern
+MarketLens is built for traders who want the fluidity of a modern
 charting platform without separating research, practice, execution, and review
 across disconnected tools. From the first market observation to the final trade
 record, every stage lives in one coherent, responsive workspace.
@@ -38,7 +38,7 @@ executes in a separate terminal, and opens yet another tool to monitor and
 review the outcome. Every switch loses context, repeats work, and creates
 another opportunity for intent and execution to drift apart.
 
-SMC Trading Terminal began with one ambitious question:
+MarketLens began with one ambitious question:
 
 > **What if a drawing on the chart did not end at the chart?**
 
@@ -79,7 +79,7 @@ return, the journal and analytics help turn outcomes into experience.
 - **One consistent experience** — desktop and mobile surfaces, English and
   Vietnamese localization, live alerts, and backend-synchronized settings.
 
-> **SMC Trading Terminal turns a chart into an operating system for the full
+> **MarketLens turns a chart into an operating system for the full
 > trading workflow—beautiful at the surface, disciplined underneath.**
 
 ## Runtime architecture

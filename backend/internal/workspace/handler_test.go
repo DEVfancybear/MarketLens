@@ -9,14 +9,14 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 
-	alertspkg "github.com/smc-trading-terminal/backend/internal/alerts"
-	"github.com/smc-trading-terminal/backend/internal/auth"
-	"github.com/smc-trading-terminal/backend/internal/drawings"
-	"github.com/smc-trading-terminal/backend/internal/indicators"
-	"github.com/smc-trading-terminal/backend/internal/layouts"
-	"github.com/smc-trading-terminal/backend/internal/pinescripts"
-	"github.com/smc-trading-terminal/backend/internal/settings"
-	"github.com/smc-trading-terminal/backend/internal/watchlists"
+	alertspkg "github.com/marketlens/backend/internal/alerts"
+	"github.com/marketlens/backend/internal/auth"
+	"github.com/marketlens/backend/internal/drawings"
+	"github.com/marketlens/backend/internal/indicators"
+	"github.com/marketlens/backend/internal/layouts"
+	"github.com/marketlens/backend/internal/pinescripts"
+	"github.com/marketlens/backend/internal/settings"
+	"github.com/marketlens/backend/internal/watchlists"
 )
 
 type fakeSettingsReader struct {

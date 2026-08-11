@@ -161,7 +161,7 @@ npm audit --omit=dev
 Compile and publish the downloadable EA on the trusted Windows build host:
 
 ```powershell
-.\backend\bridge\mt5_ea\Publish-SMCExecutionEA.ps1
+.\backend\bridge\mt5_ea\Publish-MarketLensExecutionEA.ps1
 ```
 
 The publisher requires MetaEditor to report `0 errors, 0 warnings`. It creates
@@ -192,7 +192,7 @@ Deploy portfolio synchronization changes in this order:
 1. Run the canonical backend deployment with
    `.\run-backend-production.ps1`.
 2. Deploy the frontend.
-3. Upgrade `SMCExecutionEA` one terminal at a time. EA 1.25 is required because
+3. Upgrade `MarketLensExecutionEA` one terminal at a time. EA 1.25 is required because
    it retains `modifyPendingOrder` and the independent portfolio, command-event,
    and instrument lanes while adding the current copier telemetry and broker
    margin-cap safety contract.
