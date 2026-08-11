@@ -1,5 +1,15 @@
 # Current Progress
 
+- Universal MT5 cloud connector planning (2026-08-11): approved a broker-neutral
+  web-only account connection path through backend cloud providers. Users will
+  connect with MT5 login/password/server entirely inside MarketLens and will not
+  open or install MT5, WebTerminal, an EA, or a local connector. The authoritative
+  Plans 0-9 define provider validation, common Rust contracts, additive storage,
+  credential policy, TickerAll read/execution flow, synchronization and unknown-
+  outcome recovery, universal frontend UX, multi-broker certification, MetaApi
+  fallback, and production canaries. Implementation begins with Plan 0 only; see
+  `UNIVERSAL_MT5_CLOUD_CONNECTOR_PLAN.md`.
+
 - Live-tail indicator viewport stability (2026-08-10): post-deploy Edge probes
   separated the remaining shake from MT5 ingress and controller resets. The
   chart held 903 candles, each refresh changed only the forming candle, and the

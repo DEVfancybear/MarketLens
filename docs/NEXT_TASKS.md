@@ -1,5 +1,20 @@
 # NEXT TASKS
 
+## Approved universal MT5 cloud connector initiative
+
+The next cloud-execution initiative is documented in
+[`UNIVERSAL_MT5_CLOUD_CONNECTOR_PLAN.md`](UNIVERSAL_MT5_CLOUD_CONNECTOR_PLAN.md).
+It adds one broker-neutral backend connector path in which users connect an MT5
+account from MarketLens web with login, password, and exact server. Users do not
+open or install MT5 Desktop, Mobile, WebTerminal, an EA, or a local connector.
+
+Start with **Plan 0 only**: validate TickerAll across at least three MT5 server
+families, prove the complete demo lifecycle and idempotency behavior, collect
+sanitized contract fixtures, and resolve broker/provider permission constraints.
+Do not add public password routes, migration `0038`, or production provider
+secrets before the Plan 0 exit gate passes. MetaApi is the secondary provider
+after the common contract and TickerAll vertical slice are proven.
+
 > Trade execution update (2026-07-26): older Phase 6 verifier/Connector tasks
 > are cancelled, not pending. The only native-venue completion sequence is the
 > fail-closed plan in `TRADE_EXECUTION_ARCHITECTURE.md`.

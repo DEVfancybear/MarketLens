@@ -4,6 +4,21 @@ All notable changes to the MarketLens. Dates are UTC.
 
 ## [Unreleased]
 
+### Documented - Universal web-only MT5 cloud connector plan (2026-08-11)
+
+- Added the authoritative Plans 0-9 for a broker-neutral cloud MT5 connector
+  that lets users connect login/password/server and trade entirely from
+  MarketLens without opening or installing MT5, WebTerminal, an EA, or a local
+  connector.
+- Kept the existing Go authentication boundary, Rust execution/risk/command
+  authority, PostgreSQL ledger, owner isolation, trade authorization, copier,
+  and audit contracts. Connector providers are transport drivers rather than
+  broker-specific execution paths.
+- Defined TickerAll as the first validation and vertical-slice provider,
+  MetaApi as the secondary implementation, and mandatory gates for credentials,
+  synchronization, idempotency, ambiguous outcomes, broker certification,
+  feature flags, rollback, and production canaries.
+
 ### Fixed - Multi-chart canvases and drawing tools survive focus changes (2026-08-11)
 
 - Fixed inactive charts turning blank after repeatedly selecting panes in a

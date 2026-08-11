@@ -1,5 +1,13 @@
 # HANDOFF
 
+> Universal MT5 cloud connector handoff (2026-08-11): begin with Plan 0 in
+> `UNIVERSAL_MT5_CLOUD_CONNECTOR_PLAN.md`. The required product flow is web-only:
+> users enter MT5 login/password/server in MarketLens and never open or install
+> MT5 Desktop, Mobile, WebTerminal, an EA, or a local connector. Keep one common
+> connector codebase for all certified brokers; TickerAll is the first provider
+> vertical slice and MetaApi is secondary. Do not create credential routes,
+> migration `0038`, or production secrets until the Plan 0 validation gate passes.
+
 > Trade execution handoff (2026-07-26): never restore or follow the old FTMO
 > verifier/Connector workflow below. Continue from
 > `TRADE_EXECUTION_ARCHITECTURE.md` and
