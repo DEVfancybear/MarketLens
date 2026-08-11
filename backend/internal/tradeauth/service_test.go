@@ -2,6 +2,7 @@ package tradeauth
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -102,6 +103,111 @@ func TestTradePasswordPolicy(t *testing.T) {
 	}
 	if err := validateTradePassword("a long but memorable trade phrase"); err != nil {
 		t.Fatalf("valid password rejected: %v", err)
+	}
+}
+
+func TestConfigurationRequiresCurrentPasswordBeforeDisablingOrRotating(t *testing.T) {
+	const password = "correct horse battery staple"
+	hash, err := hashTradePassword(password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuredHash := sql.NullString{String: hash, Valid: true}
+
+	tests := []struct {
+		name            string
+		currentEnabled  bool
+		nextEnabled     bool
+		newPassword     string
+		currentPassword string
+		wantErr         error
+	}{
+		{
+			name:           "disabled protection does not require proof",
+			newPassword:    "another memorable trade phrase",
+			nextEnabled:    false,
+			currentEnabled: false,
+		},
+		{
+			name:           "unchanged enabled protection does not require proof",
+			nextEnabled:    true,
+			currentEnabled: true,
+		},
+		{
+			name:           "disabling requires proof",
+			nextEnabled:    false,
+			currentEnabled: true,
+			wantErr:        ErrPasswordRequired,
+		},
+		{
+			name:            "disabling rejects incorrect proof",
+			nextEnabled:     false,
+			currentEnabled:  true,
+			currentPassword: "incorrect password",
+			wantErr:         ErrPasswordInvalid,
+		},
+		{
+			name:            "new password cannot verify itself while disabling",
+			nextEnabled:     false,
+			currentEnabled:  true,
+			newPassword:     "attacker chosen memorable phrase",
+			currentPassword: "attacker chosen memorable phrase",
+			wantErr:         ErrPasswordInvalid,
+		},
+		{
+			name:            "disabling accepts current password",
+			nextEnabled:     false,
+			currentEnabled:  true,
+			currentPassword: password,
+		},
+		{
+			name:           "rotation requires proof while enabled",
+			nextEnabled:    true,
+			currentEnabled: true,
+			newPassword:    "another memorable trade phrase",
+			wantErr:        ErrPasswordRequired,
+		},
+		{
+			name:            "rotation rejects incorrect proof",
+			nextEnabled:     true,
+			currentEnabled:  true,
+			newPassword:     "another memorable trade phrase",
+			currentPassword: "incorrect password",
+			wantErr:         ErrPasswordInvalid,
+		},
+		{
+			name:            "rotation accepts current password",
+			nextEnabled:     true,
+			currentEnabled:  true,
+			newPassword:     "another memorable trade phrase",
+			currentPassword: password,
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			err := verifyCurrentPasswordForConfiguration(
+				testCase.currentEnabled,
+				testCase.nextEnabled,
+				testCase.newPassword,
+				configuredHash,
+				testCase.currentPassword,
+			)
+			if !errors.Is(err, testCase.wantErr) {
+				t.Fatalf("error = %v, want %v", err, testCase.wantErr)
+			}
+		})
+	}
+
+	err = verifyCurrentPasswordForConfiguration(
+		true,
+		false,
+		"",
+		sql.NullString{},
+		password,
+	)
+	if err == nil || errors.Is(err, ErrPasswordInvalid) {
+		t.Fatalf("missing stored hash must fail closed, got %v", err)
 	}
 }
 

@@ -129,7 +129,7 @@ func (s *Service) Configure(
 	ctx context.Context,
 	userID, idToken string,
 	enabled bool,
-	password string,
+	newPassword, currentPassword string,
 ) (SecurityStatus, error) {
 	if _, err := s.identity.VerifyUserIdentity(ctx, idToken, userID); err != nil {
 		return SecurityStatus{}, err
@@ -141,31 +141,57 @@ func (s *Service) Configure(
 	}
 	defer tx.Rollback(ctx)
 
-	var currentHash sql.NullString
-	err = tx.QueryRow(ctx, `
-		SELECT password_hash
-		FROM trade_security_settings
-		WHERE user_id = $1::uuid
-		FOR UPDATE
-	`, userID).Scan(&currentHash)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	if _, err = tx.Exec(ctx, `
+		INSERT INTO trade_security_settings (user_id, enabled)
+		VALUES ($1::uuid, FALSE)
+		ON CONFLICT (user_id) DO NOTHING
+	`, userID); err != nil {
 		return SecurityStatus{}, err
 	}
 
-	if password != "" {
-		hash, hashErr := hashTradePassword(password)
+	var currentEnabled bool
+	var storedHash sql.NullString
+	err = tx.QueryRow(ctx, `
+		SELECT enabled, password_hash
+		FROM trade_security_settings
+		WHERE user_id = $1::uuid
+		FOR UPDATE
+	`, userID).Scan(&currentEnabled, &storedHash)
+	if err != nil {
+		return SecurityStatus{}, err
+	}
+	if currentEnabled == enabled && newPassword == "" {
+		return SecurityStatus{
+			Enabled:    currentEnabled,
+			Configured: storedHash.Valid,
+		}, nil
+	}
+
+	if err = verifyCurrentPasswordForConfiguration(
+		currentEnabled,
+		enabled,
+		newPassword,
+		storedHash,
+		currentPassword,
+	); err != nil {
+		return SecurityStatus{}, err
+	}
+
+	nextHash := storedHash
+	if newPassword != "" {
+		hash, hashErr := hashTradePassword(newPassword)
 		if hashErr != nil {
 			return SecurityStatus{}, hashErr
 		}
-		currentHash = sql.NullString{String: hash, Valid: true}
+		nextHash = sql.NullString{String: hash, Valid: true}
 	}
-	if enabled && !currentHash.Valid {
+	if enabled && !nextHash.Valid {
 		return SecurityStatus{}, ErrPasswordNotConfigured
 	}
 
 	var passwordHash any
-	if currentHash.Valid {
-		passwordHash = currentHash.String
+	if nextHash.Valid {
+		passwordHash = nextHash.String
 	}
 	if _, err = tx.Exec(ctx, `
 		INSERT INTO trade_security_settings
@@ -194,7 +220,32 @@ func (s *Service) Configure(
 	if err = tx.Commit(ctx); err != nil {
 		return SecurityStatus{}, err
 	}
-	return SecurityStatus{Enabled: enabled, Configured: currentHash.Valid}, nil
+	return SecurityStatus{Enabled: enabled, Configured: nextHash.Valid}, nil
+}
+
+func verifyCurrentPasswordForConfiguration(
+	currentEnabled, nextEnabled bool,
+	newPassword string,
+	currentHash sql.NullString,
+	currentPassword string,
+) error {
+	if !currentEnabled || (nextEnabled && newPassword == "") {
+		return nil
+	}
+	if currentPassword == "" {
+		return ErrPasswordRequired
+	}
+	if !currentHash.Valid {
+		return errors.New("tradeauth: enabled trade password has no hash")
+	}
+	matches, err := verifyTradePassword(currentPassword, currentHash.String)
+	if err != nil {
+		return fmt.Errorf("tradeauth: verify current password hash: %w", err)
+	}
+	if !matches {
+		return ErrPasswordInvalid
+	}
+	return nil
 }
 
 func (s *Service) Authorize(

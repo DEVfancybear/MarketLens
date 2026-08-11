@@ -21,6 +21,10 @@ per order.
 - **Lock this browser now** revokes the server-side unlock, clears the cookie
   across all tabs, and invalidates unconsumed one-time authorizations from that
   browser session.
+- Turning protection off requires the current trade password. Replacing the
+  password while protection is on also requires the current password, so a
+  signed-in browser cannot reset the password and then bypass the disable
+  confirmation.
 - Changing, enabling, or disabling trade security revokes every outstanding
   trade unlock and unconsumed execution authorization for that user.
 
@@ -107,7 +111,21 @@ Content-Type: application/json
 ```
 
 `password` may be omitted when toggling a previously configured password back
-on or off. Supplying it sets/replaces the stored hash.
+on. It contains the new password when initially configuring or replacing the
+stored hash. `currentPassword` is required when turning enabled protection off
+or replacing its password:
+
+```json
+{
+  "enabled": false,
+  "currentPassword": "the current trade password",
+  "idToken": "<fresh Firebase ID token>"
+}
+```
+
+The backend verifies `currentPassword` against the stored hash while holding
+the user's security-settings row lock. Missing or incorrect proof leaves the
+setting, stored hash, unlock sessions, and pending authorizations unchanged.
 
 ### Authorize
 

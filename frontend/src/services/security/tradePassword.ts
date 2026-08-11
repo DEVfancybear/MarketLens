@@ -43,6 +43,7 @@ export function getTradeSecurityStatus(): Promise<TradeSecurityStatus> {
 export function configureTradeSecurity(input: {
   enabled: boolean;
   password?: string;
+  currentPassword?: string;
   idToken: string;
 }): Promise<TradeSecurityStatus> {
   return putJson<TradeSecurityStatus>("execution/trade-security", input, {

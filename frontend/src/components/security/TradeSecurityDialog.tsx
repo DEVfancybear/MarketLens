@@ -16,7 +16,7 @@ import {
   ShieldOff,
 } from "lucide-react";
 import { PlatformContentDialog } from "@/components/ui/PlatformDialog";
-import { errorMessage } from "@/services/api/errors";
+import { errorMessage, isApiError } from "@/services/api/errors";
 import { currentIdToken } from "@/services/auth/firebaseAuth";
 import {
   configureTradeSecurity,
@@ -52,12 +52,20 @@ export function TradeSecurityDialog() {
   const [settingsError, setSettingsError] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
   const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [disableConfirmationOpen, setDisableConfirmationOpen] = useState(false);
+  const [disablePassword, setDisablePassword] = useState("");
+  const [showDisablePassword, setShowDisablePassword] = useState(false);
   const [prompt, setPrompt] = useState<PromptRequest | null>(null);
   const [promptPassword, setPromptPassword] = useState("");
   const [showPromptPassword, setShowPromptPassword] = useState(false);
   const promptRef = useRef<PromptRequest | null>(null);
   const promptInputRef = useRef<HTMLInputElement>(null);
+  const currentPasswordInputRef = useRef<HTMLInputElement>(null);
+  const disablePasswordInputRef = useRef<HTMLInputElement>(null);
+  const protectionSwitchRef = useRef<HTMLButtonElement>(null);
 
   const requestPassword = useCallback((error?: string) => {
     return new Promise<string | null>((resolve) => {
@@ -100,6 +108,12 @@ export function TradeSecurityDialog() {
     setSettingsError("");
     setNewPassword("");
     setConfirmPassword("");
+    setCurrentPassword("");
+    setShowNewPassword(false);
+    setShowCurrentPassword(false);
+    setDisableConfirmationOpen(false);
+    setDisablePassword("");
+    setShowDisablePassword(false);
     void getTradeSecurityStatus()
       .then(setStatus)
       .catch((error) =>
@@ -114,25 +128,49 @@ export function TradeSecurityDialog() {
     return () => cancelAnimationFrame(frame);
   }, [prompt]);
 
+  useEffect(() => {
+    if (!disableConfirmationOpen) return;
+    const frame = requestAnimationFrame(() =>
+      disablePasswordInputRef.current?.focus(),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [disableConfirmationOpen]);
+
   const saveConfiguration = useCallback(
-    async (enabled: boolean, password?: string) => {
+    async (configuration: {
+      enabled: boolean;
+      password?: string;
+      currentPassword?: string;
+    }): Promise<boolean> => {
       setSaving(true);
       setSettingsError("");
       try {
         const idToken = await currentIdToken(true);
         if (!idToken) throw new Error("Sign in again to change trade security.");
         const next = await configureTradeSecurity({
-          enabled,
-          password: password || undefined,
+          ...configuration,
           idToken,
         });
         setStatus(next);
         setNewPassword("");
         setConfirmPassword("");
+        setCurrentPassword("");
+        setDisablePassword("");
+        setShowNewPassword(false);
+        setShowCurrentPassword(false);
+        setShowDisablePassword(false);
+        return true;
       } catch (error) {
-        setSettingsError(
-          errorMessage(error, "Could not update trade security."),
-        );
+        if (isApiError(error) && error.status === 403) {
+          setSettingsError("Incorrect trade password. Please try again.");
+        } else if (isApiError(error) && error.status === 428) {
+          setSettingsError("Enter your current trade password.");
+        } else {
+          setSettingsError(
+            errorMessage(error, "Could not update trade security."),
+          );
+        }
+        return false;
       } finally {
         setSaving(false);
       }
@@ -154,13 +192,26 @@ export function TradeSecurityDialog() {
 
   const toggleProtection = () => {
     if (!status || saving) return;
+    if (status.enabled) {
+      if (disableConfirmationOpen) {
+        cancelDisableConfirmation();
+        return;
+      }
+      setSettingsError("");
+      setCurrentPassword("");
+      setShowCurrentPassword(false);
+      setDisablePassword("");
+      setShowDisablePassword(false);
+      setDisableConfirmationOpen(true);
+      return;
+    }
     const nextEnabled = !status.enabled;
     if (nextEnabled && !status.configured) {
       if (!validateNewPassword()) return;
-      void saveConfiguration(true, newPassword);
+      void saveConfiguration({ enabled: true, password: newPassword });
       return;
     }
-    void saveConfiguration(nextEnabled);
+    void saveConfiguration({ enabled: nextEnabled });
   };
 
   const lockSession = async () => {
@@ -178,11 +229,56 @@ export function TradeSecurityDialog() {
     }
   };
 
-  const submitPasswordChange = (event: FormEvent) => {
+  const submitPasswordChange = async (event: FormEvent) => {
     event.preventDefault();
     if (!status || !validateNewPassword()) return;
-    void saveConfiguration(status.configured ? status.enabled : true, newPassword);
+    const requiresCurrentPassword = status.enabled && status.configured;
+    if (requiresCurrentPassword && currentPassword.length === 0) {
+      setSettingsError("Enter your current trade password.");
+      currentPasswordInputRef.current?.focus();
+      return;
+    }
+    const saved = await saveConfiguration({
+      enabled: status.configured ? status.enabled : true,
+      password: newPassword,
+      currentPassword: currentPassword || undefined,
+    });
+    if (!saved && requiresCurrentPassword) {
+      setCurrentPassword("");
+      setShowCurrentPassword(false);
+      requestAnimationFrame(() => currentPasswordInputRef.current?.focus());
+    }
   };
+
+  const submitDisableProtection = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!disablePassword) {
+      setSettingsError("Enter your current trade password.");
+      disablePasswordInputRef.current?.focus();
+      return;
+    }
+    const saved = await saveConfiguration({
+      enabled: false,
+      currentPassword: disablePassword,
+    });
+    setDisablePassword("");
+    if (saved) {
+      setDisableConfirmationOpen(false);
+      requestAnimationFrame(() => protectionSwitchRef.current?.focus());
+    } else {
+      setShowDisablePassword(false);
+      requestAnimationFrame(() => disablePasswordInputRef.current?.focus());
+    }
+  };
+
+  function cancelDisableConfirmation() {
+    if (saving) return;
+    setDisableConfirmationOpen(false);
+    setDisablePassword("");
+    setShowDisablePassword(false);
+    setSettingsError("");
+    requestAnimationFrame(() => protectionSwitchRef.current?.focus());
+  }
 
   const closeSettings = () => {
     if (saving) return;
@@ -190,24 +286,40 @@ export function TradeSecurityDialog() {
     setSettingsError("");
     setNewPassword("");
     setConfirmPassword("");
+    setCurrentPassword("");
     setShowNewPassword(false);
+    setShowCurrentPassword(false);
+    setDisableConfirmationOpen(false);
+    setDisablePassword("");
+    setShowDisablePassword(false);
+  };
+
+  const dismissSettings = () => {
+    if (disableConfirmationOpen) {
+      cancelDisableConfirmation();
+      return;
+    }
+    closeSettings();
   };
 
   return (
     <>
       <PlatformContentDialog
         open={settingsOpen}
-        onClose={closeSettings}
+        onClose={dismissSettings}
         title="Trade security"
         description="Optional second password for live orders and execution actions."
+        closeLabel={
+          disableConfirmationOpen ? "Cancel turning off protection" : "Close"
+        }
         footer={
           <button
             type="button"
             disabled={saving}
-            onClick={closeSettings}
+            onClick={dismissSettings}
             className="min-h-10 rounded-xl border border-terminal-border-strong px-4 text-sm font-semibold text-ink hover:bg-terminal-hover disabled:opacity-60 focus-ring"
           >
-            Close
+            {disableConfirmationOpen ? "Cancel" : "Close"}
           </button>
         }
       >
@@ -251,11 +363,20 @@ export function TradeSecurityDialog() {
                   </div>
                 </div>
                 <button
+                  ref={protectionSwitchRef}
                   type="button"
                   role="switch"
                   aria-checked={status?.enabled ?? false}
                   aria-label="Require trade password"
                   aria-describedby="trade-security-state-description"
+                  aria-expanded={
+                    status?.enabled ? disableConfirmationOpen : undefined
+                  }
+                  aria-controls={
+                    disableConfirmationOpen
+                      ? "disable-trade-password-form"
+                      : undefined
+                  }
                   disabled={!status || saving}
                   onClick={toggleProtection}
                   className={cn(
@@ -275,104 +396,229 @@ export function TradeSecurityDialog() {
               </div>
             </section>
 
-            {status?.enabled && status.unlocked && (
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => void lockSession()}
-                className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-terminal-border-strong px-4 text-sm font-semibold text-ink hover:bg-terminal-hover disabled:opacity-50 focus-ring"
+            {disableConfirmationOpen ? (
+              <form
+                id="disable-trade-password-form"
+                className="space-y-4 rounded-2xl border border-bear/25 bg-bear/5 p-4"
+                onSubmit={(event) => void submitDisableProtection(event)}
               >
-                <ShieldOff size={15} />
-                Lock this browser now
-              </button>
-            )}
-
-            <form
-              id="trade-password-settings-form"
-              className="space-y-3"
-              onSubmit={submitPasswordChange}
-            >
-              <div>
-                <label
-                  htmlFor="new-trade-password"
-                  className="mb-1.5 block text-xs font-semibold text-ink-muted"
-                >
-                  {status?.configured ? "New trade password" : "Trade password"}
-                </label>
-                <div className="relative">
-                  <input
-                    id="new-trade-password"
-                    type={showNewPassword ? "text" : "password"}
-                    autoComplete="new-password"
-                    minLength={8}
-                    maxLength={512}
-                    value={newPassword}
-                    onChange={(event) => setNewPassword(event.target.value)}
-                    aria-invalid={settingsError.length > 0}
-                    aria-describedby={
-                      settingsError
-                        ? "trade-password-guidance trade-security-settings-error"
-                        : "trade-password-guidance"
-                    }
-                    className={inputClass}
-                  />
-                  <PasswordVisibilityButton
-                    visible={showNewPassword}
-                    onClick={() => setShowNewPassword((value) => !value)}
-                  />
+                <div className="flex items-start gap-3">
+                  <span className="rounded-xl bg-bear/10 p-2 text-bear">
+                    <ShieldOff size={18} />
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-semibold text-ink">
+                      Confirm turning off protection
+                    </h3>
+                    <p
+                      id="disable-trade-password-description"
+                      className="mt-1 text-xs leading-5 text-ink-muted"
+                    >
+                      Enter your current trade password to turn off protection
+                      for live orders and execution actions.
+                    </p>
+                  </div>
                 </div>
-              </div>
-              <div>
-                <label
-                  htmlFor="confirm-trade-password"
-                  className="mb-1.5 block text-xs font-semibold text-ink-muted"
-                >
-                  Confirm trade password
-                </label>
-                <input
-                  id="confirm-trade-password"
-                  type={showNewPassword ? "text" : "password"}
-                  autoComplete="new-password"
-                  minLength={8}
-                  maxLength={512}
-                  value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
-                  aria-invalid={settingsError.length > 0}
-                  aria-describedby={
-                    settingsError
-                      ? "trade-password-guidance trade-security-settings-error"
-                      : "trade-password-guidance"
-                  }
-                  className={inputClass}
-                />
-              </div>
-              <p
-                id="trade-password-guidance"
-                className="text-[11px] leading-4 text-ink-faint"
-              >
-                Use 8-128 characters. Spaces and password-manager paste are
-                supported. The password is never saved in this browser.
-              </p>
-              <button
-                type="submit"
-                disabled={
-                  !status ||
-                  saving ||
-                  newPassword.length === 0 ||
-                  confirmPassword.length === 0
-                }
-                className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover disabled:opacity-50 focus-ring"
-              >
-                {saving ? (
-                  <LoaderCircle size={15} className="animate-spin" />
-                ) : (
-                  <KeyRound size={15} />
+                <div>
+                  <label
+                    htmlFor="disable-trade-password"
+                    className="mb-1.5 block text-xs font-semibold text-ink-muted"
+                  >
+                    Current trade password
+                  </label>
+                  <div className="relative">
+                    <input
+                      ref={disablePasswordInputRef}
+                      id="disable-trade-password"
+                      type={showDisablePassword ? "text" : "password"}
+                      autoComplete="current-password"
+                      maxLength={512}
+                      value={disablePassword}
+                      onChange={(event) =>
+                        setDisablePassword(event.target.value)
+                      }
+                      aria-invalid={settingsError.length > 0}
+                      aria-describedby={
+                        settingsError
+                          ? "disable-trade-password-description trade-security-settings-error"
+                          : "disable-trade-password-description"
+                      }
+                      className={inputClass}
+                    />
+                    <PasswordVisibilityButton
+                      visible={showDisablePassword}
+                      onClick={() =>
+                        setShowDisablePassword((value) => !value)
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={cancelDisableConfirmation}
+                    className="min-h-10 rounded-xl border border-terminal-border-strong px-4 text-sm font-semibold text-ink hover:bg-terminal-hover disabled:opacity-50 focus-ring"
+                  >
+                    Keep protection on
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving || disablePassword.length === 0}
+                    className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-bear px-4 text-sm font-semibold text-white hover:bg-bear/90 disabled:opacity-50 focus-ring"
+                  >
+                    {saving && <LoaderCircle size={15} className="animate-spin" />}
+                    Turn off protection
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <>
+                {status?.enabled && status.unlocked && (
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => void lockSession()}
+                    className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-terminal-border-strong px-4 text-sm font-semibold text-ink hover:bg-terminal-hover disabled:opacity-50 focus-ring"
+                  >
+                    <ShieldOff size={15} />
+                    Lock this browser now
+                  </button>
                 )}
-                {status?.configured
-                  ? "Update password"
-                  : "Set password and enable"}
-              </button>
-            </form>
+
+                <form
+                  id="trade-password-settings-form"
+                  className="space-y-3"
+                  onSubmit={(event) => void submitPasswordChange(event)}
+                >
+                  {status?.configured && status.enabled && (
+                    <div>
+                      <label
+                        htmlFor="current-trade-password"
+                        className="mb-1.5 block text-xs font-semibold text-ink-muted"
+                      >
+                        Current trade password
+                      </label>
+                      <div className="relative">
+                        <input
+                          ref={currentPasswordInputRef}
+                          id="current-trade-password"
+                          type={showCurrentPassword ? "text" : "password"}
+                          autoComplete="current-password"
+                          maxLength={512}
+                          value={currentPassword}
+                          onChange={(event) =>
+                            setCurrentPassword(event.target.value)
+                          }
+                          aria-invalid={settingsError.length > 0}
+                          aria-describedby={
+                            settingsError
+                              ? "trade-security-settings-error"
+                              : undefined
+                          }
+                          className={inputClass}
+                        />
+                        <PasswordVisibilityButton
+                          visible={showCurrentPassword}
+                          onClick={() =>
+                            setShowCurrentPassword((value) => !value)
+                          }
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <label
+                      htmlFor="new-trade-password"
+                      className="mb-1.5 block text-xs font-semibold text-ink-muted"
+                    >
+                      {status?.configured
+                        ? "New trade password"
+                        : "Trade password"}
+                    </label>
+                    <div className="relative">
+                      <input
+                        id="new-trade-password"
+                        type={showNewPassword ? "text" : "password"}
+                        autoComplete="new-password"
+                        minLength={8}
+                        maxLength={512}
+                        value={newPassword}
+                        onChange={(event) => setNewPassword(event.target.value)}
+                        aria-invalid={settingsError.length > 0}
+                        aria-describedby={
+                          settingsError
+                            ? "trade-password-guidance trade-security-settings-error"
+                            : "trade-password-guidance"
+                        }
+                        className={inputClass}
+                      />
+                      <PasswordVisibilityButton
+                        visible={showNewPassword}
+                        onClick={() =>
+                          setShowNewPassword((value) => !value)
+                        }
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="confirm-trade-password"
+                      className="mb-1.5 block text-xs font-semibold text-ink-muted"
+                    >
+                      Confirm trade password
+                    </label>
+                    <input
+                      id="confirm-trade-password"
+                      type={showNewPassword ? "text" : "password"}
+                      autoComplete="new-password"
+                      minLength={8}
+                      maxLength={512}
+                      value={confirmPassword}
+                      onChange={(event) =>
+                        setConfirmPassword(event.target.value)
+                      }
+                      aria-invalid={settingsError.length > 0}
+                      aria-describedby={
+                        settingsError
+                          ? "trade-password-guidance trade-security-settings-error"
+                          : "trade-password-guidance"
+                      }
+                      className={inputClass}
+                    />
+                  </div>
+                  <p
+                    id="trade-password-guidance"
+                    className="text-[11px] leading-4 text-ink-faint"
+                  >
+                    Use 8-128 characters. Spaces and password-manager paste are
+                    supported. The password is never saved in this browser.
+                  </p>
+                  <button
+                    type="submit"
+                    disabled={
+                      !status ||
+                      saving ||
+                      newPassword.length === 0 ||
+                      confirmPassword.length === 0 ||
+                      (status.configured &&
+                        status.enabled &&
+                        currentPassword.length === 0)
+                    }
+                    className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover disabled:opacity-50 focus-ring"
+                  >
+                    {saving ? (
+                      <LoaderCircle size={15} className="animate-spin" />
+                    ) : (
+                      <KeyRound size={15} />
+                    )}
+                    {status?.configured
+                      ? "Update password"
+                      : "Set password and enable"}
+                  </button>
+                </form>
+              </>
+            )}
 
             {settingsError && (
               <p
@@ -472,7 +718,7 @@ function PasswordVisibilityButton({
     <button
       type="button"
       onClick={onClick}
-      className="absolute right-1 top-1 flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted hover:bg-terminal-hover hover:text-ink"
+      className="absolute right-1 top-1 flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted hover:bg-terminal-hover hover:text-ink focus-ring"
       aria-label={visible ? "Hide password" : "Show password"}
     >
       {visible ? <EyeOff size={16} /> : <Eye size={16} />}

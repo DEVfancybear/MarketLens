@@ -85,14 +85,16 @@ func (h *Handler) status(c fiber.Ctx) error {
 
 func (h *Handler) configure(c fiber.Ctx) error {
 	var request struct {
-		Enabled  bool   `json:"enabled"`
-		Password string `json:"password"`
-		IDToken  string `json:"idToken"`
+		Enabled         bool   `json:"enabled"`
+		Password        string `json:"password"`
+		CurrentPassword string `json:"currentPassword"`
+		IDToken         string `json:"idToken"`
 	}
 	if err := decodeStrict(c.Body(), &request); err != nil ||
 		strings.TrimSpace(request.IDToken) == "" ||
 		len(request.IDToken) > auth.MaxIDTokenLength ||
-		len(request.Password) > maxTradePasswordBytes {
+		len(request.Password) > maxTradePasswordBytes ||
+		len(request.CurrentPassword) > maxTradePasswordBytes {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
 	}
 	result, err := h.service.Configure(
@@ -101,6 +103,7 @@ func (h *Handler) configure(c fiber.Ctx) error {
 		request.IDToken,
 		request.Enabled,
 		request.Password,
+		request.CurrentPassword,
 	)
 	if err != nil {
 		return serviceError(err)
