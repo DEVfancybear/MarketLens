@@ -333,7 +333,7 @@ function PlatformConfirmDialog({
     <div
       ref={dialogRef}
       className="platform-dialog flex w-[400px] max-w-[calc(100vw-24px)] flex-col overflow-hidden rounded-2xl border border-terminal-border-strong bg-terminal-raised text-ink shadow-floating"
-      role="dialog"
+      role="alertdialog"
       aria-modal="true"
       aria-labelledby={titleId}
       aria-describedby={options.description ? descriptionId : undefined}

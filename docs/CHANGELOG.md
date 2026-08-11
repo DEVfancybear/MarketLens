@@ -4,6 +4,20 @@ All notable changes to the MarketLens. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Shared continuous-copier confirmation dialogs (2026-08-11)
+
+- Replaced the continuous copier's remaining browser-native confirmations for
+  switching groups, creating a group, and refreshing server state with the
+  shared promise-based `PlatformDialog` flow.
+- Destructive confirmations now use terminal theme tokens, cancel-first focus,
+  keyboard trapping and restoration, responsive portal layering, and
+  `alertdialog` semantics instead of browser-owned UI.
+- Added an AST-based UI boundary test that rejects native `alert`, `confirm`,
+  and `prompt` calls without confusing price-alert features, ARIA live regions,
+  comments, or user-facing strings for browser APIs.
+- Documented the shared dialog contract in
+  [`PLATFORM_DIALOGS.md`](PLATFORM_DIALOGS.md).
+
 ### Added - Localized MT5 Copier onboarding and control surface (2026-08-10)
 
 - Added an accessible Copier guide tab that explains continuous lifecycle
@@ -94,7 +108,6 @@ All notable changes to the MarketLens. Dates are UTC.
   ready` when a web Limit order is routed.
 - Added client-side order blocking with actionable upgrade guidance, updated the
   current production contract to EA `1.25`, and added Go/TypeScript regressions.
-
 ### Fixed - Provider-neutral prop-account stage profiles (2026-08-10)
 
 - Replaced the in-process FTMO preset list with a validated, versioned

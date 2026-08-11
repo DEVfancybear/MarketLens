@@ -8,6 +8,8 @@ npm run test:ui
 
 Covered contracts include:
 
+- Native browser `alert`, `confirm`, and `prompt` calls are rejected by an AST
+  boundary test; user decisions must use the shared `PlatformDialog` flow.
 - Dialog viewport clamping and oversized-dialog reachability.
 - Mobile/desktop platform policy for phone, tablet, coarse and fine pointers.
 - Mobile sheet gesture threshold, dismiss boundary, cancellation rollback and foreign-pointer rejection.

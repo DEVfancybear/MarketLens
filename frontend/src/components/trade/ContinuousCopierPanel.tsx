@@ -38,6 +38,7 @@ import {
   selectedExecutionAccountIdAtom,
 } from "@/store/executionRegistryStore";
 import { pushToastAtom } from "@/store/toastStore";
+import { usePlatformDialog } from "@/components/ui/PlatformDialog";
 import type {
   ContinuousCopyAllocation,
   ContinuousCopyConfig,
@@ -60,6 +61,7 @@ export function ContinuousCopierPanel() {
   const accounts = useAtomValue(executionAccountsAtom);
   const selectedAccountId = useAtomValue(selectedExecutionAccountIdAtom);
   const pushToast = useSetAtom(pushToastAtom);
+  const { requestConfirm, dialog } = usePlatformDialog();
   const [groups, setGroups] = useState<ContinuousCopyGroupView[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ContinuousCopyGroupDraft | null>(null);
@@ -153,20 +155,35 @@ export function ContinuousCopierPanel() {
     return () => window.clearInterval(timer);
   }, [refresh]);
 
-  const selectView = (view: ContinuousCopyGroupView) => {
+  const confirmDiscard = useCallback(
+    async (description: string) =>
+      !dirty ||
+      requestConfirm({
+        title: t("copier.continuous.unsaved"),
+        description,
+        confirmLabel: t("copier.continuous.discard"),
+        cancelLabel: t("copier.continuous.cancel"),
+        tone: "danger",
+      }),
+    [dirty, requestConfirm, t],
+  );
+
+  const selectView = async (view: ContinuousCopyGroupView) => {
     if (
-      dirty &&
-      !window.confirm(t("copier.continuous.confirm.open"))
+      !(await confirmDiscard(
+        t("copier.continuous.confirm.open"),
+      ))
     ) {
       return;
     }
     installView(view);
   };
 
-  const createGroup = () => {
+  const createGroup = async () => {
     if (
-      dirty &&
-      !window.confirm(t("copier.continuous.confirm.create"))
+      !(await confirmDiscard(
+        t("copier.continuous.confirm.create"),
+      ))
     ) {
       return;
     }
@@ -178,14 +195,15 @@ export function ContinuousCopierPanel() {
     setArchiveArmed(false);
   };
 
-  const refreshFromServer = () => {
+  const refreshFromServer = async () => {
     if (
-      dirty &&
-      !window.confirm(t("copier.continuous.confirm.refresh"))
+      !(await confirmDiscard(
+        t("copier.continuous.confirm.refresh"),
+      ))
     ) {
       return;
     }
-    void refresh(true);
+    await refresh(true);
   };
 
   const save = async () => {
@@ -284,7 +302,7 @@ export function ContinuousCopierPanel() {
           </div>
           <button
             type="button"
-            onClick={refreshFromServer}
+            onClick={() => void refreshFromServer()}
             disabled={status === "loading" || status === "saving" || status === "acting"}
             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-terminal-border-strong px-3 text-[10px] font-semibold text-ink-muted transition-colors hover:border-brand/45 hover:text-brand disabled:opacity-45 focus-ring sm:min-h-9"
           >
@@ -316,7 +334,7 @@ export function ContinuousCopierPanel() {
               </div>
               <button
                 type="button"
-                onClick={createGroup}
+                onClick={() => void createGroup()}
                 className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-brand px-3 text-[10px] font-semibold text-white transition-opacity hover:opacity-90 focus-ring sm:min-h-9"
               >
                 <Plus size={13} aria-hidden="true" />
@@ -333,7 +351,7 @@ export function ContinuousCopierPanel() {
                   <button
                     key={view.group.id}
                     type="button"
-                    onClick={() => selectView(view)}
+                    onClick={() => void selectView(view)}
                     aria-pressed={active}
                     className={cn(
                       "min-h-[76px] rounded-xl border p-3 text-left transition-colors focus-ring",
@@ -384,7 +402,7 @@ export function ContinuousCopierPanel() {
               onSave={() => void save()}
               onDiscard={() => {
                 if (selectedView) installView(selectedView);
-                else createGroup();
+                else void createGroup();
               }}
               onAction={(action) => void runAction(action)}
             />
@@ -395,6 +413,7 @@ export function ContinuousCopierPanel() {
           )}
         </div>
       </div>
+      {dialog}
     </div>
   );
 }
