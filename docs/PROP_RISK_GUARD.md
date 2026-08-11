@@ -67,6 +67,12 @@ new catalog version therefore does not silently rewrite protection on an
 existing account. When the provider advances or replaces an account, the user
 must explicitly select the new stage and confirm its capital.
 
+The same explicit assignment controls the order-ticket default without adding a
+provider-name branch: assigned prop accounts start at 0.1% risk, while
+unassigned accounts start at 1%. Until the assignment lookup completes, MT5
+uses 0.1% as the conservative default. This is only a UI default; the backend
+pre-trade guard remains authoritative for every submitted quantity.
+
 No manual daily reset is required. PostgreSQL derives `trading_day` from the
 profile's IANA time zone and captures `day_start_balance` from the first
 heartbeat observed while protection is active for that trading day. Once

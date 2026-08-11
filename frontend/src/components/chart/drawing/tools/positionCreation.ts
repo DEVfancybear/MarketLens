@@ -5,6 +5,7 @@ import {
 import { getDrawingToolPositionSide } from "../../../../types/drawingToolManifest";
 import { levelFromTicks, roundToTick, safeTickSize } from "./positionMetrics";
 import { nearestCandleIndex } from "../coordinates/drawingCoordinates";
+import { STANDARD_ACCOUNT_DEFAULT_RISK_PERCENT } from "../../../../services/execution/orderRiskDefaults";
 
 export interface PositionDrawingInitialization {
   drawing: Drawing;
@@ -158,7 +159,12 @@ export function initializePositionDrawing(
       accountSize: drawing.accountSize ?? 1000,
       accountCurrency: drawing.accountCurrency ?? "Default",
       lotSize: drawing.lotSize ?? 1,
-      riskValue: drawing.riskValue ?? 25,
+      riskValue:
+        drawing.riskValue ?? STANDARD_ACCOUNT_DEFAULT_RISK_PERCENT,
+      riskValueDefaulted:
+        drawing.riskValue == null
+          ? true
+          : drawing.riskValueDefaulted ?? false,
       riskUnit: drawing.riskUnit ?? "%",
       leverage: drawing.leverage ?? 10000,
       showLabels: drawing.showLabels ?? true,

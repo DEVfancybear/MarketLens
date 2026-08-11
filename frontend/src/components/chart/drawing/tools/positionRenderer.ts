@@ -38,6 +38,7 @@ import {
   POSITION_ANCHORS,
 } from "./positionGeometry";
 import { PRICE_SCALE_MIN_WIDTH } from "../../chartVisualProfile";
+import { STANDARD_ACCOUNT_DEFAULT_RISK_PERCENT } from "../../../../services/execution/orderRiskDefaults";
 import { line, chip, canvasFont, applyStyle } from "./plugins/shared";
 import {
   hitTestPositionGeometry,
@@ -82,7 +83,7 @@ const PRICE_PANE_BOTTOM_RATIO = 1;
 const TV_SELECTION_BLUE = "#2962ff";
 const POSITION_HANDLE_SIZE = 7;
 const DEFAULT_ACCOUNT_SIZE = 1000;
-const DEFAULT_RISK_VALUE = 25;
+const DEFAULT_RISK_VALUE = STANDARD_ACCOUNT_DEFAULT_RISK_PERCENT;
 
 /** TradingView mark: right-edge close for history, latest close in the future. */
 function currentPrice(drawing: Drawing, proj: Projector): number | null {

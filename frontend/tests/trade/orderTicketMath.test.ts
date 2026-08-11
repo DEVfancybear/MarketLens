@@ -8,6 +8,24 @@ import {
   parseTicketNumber,
   ticketLotOverride,
 } from "../../src/components/trade/tradeTicketMath";
+import {
+  defaultOrderRiskPercent,
+  isDefaultPositionRisk,
+  PROP_ACCOUNT_DEFAULT_RISK_PERCENT,
+  STANDARD_ACCOUNT_DEFAULT_RISK_PERCENT,
+} from "../../src/services/execution/orderRiskDefaults";
+
+test("ticket defaults risk conservatively for prop accounts", () => {
+  assert.equal(defaultOrderRiskPercent(true), PROP_ACCOUNT_DEFAULT_RISK_PERCENT);
+  assert.equal(
+    defaultOrderRiskPercent(false),
+    STANDARD_ACCOUNT_DEFAULT_RISK_PERCENT,
+  );
+  assert.equal(isDefaultPositionRisk(1, true), true);
+  assert.equal(isDefaultPositionRisk(25, undefined), true);
+  assert.equal(isDefaultPositionRisk(1, false), false);
+  assert.equal(isDefaultPositionRisk(25, false), false);
+});
 
 test("trade ticket parses formatted prices with thousands separators", () => {
   assert.equal(parseTicketNumber("62,751.61"), 62751.61);

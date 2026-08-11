@@ -128,6 +128,13 @@ test("position creation applies defaults without overwriting configured values",
   assert.deepEqual(input.points, [{ time: 1_000, price: 100 }]);
 });
 
+test("position creation defaults risk to one percent and marks it replaceable", () => {
+  const result = initializePositionDrawing(onePointPosition("long"), Number.NaN);
+
+  assert.equal(result?.drawing.riskValue, 1);
+  assert.equal(result?.drawing.riskValueDefaulted, true);
+});
+
 test("position creation ignores non-position tools and completed projections", () => {
   const trendline: Drawing = {
     ...onePointPosition("long"),

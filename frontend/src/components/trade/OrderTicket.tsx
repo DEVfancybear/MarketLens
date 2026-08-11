@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   priceAtom,
   equityAtom,
@@ -50,8 +50,19 @@ import type { Mt5CloseAllRequest, Mt5OrderRequest } from "@/types/mt5";
 import { LiveOrderConfirmDialog } from "./LiveOrderConfirmDialog";
 import { useReplayTrading } from "@/store/replayTradingClientStore";
 import { useReplayClientProjection } from "@/store/replayClientStore";
+import { selectedExecutionAccountAtom } from "@/store/executionRegistryStore";
+import { getExecutionPropRisk } from "@/services/api/resources/executionApi";
+import {
+  defaultOrderRiskPercent,
+  PROP_ACCOUNT_DEFAULT_RISK_PERCENT,
+  STANDARD_ACCOUNT_DEFAULT_RISK_PERCENT,
+} from "@/services/execution/orderRiskDefaults";
 
 const ORDER_TYPES: OrderType[] = ["market", "limit", "stop"];
+
+function formatRiskPercent(value: number): string {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
+}
 
 /** Order ticket: type, entry/SL/TP, risk%, with live position sizing. */
 export function OrderTicket({
@@ -70,6 +81,7 @@ export function OrderTicket({
   const mt5SymbolInfo = useAtomValue(mt5SymbolInfoAtom);
   const mt5Account = useAtomValue(mt5AccountAtom);
   const mt5RiskSnapshot = useAtomValue(mt5RiskSnapshotAtom);
+  const selectedExecutionAccount = useAtomValue(selectedExecutionAccountAtom);
   const requireMt5Confirmation = useAtomValue(mt5RequireConfirmationAtom);
   const placeMt5 = useSetAtom(placeMt5OrderAtom);
   const closeAllMt5 = useSetAtom(closeAllMt5Atom);
@@ -82,13 +94,19 @@ export function OrderTicket({
     ? replayTrading.account?.equity ?? equity
     : equity;
   const quote = useQuote(symbol);
+  const initialDefaultRisk =
+    executionMode === "mt5"
+      ? PROP_ACCOUNT_DEFAULT_RISK_PERCENT
+      : STANDARD_ACCOUNT_DEFAULT_RISK_PERCENT;
 
   const prec = getMarketSymbol(symbol)?.pricePrecision ?? 2;
   const [type, setType] = useState<OrderType>("market");
   const [entry, setEntry] = useState("");
   const [sl, setSl] = useState("");
   const [tp, setTp] = useState("");
-  const [risk, setRisk] = useState("1");
+  const [risk, setRisk] = useState(() => formatRiskPercent(initialDefaultRisk));
+  const riskSourceRef = useRef<"default" | "explicit">("default");
+  const activeDefaultRiskRef = useRef(initialDefaultRisk);
   const [riskUnit, setRiskUnit] = useState<"%" | "amount">("%");
   const [accountBasis, setAccountBasis] = useState<Mt5AccountBasis>("equity");
   const [commission, setCommission] = useState("");
@@ -301,8 +319,48 @@ export function OrderTicket({
     () => (value: number) => fmtPrice(value, prec),
     [prec],
   );
-  const formatPercent = (value: number) =>
-    Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
+  useEffect(() => {
+    let active = true;
+    const accountId =
+      executionMode === "mt5"
+        ? selectedExecutionAccount?.id ?? mt5Account?.accountId
+        : undefined;
+    const failSafeDefault =
+      executionMode === "mt5"
+        ? PROP_ACCOUNT_DEFAULT_RISK_PERCENT
+        : STANDARD_ACCOUNT_DEFAULT_RISK_PERCENT;
+
+    riskSourceRef.current = "default";
+    activeDefaultRiskRef.current = failSafeDefault;
+    setRiskUnit("%");
+    setRisk(formatRiskPercent(failSafeDefault));
+    if (!accountId) {
+      return () => {
+        active = false;
+      };
+    }
+
+    const refreshAccountDefault = () => {
+      void getExecutionPropRisk(accountId)
+        .then((guard) => {
+          if (!active) return;
+          const nextDefault = defaultOrderRiskPercent(Boolean(guard.assignment));
+          activeDefaultRiskRef.current = nextDefault;
+          if (riskSourceRef.current === "default") {
+            setRisk(formatRiskPercent(nextDefault));
+          }
+        })
+        .catch(() => {
+          // Unknown classification remains on the conservative 0.1% default.
+        });
+    };
+    refreshAccountDefault();
+    const timer = window.setInterval(refreshAccountDefault, 5_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [executionMode, mt5Account?.accountId, selectedExecutionAccount?.id]);
 
   const applyPrefill = (prefill: OrderPrefill) => {
     setPlannedSide(prefill.side ?? null);
@@ -315,7 +373,16 @@ export function OrderTicket({
     if (prefill.takeProfit != null) setTp(formatTicketNumber(prefill.takeProfit));
     if (prefill.riskPct != null) {
       setRiskUnit("%");
-      setRisk(formatPercent(prefill.riskPct));
+      riskSourceRef.current = prefill.riskPctIsDefault
+        ? "default"
+        : "explicit";
+      setRisk(
+        formatRiskPercent(
+          prefill.riskPctIsDefault
+            ? activeDefaultRiskRef.current
+            : prefill.riskPct,
+        ),
+      );
     }
     if (prefill.quantity != null && Number.isFinite(prefill.quantity)) {
       setMt5LotMode("manual");
@@ -430,13 +497,23 @@ export function OrderTicket({
             <TradeInput
               label={riskUnit === "%" ? "Risk %" : "Risk amount"}
               value={risk}
-              onChange={setRisk}
-              placeholder={riskUnit === "%" ? "1" : "100"}
+              onChange={(value) => {
+                riskSourceRef.current = "explicit";
+                setRisk(value);
+              }}
+              placeholder={
+                riskUnit === "%"
+                  ? formatRiskPercent(activeDefaultRiskRef.current)
+                  : "100"
+              }
             />
             <InlineSelect
               label="Risk basis"
               value={riskUnit}
-              onChange={(value) => setRiskUnit(value as "%" | "amount")}
+              onChange={(value) => {
+                riskSourceRef.current = "explicit";
+                setRiskUnit(value as "%" | "amount");
+              }}
               options={[
                 { value: "%", label: "%" },
                 { value: "amount", label: "Money" },
@@ -444,7 +521,14 @@ export function OrderTicket({
             />
           </div>
         ) : (
-          <TradeInput label="Risk %" value={risk} onChange={setRisk} />
+          <TradeInput
+            label="Risk %"
+            value={risk}
+            onChange={(value) => {
+              riskSourceRef.current = "explicit";
+              setRisk(value);
+            }}
+          />
         )}
         {executionMode === "mt5" && (
           <div className="grid grid-cols-2 gap-2">

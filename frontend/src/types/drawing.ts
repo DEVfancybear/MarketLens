@@ -224,6 +224,8 @@ export interface BaseDrawing
   lotSize?: number;
   /** Risk value — interpreted as % of account or absolute amount per `riskUnit`. */
   riskValue?: number;
+  /** True until the user explicitly changes the position tool's risk input. */
+  riskValueDefaulted?: boolean;
   riskUnit?: "%" | "amount";
   leverage?: number;
   /** Decimal places for the computed position quantity. */

@@ -7,6 +7,7 @@ import {
 } from "../../../../services/positionLotSizing";
 import { calculatePositionProjection } from "./positionMetrics";
 import { getDrawingToolPositionSide } from "../../../../types/drawingToolManifest";
+import { isDefaultPositionRisk } from "../../../../services/execution/orderRiskDefaults";
 
 export function inferPositionOrderType(
   side: Side,
@@ -40,10 +41,15 @@ export function buildOrderPrefillFromPositionDrawing(
 
   if (Number.isFinite(stop)) prefill.stopLoss = Number(stop);
   if (Number.isFinite(target)) prefill.takeProfit = Number(target);
+  const defaultRisk =
+    drawing.riskUnit === "%" &&
+    isDefaultPositionRisk(drawing.riskValue, drawing.riskValueDefaulted);
   if (drawing.riskUnit === "%" && Number.isFinite(drawing.riskValue)) {
     prefill.riskPct = Number(drawing.riskValue);
+    if (defaultRisk) prefill.riskPctIsDefault = true;
   }
   if (
+    !defaultRisk &&
     context.symbolInfo &&
     Number.isFinite(stop) &&
     Number.isFinite(drawing.accountSize) &&

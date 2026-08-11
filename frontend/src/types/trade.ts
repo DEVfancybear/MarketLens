@@ -60,6 +60,8 @@ export interface OrderPrefill {
   stopLoss?: number;
   takeProfit?: number;
   riskPct?: number;
+  /** Lets the ticket replace a drawing default with the selected account default. */
+  riskPctIsDefault?: boolean;
   /** Explicit ticket size/lot, e.g. calculated from a Long/Short drawing. */
   quantity?: number;
   drawingId?: string;

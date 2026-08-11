@@ -109,6 +109,38 @@ test("position prefill includes lot quantity from account risk and SL distance",
   );
 });
 
+test("position prefill leaves default risk sizing to the selected account", () => {
+  const drawing = position("long");
+  drawing.riskValue = 1;
+  drawing.riskValueDefaulted = true;
+
+  assert.deepEqual(
+    buildOrderPrefillFromPositionDrawing(drawing, 101, { symbolInfo }),
+    {
+      source: "position-drawing",
+      drawingId: "dw-test",
+      side: "long",
+      type: "limit",
+      price: 100,
+      stopLoss: 90,
+      takeProfit: 110,
+      riskPct: 1,
+      riskPctIsDefault: true,
+    },
+  );
+});
+
+test("position prefill treats the historical 25 percent value as a default", () => {
+  const drawing = position("long");
+  drawing.riskValue = 25;
+
+  const prefill = buildOrderPrefillFromPositionDrawing(drawing, 101, {
+    symbolInfo,
+  });
+  assert.equal(prefill?.riskPctIsDefault, true);
+  assert.equal(prefill?.quantity, undefined);
+});
+
 test("position prefill applies the same TradingView leverage cap as chart labels", () => {
   const drawing = position("long");
   drawing.riskValue = 100;

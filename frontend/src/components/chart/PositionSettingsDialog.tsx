@@ -9,6 +9,7 @@ import { createPortal } from "react-dom";
 import { Check, ChevronDown, Pencil, X } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { getMarketSymbol } from "@/services/market-data/symbols";
+import { STANDARD_ACCOUNT_DEFAULT_RISK_PERCENT } from "@/services/execution/orderRiskDefaults";
 import {
   editingDrawingIdAtom,
   candlesAtom,
@@ -518,7 +519,8 @@ export function PositionSettingsDialog() {
     );
 
   const accountSize = drawing.accountSize ?? 1000;
-  const riskValue = drawing.riskValue ?? 25;
+  const riskValue =
+    drawing.riskValue ?? STANDARD_ACCOUNT_DEFAULT_RISK_PERCENT;
   const riskUnit = drawing.riskUnit ?? "%";
   const lotSize = drawing.lotSize ?? 1;
   const leverage = drawing.leverage ?? 1;
@@ -623,12 +625,16 @@ export function PositionSettingsDialog() {
               <Row label="Risk">
                 <NumberField
                   value={riskValue}
-                  onCommit={(v) => patch({ riskValue: v })}
+                  onCommit={(v) =>
+                    patch({ riskValue: v, riskValueDefaulted: false })
+                  }
                   className="w-[100px]"
                 />
                 <Select
                   value={riskUnit}
-                  onChange={(v) => patch({ riskUnit: v })}
+                  onChange={(v) =>
+                    patch({ riskUnit: v, riskValueDefaulted: false })
+                  }
                   className="w-[100px]"
                   options={[
                     { value: "%", label: "%" },

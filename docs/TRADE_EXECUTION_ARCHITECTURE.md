@@ -230,6 +230,16 @@ Cross-venue quantity units are rejected unless a future adapter provides an
 explicit, tested conversion. Lots are never silently interpreted as base units,
 contracts, or quote notional.
 
+### Order-ticket risk defaults
+
+New Long/Short Position drawings use a 1% risk default instead of the historical
+25% value. When a drawing opens the order ticket, default-derived sizing remains
+in automatic lot mode so the selected execution account can own the final risk
+default. An account with an explicit Prop Risk assignment defaults to 0.1%; an
+unassigned account or Simulator defaults to 1%. While account classification is
+loading or unavailable, the MT5 ticket fails safe at 0.1%. Explicit risk values
+entered by the user are preserved.
+
 ## Lifecycle commands
 
 Modify, close, partial close, and cancel requests are target-scoped. Before
