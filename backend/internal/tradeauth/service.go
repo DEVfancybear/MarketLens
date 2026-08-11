@@ -40,13 +40,19 @@ const (
 )
 
 var (
-	ErrPasswordRequired       = errors.New("trade password required")
-	ErrPasswordInvalid        = errors.New("trade password invalid")
-	ErrPasswordLocked         = errors.New("trade password temporarily locked")
-	ErrPasswordNotConfigured  = errors.New("trade password not configured")
-	ErrPasswordPolicy         = errors.New("trade password does not meet policy")
-	ErrAuthorizationRejected  = errors.New("trade authorization rejected")
-	commonTradePasswordValues = map[string]struct{}{
+	ErrPasswordRequired         = errors.New("trade password required")
+	ErrPasswordInvalid          = errors.New("trade password invalid")
+	ErrPasswordLocked           = errors.New("trade password temporarily locked")
+	ErrPasswordNotConfigured    = errors.New("trade password not configured")
+	ErrPasswordPolicy           = errors.New("trade password does not meet policy")
+	ErrAuthorizationRejected    = errors.New("trade authorization rejected")
+	ErrRecoveryUnavailable      = errors.New("trade password recovery unavailable")
+	ErrRecoveryEmailUnverified  = errors.New("verified recovery email required")
+	ErrRecoveryCooldown         = errors.New("trade password recovery code recently sent")
+	ErrRecoveryCodeInvalid      = errors.New("trade password recovery code invalid")
+	ErrRecoveryCodeExpired      = errors.New("trade password recovery code expired")
+	ErrRecoveryAttemptsExceeded = errors.New("trade password recovery attempts exceeded")
+	commonTradePasswordValues   = map[string]struct{}{
 		"12345678": {}, "123456789": {}, "1234567890": {},
 		"abcdefgh": {}, "admin123": {}, "letmein123": {},
 		"password": {}, "password1": {}, "password123": {},
@@ -62,6 +68,8 @@ type Service struct {
 	pool             *pgxpool.Pool
 	identity         IdentityVerifier
 	authorizationTTL time.Duration
+	recoveryEmail    RecoveryEmailSender
+	recoveryHashKey  []byte
 	now              func() time.Time
 }
 
@@ -87,6 +95,8 @@ func NewService(
 		pool:             pool,
 		identity:         identity,
 		authorizationTTL: cfg.TradeAuthorizationTTL,
+		recoveryEmail:    newSMTPRecoveryEmailSender(cfg),
+		recoveryHashKey:  []byte(cfg.AuthJWTSecret),
 		now:              time.Now,
 	}
 }
@@ -207,6 +217,12 @@ func (s *Service) Configure(
 	}
 	if _, err = tx.Exec(ctx, `
 		DELETE FROM trade_unlock_sessions
+		WHERE user_id = $1::uuid
+	`, userID); err != nil {
+		return SecurityStatus{}, err
+	}
+	if _, err = tx.Exec(ctx, `
+		DELETE FROM trade_password_recovery_codes
 		WHERE user_id = $1::uuid
 	`, userID); err != nil {
 		return SecurityStatus{}, err

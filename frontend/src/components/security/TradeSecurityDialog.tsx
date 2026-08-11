@@ -12,6 +12,7 @@ import {
   EyeOff,
   KeyRound,
   LoaderCircle,
+  MailCheck,
   ShieldCheck,
   ShieldOff,
 } from "lucide-react";
@@ -20,9 +21,12 @@ import { errorMessage, isApiError } from "@/services/api/errors";
 import { currentIdToken } from "@/services/auth/firebaseAuth";
 import {
   configureTradeSecurity,
+  confirmTradePasswordRecovery,
   getTradeSecurityStatus,
   lockTradeSession,
   registerTradePasswordPrompt,
+  requestTradePasswordRecovery,
+  type TradePasswordRecoveryChallenge,
   type TradeSecurityStatus,
 } from "@/services/security/tradePassword";
 import { cn } from "@/utils/cn";
@@ -50,6 +54,7 @@ export function TradeSecurityDialog() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [settingsError, setSettingsError] = useState("");
+  const [settingsNotice, setSettingsNotice] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
@@ -58,6 +63,13 @@ export function TradeSecurityDialog() {
   const [disableConfirmationOpen, setDisableConfirmationOpen] = useState(false);
   const [disablePassword, setDisablePassword] = useState("");
   const [showDisablePassword, setShowDisablePassword] = useState(false);
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [recoveryChallenge, setRecoveryChallenge] =
+    useState<TradePasswordRecoveryChallenge | null>(null);
+  const [recoveryCode, setRecoveryCode] = useState("");
+  const [recoveryPassword, setRecoveryPassword] = useState("");
+  const [recoveryConfirmPassword, setRecoveryConfirmPassword] = useState("");
+  const [showRecoveryPassword, setShowRecoveryPassword] = useState(false);
   const [prompt, setPrompt] = useState<PromptRequest | null>(null);
   const [promptPassword, setPromptPassword] = useState("");
   const [showPromptPassword, setShowPromptPassword] = useState(false);
@@ -65,6 +77,8 @@ export function TradeSecurityDialog() {
   const promptInputRef = useRef<HTMLInputElement>(null);
   const currentPasswordInputRef = useRef<HTMLInputElement>(null);
   const disablePasswordInputRef = useRef<HTMLInputElement>(null);
+  const recoveryCodeInputRef = useRef<HTMLInputElement>(null);
+  const recoverySendButtonRef = useRef<HTMLButtonElement>(null);
   const protectionSwitchRef = useRef<HTMLButtonElement>(null);
 
   const requestPassword = useCallback((error?: string) => {
@@ -106,6 +120,7 @@ export function TradeSecurityDialog() {
     if (!settingsOpen) return;
     setLoading(true);
     setSettingsError("");
+    setSettingsNotice("");
     setNewPassword("");
     setConfirmPassword("");
     setCurrentPassword("");
@@ -114,6 +129,12 @@ export function TradeSecurityDialog() {
     setDisableConfirmationOpen(false);
     setDisablePassword("");
     setShowDisablePassword(false);
+    setRecoveryOpen(false);
+    setRecoveryChallenge(null);
+    setRecoveryCode("");
+    setRecoveryPassword("");
+    setRecoveryConfirmPassword("");
+    setShowRecoveryPassword(false);
     void getTradeSecurityStatus()
       .then(setStatus)
       .catch((error) =>
@@ -136,6 +157,18 @@ export function TradeSecurityDialog() {
     return () => cancelAnimationFrame(frame);
   }, [disableConfirmationOpen]);
 
+  useEffect(() => {
+    if (!recoveryOpen) return;
+    const frame = requestAnimationFrame(() => {
+      if (recoveryChallenge) {
+        recoveryCodeInputRef.current?.focus();
+      } else {
+        recoverySendButtonRef.current?.focus();
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [recoveryChallenge, recoveryOpen]);
+
   const saveConfiguration = useCallback(
     async (configuration: {
       enabled: boolean;
@@ -144,6 +177,7 @@ export function TradeSecurityDialog() {
     }): Promise<boolean> => {
       setSaving(true);
       setSettingsError("");
+      setSettingsNotice("");
       try {
         const idToken = await currentIdToken(true);
         if (!idToken) throw new Error("Sign in again to change trade security.");
@@ -229,6 +263,116 @@ export function TradeSecurityDialog() {
     }
   };
 
+  const clearRecoverySecrets = () => {
+    setRecoveryCode("");
+    setRecoveryPassword("");
+    setRecoveryConfirmPassword("");
+    setShowRecoveryPassword(false);
+  };
+
+  const openRecovery = () => {
+    if (saving) return;
+    setSettingsError("");
+    setSettingsNotice("");
+    setCurrentPassword("");
+    setDisablePassword("");
+    setShowCurrentPassword(false);
+    setShowDisablePassword(false);
+    setDisableConfirmationOpen(false);
+    setRecoveryChallenge(null);
+    clearRecoverySecrets();
+    setRecoveryOpen(true);
+  };
+
+  const cancelRecovery = () => {
+    if (saving) return;
+    setRecoveryOpen(false);
+    setRecoveryChallenge(null);
+    clearRecoverySecrets();
+    setSettingsError("");
+    requestAnimationFrame(() => currentPasswordInputRef.current?.focus());
+  };
+
+  const sendRecoveryCode = async () => {
+    setSaving(true);
+    setSettingsError("");
+    setSettingsNotice("");
+    clearRecoverySecrets();
+    try {
+      const idToken = await currentIdToken(true);
+      if (!idToken) throw new Error("Sign in again to reset the trade password.");
+      const challenge = await requestTradePasswordRecovery({ idToken });
+      setRecoveryChallenge(challenge);
+    } catch (error) {
+      if (isApiError(error) && error.status === 429) {
+        setSettingsError("Please wait before requesting another code.");
+      } else {
+        setSettingsError(
+          errorMessage(error, "Could not send the confirmation code."),
+        );
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitRecovery = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!recoveryChallenge) return;
+    if (!/^[0-9]{6}$/.test(recoveryCode)) {
+      setSettingsError("Enter the 6-digit confirmation code.");
+      recoveryCodeInputRef.current?.focus();
+      return;
+    }
+    if (!validTradePasswordLength(recoveryPassword)) {
+      setSettingsError("Use 8-128 characters for the trade password.");
+      return;
+    }
+    if (recoveryPassword !== recoveryConfirmPassword) {
+      setSettingsError("The password confirmation does not match.");
+      return;
+    }
+
+    setSaving(true);
+    setSettingsError("");
+    setSettingsNotice("");
+    try {
+      const idToken = await currentIdToken(true);
+      if (!idToken) throw new Error("Sign in again to reset the trade password.");
+      const next = await confirmTradePasswordRecovery({
+        idToken,
+        code: recoveryCode,
+        password: recoveryPassword,
+      });
+      setStatus(next);
+      setRecoveryOpen(false);
+      setRecoveryChallenge(null);
+      clearRecoverySecrets();
+      setSettingsNotice(
+        "Trade password reset. All browser trade unlocks were revoked.",
+      );
+      requestAnimationFrame(() => currentPasswordInputRef.current?.focus());
+    } catch (error) {
+      setRecoveryCode("");
+      if (isApiError(error) && error.status === 403) {
+        setSettingsError("The confirmation code is incorrect.");
+      } else if (isApiError(error) && error.status === 410) {
+        setRecoveryChallenge(null);
+        clearRecoverySecrets();
+        setSettingsError("The confirmation code expired. Request a new code.");
+      } else if (isApiError(error) && error.status === 429) {
+        setRecoveryChallenge(null);
+        clearRecoverySecrets();
+        setSettingsError("Too many attempts. Request a new confirmation code.");
+      } else {
+        setSettingsError(errorMessage(error, "Could not reset the trade password."));
+      }
+      requestAnimationFrame(() => recoveryCodeInputRef.current?.focus());
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const submitPasswordChange = async (event: FormEvent) => {
     event.preventDefault();
     if (!status || !validateNewPassword()) return;
@@ -277,6 +421,7 @@ export function TradeSecurityDialog() {
     setDisablePassword("");
     setShowDisablePassword(false);
     setSettingsError("");
+    setSettingsNotice("");
     requestAnimationFrame(() => protectionSwitchRef.current?.focus());
   }
 
@@ -284,6 +429,7 @@ export function TradeSecurityDialog() {
     if (saving) return;
     setSettingsOpen(false);
     setSettingsError("");
+    setSettingsNotice("");
     setNewPassword("");
     setConfirmPassword("");
     setCurrentPassword("");
@@ -292,9 +438,16 @@ export function TradeSecurityDialog() {
     setDisableConfirmationOpen(false);
     setDisablePassword("");
     setShowDisablePassword(false);
+    setRecoveryOpen(false);
+    setRecoveryChallenge(null);
+    clearRecoverySecrets();
   };
 
   const dismissSettings = () => {
+    if (recoveryOpen) {
+      cancelRecovery();
+      return;
+    }
     if (disableConfirmationOpen) {
       cancelDisableConfirmation();
       return;
@@ -310,7 +463,11 @@ export function TradeSecurityDialog() {
         title="Trade security"
         description="Optional second password for live orders and execution actions."
         closeLabel={
-          disableConfirmationOpen ? "Cancel turning off protection" : "Close"
+          recoveryOpen
+            ? "Back to trade security"
+            : disableConfirmationOpen
+              ? "Cancel turning off protection"
+              : "Close"
         }
         footer={
           <button
@@ -319,7 +476,7 @@ export function TradeSecurityDialog() {
             onClick={dismissSettings}
             className="min-h-10 rounded-xl border border-terminal-border-strong px-4 text-sm font-semibold text-ink hover:bg-terminal-hover disabled:opacity-60 focus-ring"
           >
-            {disableConfirmationOpen ? "Cancel" : "Close"}
+            {recoveryOpen ? "Back" : disableConfirmationOpen ? "Cancel" : "Close"}
           </button>
         }
       >
@@ -370,14 +527,18 @@ export function TradeSecurityDialog() {
                   aria-label="Require trade password"
                   aria-describedby="trade-security-state-description"
                   aria-expanded={
-                    status?.enabled ? disableConfirmationOpen : undefined
+                    status?.enabled
+                      ? disableConfirmationOpen || recoveryOpen
+                      : undefined
                   }
                   aria-controls={
-                    disableConfirmationOpen
+                    recoveryOpen
+                      ? "trade-password-recovery-form"
+                      : disableConfirmationOpen
                       ? "disable-trade-password-form"
                       : undefined
                   }
-                  disabled={!status || saving}
+                  disabled={!status || saving || recoveryOpen}
                   onClick={toggleProtection}
                   className={cn(
                     "relative h-7 w-12 shrink-0 rounded-full border transition-colors motion-reduce:transition-none focus-ring disabled:opacity-50",
@@ -396,7 +557,166 @@ export function TradeSecurityDialog() {
               </div>
             </section>
 
-            {disableConfirmationOpen ? (
+            {recoveryOpen ? (
+              <form
+                id="trade-password-recovery-form"
+                className="space-y-4 rounded-2xl border border-brand/25 bg-brand/5 p-4"
+                onSubmit={(event) => void submitRecovery(event)}
+              >
+                <div className="flex items-start gap-3">
+                  <span className="rounded-xl bg-brand/10 p-2 text-brand">
+                    <MailCheck size={18} />
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-semibold text-ink">
+                      Reset trade password
+                    </h3>
+                    <p
+                      id="trade-password-recovery-description"
+                      className="mt-1 text-xs leading-5 text-ink-muted"
+                    >
+                      We will send a confirmation code to the verified email on
+                      your account. Protection stays on while you reset the password.
+                    </p>
+                  </div>
+                </div>
+
+                {!recoveryChallenge ? (
+                  <button
+                    ref={recoverySendButtonRef}
+                    type="button"
+                    disabled={saving}
+                    onClick={() => void sendRecoveryCode()}
+                    className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover disabled:opacity-50 focus-ring"
+                  >
+                    {saving ? (
+                      <LoaderCircle size={15} className="animate-spin" />
+                    ) : (
+                      <MailCheck size={15} />
+                    )}
+                    Send confirmation code
+                  </button>
+                ) : (
+                  <>
+                    <p
+                      role="status"
+                      aria-live="polite"
+                      className="rounded-xl border border-bull/25 bg-bull/10 px-3 py-2 text-xs leading-5 text-bull"
+                    >
+                      Sent to <strong>{recoveryChallenge.maskedEmail}</strong>.
+                    </p>
+                    <div>
+                      <label
+                        htmlFor="trade-password-recovery-code"
+                        className="mb-1.5 block text-xs font-semibold text-ink-muted"
+                      >
+                        Confirmation code
+                      </label>
+                      <input
+                        ref={recoveryCodeInputRef}
+                        id="trade-password-recovery-code"
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        pattern="[0-9]{6}"
+                        maxLength={6}
+                        value={recoveryCode}
+                        onChange={(event) =>
+                          setRecoveryCode(event.target.value.replace(/\D/g, ""))
+                        }
+                        aria-invalid={settingsError.length > 0}
+                        aria-describedby="trade-password-recovery-description"
+                        className={`${inputClass} pr-3 text-center font-mono text-lg tracking-[0.35em]`}
+                      />
+                    </div>
+                    <div>
+                      <label
+                        htmlFor="recovery-trade-password"
+                        className="mb-1.5 block text-xs font-semibold text-ink-muted"
+                      >
+                        New trade password
+                      </label>
+                      <div className="relative">
+                        <input
+                          id="recovery-trade-password"
+                          type={showRecoveryPassword ? "text" : "password"}
+                          autoComplete="new-password"
+                          minLength={8}
+                          maxLength={512}
+                          value={recoveryPassword}
+                          onChange={(event) =>
+                            setRecoveryPassword(event.target.value)
+                          }
+                          aria-describedby="trade-password-recovery-guidance"
+                          className={inputClass}
+                        />
+                        <PasswordVisibilityButton
+                          visible={showRecoveryPassword}
+                          onClick={() =>
+                            setShowRecoveryPassword((value) => !value)
+                          }
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label
+                        htmlFor="recovery-confirm-trade-password"
+                        className="mb-1.5 block text-xs font-semibold text-ink-muted"
+                      >
+                        Confirm trade password
+                      </label>
+                      <input
+                        id="recovery-confirm-trade-password"
+                        type={showRecoveryPassword ? "text" : "password"}
+                        autoComplete="new-password"
+                        minLength={8}
+                        maxLength={512}
+                        value={recoveryConfirmPassword}
+                        onChange={(event) =>
+                          setRecoveryConfirmPassword(event.target.value)
+                        }
+                        aria-describedby="trade-password-recovery-guidance"
+                        className={inputClass}
+                      />
+                    </div>
+                    <p
+                      id="trade-password-recovery-guidance"
+                      className="text-[11px] leading-4 text-ink-faint"
+                    >
+                      The code expires after 10 minutes. Your new password must
+                      contain 8-128 characters.
+                    </p>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => void sendRecoveryCode()}
+                        className="min-h-10 rounded-xl px-2 text-xs font-semibold text-brand hover:bg-brand/10 disabled:opacity-50 focus-ring"
+                      >
+                        Send another code
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={
+                          saving ||
+                          recoveryCode.length !== 6 ||
+                          recoveryPassword.length === 0 ||
+                          recoveryConfirmPassword.length === 0
+                        }
+                        className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover disabled:opacity-50 focus-ring"
+                      >
+                        {saving ? (
+                          <LoaderCircle size={15} className="animate-spin" />
+                        ) : (
+                          <KeyRound size={15} />
+                        )}
+                        Reset password
+                      </button>
+                    </div>
+                  </>
+                )}
+              </form>
+            ) : disableConfirmationOpen ? (
               <form
                 id="disable-trade-password-form"
                 className="space-y-4 rounded-2xl border border-bear/25 bg-bear/5 p-4"
@@ -452,6 +772,14 @@ export function TradeSecurityDialog() {
                       }
                     />
                   </div>
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={openRecovery}
+                    className="mt-1 min-h-9 rounded-lg px-2 text-xs font-semibold text-brand hover:bg-brand/10 disabled:opacity-50 focus-ring"
+                  >
+                    Forgot trade password?
+                  </button>
                 </div>
                 <div className="flex flex-wrap justify-end gap-2">
                   <button
@@ -525,6 +853,14 @@ export function TradeSecurityDialog() {
                           }
                         />
                       </div>
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={openRecovery}
+                        className="mt-1 min-h-9 rounded-lg px-2 text-xs font-semibold text-brand hover:bg-brand/10 disabled:opacity-50 focus-ring"
+                      >
+                        Forgot trade password?
+                      </button>
                     </div>
                   )}
                   <div>
@@ -627,6 +963,16 @@ export function TradeSecurityDialog() {
                 className="rounded-xl border border-bear/25 bg-bear/10 px-3 py-2 text-xs leading-5 text-bear"
               >
                 {settingsError}
+              </p>
+            )}
+            {settingsNotice && (
+              <p
+                id="trade-security-settings-notice"
+                role="status"
+                aria-live="polite"
+                className="rounded-xl border border-bull/25 bg-bull/10 px-3 py-2 text-xs leading-5 text-bull"
+              >
+                {settingsNotice}
               </p>
             )}
           </div>

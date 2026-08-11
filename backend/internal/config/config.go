@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/mail"
 	"net/url"
 	"os"
 	"sort"
@@ -40,6 +41,12 @@ type Config struct {
 	AuthAccessTTL          time.Duration
 	AuthRefreshTTL         time.Duration
 	TradeAuthorizationTTL  time.Duration
+	TradeRecoverySMTPHost  string
+	TradeRecoverySMTPPort  int
+	TradeRecoverySMTPUser  string
+	TradeRecoverySMTPPass  string
+	TradeRecoverySMTPMode  string
+	TradeRecoveryEmailFrom string
 
 	FirebaseProjectID   string
 	FirebaseClientEmail string
@@ -90,6 +97,17 @@ func (c Config) ObjectStorageConfigured() bool {
 	return c.ObjectStorageBucket != "" && c.ObjectStorageAccessKey != "" && c.ObjectStorageSecretKey != ""
 }
 
+// TradeRecoveryEmailConfigured reports whether the backend can deliver trade
+// password recovery codes. Authentication is optional for local SMTP relays,
+// but username/password must always be supplied as a pair.
+func (c Config) TradeRecoveryEmailConfigured() bool {
+	return strings.TrimSpace(c.TradeRecoverySMTPHost) != "" &&
+		c.TradeRecoverySMTPPort > 0 &&
+		strings.TrimSpace(c.TradeRecoveryEmailFrom) != "" &&
+		((c.TradeRecoverySMTPUser == "" && c.TradeRecoverySMTPPass == "") ||
+			(c.TradeRecoverySMTPUser != "" && c.TradeRecoverySMTPPass != ""))
+}
+
 // Load reads configuration from the environment. In development it best-effort
 // loads a local .env file first. It returns an error (rather than exiting) when
 // a required secret is missing outside development, so the caller controls the
@@ -123,6 +141,12 @@ func Load() (Config, error) {
 		AuthAccessTTL:          getEnvDuration("AUTH_ACCESS_TTL", 15*time.Minute),
 		AuthRefreshTTL:         getEnvDuration("AUTH_REFRESH_TTL", 720*time.Hour),
 		TradeAuthorizationTTL:  getEnvDuration("TRADE_AUTHORIZATION_TTL", 45*time.Second),
+		TradeRecoverySMTPHost:  strings.TrimSpace(os.Getenv("TRADE_RECOVERY_SMTP_HOST")),
+		TradeRecoverySMTPPort:  getEnvInt("TRADE_RECOVERY_SMTP_PORT", 587),
+		TradeRecoverySMTPUser:  os.Getenv("TRADE_RECOVERY_SMTP_USERNAME"),
+		TradeRecoverySMTPPass:  os.Getenv("TRADE_RECOVERY_SMTP_PASSWORD"),
+		TradeRecoverySMTPMode:  strings.ToLower(strings.TrimSpace(getEnv("TRADE_RECOVERY_SMTP_MODE", "starttls"))),
+		TradeRecoveryEmailFrom: strings.TrimSpace(os.Getenv("TRADE_RECOVERY_EMAIL_FROM")),
 		FirebaseProjectID:      os.Getenv("FIREBASE_PROJECT_ID"),
 		FirebaseClientEmail:    os.Getenv("FIREBASE_CLIENT_EMAIL"),
 		// The private key is stored \n-escaped (same as the frontend push key);
@@ -213,6 +237,9 @@ func (c Config) validate() error {
 			return fmt.Errorf("TRADE_AUTHORIZATION_TTL must be between 10s and 2m")
 		}
 	}
+	if err := c.validateTradeRecoveryEmail(); err != nil {
+		return err
+	}
 
 	storageValues := []string{c.ObjectStorageBucket, c.ObjectStorageAccessKey, c.ObjectStorageSecretKey}
 	storageSet := 0
@@ -229,13 +256,17 @@ func (c Config) validate() error {
 	}
 
 	required := map[string]string{
-		"DATABASE_URL":          c.DatabaseURL,
-		"AUTH_JWT_SECRET":       c.AuthJWTSecret,
-		"FIREBASE_PROJECT_ID":   c.FirebaseProjectID,
-		"FIREBASE_CLIENT_EMAIL": c.FirebaseClientEmail,
-		"FIREBASE_PRIVATE_KEY":  c.FirebasePrivateKey,
-		"PUSH_WORKER_SECRET":    c.PushWorkerSecret,
-		"EXECUTION_ADMIN_TOKEN": c.ExecutionAdminToken,
+		"DATABASE_URL":                 c.DatabaseURL,
+		"AUTH_JWT_SECRET":              c.AuthJWTSecret,
+		"FIREBASE_PROJECT_ID":          c.FirebaseProjectID,
+		"FIREBASE_CLIENT_EMAIL":        c.FirebaseClientEmail,
+		"FIREBASE_PRIVATE_KEY":         c.FirebasePrivateKey,
+		"PUSH_WORKER_SECRET":           c.PushWorkerSecret,
+		"EXECUTION_ADMIN_TOKEN":        c.ExecutionAdminToken,
+		"TRADE_RECOVERY_SMTP_HOST":     c.TradeRecoverySMTPHost,
+		"TRADE_RECOVERY_SMTP_USERNAME": c.TradeRecoverySMTPUser,
+		"TRADE_RECOVERY_SMTP_PASSWORD": c.TradeRecoverySMTPPass,
+		"TRADE_RECOVERY_EMAIL_FROM":    c.TradeRecoveryEmailFrom,
 	}
 	if c.AlertEvaluatorEnabled {
 		required["ALERT_EVALUATOR_URL"] = c.AlertEvaluatorURL
@@ -264,6 +295,41 @@ func (c Config) validate() error {
 	}
 	if !c.AuthCookiesSecure() {
 		return fmt.Errorf("AUTH_COOKIE_SECURE cannot be disabled in production")
+	}
+	return nil
+}
+
+func (c Config) validateTradeRecoveryEmail() error {
+	host := strings.TrimSpace(c.TradeRecoverySMTPHost)
+	from := strings.TrimSpace(c.TradeRecoveryEmailFrom)
+	userSet := c.TradeRecoverySMTPUser != ""
+	passSet := c.TradeRecoverySMTPPass != ""
+	anySet := host != "" || from != "" || userSet || passSet
+	if !anySet {
+		return nil
+	}
+	if host == "" || from == "" || userSet != passSet {
+		return fmt.Errorf("TRADE_RECOVERY_SMTP_HOST, TRADE_RECOVERY_EMAIL_FROM and both SMTP credentials must be configured together")
+	}
+	if c.TradeRecoverySMTPPort < 1 || c.TradeRecoverySMTPPort > 65535 {
+		return fmt.Errorf("TRADE_RECOVERY_SMTP_PORT must be between 1 and 65535")
+	}
+	address, err := mail.ParseAddress(from)
+	if err != nil || address.Address == "" {
+		return fmt.Errorf("TRADE_RECOVERY_EMAIL_FROM must be a valid email address")
+	}
+	switch c.TradeRecoverySMTPMode {
+	case "starttls", "tls":
+	case "plain":
+		ip := net.ParseIP(host)
+		if c.IsProduction() || (host != "localhost" && (ip == nil || !ip.IsLoopback())) {
+			return fmt.Errorf("TRADE_RECOVERY_SMTP_MODE=plain is allowed only for a local development SMTP server")
+		}
+		if userSet {
+			return fmt.Errorf("TRADE_RECOVERY_SMTP_MODE=plain cannot be used with SMTP credentials")
+		}
+	default:
+		return fmt.Errorf("TRADE_RECOVERY_SMTP_MODE must be starttls, tls, or plain")
 	}
 	return nil
 }

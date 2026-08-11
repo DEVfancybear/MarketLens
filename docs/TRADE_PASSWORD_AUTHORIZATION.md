@@ -26,7 +26,12 @@ per order.
   signed-in browser cannot reset the password and then bypass the disable
   confirmation.
 - Changing, enabling, or disabling trade security revokes every outstanding
-  trade unlock and unconsumed execution authorization for that user.
+  trade unlock and unconsumed execution authorization for that user, and
+  invalidates any active recovery code.
+- A user who forgets the trade password can request a six-digit confirmation
+  code at the account's verified Google email and set a new password. Recovery
+  keeps protection enabled and revokes every outstanding unlock and unconsumed
+  execution authorization.
 
 Browsers with “restore previous session” may restore session cookies as if the
 browser had never closed. This is browser-defined behavior, not something a web
@@ -127,6 +132,57 @@ The backend verifies `currentPassword` against the stored hash while holding
 the user's security-settings row lock. Missing or incorrect proof leaves the
 setting, stored hash, unlock sessions, and pending authorizations unchanged.
 
+### Recover a forgotten password
+
+Request a code with a fresh Firebase identity proof:
+
+```http
+POST /api/v1/execution/trade-security/recovery
+Content-Type: application/json
+
+{
+  "idToken": "<fresh Firebase ID token>"
+}
+```
+
+```json
+{
+  "maskedEmail": "d***@example.com",
+  "expiresAtMs": 1786435800000
+}
+```
+
+The backend resolves the destination from the verified account identity; the
+client cannot supply or redirect the email address. A new request invalidates
+the previous code. Sends have a one-minute database cooldown and an additional
+per-user HTTP rate limit.
+
+SMTP is intentionally configured once for the MarketLens system, not once per
+user. User A receives the code at user A's verified email and user B receives a
+separate, user-bound code at user B's verified email. Recovery rows are keyed by
+`user_id`, and the code HMAC also includes that ID, so a code issued to one user
+cannot reset another user's trade password.
+
+Confirm the code and set the replacement password:
+
+```http
+POST /api/v1/execution/trade-security/recovery/confirm
+Content-Type: application/json
+
+{
+  "idToken": "<fresh Firebase ID token>",
+  "code": "042731",
+  "password": "a new memorable trade phrase"
+}
+```
+
+Codes contain six digits, expire after 10 minutes, are single-use, and allow at
+most five failed checks. PostgreSQL stores only an HMAC-SHA256 digest bound to
+the user ID; the HMAC key is domain-separated from `AUTH_JWT_SECRET`. Successful
+recovery replaces the Argon2id password hash in one transaction, clears the
+password failure lock, deletes the code, and revokes all browser unlocks and
+unconsumed authorizations. The `enabled` setting is preserved.
+
 ### Authorize
 
 ```http
@@ -172,16 +228,30 @@ removes the passkey credential/challenge tables, and removes the credential
 foreign key from `trade_authorizations`. Migration `0031` remains immutable
 because it may already be recorded in production migration history.
 
-The only execution-specific environment setting is:
+Migration `0037_trade_password_recovery` adds the single active recovery-code
+record per user, its expiry index, attempt counter, and update trigger.
+
+The execution-specific environment settings are:
 
 ```dotenv
 TRADE_AUTHORIZATION_TTL=45s
+TRADE_RECOVERY_SMTP_HOST=smtp.example.com
+TRADE_RECOVERY_SMTP_PORT=587
+TRADE_RECOVERY_SMTP_USERNAME=<smtp-user>
+TRADE_RECOVERY_SMTP_PASSWORD=<smtp-password>
+TRADE_RECOVERY_SMTP_MODE=starttls
+TRADE_RECOVERY_EMAIL_FROM="MarketLens Security <security@example.com>"
 ```
+
+Production requires authenticated SMTP. `starttls` and implicit `tls` require
+TLS 1.2 or newer; `plain` is accepted only for a loopback development server.
+The SMTP password stays backend-only.
 
 Deploy the migration, Go API, frontend, and Rust gateway as one compatible
 release. Verify enabled/disabled flows, multi-tab reuse, explicit lock,
 password-change revocation, failure backoff, token replay rejection, payload
-mutation rejection, and normal browser restart.
+mutation rejection, normal browser restart, recovery expiry/attempt limits,
+and recovery revocation of existing unlocks.
 
 ## Standards and implementation references
 

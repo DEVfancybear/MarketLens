@@ -22,6 +22,8 @@ type Handler struct {
 	requireActive        fiber.Handler
 	authorizationLimit   fiber.Handler
 	configurationLimiter fiber.Handler
+	recoveryRequestLimit fiber.Handler
+	recoveryConfirmLimit fiber.Handler
 }
 
 func NewHandler(
@@ -37,6 +39,8 @@ func NewHandler(
 		requireActive:        requireActive,
 		authorizationLimit:   newUserRateLimiter(120, time.Minute),
 		configurationLimiter: newUserRateLimiter(10, 10*time.Minute),
+		recoveryRequestLimit: newUserRateLimiter(3, 15*time.Minute),
+		recoveryConfirmLimit: newUserRateLimiter(10, 15*time.Minute),
 	}
 }
 
@@ -66,6 +70,20 @@ func (h *Handler) Register(router fiber.Router) {
 		h.requireAuth,
 		h.requireActive,
 		h.lock,
+	)
+	router.Post(
+		"/execution/trade-security/recovery",
+		h.requireAuth,
+		h.recoveryRequestLimit,
+		h.requireActive,
+		h.requestRecovery,
+	)
+	router.Post(
+		"/execution/trade-security/recovery/confirm",
+		h.requireAuth,
+		h.recoveryConfirmLimit,
+		h.requireActive,
+		h.confirmRecovery,
 	)
 }
 
@@ -151,6 +169,55 @@ func (h *Handler) lock(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{"ok": true})
 }
 
+func (h *Handler) requestRecovery(c fiber.Ctx) error {
+	var request struct {
+		IDToken string `json:"idToken"`
+	}
+	if err := decodeStrict(c.Body(), &request); err != nil ||
+		strings.TrimSpace(request.IDToken) == "" ||
+		len(request.IDToken) > auth.MaxIDTokenLength {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	result, err := h.service.RequestPasswordRecovery(
+		c.Context(),
+		userID(c),
+		request.IDToken,
+	)
+	if err != nil {
+		return serviceError(err)
+	}
+	c.Set(fiber.HeaderCacheControl, "no-store")
+	return c.JSON(result)
+}
+
+func (h *Handler) confirmRecovery(c fiber.Ctx) error {
+	var request struct {
+		IDToken  string `json:"idToken"`
+		Code     string `json:"code"`
+		Password string `json:"password"`
+	}
+	if err := decodeStrict(c.Body(), &request); err != nil ||
+		strings.TrimSpace(request.IDToken) == "" ||
+		len(request.IDToken) > auth.MaxIDTokenLength ||
+		len(request.Code) != recoveryCodeDigits ||
+		len(request.Password) > maxTradePasswordBytes {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	result, err := h.service.ConfirmPasswordRecovery(
+		c.Context(),
+		userID(c),
+		request.IDToken,
+		request.Code,
+		request.Password,
+	)
+	if err != nil {
+		return serviceError(err)
+	}
+	clearTradeUnlockCookie(c, h.cfg)
+	c.Set(fiber.HeaderCacheControl, "no-store")
+	return c.JSON(result)
+}
+
 func (h *Handler) unlockCookieName() string {
 	name, _ := tradeUnlockCookieScope(h.cfg)
 	return name
@@ -201,6 +268,18 @@ func serviceError(err error) error {
 		)
 	case errors.Is(err, ErrAuthorizationRejected):
 		return fiber.NewError(fiber.StatusBadRequest, "invalid trade authorization request")
+	case errors.Is(err, ErrRecoveryUnavailable):
+		return fiber.NewError(fiber.StatusServiceUnavailable, "trade password recovery email is unavailable")
+	case errors.Is(err, ErrRecoveryEmailUnverified):
+		return fiber.NewError(fiber.StatusConflict, "a verified account email is required")
+	case errors.Is(err, ErrRecoveryCooldown):
+		return fiber.NewError(fiber.StatusTooManyRequests, "wait before requesting another confirmation code")
+	case errors.Is(err, ErrRecoveryCodeInvalid):
+		return fiber.NewError(fiber.StatusForbidden, "confirmation code is invalid")
+	case errors.Is(err, ErrRecoveryCodeExpired):
+		return fiber.NewError(fiber.StatusGone, "confirmation code has expired")
+	case errors.Is(err, ErrRecoveryAttemptsExceeded):
+		return fiber.NewError(fiber.StatusTooManyRequests, "request a new confirmation code")
 	default:
 		log.Error().Err(err).Msg("trade authorization service request failed")
 		return fiber.NewError(fiber.StatusInternalServerError, "trade authorization service unavailable")

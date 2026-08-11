@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"net/mail"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -254,5 +256,71 @@ func TestAuthorizationTokensAreOpaqueAndOneTimeComparable(t *testing.T) {
 	}
 	if _, ok := opaqueTokenHash("not-a-valid-token"); ok {
 		t.Fatal("malformed unlock token was accepted")
+	}
+}
+
+func TestRecoveryCodeIsSixDigitsAndHMACBoundToUser(t *testing.T) {
+	code, err := generateRecoveryCode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !regexp.MustCompile(`^[0-9]{6}$`).MatchString(code) || !validRecoveryCode(code) {
+		t.Fatalf("invalid recovery code shape %q", code)
+	}
+	if validRecoveryCode("12345") || validRecoveryCode("12345a") {
+		t.Fatal("malformed recovery code accepted")
+	}
+	key := []byte("test-recovery-hmac-key-at-least-32-bytes")
+	first := recoveryCodeHash(key, "user-a", code)
+	second := recoveryCodeHash(key, "user-b", code)
+	if bytes.Equal(first, second) || len(first) != 32 {
+		t.Fatal("recovery HMAC must be 32 bytes and bound to the user")
+	}
+}
+
+func TestMaskEmailDoesNotExposeMailbox(t *testing.T) {
+	if got := maskEmail("duong@example.com"); got != "d***@example.com" {
+		t.Fatalf("masked email = %q", got)
+	}
+	if got := maskEmail("invalid"); got != "***" {
+		t.Fatalf("invalid masked email = %q", got)
+	}
+}
+
+func TestRecoveryEmailMessageContainsOnlyExpectedCode(t *testing.T) {
+	message := recoveryEmailMessage(
+		mail.Address{Name: "MarketLens", Address: "security@example.com"},
+		mail.Address{Address: "user@example.com"},
+		"042731",
+		time.Now().Add(recoveryCodeTTL),
+	)
+	for _, expected := range []string{
+		"Subject:",
+		"Content-Type: text/plain; charset=UTF-8",
+		"042731",
+		"user@example.com",
+	} {
+		if !strings.Contains(message, expected) {
+			t.Fatalf("email is missing %q", expected)
+		}
+	}
+}
+
+func TestRecoveryServiceErrorsUseDistinctStatuses(t *testing.T) {
+	tests := []struct {
+		err  error
+		code int
+	}{
+		{ErrRecoveryUnavailable, fiber.StatusServiceUnavailable},
+		{ErrRecoveryCooldown, fiber.StatusTooManyRequests},
+		{ErrRecoveryCodeInvalid, fiber.StatusForbidden},
+		{ErrRecoveryCodeExpired, fiber.StatusGone},
+		{ErrRecoveryAttemptsExceeded, fiber.StatusTooManyRequests},
+	}
+	for _, testCase := range tests {
+		actual, ok := serviceError(testCase.err).(*fiber.Error)
+		if !ok || actual.Code != testCase.code {
+			t.Fatalf("serviceError(%v) = %#v, want status %d", testCase.err, actual, testCase.code)
+		}
 	}
 }

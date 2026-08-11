@@ -25,6 +25,12 @@ Copy `backend/.env.example` to `backend/.env` for local development.
 | `FIREBASE_PRIVATE_KEY` | string | empty | Firebase Admin PEM; escaped `\n` newlines are supported |
 | `CORS_ALLOWED_ORIGINS` | CSV | `http://localhost:3000` | Credentialed browser origins; wildcard is unsupported |
 | `CHART_TIME_ZONE` | IANA timezone | `Asia/Ho_Chi_Minh` | Backend-owned display/input timezone for the chart's `Exchange` option; MT5 candle timestamps remain UTC |
+| `TRADE_RECOVERY_SMTP_HOST` | hostname | empty | SMTP server used only for trade-password recovery codes; required in production |
+| `TRADE_RECOVERY_SMTP_PORT` | integer | `587` | SMTP port (`587` for STARTTLS, commonly `465` for implicit TLS) |
+| `TRADE_RECOVERY_SMTP_USERNAME` | string | empty | SMTP login; required with the SMTP password in production |
+| `TRADE_RECOVERY_SMTP_PASSWORD` | secret | empty | SMTP password; server-only and never returned to the browser |
+| `TRADE_RECOVERY_SMTP_MODE` | enum | `starttls` | `starttls`, `tls`, or loopback-development-only `plain` |
+| `TRADE_RECOVERY_EMAIL_FROM` | mailbox | empty | Shared system sender for all users, for example `MarketLens Security <security@example.com>`; required in production |
 | `OBJECT_STORAGE_ENDPOINT` | URL | AWS regional S3 endpoint | Optional S3-compatible endpoint for R2/MinIO |
 | `OBJECT_STORAGE_BUCKET` | string | empty | Screenshot bucket; required with access/secret keys |
 | `OBJECT_STORAGE_REGION` | string | `us-east-1` | SigV4 signing region (`auto` for Cloudflare R2) |
@@ -44,6 +50,13 @@ the header.
 Access/refresh cookies are always `HttpOnly` and `SameSite=Strict`; production additionally requires
 `Secure`. `tradingterminal.io.vn` and `api.tradingterminal.io.vn` are separate origins but remain
 the same site, so Strict cookies work for the current topology.
+
+Trade-password recovery sends a six-digit, single-use code only to the verified email resolved from
+the user's fresh Firebase identity token. The API never accepts a destination email from the browser.
+The SMTP credentials and `TRADE_RECOVERY_EMAIL_FROM` identify one shared outbound system mailbox;
+they are not per-user settings. Each request uses the authenticated user's own verified email as `To`.
+Production startup requires the SMTP variables above so a configured trade password cannot become
+unrecoverable. SMTP uses TLS 1.2 or newer; plaintext SMTP is limited to a loopback development relay.
 
 `POST /api/v1/auth/session`, `/auth/google`, and `/auth/refresh` are limited to 120 requests per
 five minutes per client IP in each API process. Keep an outer Cloudflare/WAF rule for distributed

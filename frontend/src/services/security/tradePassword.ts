@@ -12,6 +12,11 @@ export type TradeSecurityStatus = {
   lockedUntilMs?: number;
 };
 
+export type TradePasswordRecoveryChallenge = {
+  maskedEmail: string;
+  expiresAtMs: number;
+};
+
 type AuthorizationResponse = {
   token: string;
   expiresAtMs: number;
@@ -55,6 +60,28 @@ export function lockTradeSession(): Promise<{ ok: true }> {
   return deleteJson<{ ok: true }>("execution/trade-security/unlock", {
     retry: { limit: 0 },
   });
+}
+
+export function requestTradePasswordRecovery(input: {
+  idToken: string;
+}): Promise<TradePasswordRecoveryChallenge> {
+  return postJson<TradePasswordRecoveryChallenge>(
+    "execution/trade-security/recovery",
+    input,
+    { retry: { limit: 0 } },
+  );
+}
+
+export function confirmTradePasswordRecovery(input: {
+  idToken: string;
+  code: string;
+  password: string;
+}): Promise<TradeSecurityStatus> {
+  return postJson<TradeSecurityStatus>(
+    "execution/trade-security/recovery/confirm",
+    input,
+    { retry: { limit: 0 } },
+  );
 }
 
 async function requestAuthorization(

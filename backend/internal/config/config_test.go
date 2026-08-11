@@ -152,3 +152,43 @@ func TestDefaultAlertEvaluatorURLKeepsLocalDevelopment(t *testing.T) {
 		t.Fatalf("development evaluator URL = %q", got)
 	}
 }
+
+func TestValidateTradeRecoveryEmailConfiguration(t *testing.T) {
+	base := Config{
+		Env:                    "development",
+		ChartTimeZone:          "UTC",
+		TradeRecoverySMTPHost:  "smtp.example.com",
+		TradeRecoverySMTPPort:  587,
+		TradeRecoverySMTPUser:  "smtp-user",
+		TradeRecoverySMTPPass:  "smtp-password",
+		TradeRecoverySMTPMode:  "starttls",
+		TradeRecoveryEmailFrom: "MarketLens <security@example.com>",
+	}
+	if err := base.validate(); err != nil {
+		t.Fatalf("valid SMTP recovery config rejected: %v", err)
+	}
+	if !base.TradeRecoveryEmailConfigured() {
+		t.Fatal("complete SMTP recovery config was not detected")
+	}
+
+	partial := base
+	partial.TradeRecoverySMTPPass = ""
+	if err := partial.validate(); err == nil {
+		t.Fatal("partial SMTP credentials were accepted")
+	}
+
+	plainRemote := base
+	plainRemote.TradeRecoverySMTPMode = "plain"
+	if err := plainRemote.validate(); err == nil {
+		t.Fatal("plaintext remote SMTP was accepted")
+	}
+
+	plainLocal := base
+	plainLocal.TradeRecoverySMTPHost = "127.0.0.1"
+	plainLocal.TradeRecoverySMTPMode = "plain"
+	plainLocal.TradeRecoverySMTPUser = ""
+	plainLocal.TradeRecoverySMTPPass = ""
+	if err := plainLocal.validate(); err != nil {
+		t.Fatalf("local development SMTP was rejected: %v", err)
+	}
+}
