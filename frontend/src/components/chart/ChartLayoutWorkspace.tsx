@@ -10,7 +10,6 @@ import {
   drawingLayoutIdAtom,
   getCachedDrawingsForContext,
   indicatorsAtom,
-  setActiveToolAtom,
   setDrawingLayoutContextAtom,
   setEditingDrawingAtom,
   setEditingIndicatorAtom,
@@ -126,7 +125,6 @@ export function ChartLayoutWorkspace({
   const setSymbol = useSetAtom(setSymbolAtom);
   const setTimeframe = useSetAtom(setTimeframeAtom);
   const setDrawingContext = useSetAtom(setDrawingLayoutContextAtom);
-  const setActiveTool = useSetAtom(setActiveToolAtom);
   const setEditingDrawing = useSetAtom(setEditingDrawingAtom);
   const setEditingIndicator = useSetAtom(setEditingIndicatorAtom);
   const previousActiveSlot = useRef(activeSlot);
@@ -141,7 +139,6 @@ export function ChartLayoutWorkspace({
     const switchedPane = previousActiveSlot.current !== activeSlot;
     previousActiveSlot.current = activeSlot;
     if (switchedPane && activePane?.initialized) {
-      setActiveTool("crosshair");
       setEditingDrawing(null);
       setEditingIndicator(null);
       setDrawingContext({ layoutId: drawingLayoutId, chartId: activePane.id });
@@ -161,7 +158,6 @@ export function ChartLayoutWorkspace({
     activePane?.timeframe,
     activeSlot,
     drawingLayoutId,
-    setActiveTool,
     setDrawingContext,
     setEditingDrawing,
     setEditingIndicator,
@@ -175,8 +171,9 @@ export function ChartLayoutWorkspace({
   const activatePane = useCallback((pane: ChartPaneState) => {
     if (pane.slot === activeSlot) return;
     // A drawing/indicator gesture belongs to the pane where it started. Close
-    // transient editor/tool state before changing the active store projection.
-    setActiveTool("crosshair");
+    // pane-local editors before changing the active store projection, but keep
+    // the selected drawing tool so the user's first selection is not discarded
+    // when they activate the pane they intend to draw on.
     setEditingDrawing(null);
     setEditingIndicator(null);
     setDrawingContext({ layoutId: drawingLayoutId, chartId: pane.id });
@@ -191,7 +188,6 @@ export function ChartLayoutWorkspace({
     activeSlot,
     drawingLayoutId,
     setActiveSlot,
-    setActiveTool,
     setDrawingContext,
     setEditingDrawing,
     setEditingIndicator,

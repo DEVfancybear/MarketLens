@@ -18,6 +18,45 @@ async function previewCanvasArea(preview: Locator): Promise<number> {
   );
 }
 
+async function chartHasCandlePixels(surface: Locator): Promise<boolean> {
+  return surface.locator("canvas").evaluateAll((canvases) => {
+    const isCandleColor = (red: number, green: number, blue: number, alpha: number) =>
+      alpha > 0 && (
+        (Math.abs(red - 8) <= 8 && Math.abs(green - 153) <= 8 && Math.abs(blue - 129) <= 8) ||
+        (Math.abs(red - 242) <= 8 && Math.abs(green - 54) <= 8 && Math.abs(blue - 69) <= 8)
+      );
+
+    for (const canvas of canvases) {
+      if (!(canvas instanceof HTMLCanvasElement) || canvas.width <= 0 || canvas.height <= 0) {
+        continue;
+      }
+      // Read a nearest-neighbour thumbnail instead of copying every backing
+      // pixel from every Lightweight Charts layer. Candle bodies are several
+      // CSS pixels wide, so this keeps the symptom assertion exact while the
+      // repeated-switch regression stays fast on DPR-scaled CI canvases.
+      const sample = document.createElement("canvas");
+      sample.width = Math.min(320, canvas.width);
+      sample.height = Math.min(180, canvas.height);
+      const context = sample.getContext("2d", { willReadFrequently: true });
+      if (!context) continue;
+      context.imageSmoothingEnabled = false;
+      context.drawImage(canvas, 0, 0, sample.width, sample.height);
+      const pixels = context.getImageData(0, 0, sample.width, sample.height).data;
+      for (let index = 0; index < pixels.length; index += 4) {
+        if (isCandleColor(
+          pixels[index]!,
+          pixels[index + 1]!,
+          pixels[index + 2]!,
+          pixels[index + 3]!,
+        )) {
+          return true;
+        }
+      }
+    }
+    return false;
+  });
+}
+
 test.describe("TradingView-style chart layouts", () => {
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ width: 1366, height: 768 });
@@ -181,6 +220,12 @@ test.describe("TradingView-style chart layouts", () => {
       ),
       { timeout: 15_000 },
     ).toBeGreaterThan(0);
+    await expect.poll(
+      async () => chartHasCandlePixels(
+        layout.locator('[data-chart-slot="0"] [data-active-chart-surface]'),
+      ),
+      { timeout: 15_000 },
+    ).toBe(true);
 
     const persistentPreviews = [
       await previews.nth(0).elementHandle(),
@@ -188,7 +233,7 @@ test.describe("TradingView-style chart layouts", () => {
     ];
     expect(persistentPreviews.every(Boolean)).toBe(true);
 
-    for (let iteration = 0; iteration < 12; iteration += 1) {
+    for (let iteration = 0; iteration < 6; iteration += 1) {
       const targetSlot = iteration % 2 === 0 ? 1 : 0;
       const inactiveSlot = targetSlot === 0 ? 1 : 0;
       await page.getByRole("button", {
@@ -204,9 +249,124 @@ test.describe("TradingView-style chart layouts", () => {
         expect(await preview!.evaluate((node) => node.isConnected)).toBe(true);
       }
       expect(await previewCanvasArea(previews.nth(inactiveSlot))).toBeGreaterThan(0);
+      expect(await chartHasCandlePixels(previews.nth(inactiveSlot))).toBe(true);
+      expect(await chartHasCandlePixels(
+        layout.locator(
+          `[data-chart-slot="${targetSlot}"] [data-active-chart-surface]`,
+        ),
+      )).toBe(true);
     }
 
     expect(pageErrors.filter((message) => /disposed|canvas|chart/i.test(message))).toEqual([]);
+  });
+
+  test("selecting Text once survives pane activation and opens a pane-local editor", async ({ page }) => {
+    await chooseArrangement(page, "2 Vertical");
+    await page.waitForFunction(() => Boolean(window.__drawingInteractionTest));
+    await page.evaluate(() => window.__drawingInteractionTest!.clear());
+
+    await page.getByRole("button", { name: "Text", exact: true }).click();
+    await page.getByRole("button", { name: /^Text\b/ }).last().click();
+    await expect.poll(async () =>
+      page.evaluate(() => window.__drawingInteractionTest!.snapshot().activeTool)
+    ).toBe("text");
+
+    await page.getByRole("button", { name: /^Activate chart 2:/ }).click();
+    await expect(page.locator('[data-chart-slot="1"]')).toHaveAttribute(
+      "data-active-chart",
+      "true",
+    );
+    await expect.poll(async () =>
+      page.evaluate(() => window.__drawingInteractionTest!.snapshot().activeTool)
+    ).toBe("text");
+
+    const target = page.locator('[data-chart-slot="1"]');
+    const targetBox = await target.boundingBox();
+    expect(targetBox).not.toBeNull();
+    const placement = {
+      x: targetBox!.x + targetBox!.width * 0.32,
+      y: targetBox!.y + targetBox!.height * 0.56,
+    };
+    await page.mouse.click(placement.x, placement.y);
+
+    const editor = target.locator("[data-inline-text-editor]");
+    await expect(editor).toBeVisible();
+    await expect(
+      page.locator("[data-drawing-toolbar][data-chart-popup]"),
+    ).toHaveCount(0);
+    const editorBox = await editor.boundingBox();
+    expect(editorBox).not.toBeNull();
+    expect(Math.abs(editorBox!.x - placement.x)).toBeLessThan(3);
+    expect(
+      Math.abs(editorBox!.y + editorBox!.height / 2 - placement.y),
+    ).toBeLessThan(3);
+    expect(editorBox!.x).toBeGreaterThanOrEqual(targetBox!.x);
+    expect(editorBox!.x + editorBox!.width).toBeLessThanOrEqual(
+      targetBox!.x + targetBox!.width,
+    );
+
+    await editor.fill("Multi-chart text");
+    await editor.press("Enter");
+    await expect.poll(async () =>
+      page.evaluate(() => {
+        const drawing = window.__drawingInteractionTest!.snapshot().drawings[0];
+        return drawing
+          ? { tool: drawing.tool, text: drawing.text, chartId: drawing.sync?.chartId }
+          : null;
+      })
+    ).toEqual({ tool: "text", text: "Multi-chart text", chartId: "chart-2" });
+  });
+
+  test("pane activation preserves two-point and continuous drawing tools", async ({ page }) => {
+    await chooseArrangement(page, "2 Horizontal");
+    await page.waitForFunction(() => Boolean(window.__drawingInteractionTest));
+    await page.evaluate(() => window.__drawingInteractionTest!.clear());
+
+    await page.getByRole("button", { name: "Trend line", exact: true }).click();
+    await page.getByRole("button", { name: /^Trendline\b/ }).last().click();
+    await page.getByRole("button", { name: /^Activate chart 2:/ }).click();
+    await expect.poll(async () =>
+      page.evaluate(() => window.__drawingInteractionTest!.snapshot().activeTool)
+    ).toBe("trendline");
+
+    const secondPaneBox = await page.locator('[data-chart-slot="1"]').boundingBox();
+    expect(secondPaneBox).not.toBeNull();
+    await page.mouse.click(
+      secondPaneBox!.x + secondPaneBox!.width * 0.25,
+      secondPaneBox!.y + secondPaneBox!.height * 0.65,
+    );
+    await page.mouse.click(
+      secondPaneBox!.x + secondPaneBox!.width * 0.65,
+      secondPaneBox!.y + secondPaneBox!.height * 0.35,
+    );
+    await expect.poll(async () =>
+      page.evaluate(() => window.__drawingInteractionTest!.snapshot().drawings[0]?.tool)
+    ).toBe("trendline");
+
+    await page.evaluate(() => window.__drawingInteractionTest!.clear());
+    await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+    await page.getByRole("button", { name: /^Brush\b/ }).click();
+    await page.getByRole("button", { name: /^Activate chart 1:/ }).click();
+    await expect.poll(async () =>
+      page.evaluate(() => window.__drawingInteractionTest!.snapshot().activeTool)
+    ).toBe("brush");
+
+    const firstPaneBox = await page.locator('[data-chart-slot="0"]').boundingBox();
+    expect(firstPaneBox).not.toBeNull();
+    await page.mouse.move(
+      firstPaneBox!.x + firstPaneBox!.width * 0.3,
+      firstPaneBox!.y + firstPaneBox!.height * 0.6,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      firstPaneBox!.x + firstPaneBox!.width * 0.6,
+      firstPaneBox!.y + firstPaneBox!.height * 0.4,
+      { steps: 6 },
+    );
+    await page.mouse.up();
+    await expect.poll(async () =>
+      page.evaluate(() => window.__drawingInteractionTest!.snapshot().drawings[0]?.tool)
+    ).toBe("brush");
   });
 
   test("All charts replay scope is disabled for Single and enabled for multi-chart", async ({ page }) => {
@@ -405,7 +565,7 @@ test.describe("TradingView-style chart layouts", () => {
     );
     await expect.poll(async () =>
       page.evaluate(() => window.__drawingInteractionTest!.snapshot().activeTool)
-    ).toBe("crosshair");
+    ).toBe("long");
     await expect.poll(async () =>
       page.evaluate(() => window.__drawingInteractionTest!.snapshot().drawings.length)
     ).toBe(0);

@@ -672,7 +672,17 @@ export function PriceChart({
       if (disposed || chartRef.current !== chart) return;
       const bounds = entries[0]?.contentRect;
       if (!bounds || bounds.width <= 0 || bounds.height <= 0) return;
-      chart.resize(Math.floor(bounds.width), Math.floor(bounds.height));
+      // Lightweight Charts may resize its DPR-scaled backing canvases after
+      // the pane's CSS size has settled. A deferred resize can therefore clear
+      // the bitmap without producing another frame (most visible on inactive,
+      // non-interactive multi-chart previews). Force the resize transaction to
+      // repaint the chart atomically so a valid candle series never becomes a
+      // blank canvas after pane activation.
+      chart.resize(
+        Math.floor(bounds.width),
+        Math.floor(bounds.height),
+        true,
+      );
       applyResponsiveMaxBarSpacing(chart);
       scheduleVersionBump();
     });
@@ -747,6 +757,43 @@ export function PriceChart({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // A persistent multi-chart preview is covered by the interactive chart while
+  // its pane is active. When that cover is removed, repaint immediately even
+  // when the pane kept the same CSS dimensions and ResizeObserver has no new
+  // entry to deliver. This also gives newly mounted active charts a synchronous
+  // first paint after their series and container are ready.
+  useLayoutEffect(() => {
+    const chart = chartRef.current;
+    const container = containerRef.current;
+    const candleSeries = candleSeriesRef.current;
+    if (!chart || !container || !candleSeries || !ready) return;
+    const bounds = container.getBoundingClientRect();
+    if (bounds.width <= 0 || bounds.height <= 0) return;
+    const visibleRange = chart.timeScale().getVisibleLogicalRange();
+    chart.resize(
+      Math.floor(bounds.width),
+      Math.floor(bounds.height),
+      true,
+    );
+    const renderedCandles = prevCandlesRef.current.length > 0
+      ? prevCandlesRef.current
+      : candlesRef.current;
+    if (decorationsVisible && renderedCandles.length > 0) {
+      const data = renderedCandles.map((candle) => ({
+        time: candle.time as UTCTimestamp,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+      }));
+      measureChartSeriesWrite("candle", "setData", data.length, () => {
+        candleSeries.setData(data);
+      });
+      if (visibleRange) chart.timeScale().setVisibleLogicalRange(visibleRange);
+    }
+    scheduleVersionBump();
+  }, [decorationsVisible, ready, scheduleVersionBump]);
 
   useEffect(() => {
     const chart = chartRef.current;

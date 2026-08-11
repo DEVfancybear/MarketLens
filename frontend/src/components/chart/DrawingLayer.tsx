@@ -102,6 +102,7 @@ declare global {
 
 const MAX_INLINE_TEXT_EDITOR_WIDTH = 320;
 const STANDALONE_TEXT_EDITOR_WIDTH = 160;
+const EMPTY_SELECTED_DRAWING_IDS = new Set<string>();
 
 function boundedTextEditorWidth(width: number, minimum: number): number {
   return Math.min(
@@ -889,8 +890,15 @@ export function DrawingLayer() {
         return {
           drawings: renderDrawings,
           drawingsHidden: stateRef.current.drawingsHidden,
-          selectedDrawingId: stateRef.current.selectedDrawingId,
-          selectedDrawingIds: stateRef.current.selectedDrawingIds,
+          // The inline text editor is the active affordance. Suppress canvas
+          // selection handles for its drawing so an empty Text placeholder does
+          // not render a blue box beneath the input in compact multi panes.
+          selectedDrawingId: editingDrawingId
+            ? null
+            : stateRef.current.selectedDrawingId,
+          selectedDrawingIds: editingDrawingId
+            ? EMPTY_SELECTED_DRAWING_IDS
+            : stateRef.current.selectedDrawingIds,
           drawColor: stateRef.current.drawColor,
           activeTool: stateRef.current.activeTool,
           machine: machineRef.current,
@@ -1049,7 +1057,7 @@ export function DrawingLayer() {
         color={drawColor}
         canvasRef={canvasRef}
       />
-      <DrawingSettingsToolbar />
+      {!textEditSession && <DrawingSettingsToolbar />}
       {ctxMenu && (
         <DrawingContextMenu state={ctxMenu} onClose={() => setCtxMenu(null)} />
       )}

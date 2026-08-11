@@ -4,7 +4,7 @@ All notable changes to the MarketLens. Dates are UTC.
 
 ## [Unreleased]
 
-### Fixed - Multi-chart previews survive repeated focus changes (2026-08-11)
+### Fixed - Multi-chart canvases and drawing tools survive focus changes (2026-08-11)
 
 - Fixed inactive charts turning blank after repeatedly selecting panes in a
   multi-chart layout. Candle data and OHLC state were intact, but replacing the
@@ -14,13 +14,28 @@ All notable changes to the MarketLens. Dates are UTC.
   interactive chart on an opaque layer above the active preview. Focus changes
   now replace only that interactive layer, while each pane's painted preview
   and kline subscription remain stable.
+- Force every Lightweight Charts resize to repaint its DPR-scaled backing
+  canvases atomically. When a covered preview becomes visible again, re-commit
+  its already-rendered candle series and restore the same logical viewport so a
+  late backing-store reset cannot leave either the active or inactive chart
+  blank without changing zoom or pan.
 - Suppress indicator, drawing, alert, marker, and pointer decorations on the
   covered preview so it cannot duplicate runtime work or contend for the active
   chart's alert-line registry. Split preview subscription ownership from REST
   history recovery to avoid duplicate active-pane history requests.
-- Added a browser regression that alternates panes twelve times, waits beyond
-  the delayed canvas-resize race after each switch, and verifies that the same
-  preview nodes and their live canvas backing stores survive throughout.
+- Preserve the selected drawing tool while activating another pane. Text,
+  two-point tools, continuous tools, and position tools no longer require a
+  second selection before drawing on the newly active chart; pane-local editor
+  and indicator state still closes safely during the switch.
+- Treat inline text editing as the sole active affordance: hide the floating
+  drawing settings toolbar and suppress the placeholder's selection handles
+  until the text is saved or cancelled, removing the overlapping `Add text`
+  box seen in compact multi-chart panes.
+- Added browser regressions that alternate panes six times, wait beyond the
+  delayed canvas-resize race after each switch, and inspect actual bullish or
+  bearish candle pixels on both active and inactive charts. Additional coverage
+  creates Text, Trendline, Brush, and position drawings across pane changes and
+  verifies that each remains owned by its target chart.
 
 ### Fixed - Shared continuous-copier confirmation dialogs (2026-08-11)
 
