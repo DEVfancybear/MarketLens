@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://marketlens.local/schemas/mt5-cloud-connector-phase0-result.json",
+  "title": "Sanitized MT5 cloud connector Phase 0 result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "reviewed_at",
+    "phase_status",
+    "provider_decisions",
+    "cases"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "reviewed_at": { "type": "string", "format": "date" },
+    "phase_status": {
+      "enum": ["NOT_RUN", "IN_PROGRESS", "PASS", "STOP", "BLOCKED"]
+    },
+    "blockers": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "provider_decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["provider", "decision", "evidence_level", "reasons"],
+        "properties": {
+          "provider": { "enum": ["tickerall", "metaapi"] },
+          "decision": {
+            "enum": ["PENDING", "PROCEED", "CONDITIONAL_STOP", "STOP"]
+          },
+          "evidence_level": { "enum": ["DOC", "LIVE", "WRITTEN", "MISSING"] },
+          "reasons": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "case_id",
+          "family_kind",
+          "provider",
+          "server",
+          "account_alias",
+          "is_demo",
+          "execution_authorized",
+          "evidence_level",
+          "tests"
+        ],
+        "properties": {
+          "case_id": { "pattern": "^(PF1|RB1|RB2)$", "type": "string" },
+          "family_kind": { "enum": ["prop_firm", "retail_broker"] },
+          "provider": { "enum": ["tickerall", "metaapi"] },
+          "server": { "type": "string" },
+          "account_alias": { "pattern": "^acct_(pf1|rb1|rb2)$", "type": "string" },
+          "is_demo": { "type": ["boolean", "null"] },
+          "execution_authorized": { "type": "boolean" },
+          "permission_evidence": { "enum": ["PENDING", "TERMS", "WRITTEN", "NOT_REQUIRED"] },
+          "evidence_level": { "enum": ["DOC", "LIVE", "WRITTEN", "MISSING"] },
+          "tests": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "status"],
+              "properties": {
+                "id": { "pattern": "^[A-Z]{3,4}-[0-9]{2}$", "type": "string" },
+                "status": { "enum": ["NOT_RUN", "PASS", "FAIL", "BLOCKED", "UNSUPPORTED"] },
+                "latency_ms": { "type": ["integer", "null"], "minimum": 0 },
+                "error_class": { "type": ["string", "null"] },
+                "observation": { "type": ["string", "null"] },
+                "fixture_aliases": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

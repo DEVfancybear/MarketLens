@@ -12,8 +12,19 @@ Start with **Plan 0 only**: validate TickerAll across at least three MT5 server
 families, prove the complete demo lifecycle and idempotency behavior, collect
 sanitized contract fixtures, and resolve broker/provider permission constraints.
 Do not add public password routes, migration `0038`, or production provider
-secrets before the Plan 0 exit gate passes. MetaApi is the secondary provider
-after the common contract and TickerAll vertical slice are proven.
+secrets before the Plan 0 exit gate passes.
+
+Plan 0 contract review is complete; live validation remains blocked. Follow
+[`MT5_CLOUD_CONNECTOR_PHASE0_VALIDATION.md`](MT5_CLOUD_CONNECTOR_PHASE0_VALIDATION.md):
+
+1. obtain a short-lived provider development token without committing it;
+2. supply independently owned `PF1`, `RB1`, and `RB2` disposable MT5 demos;
+3. retain written prop-firm/broker third-party cloud-access permission;
+4. get TickerAll's written answer for pending-order management, instrument
+   specifications, stream replay, legal/security, and credential scope;
+5. treat TickerAll as `CONDITIONAL_STOP` meanwhile and run MetaApi as the
+   fallback live-validation candidate;
+6. commit only schema-validated sanitized fixtures after the live run.
 
 > Trade execution update (2026-07-26): older Phase 6 verifier/Connector tasks
 > are cancelled, not pending. The only native-venue completion sequence is the

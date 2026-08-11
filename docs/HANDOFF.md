@@ -1,11 +1,21 @@
 # HANDOFF
 
+> Universal MT5 cloud connector Plan 0 update (2026-08-11): read
+> `MT5_CLOUD_CONNECTOR_PHASE0_VALIDATION.md` before doing any connector work.
+> Contract review is complete, but the gate has not passed. TickerAll is
+> conditional-stop due to missing pending-order management/state, complete
+> instrument specifications, and replay ordering. MetaApi is the live-
+> validation fallback. Resume only with short-lived provider credentials,
+> independently owned `PF1`/`RB1`/`RB2` disposable demos, and written access
+> permission. Do not add production routes, migrations, secrets, or connector
+> code yet.
+
 > Universal MT5 cloud connector handoff (2026-08-11): begin with Plan 0 in
 > `UNIVERSAL_MT5_CLOUD_CONNECTOR_PLAN.md`. The required product flow is web-only:
 > users enter MT5 login/password/server in MarketLens and never open or install
 > MT5 Desktop, Mobile, WebTerminal, an EA, or a local connector. Keep one common
-> connector codebase for all certified brokers; TickerAll is the first provider
-> vertical slice and MetaApi is secondary. Do not create credential routes,
+> connector codebase for all certified brokers; the later provider ordering is
+> now superseded by the Plan 0 update above. Do not create credential routes,
 > migration `0038`, or production secrets until the Plan 0 validation gate passes.
 
 > Trade execution handoff (2026-07-26): never restore or follow the old FTMO

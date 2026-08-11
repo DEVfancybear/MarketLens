@@ -1,5 +1,15 @@
 # Current Progress
 
+- Universal MT5 cloud connector Plan 0 (2026-08-11): completed the official-
+  contract and security review without changing production code. TickerAll is
+  `CONDITIONAL_STOP`: its public API does not document pending-order list/
+  modify/cancel or lifecycle streaming, complete instrument specifications, or
+  replayable stream ordering. MetaApi documents the required fallback surface
+  and is selected for live validation, but provider tokens, one prop-firm and
+  two retail disposable MT5 demos, and written third-party access permissions
+  are absent. The Phase 0 production gate remains blocked; see
+  `MT5_CLOUD_CONNECTOR_PHASE0_VALIDATION.md` and the sanitized pending fixture.
+
 - Universal MT5 cloud connector planning (2026-08-11): approved a broker-neutral
   web-only account connection path through backend cloud providers. Users will
   connect with MT5 login/password/server entirely inside MarketLens and will not

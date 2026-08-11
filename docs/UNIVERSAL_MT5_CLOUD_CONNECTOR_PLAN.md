@@ -1,10 +1,13 @@
 # Universal MT5 Cloud Connector: implementation plan
 
-- Status: approved design; implementation has not started
+- Status: Plan 0 contract review complete; live validation blocked and the
+  production gate has not passed
 - Planning baseline: 11 August 2026
 - First implementation unit: Plan 0 - provider and broker validation
-- Primary provider for the first vertical slice: TickerAll
-- Secondary provider after the common contract is proven: MetaApi
+- Primary candidate: TickerAll (`CONDITIONAL_STOP` pending missing contract
+  surfaces and written answers)
+- Fallback candidate: MetaApi (proceed to live validation when secrets and
+  disposable demos are available)
 
 This document is the authoritative implementation plan for connecting user-owned
 MetaTrader 5 accounts to MarketLens without requiring the user to install or
@@ -19,6 +22,11 @@ keeps account state synchronized with the existing execution platform.
 Do not start a later plan until every exit gate in the preceding plan passes.
 Do not advertise support for a broker until that broker/server combination has
 passed the certification matrix in Plan 7.
+
+The current Plan 0 evidence, blocker list, provider matrix, test inventory, and
+secret-safe resume runbook are maintained in
+`MT5_CLOUD_CONNECTOR_PHASE0_VALIDATION.md`. Do not interpret a documentation-
+only capability as a passed live test.
 
 ## 1. Product decision
 
@@ -795,6 +803,14 @@ Rollback order:
 ## 19. Implementation plans
 
 ### Plan 0 - Provider and broker validation
+
+**Current execution status (11 August 2026):** contract review is complete but
+the exit gate is blocked. TickerAll is a conditional no-go because its public
+contract does not document pending-order read/modify/cancel, complete instrument
+specifications, or replayable stream ordering. MetaApi is the fallback selected
+for live validation. No provider token or three-account disposable demo set is
+available in the workspace, so no `LIVE` evidence exists yet. See
+`MT5_CLOUD_CONNECTOR_PHASE0_VALIDATION.md` and its sanitized fixture directory.
 
 **Objective:** prove the external path before changing production contracts.
 

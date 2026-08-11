@@ -4,6 +4,21 @@ All notable changes to the MarketLens. Dates are UTC.
 
 ## [Unreleased]
 
+### Documented - MT5 cloud connector Plan 0 contract gate (2026-08-11)
+
+- Reviewed current official TickerAll, MetaApi, and FTMO contract/security
+  material and added the executable Phase 0 provider matrix, demo lifecycle
+  cases, permission questions, redaction policy, and secret-safe resume runbook.
+- Marked TickerAll `CONDITIONAL_STOP` because its public API does not document
+  required pending-order management/state, complete instrument specifications,
+  or stream replay ordering. Selected MetaApi for fallback live validation,
+  subject to proving ambiguous-outcome recovery without native documented trade
+  idempotency.
+- Recorded the Phase 0 gate as blocked—not passed—because provider tokens,
+  three disposable MT5 demo families, and written broker/prop-firm access
+  permissions are not available. Added a JSON schema and sanitized pending
+  result; production code and secret configuration remain unchanged.
+
 ### Documented - Universal web-only MT5 cloud connector plan (2026-08-11)
 
 - Added the authoritative Plans 0-9 for a broker-neutral cloud MT5 connector
