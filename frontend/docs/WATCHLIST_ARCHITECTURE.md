@@ -51,8 +51,9 @@ Cleanup rules:
   the loaded MT5 catalog.
 - `refreshMt5SymbolCatalogAtom` runs the same sanitizer after `/api/v1/mt5/symbols` succeeds, which
   covers the startup order where bootstrap arrives before the catalog.
-- Valid legacy aliases are migrated only when the target symbol exists in the MT5 catalog, for
-  example older Binance-style `BTCUSDT`/`ETHUSDT` rows can become `BTCUSD`/`ETHUSD`.
+- Exact normalized broker symbols always win. A legacy alias is considered only when the exact
+  symbol is absent and the alias target exists in the MT5 catalog; for example older Binance-style
+  `BTCUSDT`/`ETHUSDT` rows can become `BTCUSD`/`ETHUSD`.
 - Invalid symbols are not clickable in the Watchlist. This prevents empty downstream calls such as
   `GET /api/v1/drawings?symbol=ETCUSD` or empty history requests when the broker catalog does not
   expose that symbol.

@@ -126,9 +126,16 @@ export function sanitizeListForCatalog(
   for (let index = 0; index < list.symbols.length; index += 1) {
     keptBeforeOriginalIndex[index] = keptCount;
     const rawSymbol = list.symbols[index]?.trim().toUpperCase();
-    const alias = rawSymbol ? legacyAliases[rawSymbol] : undefined;
-    const symbol = (alias || rawSymbol || "").trim().toUpperCase();
-    if (!symbol || !catalogSymbols.has(symbol) || seen.has(symbol)) continue;
+    const alias = rawSymbol
+      ? legacyAliases[rawSymbol]?.trim().toUpperCase()
+      : undefined;
+    const symbol =
+      rawSymbol && catalogSymbols.has(rawSymbol)
+        ? rawSymbol
+        : alias && catalogSymbols.has(alias)
+          ? alias
+          : "";
+    if (!symbol || seen.has(symbol)) continue;
     seen.add(symbol);
     nextSymbols.push(symbol);
     keptCount += 1;

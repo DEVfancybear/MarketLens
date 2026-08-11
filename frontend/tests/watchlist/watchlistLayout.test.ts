@@ -361,3 +361,21 @@ test("sanitizes stale server symbols against the MT5 catalog", () => {
     ],
   );
 });
+
+test("prefers an exact catalog symbol before falling back to its alias", () => {
+  const result = sanitizeListForCatalog(
+    {
+      id: "wl_exact_symbol",
+      name: "Watchlist",
+      shared: false,
+      sortKey: "symbol",
+      sortDir: "asc",
+      symbols: ["XAUUSD", "BTCUSDT"],
+      sections: [],
+    },
+    new Set(["XAUUSD", "BTCUSD"]),
+    { XAUUSD: "GOLD", BTCUSDT: "BTCUSD" },
+  );
+
+  assert.deepEqual(result.symbols, ["XAUUSD", "BTCUSD"]);
+});
