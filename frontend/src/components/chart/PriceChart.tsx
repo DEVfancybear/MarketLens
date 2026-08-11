@@ -289,6 +289,7 @@ export function PriceChart({
   replayTrackSlot = 0,
   interactive = true,
   registerAsMain = true,
+  decorationsVisible = true,
 }: {
   candles: Candle[];
   indicatorsOverride?: IndicatorConfig[];
@@ -301,6 +302,7 @@ export function PriceChart({
   replayTrackSlot?: number;
   interactive?: boolean;
   registerAsMain?: boolean;
+  decorationsVisible?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const activeDrawingTool = useAtomValue(activeToolAtom);
@@ -1756,46 +1758,54 @@ export function PriceChart({
     <div
       data-testid="price-chart-root"
       className="relative h-full min-w-0 w-full overflow-hidden"
-      onContextMenu={interactive ? onContextMenu : undefined}
+      onContextMenu={interactive && decorationsVisible ? onContextMenu : undefined}
     >
       <div ref={containerRef} className="h-full w-full" />
-      {ctx && <ChartContextObj.Provider value={ctx}>{children}</ChartContextObj.Provider>}
-      <IndicatorOverlay labels={indicatorLabels} dashboards={indicatorDashboards} />
-      <IndicatorLegend
-        className="absolute left-2 top-8 z-30 max-w-[calc(100%-116px)]"
-        indicators={overlayLegendIndicators}
-        onToggleVisibility={toggleIndicatorVisibility}
-        onSettings={openIndicatorSettings}
-        onSource={openIndicatorSource}
-        onRemove={(id) => removeIndicator(id)}
-        valueTextById={overlayLegendValueText}
-      />
-      {paneIndicators.map((indicator, index) => {
-        const top = paneLegendLayout.signature === paneLayoutSignature
-          ? paneLegendLayout.tops[indicator.id]
-          : undefined;
-        if (top == null) return null;
-        return (
-          <div
-            key={indicator.id}
-            data-indicator-pane-legend={indicator.id}
-            data-pane-index={index + 1}
-            className="absolute left-1 z-30 max-w-[calc(100%-96px)]"
-            style={{ top }}
-          >
-            <IndicatorLegend
-              indicators={[indicator]}
-              onToggleVisibility={toggleIndicatorVisibility}
-              onSettings={openIndicatorSettings}
-              onSource={openIndicatorSource}
-              onRemove={(id) => removeIndicator(id)}
-              valueTextById={paneLegendValueText}
-            />
-          </div>
-        );
-      })}
-      {priceMarker && <CurrentPriceMarker marker={priceMarker} precision={precision} symbol={symbol} />}
-      {interactive && menu && <ChartContextMenu state={menu} onClose={() => setMenu(null)} />}
+      {decorationsVisible && (
+        <>
+          {ctx && <ChartContextObj.Provider value={ctx}>{children}</ChartContextObj.Provider>}
+          <IndicatorOverlay labels={indicatorLabels} dashboards={indicatorDashboards} />
+          <IndicatorLegend
+            className="absolute left-2 top-8 z-30 max-w-[calc(100%-116px)]"
+            indicators={overlayLegendIndicators}
+            onToggleVisibility={toggleIndicatorVisibility}
+            onSettings={openIndicatorSettings}
+            onSource={openIndicatorSource}
+            onRemove={(id) => removeIndicator(id)}
+            valueTextById={overlayLegendValueText}
+          />
+          {paneIndicators.map((indicator, index) => {
+            const top = paneLegendLayout.signature === paneLayoutSignature
+              ? paneLegendLayout.tops[indicator.id]
+              : undefined;
+            if (top == null) return null;
+            return (
+              <div
+                key={indicator.id}
+                data-indicator-pane-legend={indicator.id}
+                data-pane-index={index + 1}
+                className="absolute left-1 z-30 max-w-[calc(100%-96px)]"
+                style={{ top }}
+              >
+                <IndicatorLegend
+                  indicators={[indicator]}
+                  onToggleVisibility={toggleIndicatorVisibility}
+                  onSettings={openIndicatorSettings}
+                  onSource={openIndicatorSource}
+                  onRemove={(id) => removeIndicator(id)}
+                  valueTextById={paneLegendValueText}
+                />
+              </div>
+            );
+          })}
+          {priceMarker && (
+            <CurrentPriceMarker marker={priceMarker} precision={precision} symbol={symbol} />
+          )}
+          {interactive && menu && (
+            <ChartContextMenu state={menu} onClose={() => setMenu(null)} />
+          )}
+        </>
+      )}
     </div>
   );
 }

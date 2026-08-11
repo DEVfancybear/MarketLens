@@ -4,6 +4,24 @@ All notable changes to the MarketLens. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Multi-chart previews survive repeated focus changes (2026-08-11)
+
+- Fixed inactive charts turning blank after repeatedly selecting panes in a
+  multi-chart layout. Candle data and OHLC state were intact, but replacing the
+  active chart with a newly mounted non-interactive preview let a delayed
+  device-pixel-ratio canvas resize clear its bitmap without a following paint.
+- Keep one read-only preview mounted for every visible pane and place the full
+  interactive chart on an opaque layer above the active preview. Focus changes
+  now replace only that interactive layer, while each pane's painted preview
+  and kline subscription remain stable.
+- Suppress indicator, drawing, alert, marker, and pointer decorations on the
+  covered preview so it cannot duplicate runtime work or contend for the active
+  chart's alert-line registry. Split preview subscription ownership from REST
+  history recovery to avoid duplicate active-pane history requests.
+- Added a browser regression that alternates panes twelve times, waits beyond
+  the delayed canvas-resize race after each switch, and verifies that the same
+  preview nodes and their live canvas backing stores survive throughout.
+
 ### Fixed - Shared continuous-copier confirmation dialogs (2026-08-11)
 
 - Replaced the continuous copier's remaining browser-native confirmations for

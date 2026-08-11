@@ -45,7 +45,7 @@ import {
   mt5HistoryFreshnessError,
 } from "@/services/market-data/mt5HistoryFreshness";
 import { cn } from "@/utils/cn";
-import type { Candle } from "@/types";
+import type { Candle, IndicatorConfig } from "@/types";
 import { selectIndicatorsForChart } from "./indicators/indicatorChartScope";
 import { AlertLines } from "./AlertLines";
 import { AlertOverlay } from "./AlertOverlay";
@@ -60,6 +60,7 @@ import {
 } from "./paneSeriesRetention";
 
 const PANE_HISTORY_RETRY_DELAYS_MS = [600, 1_800, 4_000, 10_000, 30_000] as const;
+const EMPTY_INDICATORS: IndicatorConfig[] = [];
 
 // MT5 serves history through one bridge slot. Serializing read-only pane loads
 // avoids filling the backend's request queue when a saved 2x2 layout restores
@@ -275,6 +276,17 @@ export function ChartLayoutWorkspace({
       {slots.map((slot) => {
         const pane = panes.find((candidate) => candidate.slot === slot) ?? panes[0]!;
         const active = slot === activeSlot;
+        const activeChart = (
+          <ChartArea
+            slot={slot}
+            chartId={pane.id}
+            mobileControls={mobileControls}
+            retainedLiveSeries={renderedSeriesByPane.current.get(pane.id)}
+            onSeriesSnapshot={(snapshot) =>
+              rememberRenderedSeries(pane, snapshot)
+            }
+          />
+        );
         return (
           <section
             key={pane.id}
@@ -288,26 +300,29 @@ export function ChartLayoutWorkspace({
                 "z-[2] ring-2 ring-inset ring-brand",
             )}
           >
-            {active ? (
-              <ChartArea
-                slot={slot}
-                chartId={pane.id}
-                mobileControls={mobileControls}
-                retainedLiveSeries={renderedSeriesByPane.current.get(pane.id)}
-                onSeriesSnapshot={(snapshot) =>
-                  rememberRenderedSeries(pane, snapshot)
-                }
-              />
+            {preset === "single" ? (
+              activeChart
             ) : (
-              <ChartPreviewPane
-                pane={pane}
-                drawingLayoutId={drawingLayoutId}
-                retainedSeries={renderedSeriesByPane.current.get(pane.id)}
-                onSeriesSnapshot={(snapshot) =>
-                  rememberRenderedSeries(pane, snapshot)
-                }
-                onActivate={() => activatePane(pane)}
-              />
+              <>
+                <ChartPreviewPane
+                  active={active}
+                  pane={pane}
+                  drawingLayoutId={drawingLayoutId}
+                  retainedSeries={renderedSeriesByPane.current.get(pane.id)}
+                  onSeriesSnapshot={(snapshot) =>
+                    rememberRenderedSeries(pane, snapshot)
+                  }
+                  onActivate={() => activatePane(pane)}
+                />
+                {active && (
+                  <div
+                    data-active-chart-surface
+                    className="absolute inset-0 z-10 min-h-0 min-w-0 bg-[var(--chart-bg)]"
+                  >
+                    {activeChart}
+                  </div>
+                )}
+              </>
             )}
             {chartDropPreview?.slot === slot && (
               <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-brand/10 backdrop-blur-[1px]">
@@ -324,12 +339,14 @@ export function ChartLayoutWorkspace({
 }
 
 function ChartPreviewPane({
+  active,
   pane,
   drawingLayoutId,
   retainedSeries,
   onSeriesSnapshot,
   onActivate,
 }: {
+  active: boolean;
   pane: ChartPaneState;
   drawingLayoutId: string;
   retainedSeries?: ChartSeriesSnapshot;
@@ -364,6 +381,7 @@ function ChartPreviewPane({
   const { candles, loading } = usePaneMarketData(
     pane,
     !replayOwnsPane,
+    !active && !replayOwnsPane,
   );
   const displayedCandles = useChartSeries(
     pane.slot,
@@ -389,16 +407,24 @@ function ChartPreviewPane({
   ]);
 
   return (
-    <div className="relative h-full min-h-0 w-full min-w-0 overflow-hidden bg-[var(--chart-bg)]">
+    <div
+      data-chart-preview
+      aria-hidden={active || undefined}
+      className={cn(
+        "relative h-full min-h-0 w-full min-w-0 overflow-hidden bg-[var(--chart-bg)]",
+        active && "pointer-events-none",
+      )}
+    >
       <PriceChart
         candles={displayedCandles}
-        indicatorsOverride={indicators}
+        indicatorsOverride={active ? EMPTY_INDICATORS : indicators}
         symbolOverride={pane.symbol}
         timeframeOverride={pane.timeframe}
         timeZone={timeZone}
         replayTrackSlot={pane.slot}
         interactive={false}
         registerAsMain={false}
+        decorationsVisible={!active}
       >
         <AlertLines chartId={pane.id} symbol={pane.symbol} />
         <AlertOverlay
@@ -412,36 +438,44 @@ function ChartPreviewPane({
           timeframe={pane.timeframe}
         />
       </PriceChart>
-      <div className="pointer-events-none absolute left-2 top-2 z-20 rounded-lg border border-terminal-border bg-terminal-panel/82 px-2 py-1.5 text-[10px] shadow-terminal backdrop-blur">
-        <div className="flex items-center gap-1 text-ink-muted">
-          <strong className="text-xs text-ink">{pane.symbol || "Chart"}</strong>
-          {market?.exchange && <span>· {market.exchange}</span>}
-          <span>· {pane.timeframe}</span>
-        </div>
-        {last && (
-          <div className={last.close >= last.open ? "text-bull" : "text-bear"}>
-            O {last.open} H {last.high} L {last.low} C {last.close}
+      {!active && (
+        <>
+          <div className="pointer-events-none absolute left-2 top-2 z-20 rounded-lg border border-terminal-border bg-terminal-panel/82 px-2 py-1.5 text-[10px] shadow-terminal backdrop-blur">
+            <div className="flex items-center gap-1 text-ink-muted">
+              <strong className="text-xs text-ink">{pane.symbol || "Chart"}</strong>
+              {market?.exchange && <span>· {market.exchange}</span>}
+              <span>· {pane.timeframe}</span>
+            </div>
+            {last && (
+              <div className={last.close >= last.open ? "text-bull" : "text-bear"}>
+                O {last.open} H {last.high} L {last.low} C {last.close}
+              </div>
+            )}
           </div>
-        )}
-      </div>
-      {loading && displayedCandles.length === 0 && (
-        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center text-ink-muted">
-          <Loader2 size={18} className="animate-spin" />
-        </div>
+          {loading && displayedCandles.length === 0 && (
+            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center text-ink-muted">
+              <Loader2 size={18} className="animate-spin" />
+            </div>
+          )}
+          <button
+            type="button"
+            aria-label={`Activate chart ${pane.slot + 1}: ${pane.symbol || "empty chart"} ${pane.timeframe}`}
+            onClick={onActivate}
+            className="absolute inset-0 z-30 cursor-pointer bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
+          >
+            <span className="sr-only">Activate chart {pane.slot + 1}</span>
+          </button>
+        </>
       )}
-      <button
-        type="button"
-        aria-label={`Activate chart ${pane.slot + 1}: ${pane.symbol || "empty chart"} ${pane.timeframe}`}
-        onClick={onActivate}
-        className="absolute inset-0 z-30 cursor-pointer bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
-      >
-        <span className="sr-only">Activate chart {pane.slot + 1}</span>
-      </button>
     </div>
   );
 }
 
-function usePaneMarketData(pane: ChartPaneState, enabled: boolean): {
+function usePaneMarketData(
+  pane: ChartPaneState,
+  enabled: boolean,
+  recoverHistory: boolean,
+): {
   candles: Candle[];
   loading: boolean;
 } {
@@ -454,7 +488,36 @@ function usePaneMarketData(pane: ChartPaneState, enabled: boolean): {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!enabled) {
+    if (!enabled) return;
+    const market = pane.symbol ? getMarketSymbol(pane.symbol) : undefined;
+    if (
+      !workspaceReady ||
+      !pane.initialized ||
+      !pane.symbol ||
+      !market
+    ) return;
+    const marketData = getMarketDataState();
+    getMarketDataService();
+    marketData.subscribe({
+      symbol: pane.symbol,
+      channels: ["kline"],
+      timeframe: pane.timeframe,
+    });
+
+    return () => {
+      marketData.unsubscribe(pane.symbol, pane.timeframe);
+    };
+  }, [
+    catalogSize,
+    enabled,
+    pane.initialized,
+    pane.symbol,
+    pane.timeframe,
+    workspaceReady,
+  ]);
+
+  useEffect(() => {
+    if (!enabled || !recoverHistory) {
       setLoading(false);
       return;
     }
@@ -464,15 +527,12 @@ function usePaneMarketData(pane: ChartPaneState, enabled: boolean): {
       !pane.initialized ||
       !pane.symbol ||
       !market
-    ) return;
+    ) {
+      setLoading(false);
+      return;
+    }
     const marketData = getMarketDataState();
     const controller = new AbortController();
-    getMarketDataService();
-    marketData.subscribe({
-      symbol: pane.symbol,
-      channels: ["kline"],
-      timeframe: pane.timeframe,
-    });
 
     if (marketData.getCandles(pane.symbol, pane.timeframe).length === 0) {
       setLoading(true);
@@ -551,11 +611,12 @@ function usePaneMarketData(pane: ChartPaneState, enabled: boolean): {
         .finally(() => {
           if (!controller.signal.aborted) setLoading(false);
         });
+    } else {
+      setLoading(false);
     }
 
     return () => {
       controller.abort();
-      marketData.unsubscribe(pane.symbol, pane.timeframe);
     };
   }, [
     catalogSize,
@@ -564,6 +625,7 @@ function usePaneMarketData(pane: ChartPaneState, enabled: boolean): {
     pane.slot,
     pane.symbol,
     pane.timeframe,
+    recoverHistory,
     workspaceReady,
   ]);
 

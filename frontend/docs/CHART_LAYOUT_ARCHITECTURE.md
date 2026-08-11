@@ -1,6 +1,6 @@
 # Chart Layout Architecture
 
-_Updated 2026-07-26._
+_Updated 2026-08-11._
 
 ## Scope and behavior contract
 
@@ -32,12 +32,28 @@ References:
 | `two_vertical` | `0, 1` | one column, two rows |
 | `grid_2x2` | `0, 1, 2, 3` | two columns, two rows |
 
-`ChartLayoutWorkspace` is the shared desktop/mobile renderer. The active slot
-mounts the complete interactive `ChartArea`; inactive slots mount real,
-read-only `PriceChart` previews plus a non-interactive drawing canvas. A preview
-has its own history/subscription, pane-scoped indicators, current-price
-symbol/countdown marker, and drawing projection, then becomes the interactive
-chart when the user activates it.
+`ChartLayoutWorkspace` is the shared desktop/mobile renderer. In a multi-chart
+arrangement, every visible slot owns one persistent read-only `PriceChart`
+preview keyed by its stable pane ID. The active slot additionally mounts the
+complete interactive `ChartArea` on an opaque layer above that preview. Changing
+focus therefore replaces only the interactive layer; it never unmounts the
+outgoing pane's painted preview.
+
+Keeping the preview mounted is a rendering invariant, not only a data-cache
+optimization. Lightweight Charts can resize its canvas backing bitmap to the
+current device-pixel ratio shortly after mount. That resize clears the bitmap;
+a newly mounted non-interactive preview may not receive another render frame
+and can remain blank even though its candles, OHLC text, DOM, and canvas sizes
+are all valid. The persistent preview has already completed that lifecycle and
+retains its painted bitmap through repeated focus changes.
+
+The active preview remains full-size below the interactive surface; it is never
+hidden with `display: none`, which would collapse its resize measurements.
+While covered, it suppresses indicators, legends, alerts, drawings, markers,
+and pointer handling. This avoids duplicate indicator work and prevents the
+hidden preview from competing with the active chart for the shared alert-line
+registry. Single-chart mode continues to mount only one interactive
+`ChartArea`.
 
 Cold preview history is loaded through one shared low-priority queue because
 the MT5 bridge exposes one history slot. Each queued task rechecks the
@@ -47,6 +63,13 @@ intervals remain isolated. Pane changes abort obsolete tasks. A visible empty
 pane retries transient HTTP, bridge warm-up, and empty-history failures with
 capped backoff and pane-specific jitter until candles arrive; one temporary
 failure therefore cannot leave that pane permanently blank.
+
+Preview subscriptions and history recovery have separate lifecycles. Every
+visible live preview keeps its kline subscription while focus moves, so the
+active-to-inactive handoff never drops the pane's last lease. Only an inactive
+preview starts REST history recovery; the covered active preview observes the
+same keyed candle store while `ChartArea` owns active loading. This prevents
+duplicate cold-history requests without reintroducing subscription churn.
 
 When the active `ChartArea` becomes a read-only preview, it records the last
 coherent live series under the stable pane ID. The preview renders that series
@@ -80,8 +103,9 @@ Layout menu
   -> setChartLayoutPresetAtom / setReplayLayoutModeAtom
   -> chartPanesAtom + activeChartSlotAtom
   -> ChartLayoutWorkspace
-       -> active slot: ChartArea
-       -> inactive slots: read-only PriceChart previews
+       -> every multi-chart slot: persistent read-only PriceChart preview
+       -> active multi-chart slot: opaque ChartArea overlay
+       -> single-chart slot: ChartArea only
 ```
 
 `chartStore.symbolAtom` and `timeframeAtom` remain the active chart bridge used
@@ -108,7 +132,7 @@ When the active selection changes, it is written back to that pane.
   `All charts` is always an explicit user choice.
 
 Stable pane IDs are also drawing chart IDs. This prevents switching panes from
-mixing drawing scopes even though the interactive chart component is remounted.
+mixing drawing scopes even though the active interactive overlay is remounted.
 The same IDs own `IndicatorConfig.chartScope`; indicators created in one pane
 are filtered out of sibling panes. Legacy indicator presets without a scope are
 bound to the active pane once at the persistence boundary.
@@ -229,6 +253,9 @@ The layout browser suite includes a cold-history recovery regression that
 switches a chart from active to preview while its first request is in flight,
 forces the next request to fail, and verifies that the same-symbol,
 different-timeframe pane repaints after the automatic retry.
+It also alternates focus between two panes twelve times, waits beyond the
+delayed device-pixel-ratio resize window on every switch, and proves that both
+original preview DOM nodes remain connected with live canvas backing stores.
 `paneSeriesRetention.test.ts` additionally proves that an empty keyed cache
 uses only the matching live frame, that authoritative keyed candles replace it,
 and that Replay/other-symbol data can never leak into the fallback. The same

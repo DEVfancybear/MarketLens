@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 async function openLayoutMenu(page: Page) {
   await page.getByRole("button", { name: "Layout", exact: true }).click();
@@ -7,6 +7,15 @@ async function openLayoutMenu(page: Page) {
 async function chooseArrangement(page: Page, label: string) {
   await openLayoutMenu(page);
   await page.getByRole("menuitemradio", { name: label, exact: true }).click();
+}
+
+async function previewCanvasArea(preview: Locator): Promise<number> {
+  return preview.locator("canvas").evaluateAll((canvases) =>
+    canvases.reduce((area, canvas) => {
+      if (!(canvas instanceof HTMLCanvasElement)) return area;
+      return area + canvas.width * canvas.height;
+    }, 0),
+  );
 }
 
 test.describe("TradingView-style chart layouts", () => {
@@ -155,6 +164,49 @@ test.describe("TradingView-style chart layouts", () => {
 
     await chooseArrangement(page, "Grid 2×2");
     await expect(page.locator('[data-chart-slot="3"]')).toHaveCount(1);
+  });
+
+  test("repeated activation keeps every multi-chart preview mounted with a live canvas", async ({ page }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+
+    await chooseArrangement(page, "2 Vertical");
+    const layout = page.locator('[data-chart-layout="two_vertical"]');
+    const previews = layout.locator("[data-chart-preview]");
+    await expect(previews).toHaveCount(2);
+    await expect.poll(
+      async () => Math.min(
+        await previewCanvasArea(previews.nth(0)),
+        await previewCanvasArea(previews.nth(1)),
+      ),
+      { timeout: 15_000 },
+    ).toBeGreaterThan(0);
+
+    const persistentPreviews = [
+      await previews.nth(0).elementHandle(),
+      await previews.nth(1).elementHandle(),
+    ];
+    expect(persistentPreviews.every(Boolean)).toBe(true);
+
+    for (let iteration = 0; iteration < 12; iteration += 1) {
+      const targetSlot = iteration % 2 === 0 ? 1 : 0;
+      const inactiveSlot = targetSlot === 0 ? 1 : 0;
+      await page.getByRole("button", {
+        name: new RegExp(`^Activate chart ${targetSlot + 1}:`),
+      }).click();
+      await expect(layout.locator(`[data-chart-slot="${targetSlot}"]`))
+        .toHaveAttribute("data-active-chart", "true");
+
+      // The production failure clears the new preview bitmap after its delayed
+      // device-pixel-ratio resize, roughly 150-200 ms after activation.
+      await page.waitForTimeout(350);
+      for (const preview of persistentPreviews) {
+        expect(await preview!.evaluate((node) => node.isConnected)).toBe(true);
+      }
+      expect(await previewCanvasArea(previews.nth(inactiveSlot))).toBeGreaterThan(0);
+    }
+
+    expect(pageErrors.filter((message) => /disposed|canvas|chart/i.test(message))).toEqual([]);
   });
 
   test("All charts replay scope is disabled for Single and enabled for multi-chart", async ({ page }) => {
@@ -353,7 +405,7 @@ test.describe("TradingView-style chart layouts", () => {
     );
     await expect.poll(async () =>
       page.evaluate(() => window.__drawingInteractionTest!.snapshot().activeTool)
-    ).toBe("cursor");
+    ).toBe("crosshair");
     await expect.poll(async () =>
       page.evaluate(() => window.__drawingInteractionTest!.snapshot().drawings.length)
     ).toBe(0);
