@@ -4,6 +4,24 @@ All notable changes to the MarketLens. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Secure multi-terminal MT5 Windows VM connector Phase 0 (2026-08-12)
+
+- Replaced and deleted the TickerAll/MetaApi cloud-provider plan with the
+  authoritative Windows VM Plans 0-9. Users remain browser-only while one Rust
+  worker supervises multiple isolated MT5 terminal/Python-adapter pairs.
+- Added the `mt5-vm-agent` Rust crate with bounded preallocated O(1) runtime
+  lookup, isolated account paths, hard capacity limits, and non-zero/stale lease
+  fencing. Six Rust tests pass.
+- Added a read-only Python/PowerShell Phase 0 harness. DPAPI ciphertext stays
+  outside Git, plaintext travels only over redirected stdin, account results are
+  refused inside the repository, and no order API is present. Seven Python tests
+  and all four host checks pass.
+- Provisioned an ignored managed Python 3.12 x64 environment with MetaTrader5
+  5.0.6090 and websockets 17.0.1, and installed the Microsoft C++ Build Tools
+  needed to build/test the Rust Windows agent.
+- Made security and measured performance explicit release gates. Phase 0 remains
+  conditional only on the operator-owned FTMO Free Trial read-only account probe.
+
 ### Documented - MT5 cloud connector Plan 0 contract gate (2026-08-11)
 
 - Reviewed current official TickerAll, MetaApi, and FTMO contract/security

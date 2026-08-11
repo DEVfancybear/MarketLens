@@ -4,11 +4,11 @@ Status: production MT5 path implemented; native exchange transports remain
 fail-closed until their credential, signing, rate-limit, and reconciliation
 implementations are complete.
 
-The approved but not yet implemented web-only MT5 transport is specified in
-[`UNIVERSAL_MT5_CLOUD_CONNECTOR_PLAN.md`](UNIVERSAL_MT5_CLOUD_CONNECTOR_PLAN.md).
-It is additive to the current EA path and begins with provider/broker validation;
-do not treat the cloud connector, credential routes, or no-install user flow as
-available until their individual plan exit gates pass.
+The approved web-only MT5 transport is specified in
+[`UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md`](UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md).
+It is additive to the current EA path and uses private Windows VMs with a Rust
+multi-terminal supervisor; do not treat credential routes, order execution, or
+the no-install user flow as available until their phase exit gates pass.
 
 ## Goals
 

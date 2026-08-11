@@ -14,6 +14,10 @@ market data, Pine execution, or ordinary application CRUD.
 - `execution-adapters`: the shared venue contract, MT5 queue adapter, and native
   API adapter boundary.
 - `execution-gateway`: PostgreSQL-backed EA and loopback admin APIs.
+- `mt5-vm-agent`: the Windows VM supervisor foundation. It owns a bounded,
+  preallocated O(1) runtime registry for multiple isolated terminal/adapter
+  pairs and rejects unsafe account paths, zero/stale leases, and capacity
+  overflow. It does not store broker credentials.
 
 The gateway refuses to start without PostgreSQL and an unpredictable
 `EXECUTION_ADMIN_TOKEN`. Commands and outcomes are tenant-scoped, target-scoped,

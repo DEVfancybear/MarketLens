@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://marketlens.local/schemas/mt5-windows-vm-phase0-result.json",
+  "title": "Sanitized MT5 Windows VM Phase 0 result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "phase",
+    "mode",
+    "generated_at",
+    "status",
+    "host",
+    "terminal",
+    "runtime",
+    "tests"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "phase": { "const": "mt5_windows_vm_phase0" },
+    "mode": { "const": "host" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "status": { "enum": ["PASS", "BLOCKED"] },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["windows", "powershell", "architecture"],
+      "properties": {
+        "windows": { "type": "string" },
+        "powershell": { "type": "string" },
+        "architecture": { "type": "string" }
+      }
+    },
+    "terminal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["found", "version", "company", "running_processes"],
+      "properties": {
+        "found": { "type": "boolean" },
+        "version": { "type": ["string", "null"] },
+        "company": { "type": ["string", "null"] },
+        "running_processes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "found",
+        "python",
+        "bits",
+        "metatrader5",
+        "websockets",
+        "error_class"
+      ],
+      "properties": {
+        "found": { "type": "boolean" },
+        "python": { "type": ["string", "null"] },
+        "bits": { "type": ["integer", "null"] },
+        "metatrader5": { "type": ["string", "null"] },
+        "websockets": { "type": ["string", "null"] },
+        "error_class": { "type": ["string", "null"] }
+      }
+    },
+    "tests": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status"],
+        "properties": {
+          "id": { "pattern": "^HST-[0-9]{2}$", "type": "string" },
+          "status": { "enum": ["PASS", "FAIL"] }
+        }
+      }
+    }
+  }
+}

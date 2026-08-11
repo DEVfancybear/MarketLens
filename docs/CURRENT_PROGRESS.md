@@ -1,24 +1,18 @@
 # Current Progress
 
-- Universal MT5 cloud connector Plan 0 (2026-08-11): completed the official-
-  contract and security review without changing production code. TickerAll is
-  `CONDITIONAL_STOP`: its public API does not document pending-order list/
-  modify/cancel or lifecycle streaming, complete instrument specifications, or
-  replayable stream ordering. MetaApi documents the required fallback surface
-  and is selected for live validation, but provider tokens, one prop-firm and
-  two retail disposable MT5 demos, and written third-party access permissions
-  are absent. The Phase 0 production gate remains blocked; see
-  `MT5_CLOUD_CONNECTOR_PHASE0_VALIDATION.md` and the sanitized pending fixture.
-
-- Universal MT5 cloud connector planning (2026-08-11): approved a broker-neutral
-  web-only account connection path through backend cloud providers. Users will
-  connect with MT5 login/password/server entirely inside MarketLens and will not
-  open or install MT5, WebTerminal, an EA, or a local connector. The authoritative
-  Plans 0-9 define provider validation, common Rust contracts, additive storage,
-  credential policy, TickerAll read/execution flow, synchronization and unknown-
-  outcome recovery, universal frontend UX, multi-broker certification, MetaApi
-  fallback, and production canaries. Implementation begins with Plan 0 only; see
-  `UNIVERSAL_MT5_CLOUD_CONNECTOR_PLAN.md`.
+- Universal MT5 Windows VM connector Phase 0 (2026-08-12): replaced and deleted
+  the TickerAll/MetaApi plan. The authoritative broker-neutral path now uses a
+  private Windows VM pool where one Rust `mt5-vm-agent` owns multiple isolated
+  MT5 terminal/Python-adapter pairs; users remain browser-only. Installed the
+  ignored managed Python 3.12 x64 runtime with MetaTrader5 5.0.6090 and
+  websockets 17.0.1, plus MSVC Build Tools/Windows SDK for Rust development.
+  Host preflight passes, the Rust agent passes six tests, and the secret-safe
+  Python adapter passes seven tests. Phase 0 is `CONDITIONAL_PASS`: only a
+  DPAPI-protected FTMO Free Trial read-only account probe remains. Security is
+  the first release gate; performance/density is measured only after isolation,
+  fencing, redaction, bounded queues, and fault tests pass. See
+  `UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md` and
+  `MT5_WINDOWS_VM_CONNECTOR_PHASE0_VALIDATION.md`.
 
 - Live-tail indicator viewport stability (2026-08-10): post-deploy Edge probes
   separated the remaining shake from MT5 ingress and controller resets. The

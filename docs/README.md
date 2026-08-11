@@ -16,8 +16,8 @@ owning package docs.
 | `KNOWN_ISSUES.md` | Known mismatches, limitations, and operational gotchas |
 | `CHANGELOG.md` | Dated log of major changes |
 | `TRADE_EXECUTION_ARCHITECTURE.md` | Durable multi-account web execution architecture and safety boundaries |
-| `UNIVERSAL_MT5_CLOUD_CONNECTOR_PLAN.md` | Phased broker-neutral plan for web-only MT5 connections through cloud providers, with no MT5 app, WebTerminal, EA, or local connector |
-| `MT5_CLOUD_CONNECTOR_PHASE0_VALIDATION.md` | Plan 0 provider contract findings, stop/go decision, permission gates, live demo matrix, and secret-safe validation runbook |
+| `UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md` | Authoritative Plans 0-9 for a secure broker-neutral Windows VM connector with multiple isolated MT5 terminals per Rust-managed worker |
+| `MT5_WINDOWS_VM_CONNECTOR_PHASE0_VALIDATION.md` | Current host/runtime evidence, secret-safe disposable-demo probe, tests, and remaining FTMO credential gate |
 | `PROP_RISK_GUARD.md` | Automated, versioned prop-firm drawdown protection on the web execution path |
 
 ## Package Docs
@@ -36,8 +36,8 @@ owning package docs.
 | `REPLAY_BACKEND_PHASE6.md` | Final Replay cutover, mandatory deletion proof, boundary guard, and verification runbook |
 | `PINE_RUNTIME_GO_MIGRATION.md` | Cross-package plan for moving Pine parsing/compilation from frontend TypeScript to the Go backend |
 | `PIVOT_FORMATION_ALERT_PLAN.md` | Deferred cross-stack plan for backend-owned, durable Swing pivot-formation alerts |
-| `UNIVERSAL_MT5_CLOUD_CONNECTOR_PLAN.md` | Plans 0-9 for provider validation, common connector contracts, secure account connection, TickerAll, synchronization, durable execution, multi-broker certification, MetaApi fallback, and production rollout |
-| `MT5_CLOUD_CONNECTOR_PHASE0_VALIDATION.md` | Current Plan 0 execution record; TickerAll is conditional-stop and live validation is blocked until provider tokens, three disposable demos, and written permissions are available |
+| `UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md` | Plans 0-9 for Rust worker control, credential security, multi-terminal isolation, durable execution, measured VM density, multi-broker certification, and rollout |
+| `MT5_WINDOWS_VM_CONNECTOR_PHASE0_VALIDATION.md` | Phase 0 execution record; host/runtime/tests pass and only the credentialed FTMO Free Trial read-only gate remains |
 
 ## Documentation Rules
 

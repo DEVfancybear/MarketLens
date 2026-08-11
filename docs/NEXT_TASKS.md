@@ -1,30 +1,28 @@
 # NEXT TASKS
 
-## Approved universal MT5 cloud connector initiative
+## Approved universal MT5 Windows VM connector initiative
 
-The next cloud-execution initiative is documented in
-[`UNIVERSAL_MT5_CLOUD_CONNECTOR_PLAN.md`](UNIVERSAL_MT5_CLOUD_CONNECTOR_PLAN.md).
-It adds one broker-neutral backend connector path in which users connect an MT5
-account from MarketLens web with login, password, and exact server. Users do not
-open or install MT5 Desktop, Mobile, WebTerminal, an EA, or a local connector.
+The authoritative initiative is
+[`UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md`](UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md).
+MarketLens owns a private Windows VM pool; one Rust agent supervises multiple
+isolated MT5 terminal/Python-adapter pairs. Users connect login, master password,
+and exact server in MarketLens web and install nothing locally. The old
+TickerAll/MetaApi cloud-provider plan and fixtures have been deleted.
 
-Start with **Plan 0 only**: validate TickerAll across at least three MT5 server
-families, prove the complete demo lifecycle and idempotency behavior, collect
-sanitized contract fixtures, and resolve broker/provider permission constraints.
-Do not add public password routes, migration `0038`, or production provider
-secrets before the Plan 0 exit gate passes.
+Phase 0 implementation, host preflight, managed Python runtime, Rust build, and
+thirteen unit tests pass. Finish the remaining read-only gate in
+[`MT5_WINDOWS_VM_CONNECTOR_PHASE0_VALIDATION.md`](MT5_WINDOWS_VM_CONNECTOR_PHASE0_VALIDATION.md):
 
-Plan 0 contract review is complete; live validation remains blocked. Follow
-[`MT5_CLOUD_CONNECTOR_PHASE0_VALIDATION.md`](MT5_CLOUD_CONNECTOR_PHASE0_VALIDATION.md):
+1. save one disposable FTMO Free Trial MT5 credential with the DPAPI helper;
+2. run the account probe and confirm demo mode plus exact login/server match;
+3. manually redact and schema-check any fixture before committing it;
+4. begin Phase 1 only after the credentialed gate passes.
 
-1. obtain a short-lived provider development token without committing it;
-2. supply independently owned `PF1`, `RB1`, and `RB2` disposable MT5 demos;
-3. retain written prop-firm/broker third-party cloud-access permission;
-4. get TickerAll's written answer for pending-order management, instrument
-   specifications, stream replay, legal/security, and credential scope;
-5. treat TickerAll as `CONDITIONAL_STOP` meanwhile and run MetaApi as the
-   fallback live-validation candidate;
-6. commit only schema-validated sanitized fixtures after the live run.
+Security precedes performance and cost. Phase 1 must add private authenticated
+IPC, ACL/reparse checks, bounded per-account queues, process/job limits,
+redaction tests, startup throttling, and cross-account fault tests before raising
+the default four-terminal density. Do not add a public password route,
+production vault secret, migration, or order execution in Phase 0.
 
 > Trade execution update (2026-07-26): older Phase 6 verifier/Connector tasks
 > are cancelled, not pending. The only native-venue completion sequence is the

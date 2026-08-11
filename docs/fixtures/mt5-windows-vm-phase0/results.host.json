@@ -1,0 +1,44 @@
+﻿{
+    "schema_version":  1,
+    "phase":  "mt5_windows_vm_phase0",
+    "mode":  "host",
+    "generated_at":  "2026-08-11T19:05:05.5536281Z",
+    "status":  "PASS",
+    "host":  {
+                 "windows":  "Microsoft Windows NT 10.0.26200.0",
+                 "powershell":  "5.1.26100.8875",
+                 "architecture":  "AMD64"
+             },
+    "terminal":  {
+                     "found":  true,
+                     "version":  "5.0.0.6090",
+                     "company":  "MetaQuotes Ltd.",
+                     "running_processes":  0
+                 },
+    "runtime":  {
+                    "found":  true,
+                    "python":  "3.12.13",
+                    "bits":  64,
+                    "metatrader5":  "5.0.6090",
+                    "websockets":  "17.0.1",
+                    "error_class":  null
+                },
+    "tests":  [
+                  {
+                      "id":  "HST-01",
+                      "status":  "PASS"
+                  },
+                  {
+                      "id":  "HST-02",
+                      "status":  "PASS"
+                  },
+                  {
+                      "id":  "HST-03",
+                      "status":  "PASS"
+                  },
+                  {
+                      "id":  "HST-04",
+                      "status":  "PASS"
+                  }
+              ]
+}

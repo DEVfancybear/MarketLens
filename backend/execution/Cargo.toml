@@ -4,6 +4,7 @@ members = [
   "crates/execution-engine",
   "crates/execution-adapters",
   "crates/execution-gateway",
+  "crates/mt5-vm-agent",
 ]
 resolver = "3"
 
