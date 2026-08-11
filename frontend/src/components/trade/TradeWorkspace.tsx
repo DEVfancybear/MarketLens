@@ -76,6 +76,7 @@ import { eaUpgradeLabel } from "@/services/execution/eaCompatibility";
 import {
   copyTargetAvailability,
   previewCopyRoutes,
+  type CopyTargetAvailability,
 } from "@/services/execution/copyRouting";
 import { useExecutionPairingToken } from "@/hooks/useExecutionPairingToken";
 import {
@@ -91,6 +92,9 @@ import {
 } from "@/services/execution/accountLayout";
 import { pushToastAtom } from "@/store/toastStore";
 import { ContinuousCopierPanel } from "./ContinuousCopierPanel";
+import { CopierGuidePanel } from "./CopierGuidePanel";
+import { useI18n } from "@/hooks/useI18n";
+import type { Translate, TranslationKey } from "@/i18n/localization";
 
 type WorkspaceTab = "positions" | "copy" | "activity";
 
@@ -768,51 +772,92 @@ function ExecutionAccountRail() {
 }
 
 export function CopyRoutingPanel() {
-  const [mode, setMode] = useState<"continuous" | "oneShot">("continuous");
+  const { t } = useI18n();
+  const [mode, setMode] = useState<"continuous" | "oneShot" | "guide">(
+    "continuous",
+  );
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const tabs = [
+    { id: "continuous" as const, label: t("copier.mode.continuous") },
+    { id: "oneShot" as const, label: t("copier.mode.oneShot") },
+    { id: "guide" as const, label: t("copier.mode.guide") },
+  ];
+
+  const selectAdjacentTab = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ) => {
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight") nextIndex = (index + 1) % tabs.length;
+    if (event.key === "ArrowLeft") nextIndex = (index - 1 + tabs.length) % tabs.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = tabs.length - 1;
+    if (nextIndex == null) return;
+    event.preventDefault();
+    const next = tabs[nextIndex]!;
+    setMode(next.id);
+    tabRefs.current[nextIndex]?.focus();
+  };
+
+  const openModeFromGuide = (nextMode: "continuous" | "oneShot") => {
+    const nextIndex = tabs.findIndex((tab) => tab.id === nextMode);
+    setMode(nextMode);
+    requestAnimationFrame(() => tabRefs.current[nextIndex]?.focus());
+  };
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div
-        className="flex min-h-11 shrink-0 items-center gap-1 border-b border-terminal-border bg-terminal-panel-2/30 px-3"
+        className="flex min-h-11 shrink-0 items-center gap-1 overflow-x-auto border-b border-terminal-border bg-terminal-panel-2/30 px-3"
         role="tablist"
-        aria-label="Copier mode"
+        aria-label={t("copier.mode.aria")}
       >
-        <button
-          type="button"
-          role="tab"
-          aria-selected={mode === "continuous"}
-          onClick={() => setMode("continuous")}
-          className={cn(
-            "min-h-9 rounded-lg px-3 text-[10px] font-semibold focus-ring",
-            mode === "continuous"
-              ? "bg-brand/10 text-brand"
-              : "text-ink-muted hover:text-ink",
-          )}
-        >
-          Continuous lifecycle
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={mode === "oneShot"}
-          onClick={() => setMode("oneShot")}
-          className={cn(
-            "min-h-9 rounded-lg px-3 text-[10px] font-semibold focus-ring",
-            mode === "oneShot"
-              ? "bg-brand/10 text-brand"
-              : "text-ink-muted hover:text-ink",
-          )}
-        >
-          One-shot web order
-        </button>
+        {tabs.map((tab, index) => (
+          <button
+            key={tab.id}
+            ref={(node) => {
+              tabRefs.current[index] = node;
+            }}
+            id={`copier-tab-${tab.id}`}
+            type="button"
+            role="tab"
+            tabIndex={mode === tab.id ? 0 : -1}
+            aria-selected={mode === tab.id}
+            aria-controls={`copier-panel-${tab.id}`}
+            onClick={() => setMode(tab.id)}
+            onKeyDown={(event) => selectAdjacentTab(event, index)}
+            className={cn(
+              "min-h-9 shrink-0 rounded-lg px-3 text-[10px] font-semibold focus-ring",
+              mode === tab.id
+                ? "bg-brand/10 text-brand"
+                : "text-ink-muted hover:text-ink",
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
-      <div className="min-h-0 flex-1">
-        {mode === "continuous" ? <ContinuousCopierPanel /> : <OneShotCopyRoutingPanel />}
+      <div
+        id={`copier-panel-${mode}`}
+        role="tabpanel"
+        aria-labelledby={`copier-tab-${mode}`}
+        tabIndex={0}
+        className="min-h-0 flex-1 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/35"
+      >
+        {mode === "continuous" ? (
+          <ContinuousCopierPanel />
+        ) : mode === "oneShot" ? (
+          <OneShotCopyRoutingPanel />
+        ) : (
+          <CopierGuidePanel onOpenMode={openModeFromGuide} />
+        )}
       </div>
     </div>
   );
 }
 
 function OneShotCopyRoutingPanel() {
+  const { t } = useI18n();
   const accounts = useAtomValue(executionAccountsAtom);
   const selectedId = useAtomValue(selectedExecutionAccountIdAtom);
   const canonicalSymbol = useAtomValue(symbolAtom);
@@ -863,7 +908,7 @@ function OneShotCopyRoutingPanel() {
   const routesSignature = useMemo(() => JSON.stringify(routes), [routes]);
   const hasInvalidEnabledTarget = available.some((account) => {
     const target = targets[account.id];
-    return Boolean(target?.enabled && copyTargetConfigError(target));
+    return Boolean(target?.enabled && copyTargetConfigError(target, t));
   });
   const routesDirty =
     routesHydrated && persistedSignature !== null && routesSignature !== persistedSignature;
@@ -903,15 +948,15 @@ function OneShotCopyRoutingPanel() {
       setPersistedSignature(routesSignature);
       setPersistenceStatus("saved");
       pushToast({
-        title: "Copier routes saved",
-        message: "Allocation and max-lot rules now follow this user on every device.",
+        title: t("copier.oneShot.toast.saved"),
+        message: t("copier.oneShot.toast.savedMessage"),
         variant: "success",
       });
     } catch {
       setPersistenceStatus("error");
       pushToast({
-        title: "Copier routes were not saved",
-        message: "Your current drafts remain on this device. Reconnect and try again.",
+        title: t("copier.oneShot.toast.failed"),
+        message: t("copier.oneShot.toast.failedMessage"),
         variant: "error",
       });
     }
@@ -923,20 +968,24 @@ function OneShotCopyRoutingPanel() {
         <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:gap-5">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-sm font-bold text-ink">MT5 Trade Copier</h2>
+              <h2 className="text-sm font-bold text-ink">
+                {t("copier.oneShot.title")}
+              </h2>
               <span className="rounded-md border border-brand/25 bg-brand/10 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wide text-brand">
-                Web orders
+                {t("copier.oneShot.badge")}
               </span>
             </div>
             <p className="mt-1 max-w-xl text-[11px] leading-5 text-ink-muted">
-              Configure each follower from the selected source account. Rust
-              sizes, caps, maps, and validates every target independently.
+              {t("copier.oneShot.description")}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-terminal-border bg-terminal-panel-2 px-2.5 py-1.5 text-[10px] text-ink-muted">
               <Copy size={12} />
-              {enabledTargetCount} on · {eligibleTargetCount} eligible
+              {t("copier.oneShot.summary", {
+                enabled: enabledTargetCount,
+                eligible: eligibleTargetCount,
+              })}
             </span>
             <button
               type="button"
@@ -955,10 +1004,10 @@ function OneShotCopyRoutingPanel() {
                 <Save size={12} aria-hidden="true" />
               )}
               {persistenceStatus === "saving"
-                ? "Saving…"
+                ? t("copier.oneShot.saving")
                 : persistenceStatus === "saved" && !routesDirty
-                  ? "Saved"
-                  : "Save routes"}
+                  ? t("copier.oneShot.saved")
+                  : t("copier.oneShot.save")}
             </button>
           </div>
         </div>
@@ -966,16 +1015,16 @@ function OneShotCopyRoutingPanel() {
         {persistenceStatus === "error" && (
           <p role="alert" className="mt-2 text-[9px] leading-4 text-bear">
             {routesHydrated ? (
-              "Save failed; current drafts remain available in this session."
+              t("copier.oneShot.saveFailed")
             ) : (
               <>
-                Saved settings are unavailable. {" "}
+                {t("copier.oneShot.savedUnavailable")} {" "}
                 <button
                   type="button"
                   onClick={() => setLoadAttempt((attempt) => attempt + 1)}
                   className="font-semibold underline underline-offset-2"
                 >
-                  Retry loading
+                  {t("copier.oneShot.retry")}
                 </button>
               </>
             )}
@@ -983,7 +1032,7 @@ function OneShotCopyRoutingPanel() {
         )}
         {hasInvalidEnabledTarget && (
           <p role="alert" className="mt-2 text-[9px] leading-4 text-bear">
-            Fix the highlighted sizing value before saving. Rust rejects invalid targets independently on send.
+            {t("copier.oneShot.invalidSizing")}
           </p>
         )}
 
@@ -998,12 +1047,10 @@ function OneShotCopyRoutingPanel() {
           />
           <div>
             <strong className="block text-[10px] text-ink">
-              New-order routing is active
+              {t("copier.oneShot.routingActive")}
             </strong>
             <p className="mt-0.5 text-[9px] leading-4 text-ink-muted">
-              These rules fan out orders submitted from this web ticket. Trades
-              opened manually or by another EA, plus later close, cancel, or
-              SL/TP changes, are not mirrored yet.
+              {t("copier.oneShot.routingDescription")}
             </p>
           </div>
         </div>
@@ -1013,11 +1060,12 @@ function OneShotCopyRoutingPanel() {
             <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(180px,280px)] lg:items-center">
               <div>
                 <strong className="block text-[11px] text-ink">
-                  Source symbol · {source.label}
+                  {t("copier.oneShot.sourceSymbol", { account: source.label })}
                 </strong>
                 <span className="mt-0.5 block text-[9px] text-ink-faint">
-                  Map chart symbol {canonicalSymbol} to the broker symbol
-                  reported by this account.
+                  {t("copier.oneShot.sourceSymbolDescription", {
+                    symbol: canonicalSymbol,
+                  })}
                 </span>
               </div>
               <SymbolMappingSelector
@@ -1039,13 +1087,10 @@ function OneShotCopyRoutingPanel() {
           />
           <div>
             <strong className="block text-[10px] text-ink">
-              Offline targets wait for 5 minutes
+              {t("copier.oneShot.offlineTitle")}
             </strong>
             <p className="mt-0.5 text-[9px] leading-4 text-ink-muted">
-              Each MT5 account needs its own running terminal and EA. If Exness
-              is offline, start that terminal within 5 minutes; the server
-              revalidates the order before delivery and cancels it after the
-              deadline.
+              {t("copier.oneShot.offlineDescription")}
             </p>
           </div>
         </div>
@@ -1054,25 +1099,24 @@ function OneShotCopyRoutingPanel() {
           <div className="mt-5 flex min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-terminal-border-strong bg-terminal-panel-2/35 px-6 text-center">
             <CircleOff size={22} className="text-ink-faint" />
             <strong className="mt-3 text-xs text-ink">
-              No second execution account yet
+              {t("copier.oneShot.noAccount")}
             </strong>
             <span className="mt-1 max-w-md text-[10px] leading-4 text-ink-faint">
-              Pair another terminal with the common MT5 EA or enable a
-              production native venue adapter. Unwired venues are never exposed
-              as tradable targets.
+              {t("copier.oneShot.noAccountDescription")}
             </span>
           </div>
         ) : (
           <div className="mt-4 space-y-2">
             {available.map((account) => {
               const availability = copyTargetAvailability(account);
+              const availabilityText = localizeCopyAvailability(t, availability);
               const target = targets[account.id] ?? {
                 accountId: account.id,
                 enabled: false,
                 allocationMode: "sameQuantity" as const,
                 multiplier: 1,
               };
-              const configError = copyTargetConfigError(target);
+              const configError = copyTargetConfigError(target, t);
               const preview = previewByAccount.get(account.id);
               return (
                 <div
@@ -1109,7 +1153,7 @@ function OneShotCopyRoutingPanel() {
                                 : "bg-bear/10 text-bear",
                           )}
                         >
-                          {availability.label}
+                          {availabilityText.label}
                         </span>
                       </span>
                       <span className="block truncate text-[9px] text-ink-faint">
@@ -1118,7 +1162,9 @@ function OneShotCopyRoutingPanel() {
                     </span>
                   </label>
                   <select
-                    aria-label={`Allocation for ${account.label}`}
+                    aria-label={t("copier.oneShot.allocationAria", {
+                      account: account.label,
+                    })}
                     value={target.allocationMode}
                     onChange={(event) => {
                       const allocationMode = event.target
@@ -1134,27 +1180,30 @@ function OneShotCopyRoutingPanel() {
                     }}
                     className="h-11 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-[11px] text-ink outline-none focus:border-brand"
                   >
-                    <option value="sameQuantity">Same quantity</option>
-                    <option value="fixedQuantity">Fixed lot</option>
-                    <option value="multiplier">Multiplier</option>
-                    <option value="equityProportional">Equity proportional</option>
-                    <option value="riskPercent">Risk percent</option>
+                    <option value="sameQuantity">{t("copier.allocation.same")}</option>
+                    <option value="fixedQuantity">{t("copier.allocation.fixed")}</option>
+                    <option value="multiplier">{t("copier.allocation.multiplier")}</option>
+                    <option value="equityProportional">{t("copier.allocation.equity")}</option>
+                    <option value="riskPercent">{t("copier.allocation.risk")}</option>
                   </select>
                   {target.allocationMode === "sameQuantity" ? (
                     <div className="flex h-11 items-center rounded-lg border border-terminal-border bg-terminal-panel px-2 text-[9px] text-ink-faint">
-                      Uses source lot
+                      {t("copier.allocation.usesSource")}
                     </div>
                   ) : (
                     <label className="grid gap-1 text-[9px] text-ink-faint">
                       <span>
                         {target.allocationMode === "riskPercent"
-                          ? "Risk %"
+                          ? t("copier.allocation.riskShort")
                           : target.allocationMode === "fixedQuantity"
-                            ? "Fixed lot"
-                            : "Multiplier"}
+                            ? t("copier.allocation.fixed")
+                            : t("copier.allocation.multiplier")}
                       </span>
                       <input
-                        aria-label={`${target.allocationMode} value for ${account.label}`}
+                        aria-label={t("copier.oneShot.valueAria", {
+                          mode: allocationModeLabel(t, target.allocationMode),
+                          account: account.label,
+                        })}
                         inputMode="decimal"
                         min={target.allocationMode === "riskPercent" ? 0.01 : 0.00000001}
                         max={target.allocationMode === "riskPercent" ? 100 : undefined}
@@ -1193,13 +1242,15 @@ function OneShotCopyRoutingPanel() {
                     </label>
                   )}
                   <label className="grid gap-1 text-[9px] text-ink-faint">
-                    <span>Max lot</span>
+                    <span>{t("copier.allocation.maxLotShort")}</span>
                     <input
-                      aria-label={`Maximum lot for ${account.label}`}
+                      aria-label={t("copier.oneShot.maxAria", {
+                        account: account.label,
+                      })}
                       inputMode="decimal"
                       min="0.00000001"
                       step="0.01"
-                      placeholder="Broker max"
+                      placeholder={t("copier.allocation.brokerMax")}
                       value={target.maxQuantity ?? ""}
                       onChange={(event) =>
                         setTarget({
@@ -1230,7 +1281,7 @@ function OneShotCopyRoutingPanel() {
                         className="mt-0.5 shrink-0"
                       />
                     )}
-                    {availability.detail}
+                    {availabilityText.detail}
                   </p>
                   <div className="grid gap-3 border-t border-terminal-border pt-2 lg:col-span-4 lg:grid-cols-[minmax(0,1fr)_minmax(180px,280px)] lg:items-center">
                     <TargetRoutePreview
@@ -1240,7 +1291,9 @@ function OneShotCopyRoutingPanel() {
                     />
                     <div className="grid gap-1">
                       <span className="text-[9px] text-ink-faint">
-                        {canonicalSymbol} broker symbol
+                        {t("copier.oneShot.brokerSymbol", {
+                          symbol: canonicalSymbol,
+                        })}
                       </span>
                       <SymbolMappingSelector
                         account={account}
@@ -1267,23 +1320,26 @@ function TargetRoutePreview({
   preview?: CopyRoutePreview;
   error: string | null;
 }) {
-  let detail = "Route disabled";
+  const { t } = useI18n();
+  let detail = t("copier.oneShot.routeDisabled");
   let tone = "text-ink-faint";
   if (target.enabled) {
     if (error) {
       detail = error;
       tone = "text-bear";
     } else if (target.allocationMode === "riskPercent") {
-      detail = "Sized by Rust from stop distance and account risk";
+      detail = t("copier.oneShot.rustSizing");
       tone = "text-brand";
     } else if (preview?.status === "ready") {
-      detail = `1.00 source lot → ${formatLot(preview.quantity)} lot`;
+      detail = t("copier.oneShot.previewValue", {
+        quantity: formatLot(preview.quantity),
+      });
       tone = "text-bull";
     } else if (preview?.status === "waiting") {
-      detail = "Preview ready; delivery waits for the EA";
+      detail = t("copier.oneShot.previewReady");
       tone = "text-amber-300";
     } else if (preview?.status === "blocked") {
-      detail = preview.reason.replaceAll("_", " ").toLowerCase();
+      detail = t(copyPreviewReasonKey(preview.reason));
       tone = "text-bear";
     }
   }
@@ -1295,7 +1351,7 @@ function TargetRoutePreview({
       </span>
       <span className="min-w-0">
         <strong className="block text-[9px] uppercase tracking-wide text-ink-faint">
-          Live sizing preview
+          {t("copier.oneShot.preview")}
         </strong>
         <span className={cn("mt-0.5 block text-[10px] font-semibold", tone)}>
           {detail}
@@ -1305,19 +1361,22 @@ function TargetRoutePreview({
   );
 }
 
-function copyTargetConfigError(target: CopyTargetDraft): string | null {
+function copyTargetConfigError(
+  target: CopyTargetDraft,
+  t: Translate,
+): string | null {
   if (
     target.allocationMode === "fixedQuantity" &&
     !isPositiveNumber(target.fixedQuantity)
   ) {
-    return "Fixed lot must be greater than zero";
+    return t("copier.oneShot.error.fixed");
   }
   if (
     (target.allocationMode === "multiplier" ||
       target.allocationMode === "equityProportional") &&
     !isPositiveNumber(target.multiplier)
   ) {
-    return "Multiplier must be greater than zero";
+    return t("copier.oneShot.error.multiplier");
   }
   if (
     target.allocationMode === "riskPercent" &&
@@ -1325,12 +1384,84 @@ function copyTargetConfigError(target: CopyTargetDraft): string | null {
       (target.riskBasisPoints ?? 0) < 1 ||
       (target.riskBasisPoints ?? 0) > 10_000)
   ) {
-    return "Risk must be between 0.01% and 100%";
+    return t("copier.oneShot.error.risk");
   }
   if (target.maxQuantity != null && !isPositiveNumber(target.maxQuantity)) {
-    return "Max lot must be greater than zero";
+    return t("copier.oneShot.error.maxLot");
   }
   return null;
+}
+
+function allocationModeLabel(
+  t: Translate,
+  mode: CopyTargetDraft["allocationMode"],
+): string {
+  const keys: Record<CopyTargetDraft["allocationMode"], TranslationKey> = {
+    sameQuantity: "copier.allocation.same",
+    fixedQuantity: "copier.allocation.fixed",
+    multiplier: "copier.allocation.multiplier",
+    equityProportional: "copier.allocation.equity",
+    riskPercent: "copier.allocation.risk",
+  };
+  return t(keys[mode]);
+}
+
+function localizeCopyAvailability(
+  t: Translate,
+  availability: CopyTargetAvailability,
+): Pick<CopyTargetAvailability, "label" | "detail"> {
+  const keys: Record<string, [TranslationKey, TranslationKey]> = {
+    Unavailable: [
+      "copier.availability.unavailable",
+      "copier.availability.unavailableDescription",
+    ],
+    Ready: [
+      "copier.availability.ready",
+      "copier.availability.readyDescription",
+    ],
+    "Offline · waits 5 min": [
+      "copier.availability.waiting",
+      "copier.availability.waitingDescription",
+    ],
+    "EA update required": [
+      "copier.availability.update",
+      "copier.availability.updateDescription",
+    ],
+    "Trading disabled": [
+      "copier.availability.tradingDisabled",
+      "copier.availability.tradingDisabledDescription",
+    ],
+    Disabled: [
+      "copier.availability.disabled",
+      "copier.availability.notReadyDescription",
+    ],
+    "Not ready": [
+      "copier.availability.notReady",
+      "copier.availability.notReadyDescription",
+    ],
+  };
+  const pair = keys[availability.label];
+  return pair
+    ? { label: t(pair[0]), detail: t(pair[1]) }
+    : { label: availability.label, detail: availability.detail };
+}
+
+function copyPreviewReasonKey(
+  reason: Extract<CopyRoutePreview, { status: "blocked" }>["reason"],
+): TranslationKey {
+  const keys: Record<
+    Extract<CopyRoutePreview, { status: "blocked" }>["reason"],
+    TranslationKey
+  > = {
+    TARGET_DISABLED: "copier.oneShot.reason.targetDisabled",
+    TARGET_NOT_FOUND: "copier.oneShot.reason.targetNotFound",
+    TARGET_NOT_READY: "copier.oneShot.reason.targetNotReady",
+    TARGET_CANNOT_TRADE: "copier.oneShot.reason.targetCannotTrade",
+    SOURCE_EQUITY_REQUIRED: "copier.oneShot.reason.sourceEquity",
+    TARGET_EQUITY_REQUIRED: "copier.oneShot.reason.targetEquity",
+    INVALID_QUANTITY: "copier.oneShot.reason.invalidQuantity",
+  };
+  return keys[reason];
 }
 
 function isPositiveNumber(value: number | undefined): value is number {
@@ -1348,6 +1479,7 @@ function SymbolMappingSelector({
   account: ExecutionAccountSummary;
   canonicalSymbol: string;
 }) {
+  const { t } = useI18n();
   const [registry, setRegistry] =
     useState<ExecutionAccountInstrumentsWire | null>(null);
   const [value, setValue] = useState("");
@@ -1411,7 +1543,10 @@ function SymbolMappingSelector({
   return (
     <label className="flex min-w-0 items-center gap-2">
       <select
-        aria-label={`${canonicalSymbol} broker symbol for ${account.label}`}
+        aria-label={t("copier.symbol.aria", {
+          symbol: canonicalSymbol,
+          account: account.label,
+        })}
         value={value}
         disabled={status === "loading" || status === "saving"}
         onChange={(event) => void save(event.target.value)}
@@ -1419,10 +1554,10 @@ function SymbolMappingSelector({
       >
         <option value="">
           {status === "loading"
-            ? "Loading symbols…"
+            ? t("copier.symbol.loading")
             : status === "error"
-              ? "Retry by reopening this tab"
-              : "Select broker symbol"}
+              ? t("copier.symbol.retry")
+              : t("copier.symbol.select")}
         </option>
         {(registry?.instruments ?? []).map((instrument) => (
           <option
@@ -1431,7 +1566,9 @@ function SymbolMappingSelector({
             disabled={!instrument.tradeAllowed}
           >
             {instrument.venueSymbol}
-            {instrument.tradeAllowed ? "" : " (not tradable)"}
+            {instrument.tradeAllowed
+              ? ""
+              : ` (${t("copier.symbol.notTradable")})`}
           </option>
         ))}
       </select>
@@ -1441,7 +1578,11 @@ function SymbolMappingSelector({
           status === "error" ? "text-bear" : "text-ink-faint",
         )}
       >
-        {status === "saving" ? "saving" : status === "error" ? "error" : ""}
+        {status === "saving"
+          ? t("copier.symbol.saving")
+          : status === "error"
+            ? t("copier.symbol.error")
+            : ""}
       </span>
     </label>
   );

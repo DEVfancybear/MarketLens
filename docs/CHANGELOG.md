@@ -4,6 +4,21 @@ All notable changes to the SMC Trading Terminal. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Localized MT5 Copier onboarding and control surface (2026-08-10)
+
+- Added an accessible Copier guide tab that explains continuous lifecycle
+  copying versus one-shot web-order routing, terminal/account prerequisites,
+  safe activation order, runtime statuses, the five-minute offline window, and
+  duplicate-routing risk.
+- Localized the guide, continuous group editor, one-shot route editor, sizing
+  previews, validation, runtime badges, symbol mapping, confirmations, and
+  toasts in English and Vietnamese through the typed localization catalog.
+- Added keyboard tab navigation with Arrow keys, Home, and End; guide actions
+  return focus to the selected mode tab. Mobile controls retain 44-pixel touch
+  targets and the panels keep their existing responsive layout.
+- Verified TypeScript, the localization suite, all 80 trade tests, and the
+  production frontend build.
+
 ### Fixed - Live-tail indicator feedback loop no longer shakes the chart (2026-08-10)
 
 - Re-ran the production symbol/timeframe stress sequence in the user's Edge

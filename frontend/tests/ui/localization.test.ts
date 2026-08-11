@@ -44,6 +44,23 @@ test("typed UI keys are complete in English and Vietnamese", () => {
     translate("vi", "alerts.clearConfirm", { count: 4 }),
     "Xóa toàn bộ 4 cảnh báo đang hoạt động?",
   );
+  assert.equal(
+    translate("vi", "copier.oneShot.summary", {
+      enabled: 2,
+      eligible: 3,
+    }),
+    "2 đang bật · 3 đủ điều kiện",
+  );
+  assert.equal(
+    translate("vi", "copier.continuous.sourceAuthority", {
+      account: "FTMO Demo",
+    }),
+    "FTMO Demo là nguồn chuẩn cho mọi tài khoản nhận đã bật.",
+  );
+  assert.equal(
+    translate("en", "copier.guide.title"),
+    "Set up MT5 Copier safely",
+  );
 });
 
 test("legacy UI boundary translates exact copy and count patterns", () => {

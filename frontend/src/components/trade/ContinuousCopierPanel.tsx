@@ -50,10 +50,13 @@ import type {
   ExecutionAccountSummary,
 } from "@/types/execution";
 import { cn } from "@/utils/cn";
+import { useI18n } from "@/hooks/useI18n";
+import type { Translate, TranslationKey } from "@/i18n/localization";
 
 type RequestStatus = "idle" | "loading" | "saving" | "acting" | "error";
 
 export function ContinuousCopierPanel() {
+  const { t } = useI18n();
   const accounts = useAtomValue(executionAccountsAtom);
   const selectedAccountId = useAtomValue(selectedExecutionAccountIdAtom);
   const pushToast = useSetAtom(pushToastAtom);
@@ -122,10 +125,10 @@ export function ContinuousCopierPanel() {
       } catch {
         if (!resetSelection) return;
         setStatus("error");
-        setMessage("Continuous copier groups are unavailable. Check the execution service and retry.");
+        setMessage(t("copier.continuous.unavailable"));
       }
     },
-    [accounts, selectedAccountId],
+    [accounts, selectedAccountId, t],
   );
 
   useEffect(() => {
@@ -153,7 +156,7 @@ export function ContinuousCopierPanel() {
   const selectView = (view: ContinuousCopyGroupView) => {
     if (
       dirty &&
-      !window.confirm("Discard unsaved copier changes and open another group?")
+      !window.confirm(t("copier.continuous.confirm.open"))
     ) {
       return;
     }
@@ -163,7 +166,7 @@ export function ContinuousCopierPanel() {
   const createGroup = () => {
     if (
       dirty &&
-      !window.confirm("Discard unsaved copier changes and create a new group?")
+      !window.confirm(t("copier.continuous.confirm.create"))
     ) {
       return;
     }
@@ -178,7 +181,7 @@ export function ContinuousCopierPanel() {
   const refreshFromServer = () => {
     if (
       dirty &&
-      !window.confirm("Discard unsaved copier changes and refresh from the server?")
+      !window.confirm(t("copier.continuous.confirm.refresh"))
     ) {
       return;
     }
@@ -189,7 +192,11 @@ export function ContinuousCopierPanel() {
     if (!draft) return;
     const validation = validateContinuousCopyGroupDraft(draft);
     if (validation.length) {
-      setMessage(validation.join(" "));
+      setMessage(
+        validation
+          .map((item) => localizeContinuousValidation(t, item))
+          .join(" "),
+      );
       return;
     }
     mutationInFlightRef.current = true;
@@ -202,14 +209,16 @@ export function ContinuousCopierPanel() {
       installView(saved);
       setStatus("idle");
       pushToast({
-        title: draft.groupId ? "Copier group updated" : "Copier group created",
-        message: "The continuous lifecycle configuration is now stored on the execution server.",
+        title: draft.groupId
+          ? t("copier.continuous.toast.updated")
+          : t("copier.continuous.toast.created"),
+        message: t("copier.continuous.toast.saved"),
         variant: "success",
       });
     } catch {
       setStatus("error");
       setMessage(
-        "The group was not saved. Refresh first if another session changed its revision, then try again.",
+        t("copier.continuous.saveError"),
       );
     } finally {
       mutationInFlightRef.current = false;
@@ -230,16 +239,16 @@ export function ContinuousCopierPanel() {
       installView(saved);
       setStatus("idle");
       pushToast({
-        title: action === "reconcile" ? "Reconciliation queued" : `Copier ${action}d`,
+        title: t(continuousActionTitleKey(action)),
         message:
           action === "reconcile"
-            ? "The server will compare source and follower lifecycle links."
-            : "The server accepted the copier lifecycle action.",
+            ? t("copier.continuous.toast.reconcileMessage")
+            : t("copier.continuous.toast.actionMessage"),
         variant: "success",
       });
     } catch {
       setStatus("error");
-      setMessage("The copier action failed or used an outdated revision. Refresh and try again.");
+      setMessage(t("copier.continuous.actionError"));
     } finally {
       mutationInFlightRef.current = false;
     }
@@ -250,7 +259,7 @@ export function ContinuousCopierPanel() {
       <div className="grid min-h-64 place-items-center" aria-live="polite">
         <span className="inline-flex items-center gap-2 text-xs text-ink-muted">
           <LoaderCircle size={15} className="animate-spin motion-reduce:animate-none" />
-          Loading continuous copier groups...
+          {t("copier.continuous.loading")}
         </span>
       </div>
     );
@@ -262,15 +271,15 @@ export function ContinuousCopierPanel() {
         <header className="flex flex-col gap-3 border-b border-terminal-border pb-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-sm font-bold text-ink">Continuous MT5 copier</h2>
+              <h2 className="text-sm font-bold text-ink">
+                {t("copier.continuous.title")}
+              </h2>
               <span className="rounded-md border border-bull/25 bg-bull/10 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wide text-bull">
-                Full lifecycle
+                {t("copier.continuous.badge")}
               </span>
             </div>
             <p className="mt-1 max-w-2xl text-[10px] leading-4 text-ink-muted sm:text-[11px] sm:leading-5">
-              Mirror market and pending orders, partial or full closes, edits, and
-              protection changes from one source account. The server keeps durable
-              links and reconciles every follower independently.
+              {t("copier.continuous.description")}
             </p>
           </div>
           <button
@@ -280,7 +289,7 @@ export function ContinuousCopierPanel() {
             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-terminal-border-strong px-3 text-[10px] font-semibold text-ink-muted transition-colors hover:border-brand/45 hover:text-brand disabled:opacity-45 focus-ring sm:min-h-9"
           >
             <RefreshCw size={13} aria-hidden="true" />
-            Refresh server state
+            {t("copier.continuous.refresh")}
           </button>
         </header>
 
@@ -295,12 +304,14 @@ export function ContinuousCopierPanel() {
         )}
 
         <div className="mt-4 grid gap-4 xl:grid-cols-[240px_minmax(0,1fr)]">
-          <aside aria-label="Continuous copier groups" className="min-w-0">
+          <aside aria-label={t("copier.continuous.groupsAria")} className="min-w-0">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <strong className="block text-[11px] text-ink">Groups</strong>
+                <strong className="block text-[11px] text-ink">
+                  {t("copier.continuous.groups")}
+                </strong>
                 <span className="text-[9px] text-ink-faint">
-                  {groups.length} server configuration{groups.length === 1 ? "" : "s"}
+                  {t("copier.continuous.groupCount", { count: groups.length })}
                 </span>
               </div>
               <button
@@ -309,7 +320,7 @@ export function ContinuousCopierPanel() {
                 className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-brand px-3 text-[10px] font-semibold text-white transition-opacity hover:opacity-90 focus-ring sm:min-h-9"
               >
                 <Plus size={13} aria-hidden="true" />
-                New
+                {t("copier.continuous.new")}
               </button>
             </div>
             <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
@@ -338,13 +349,15 @@ export function ContinuousCopierPanel() {
                       <RuntimeBadge status={view.group.runtimeStatus} />
                     </span>
                     <span className="mt-1 block truncate text-[9px] text-ink-faint">
-                      Source: {account?.label ?? view.group.sourceAccountId}
+                      {t("copier.continuous.source", {
+                        account: account?.label ?? view.group.sourceAccountId,
+                      })}
                     </span>
                     <span className="mt-2 flex items-center gap-3 text-[8px] uppercase tracking-wide text-ink-faint">
-                      <span>{view.activeLinks} links</span>
-                      <span>{view.pendingWork} queued</span>
+                      <span>{t("copier.continuous.links", { count: view.activeLinks })}</span>
+                      <span>{t("copier.continuous.queued", { count: view.pendingWork })}</span>
                       <span className={view.unresolvedErrors ? "text-bear" : undefined}>
-                        {view.unresolvedErrors} errors
+                        {t("copier.continuous.errors", { count: view.unresolvedErrors })}
                       </span>
                     </span>
                   </button>
@@ -352,8 +365,7 @@ export function ContinuousCopierPanel() {
               })}
               {groups.length === 0 && (
                 <div className="rounded-xl border border-dashed border-terminal-border-strong bg-terminal-panel-2/25 p-4 text-[10px] leading-4 text-ink-faint sm:col-span-2 xl:col-span-1">
-                  No continuous group exists yet. Create one after pairing a source
-                  and at least one follower terminal.
+                  {t("copier.continuous.emptyGroups")}
                 </div>
               )}
             </div>
@@ -378,7 +390,7 @@ export function ContinuousCopierPanel() {
             />
           ) : (
             <div className="grid min-h-64 place-items-center rounded-xl border border-dashed border-terminal-border-strong text-xs text-ink-faint">
-              Select or create a copier group.
+              {t("copier.continuous.selectGroup")}
             </div>
           )}
         </div>
@@ -412,6 +424,7 @@ function CopierGroupEditor({
   onDiscard: () => void;
   onAction: (action: ContinuousCopyGroupAction) => void;
 }) {
+  const { t } = useI18n();
   const setGroup = (patch: Partial<ContinuousCopyGroupDraft["group"]>) =>
     onChange({ ...draft, group: { ...draft.group, ...patch } });
   const setConfig = (patch: Partial<ContinuousCopyConfig>) =>
@@ -433,25 +446,29 @@ function CopierGroupEditor({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <strong className="truncate text-xs text-ink">
-              {draft.groupId ? draft.group.name : "New continuous group"}
+              {draft.groupId
+                ? draft.group.name
+                : t("copier.continuous.newGroup")}
             </strong>
             {view ? (
               <RuntimeBadge status={view.group.runtimeStatus} />
             ) : (
               <span className="rounded-md bg-brand/10 px-1.5 py-0.5 text-[8px] font-semibold uppercase text-brand">
-                Draft
+                {t("copier.continuous.draft")}
               </span>
             )}
             {dirty && (
               <span className="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[8px] font-semibold uppercase text-amber-300">
-                Unsaved
+                {t("copier.continuous.unsaved")}
               </span>
             )}
           </div>
           <p className="mt-1 text-[9px] leading-4 text-ink-faint">
             {source
-              ? `${source.label} is authoritative for every enabled follower.`
-              : "Choose the MT5 account that owns the source lifecycle."}
+              ? t("copier.continuous.sourceAuthority", {
+                  account: source.label,
+                })
+              : t("copier.continuous.chooseAuthority")}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -463,7 +480,7 @@ function CopierGroupEditor({
               className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-terminal-border-strong px-3 text-[10px] font-semibold text-ink-muted hover:text-ink disabled:opacity-45 focus-ring sm:min-h-9"
             >
               <RotateCcw size={12} aria-hidden="true" />
-              Discard
+              {t("copier.continuous.discard")}
             </button>
           )}
           <button
@@ -477,18 +494,26 @@ function CopierGroupEditor({
             ) : (
               <Save size={12} aria-hidden="true" />
             )}
-            Save configuration
+            {t("copier.continuous.save")}
           </button>
         </div>
       </div>
 
       {view && (
         <div className="grid grid-cols-3 border-b border-terminal-border">
-          <ActivityMetric icon={<Link2 size={13} />} label="Active links" value={view.activeLinks} />
-          <ActivityMetric icon={<Activity size={13} />} label="Pending work" value={view.pendingWork} />
+          <ActivityMetric
+            icon={<Link2 size={13} />}
+            label={t("copier.continuous.metric.links")}
+            value={view.activeLinks}
+          />
+          <ActivityMetric
+            icon={<Activity size={13} />}
+            label={t("copier.continuous.metric.work")}
+            value={view.pendingWork}
+          />
           <ActivityMetric
             icon={<AlertCircle size={13} />}
-            label="Open errors"
+            label={t("copier.continuous.metric.errors")}
             value={view.unresolvedErrors}
             alert={view.unresolvedErrors > 0}
           />
@@ -497,8 +522,11 @@ function CopierGroupEditor({
 
       <div className="space-y-4 p-3 sm:p-4">
         <fieldset className="grid gap-3 sm:grid-cols-2">
-          <legend className="sr-only">Group identity</legend>
-          <Field label="Group name" description="Visible only to this user.">
+          <legend className="sr-only">{t("copier.continuous.identity")}</legend>
+          <Field
+            label={t("copier.continuous.groupName")}
+            description={t("copier.continuous.groupNameDescription")}
+          >
             <input
               value={draft.group.name}
               onChange={(event) => setGroup({ name: event.target.value })}
@@ -507,7 +535,10 @@ function CopierGroupEditor({
               className={inputClass}
             />
           </Field>
-          <Field label="Source account" description="The only authoritative lifecycle.">
+          <Field
+            label={t("copier.continuous.sourceAccount")}
+            description={t("copier.continuous.sourceAccountDescription")}
+          >
             <select
               value={draft.group.sourceAccountId}
               disabled={busy || Boolean(view?.activeLinks)}
@@ -522,10 +553,10 @@ function CopierGroupEditor({
               }}
               className={inputClass}
             >
-              <option value="">Select source account</option>
+              <option value="">{t("copier.continuous.selectSource")}</option>
               {accounts.map((account) => (
                 <option key={account.id} value={account.id}>
-                  {account.label} - {account.brokerCode} - {account.status}
+                  {account.label} - {account.brokerCode} - {localizeAccountStatus(t, account.status)}
                 </option>
               ))}
             </select>
@@ -534,47 +565,47 @@ function CopierGroupEditor({
 
         <fieldset className="rounded-xl border border-terminal-border bg-terminal-panel/45 p-3">
           <legend className="px-1 text-[10px] font-semibold text-ink">
-            Lifecycle coverage
+            {t("copier.continuous.coverage")}
           </legend>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             <Toggle
-              label="Market orders"
-              description="Open and increase positions."
+              label={t("copier.continuous.market")}
+              description={t("copier.continuous.marketDescription")}
               checked={draft.group.config.copyMarketOrders}
               onChange={(checked) => setConfig({ copyMarketOrders: checked })}
             />
             <Toggle
-              label="Pending orders"
-              description="Create, edit, fill, and cancel."
+              label={t("copier.continuous.pending")}
+              description={t("copier.continuous.pendingDescription")}
               checked={draft.group.config.copyPendingOrders}
               onChange={(checked) => setConfig({ copyPendingOrders: checked })}
             />
             <Toggle
-              label="SL / TP"
-              description="Mirror source protection levels."
+              label={t("copier.continuous.sltp")}
+              description={t("copier.continuous.sltpDescription")}
               checked={draft.group.config.copyStopLossTakeProfit}
               onChange={(checked) =>
                 setConfig({ copyStopLossTakeProfit: checked })
               }
             />
             <Toggle
-              label="Modifications"
-              description="Apply later source edits."
+              label={t("copier.continuous.modifications")}
+              description={t("copier.continuous.modificationsDescription")}
               checked={draft.group.config.copyModifications}
               onChange={(checked) => setConfig({ copyModifications: checked })}
             />
             <Toggle
-              label="Partial closes"
-              description="Reduce follower links proportionally."
+              label={t("copier.continuous.partialCloses")}
+              description={t("copier.continuous.partialClosesDescription")}
               checked={draft.group.config.copyPartialCloses}
               onChange={(checked) => setConfig({ copyPartialCloses: checked })}
             />
             <Toggle
-              label="Group enabled"
+              label={t("copier.continuous.enabled")}
               description={
                 view?.activeLinks
-                  ? "Use Pause while linked exposure is still open."
-                  : "Start after this revision is saved."
+                  ? t("copier.continuous.enabledLinkedDescription")
+                  : t("copier.continuous.enabledDraftDescription")
               }
               checked={draft.group.enabled}
               disabled={Boolean(view?.activeLinks)}
@@ -587,12 +618,15 @@ function CopierGroupEditor({
           <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-3 focus-ring">
             <span className="inline-flex items-center gap-2 text-[10px] font-semibold text-ink">
               <SlidersHorizontal size={13} className="text-brand" />
-              Source filters and timing
+              {t("copier.continuous.filters")}
             </span>
             <ChevronDown size={14} className="text-ink-faint transition-transform group-open:rotate-180 motion-reduce:transition-none" />
           </summary>
           <div className="grid gap-3 border-t border-terminal-border p-3 sm:grid-cols-2 lg:grid-cols-3">
-            <Field label="Magic filter" description="Blank accepts every magic number.">
+            <Field
+              label={t("copier.continuous.magic")}
+              description={t("copier.continuous.magicDescription")}
+            >
               <input
                 type="number"
                 step="1"
@@ -604,34 +638,37 @@ function CopierGroupEditor({
                       : undefined,
                   })
                 }
-                placeholder="Any magic"
+                placeholder={t("copier.continuous.anyMagic")}
                 className={inputClass}
               />
             </Field>
-            <Field label="Comment prefix" description="Blank accepts every source comment.">
+            <Field
+              label={t("copier.continuous.commentPrefix")}
+              description={t("copier.continuous.commentDescription")}
+            >
               <input
                 value={draft.group.config.sourceCommentPrefix ?? ""}
                 onChange={(event) =>
                   setConfig({ sourceCommentPrefix: event.target.value || undefined })
                 }
-                placeholder="Example: strategy-a"
+                placeholder={t("copier.continuous.commentPlaceholder")}
                 className={inputClass}
               />
             </Field>
-            <Field label="Max slippage" suffix="points">
+            <Field label={t("copier.continuous.maxSlippage")} suffix="points">
               <IntegerInput
                 value={draft.group.config.maxSlippagePoints}
                 onChange={(maxSlippagePoints) => setConfig({ maxSlippagePoints })}
               />
             </Field>
-            <Field label="Stale event window" suffix="ms">
+            <Field label={t("copier.continuous.staleWindow")} suffix="ms">
               <IntegerInput
                 value={draft.group.config.staleAfterMs}
                 min={1}
                 onChange={(staleAfterMs) => setConfig({ staleAfterMs })}
               />
             </Field>
-            <Field label="Reconcile interval" suffix="ms">
+            <Field label={t("copier.continuous.reconcileInterval")} suffix="ms">
               <IntegerInput
                 value={draft.group.config.reconciliationIntervalMs}
                 min={1}
@@ -644,10 +681,11 @@ function CopierGroupEditor({
         </details>
 
         <fieldset>
-          <legend className="text-[10px] font-semibold text-ink">Followers</legend>
+          <legend className="text-[10px] font-semibold text-ink">
+            {t("copier.continuous.followers")}
+          </legend>
           <p className="mt-1 text-[9px] leading-4 text-ink-faint">
-            Each account is sized, mapped, protected, queued, and reconciled independently.
-            Reverse mode also swaps pending direction and source SL/TP geometry.
+            {t("copier.continuous.followersDescription")}
           </p>
           <div className="mt-2 space-y-2">
             {draft.targets.map((target) => {
@@ -669,7 +707,7 @@ function CopierGroupEditor({
             })}
             {draft.targets.length === 0 && (
               <div className="rounded-xl border border-dashed border-terminal-border-strong p-5 text-center text-[10px] leading-4 text-ink-faint">
-                Pair another MT5 terminal before saving this group.
+                {t("copier.continuous.noFollowers")}
               </div>
             )}
           </div>
@@ -678,12 +716,10 @@ function CopierGroupEditor({
         {view && (
           <fieldset className="rounded-xl border border-terminal-border bg-terminal-panel/45 p-3">
             <legend className="px-1 text-[10px] font-semibold text-ink">
-              Runtime controls
+              {t("copier.continuous.runtimeControls")}
             </legend>
             <p className="text-[9px] leading-4 text-ink-faint">
-              Pause stops new source changes. Risk-reducing closes remain safe to
-              reconcile. Archive is available only after every linked exposure is
-              closed or cancelled, and it preserves the audit trail.
+              {t("copier.continuous.runtimeDescription")}
             </p>
             {view.group.statusMessage && (
               <p className="mt-2 rounded-lg bg-terminal-panel-2 px-2.5 py-2 text-[9px] text-ink-muted">
@@ -694,21 +730,21 @@ function CopierGroupEditor({
               {view.group.runtimeStatus === "paused" || !view.group.enabled ? (
                 <ActionButton
                   icon={<Zap size={12} />}
-                  label="Resume"
+                  label={t("copier.continuous.resume")}
                   disabled={busy || dirty}
                   onClick={() => onAction("resume")}
                 />
               ) : (
                 <ActionButton
                   icon={<CirclePause size={12} />}
-                  label="Pause"
+                  label={t("copier.continuous.pause")}
                   disabled={busy || dirty}
                   onClick={() => onAction("pause")}
                 />
               )}
               <ActionButton
                 icon={<RefreshCw size={12} />}
-                label="Reconcile now"
+                label={t("copier.continuous.reconcile")}
                 disabled={busy || dirty}
                 onClick={() => onAction("reconcile")}
               />
@@ -716,13 +752,13 @@ function CopierGroupEditor({
                 <>
                   <ActionButton
                     icon={<Archive size={12} />}
-                    label="Confirm archive"
+                    label={t("copier.continuous.confirmArchive")}
                     danger
                     disabled={busy || dirty || view.activeLinks > 0}
                     onClick={() => onAction("archive")}
                   />
                   <ActionButton
-                    label="Cancel"
+                    label={t("copier.continuous.cancel")}
                     disabled={busy}
                     onClick={() => onArchiveArmed(false)}
                   />
@@ -730,7 +766,7 @@ function CopierGroupEditor({
               ) : (
                 <ActionButton
                   icon={<Archive size={12} />}
-                  label="Archive"
+                  label={t("copier.continuous.archive")}
                   disabled={busy || dirty || view.activeLinks > 0}
                   onClick={() => onArchiveArmed(true)}
                 />
@@ -738,12 +774,12 @@ function CopierGroupEditor({
             </div>
             {view.activeLinks > 0 && (
               <p className="mt-2 text-[9px] text-amber-300" role="status">
-                Close or cancel all linked exposure before archiving this group.
+                {t("copier.continuous.archiveBlocked")}
               </p>
             )}
             {dirty && (
               <p className="mt-2 text-[9px] text-amber-300" role="status">
-                Save or discard this draft before using runtime controls.
+                {t("copier.continuous.dirtyBlocked")}
               </p>
             )}
           </fieldset>
@@ -768,6 +804,7 @@ function FollowerEditor({
   membershipLocked: boolean;
   onChange: (target: ContinuousCopyTargetWrite) => void;
 }) {
+  const { t } = useI18n();
   const setConfig = (patch: Partial<ContinuousCopyTargetWrite["config"]>) =>
     onChange({ ...target, config: { ...target.config, ...patch } });
   const setProtection = (patch: Partial<ContinuousCopyProtectionConfig>) =>
@@ -791,7 +828,9 @@ function FollowerEditor({
             onChange({ ...target, enabled: event.target.checked })
           }
           onClick={(event) => event.stopPropagation()}
-          aria-label={`Enable ${account?.label ?? target.accountId} as a follower`}
+          aria-label={t("copier.continuous.enableFollower", {
+            account: account?.label ?? target.accountId,
+          })}
           className="h-4 w-4 shrink-0 accent-[var(--accent)] focus-ring"
         />
         <span className="min-w-0 flex-1">
@@ -800,8 +839,8 @@ function FollowerEditor({
           </strong>
           <span className="mt-0.5 block truncate text-[9px] text-ink-faint">
             {account
-              ? `${account.brokerCode} - ${account.externalAccountRef} - ${account.status}`
-              : "Account is no longer present in the execution registry"}
+              ? `${account.brokerCode} - ${account.externalAccountRef} - ${localizeAccountStatus(t, account.status)}`
+              : t("copier.continuous.accountMissing")}
           </span>
         </span>
         <RuntimeBadge status={runtimeStatus ?? "inactive"} />
@@ -814,8 +853,10 @@ function FollowerEditor({
           </p>
         )}
         <fieldset className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <legend className="sr-only">Follower sizing</legend>
-          <Field label="Allocation">
+          <legend className="sr-only">
+            {t("copier.continuous.followerSizing")}
+          </legend>
+          <Field label={t("copier.allocation.label")}>
             <select
               value={target.config.allocation.mode}
               onChange={(event) =>
@@ -823,21 +864,21 @@ function FollowerEditor({
               }
               className={inputClass}
             >
-              <option value="sameQuantity">Same quantity</option>
-              <option value="fixedQuantity">Fixed lot</option>
-              <option value="multiplier">Multiplier</option>
-              <option value="equityProportional">Equity proportional</option>
-              <option value="riskPercent">Risk percent</option>
+              <option value="sameQuantity">{t("copier.allocation.same")}</option>
+              <option value="fixedQuantity">{t("copier.allocation.fixed")}</option>
+              <option value="multiplier">{t("copier.allocation.multiplier")}</option>
+              <option value="equityProportional">{t("copier.allocation.equity")}</option>
+              <option value="riskPercent">{t("copier.allocation.risk")}</option>
             </select>
           </Field>
           {target.config.allocation.mode !== "sameQuantity" ? (
             <Field
               label={
                 target.config.allocation.mode === "fixedQuantity"
-                  ? "Fixed lot"
+                  ? t("copier.allocation.fixed")
                   : target.config.allocation.mode === "riskPercent"
-                    ? "Risk"
-                    : "Multiplier"
+                    ? t("copier.allocation.riskShort")
+                    : t("copier.allocation.multiplier")
               }
               suffix={target.config.allocation.mode === "riskPercent" ? "%" : undefined}
             >
@@ -861,11 +902,14 @@ function FollowerEditor({
           ) : (
             <div className="flex items-end">
               <div className="flex min-h-11 w-full items-center rounded-lg border border-terminal-border bg-terminal-panel px-2.5 text-[9px] text-ink-faint sm:min-h-9">
-                Uses the source lot
+                {t("copier.allocation.usesSource")}
               </div>
             </div>
           )}
-          <Field label="Maximum lot" description="Blank uses the broker maximum.">
+          <Field
+            label={t("copier.allocation.maxLot")}
+            description={t("copier.allocation.maxLotDescription")}
+          >
             <input
               type="number"
               inputMode="decimal"
@@ -875,13 +919,13 @@ function FollowerEditor({
               onChange={(event) =>
                 setConfig({ maxQuantity: event.target.value || undefined })
               }
-              placeholder="Broker max"
+              placeholder={t("copier.allocation.brokerMax")}
               className={inputClass}
             />
           </Field>
           <Toggle
-            label="Reverse trade"
-            description="Invert side, pending kind, SL and TP."
+            label={t("copier.continuous.reverse")}
+            description={t("copier.continuous.reverseDescription")}
             checked={target.config.reverseTrade}
             onChange={(reverseTrade) => setConfig({ reverseTrade })}
             compact
@@ -896,12 +940,12 @@ function FollowerEditor({
         <fieldset className="rounded-xl border border-terminal-border bg-terminal-panel/40 p-3">
           <legend className="flex items-center gap-1.5 px-1 text-[10px] font-semibold text-ink">
             <ShieldCheck size={13} className="text-brand" />
-            Target-local protection
+            {t("copier.continuous.protection")}
           </legend>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Toggle
-              label="Broker margin cap"
-              description="Final EA-side margin rejection; never scales down."
+              label={t("copier.continuous.marginCap")}
+              description={t("copier.continuous.marginCapDescription")}
               checked={Boolean(target.config.protection.brokerMarginCap)}
               onChange={(checked) =>
                 setProtection({
@@ -914,7 +958,7 @@ function FollowerEditor({
             />
             {target.config.protection.brokerMarginCap && (
               <>
-                <Field label="Margin basis">
+                <Field label={t("copier.continuous.marginBasis")}>
                   <select
                     value={target.config.protection.brokerMarginCap.basis}
                     onChange={(event) =>
@@ -927,11 +971,11 @@ function FollowerEditor({
                     }
                     className={inputClass}
                   >
-                    <option value="equity">Live equity</option>
-                    <option value="balance">Balance</option>
+                    <option value="equity">{t("copier.continuous.liveEquity")}</option>
+                    <option value="balance">{t("copier.continuous.balance")}</option>
                   </select>
                 </Field>
-                <Field label="Margin cap" suffix="%">
+                <Field label={t("copier.continuous.marginCapValue")} suffix="%">
                   <PercentInput
                     value={target.config.protection.brokerMarginCap.basisPoints}
                     onChange={(basisPoints) =>
@@ -945,8 +989,8 @@ function FollowerEditor({
                   />
                 </Field>
                 <Toggle
-                  label="Margin alert"
-                  description="Surface rejection as an account alert."
+                  label={t("copier.continuous.marginAlert")}
+                  description={t("copier.continuous.marginAlertDescription")}
                   checked={target.config.protection.brokerMarginCap.alert}
                   onChange={(alert) =>
                     setProtection({
@@ -960,7 +1004,11 @@ function FollowerEditor({
                 />
               </>
             )}
-            <Field label="Maximum drawdown" suffix="%" description="Blank disables target equity protection.">
+            <Field
+              label={t("copier.continuous.maxDrawdown")}
+              suffix="%"
+              description={t("copier.continuous.maxDrawdownDescription")}
+            >
               <PercentInput
                 value={target.config.protection.maxDrawdownBasisPoints}
                 optional
@@ -971,7 +1019,7 @@ function FollowerEditor({
             </Field>
           </div>
           <div className="mt-3 grid gap-3 border-t border-terminal-border pt-3 sm:grid-cols-2 lg:grid-cols-5">
-            <Field label="Trailing start" suffix="points">
+            <Field label={t("copier.continuous.trailingStart")} suffix="points">
               <ProtectionPointInput
                 value={target.config.protection.trailingStartPoints}
                 onChange={(trailingStartPoints) =>
@@ -979,7 +1027,7 @@ function FollowerEditor({
                 }
               />
             </Field>
-            <Field label="Trailing distance" suffix="points">
+            <Field label={t("copier.continuous.trailingDistance")} suffix="points">
               <ProtectionPointInput
                 value={target.config.protection.trailingStopPoints}
                 onChange={(trailingStopPoints) =>
@@ -987,7 +1035,7 @@ function FollowerEditor({
                 }
               />
             </Field>
-            <Field label="Trailing step" suffix="points">
+            <Field label={t("copier.continuous.trailingStep")} suffix="points">
               <ProtectionPointInput
                 value={target.config.protection.trailingStepPoints}
                 onChange={(trailingStepPoints) =>
@@ -995,7 +1043,7 @@ function FollowerEditor({
                 }
               />
             </Field>
-            <Field label="Breakeven trigger" suffix="points">
+            <Field label={t("copier.continuous.breakevenTrigger")} suffix="points">
               <ProtectionPointInput
                 value={target.config.protection.breakevenTriggerPoints}
                 onChange={(breakevenTriggerPoints) =>
@@ -1003,7 +1051,7 @@ function FollowerEditor({
                 }
               />
             </Field>
-            <Field label="Breakeven offset" suffix="points">
+            <Field label={t("copier.continuous.breakevenOffset")} suffix="points">
               <ProtectionPointInput
                 value={target.config.protection.breakevenOffsetPoints}
                 onChange={(breakevenOffsetPoints) =>
@@ -1013,8 +1061,7 @@ function FollowerEditor({
             </Field>
           </div>
           <p className="mt-2 text-[9px] leading-4 text-ink-faint">
-            Trailing and breakeven are evaluated independently on each target. A
-            zero trigger or distance disables only that feature.
+            {t("copier.continuous.protectionDescription")}
           </p>
         </fieldset>
       </div>
@@ -1029,6 +1076,7 @@ function SymbolMappingEditor({
   mapping: Record<string, string>;
   onChange: (mapping: Record<string, string>) => void;
 }) {
+  const { t } = useI18n();
   const [canonical, setCanonical] = useState("");
   const [venue, setVenue] = useState("");
   const entries = Object.entries(mapping);
@@ -1044,9 +1092,11 @@ function SymbolMappingEditor({
 
   return (
     <fieldset className="rounded-xl border border-terminal-border bg-terminal-panel/40 p-3">
-      <legend className="px-1 text-[10px] font-semibold text-ink">Symbol mapping</legend>
+      <legend className="px-1 text-[10px] font-semibold text-ink">
+        {t("copier.continuous.symbolMapping")}
+      </legend>
       <p className="text-[9px] leading-4 text-ink-faint">
-        Map canonical source symbols to the exact symbol exposed by this follower broker.
+        {t("copier.continuous.symbolMappingDescription")}
       </p>
       {entries.length > 0 && (
         <div className="mt-2 space-y-1.5">
@@ -1056,7 +1106,9 @@ function SymbolMappingEditor({
               className="grid grid-cols-[minmax(0,1fr)_16px_minmax(0,1fr)_40px] items-center gap-2"
             >
               <input
-                aria-label={`Canonical symbol ${source}`}
+                aria-label={t("copier.continuous.canonicalSymbolAria", {
+                  symbol: source,
+                })}
                 value={source}
                 onChange={(event) => {
                   const next = { ...mapping };
@@ -1067,9 +1119,13 @@ function SymbolMappingEditor({
                 }}
                 className={inputClass}
               />
-              <span className="text-center text-ink-faint" aria-hidden="true">to</span>
+              <span className="text-center text-ink-faint" aria-hidden="true">
+                {t("copier.continuous.mappingTo")}
+              </span>
               <input
-                aria-label={`Follower symbol for ${source}`}
+                aria-label={t("copier.continuous.followerSymbolAria", {
+                  symbol: source,
+                })}
                 value={target}
                 onChange={(event) =>
                   onChange({ ...mapping, [source]: event.target.value })
@@ -1078,7 +1134,9 @@ function SymbolMappingEditor({
               />
               <button
                 type="button"
-                aria-label={`Remove ${source} mapping`}
+                aria-label={t("copier.continuous.removeMappingAria", {
+                  symbol: source,
+                })}
                 onClick={() => {
                   const next = { ...mapping };
                   delete next[source];
@@ -1094,17 +1152,17 @@ function SymbolMappingEditor({
       )}
       <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
         <input
-          aria-label="New canonical source symbol"
+          aria-label={t("copier.continuous.newCanonicalAria")}
           value={canonical}
           onChange={(event) => setCanonical(event.target.value)}
-          placeholder="Source, e.g. XAUUSD"
+          placeholder={t("copier.continuous.sourceSymbolPlaceholder")}
           className={inputClass}
         />
         <input
-          aria-label="New follower broker symbol"
+          aria-label={t("copier.continuous.newFollowerAria")}
           value={venue}
           onChange={(event) => setVenue(event.target.value)}
-          placeholder="Follower, e.g. XAUUSDm"
+          placeholder={t("copier.continuous.followerSymbolPlaceholder")}
           className={inputClass}
         />
         <button
@@ -1113,7 +1171,8 @@ function SymbolMappingEditor({
           disabled={!canonical.trim() || !venue.trim()}
           className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-terminal-border-strong px-3 text-[10px] font-semibold text-ink-muted hover:border-brand/45 hover:text-brand disabled:opacity-40 focus-ring sm:min-h-9"
         >
-          <Plus size={12} aria-hidden="true" /> Add mapping
+          <Plus size={12} aria-hidden="true" />
+          {t("copier.continuous.addMapping")}
         </button>
       </div>
     </fieldset>
@@ -1125,6 +1184,7 @@ function RuntimeBadge({
 }: {
   status: ContinuousCopyGroupRuntimeStatus | ContinuousCopyTargetRuntimeStatus;
 }) {
+  const { t } = useI18n();
   const tone =
     status === "active"
       ? "bg-bull/10 text-bull"
@@ -1137,13 +1197,15 @@ function RuntimeBadge({
             : "bg-terminal-hover text-ink-faint";
   return (
     <span
-      aria-label={`Runtime status ${status}`}
+      aria-label={t("copier.runtime.aria", {
+        status: localizeRuntimeStatus(t, status),
+      })}
       className={cn(
         "shrink-0 rounded-md px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wide",
         tone,
       )}
     >
-      {status}
+      {localizeRuntimeStatus(t, status)}
     </span>
   );
 }
@@ -1276,6 +1338,7 @@ function PercentInput({
   optional?: boolean;
   onChange: (basisPoints: number | undefined) => void;
 }) {
+  const { t } = useI18n();
   return (
     <input
       type="number"
@@ -1284,7 +1347,7 @@ function PercentInput({
       max="100"
       step="0.01"
       value={value == null ? "" : value / 100}
-      placeholder={optional ? "Disabled" : undefined}
+      placeholder={optional ? t("copier.continuous.disabled") : undefined}
       onChange={(event) =>
         onChange(
           event.target.value
@@ -1361,6 +1424,92 @@ function allocationWithValue(
     case "sameQuantity":
       return allocation;
   }
+}
+
+function continuousActionTitleKey(
+  action: ContinuousCopyGroupAction,
+): TranslationKey {
+  const keys: Record<ContinuousCopyGroupAction, TranslationKey> = {
+    pause: "copier.continuous.toast.paused",
+    resume: "copier.continuous.toast.resumed",
+    reconcile: "copier.continuous.toast.reconcile",
+    archive: "copier.continuous.toast.archived",
+  };
+  return keys[action];
+}
+
+function localizeRuntimeStatus(
+  t: Translate,
+  status: ContinuousCopyGroupRuntimeStatus | ContinuousCopyTargetRuntimeStatus,
+): string {
+  const keys: Partial<Record<string, TranslationKey>> = {
+    inactive: "copier.runtime.inactive",
+    starting: "copier.runtime.starting",
+    active: "copier.runtime.active",
+    paused: "copier.runtime.paused",
+    degraded: "copier.runtime.degraded",
+    error: "copier.runtime.error",
+    connecting: "copier.runtime.connecting",
+    waiting: "copier.runtime.waiting",
+  };
+  const key = keys[status];
+  return key ? t(key) : status;
+}
+
+function localizeAccountStatus(t: Translate, status: string): string {
+  const keys: Partial<Record<string, TranslationKey>> = {
+    disabled: "copier.account.disabled",
+    offline: "copier.account.offline",
+    connecting: "copier.account.connecting",
+    ready: "copier.account.ready",
+    degraded: "copier.account.degraded",
+    blocked: "copier.account.blocked",
+  };
+  const key = keys[status];
+  return key ? t(key) : status;
+}
+
+function localizeContinuousValidation(t: Translate, message: string): string {
+  const keys: Partial<Record<string, TranslationKey>> = {
+    "Group name is required.": "copier.validation.groupName",
+    "Choose a source account.": "copier.validation.source",
+    "Pair at least one follower account.": "copier.validation.follower",
+    "Enable at least one follower before starting the group.":
+      "copier.validation.enableFollower",
+    "Maximum slippage must be zero or a positive whole number.":
+      "copier.validation.slippage",
+    "Stale event window must be a positive number of milliseconds.":
+      "copier.validation.stale",
+    "Reconciliation interval must be a positive number of milliseconds.":
+      "copier.validation.reconcile",
+    "Magic filter must be a whole number.": "copier.validation.magic",
+    "The source account cannot also be a follower.":
+      "copier.validation.sourceFollower",
+    "Each follower account can appear only once.":
+      "copier.validation.uniqueFollower",
+    "Risk-percent allocation requires copied stop-loss protection on the initial order.":
+      "copier.validation.riskNeedsStop",
+    "Every follower must have an account.":
+      "copier.validation.followerAccount",
+    "Fixed follower lot must be greater than zero.":
+      "copier.validation.fixedLot",
+    "Follower multiplier must be greater than zero.":
+      "copier.validation.multiplier",
+    "Follower risk must be between 0.01% and 100%.":
+      "copier.validation.risk",
+    "Follower maximum lot must be greater than zero.":
+      "copier.validation.maxLot",
+    "Broker margin cap must be between 0.01% and 100%.":
+      "copier.validation.marginCap",
+    "Maximum drawdown must be between 0.01% and 100%.":
+      "copier.validation.drawdown",
+    "Protection distances must be zero or positive whole points.":
+      "copier.validation.protectionPoints",
+    "Trailing step must be positive when trailing stop is enabled.":
+      "copier.validation.trailingStep",
+  };
+  const key = keys[message];
+  return key ? t(key) : message;
 }
 
 const inputClass =
