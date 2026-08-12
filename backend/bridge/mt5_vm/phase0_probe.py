@@ -151,6 +151,10 @@ def _symbol_snapshot(mt5: Any, requested_symbol: str) -> dict[str, Any] | None:
 
 def run_probe(mt5: Any, request: dict[str, Any]) -> dict[str, Any]:
     cfg = _validate_request(request)
+    return _run_validated_probe(mt5, cfg)
+
+
+def _run_validated_probe(mt5: Any, cfg: dict[str, Any]) -> dict[str, Any]:
     initialized = False
     tests: list[dict[str, Any]] = []
     generated_at = datetime.now(timezone.utc).isoformat()
@@ -282,8 +286,8 @@ def run_probe(mt5: Any, request: dict[str, Any]) -> dict[str, Any]:
 
 def main() -> int:
     try:
-        request = json.load(sys.stdin)
-        request = _validate_request(request)
+        raw_request = json.load(sys.stdin)
+        request = _validate_request(raw_request)
     except Exception as exc:
         result = {
             "schema_version": 1,
@@ -314,8 +318,9 @@ def main() -> int:
         return 2
 
     try:
-        result = run_probe(mt5, request)
+        result = _run_validated_probe(mt5, request)
     finally:
+        raw_request["password"] = None
         request["password"] = None
     print(json.dumps(result, separators=(",", ":"), allow_nan=False))
     return 0 if result["status"] == "PASS" else 2

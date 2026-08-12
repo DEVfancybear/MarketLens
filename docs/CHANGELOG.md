@@ -14,13 +14,16 @@ All notable changes to the MarketLens. Dates are UTC.
   fencing. Six Rust tests pass.
 - Added a read-only Python/PowerShell Phase 0 harness. DPAPI ciphertext stays
   outside Git, plaintext travels only over redirected stdin, account results are
-  refused inside the repository, and no order API is present. Seven Python tests
-  and all four host checks pass.
-- Provisioned an ignored managed Python 3.12 x64 environment with MetaTrader5
+  refused inside the repository, and no order API is present. Eight Python tests
+  and all four host checks pass. Fixed the stdin entrypoint's double-validation
+  bug and added an end-to-end regression for the executable path.
+- Provisioned an ignored managed Python 3.14 x64 environment with MetaTrader5
   5.0.6090 and websockets 17.0.1, and installed the Microsoft C++ Build Tools
   needed to build/test the Rust Windows agent.
-- Made security and measured performance explicit release gates. Phase 0 remains
-  conditional only on the operator-owned FTMO Free Trial read-only account probe.
+- Completed the operator-owned FTMO Free Trial read-only account gate: demo mode,
+  exact login/server matches, terminal connectivity, and all read snapshots pass.
+  Added a manually reviewed schema-valid fixture without credentials or account
+  identifiers. Phase 0 is complete and Phase 1 is next.
 
 ### Documented - MT5 cloud connector Plan 0 contract gate (2026-08-11)
 

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import ast
+import io
 import inspect
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from . import phase0_probe
 from .phase0_probe import ProbeInputError, _validate_request, run_probe
@@ -184,6 +187,20 @@ class Phase0ProbeTests(unittest.TestCase):
         request["server"] = "FTMO-Demo\nforged-log"
         with self.assertRaises(ProbeInputError):
             _validate_request(request)
+
+    def test_main_runs_the_validated_request(self) -> None:
+        stub = MT5Stub()
+        stdout = io.StringIO()
+
+        with (
+            mock.patch.object(sys, "stdin", io.StringIO(json.dumps(self.request))),
+            mock.patch.object(sys, "stdout", stdout),
+            mock.patch.dict(sys.modules, {"MetaTrader5": stub}),
+        ):
+            exit_code = phase0_probe.main()
+
+        self.assertEqual(0, exit_code)
+        self.assertEqual("PASS", json.loads(stdout.getvalue())["status"])
 
 
 if __name__ == "__main__":

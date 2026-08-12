@@ -5,9 +5,9 @@
 > `MT5_WINDOWS_VM_CONNECTOR_PHASE0_VALIDATION.md` before connector work. The old
 > TickerAll/MetaApi plan and fixtures were deleted. One Rust agent manages a
 > bounded set of isolated MT5 terminal/Python-adapter pairs per private Windows
-> VM; users connect from MarketLens web and install nothing. Host/runtime and
-> thirteen unit tests pass. Before Phase 1, run the remaining DPAPI-protected FTMO
-> Free Trial read-only probe. Security precedes performance: do not raise
+> VM; users connect from MarketLens web and install nothing. Phase 0 is complete:
+> host/runtime, fourteen unit tests, and the DPAPI-protected FTMO Free Trial
+> read-only account gate pass. Phase 1 is next. Security precedes performance: do not raise
 > terminal density until isolation, fencing, secret redaction, bounded queues,
 > process limits, and fault tests pass. Do not add public credential routes,
 > migrations, production secrets, or order execution during Phase 0.

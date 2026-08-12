@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "phase": "mt5_windows_vm_phase0",
+  "mode": "account",
+  "generated_at": "2026-08-12T09:05:06.791080+00:00",
+  "status": "PASS",
+  "runtime": {
+    "python": "3.14.6",
+    "bits": 64,
+    "metatrader5": "5.0.6090",
+    "initialized": true
+  },
+  "account": {
+    "mode": "demo",
+    "login_matches": true,
+    "server_matches": true,
+    "connected": true,
+    "trade_allowed": true,
+    "trade_expert": true
+  },
+  "observations": {
+    "symbols_total": 166,
+    "positions_count": 0,
+    "pending_orders_count": 0,
+    "history_orders_count_7d": 0,
+    "history_deals_count_7d": 1,
+    "symbol_specification": {
+      "symbol": "EURUSD",
+      "tick_available": true,
+      "digits": 5,
+      "point": 0.00001,
+      "trade_mode": 4,
+      "order_mode": 127,
+      "filling_mode": 3,
+      "volume_min": 0.01,
+      "volume_max": 50.0,
+      "volume_step": 0.01,
+      "trade_stops_level": 0,
+      "trade_freeze_level": 0,
+      "trade_contract_size": 100000.0,
+      "currency_base": "EUR",
+      "currency_profit": "USD",
+      "currency_margin": "EUR"
+    }
+  },
+  "tests": [
+    { "id": "ACC-01", "status": "PASS" },
+    { "id": "ACC-02", "status": "PASS" },
+    { "id": "ACC-03", "status": "PASS" },
+    { "id": "ACC-04", "status": "PASS", "observation": "demo" },
+    { "id": "READ-01", "status": "PASS" },
+    { "id": "READ-02", "status": "PASS" },
+    { "id": "READ-03", "status": "PASS" },
+    { "id": "READ-04", "status": "PASS" }
+  ],
+  "error_class": null
+}

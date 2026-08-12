@@ -9,14 +9,11 @@ isolated MT5 terminal/Python-adapter pairs. Users connect login, master password
 and exact server in MarketLens web and install nothing locally. The old
 TickerAll/MetaApi cloud-provider plan and fixtures have been deleted.
 
-Phase 0 implementation, host preflight, managed Python runtime, Rust build, and
-thirteen unit tests pass. Finish the remaining read-only gate in
-[`MT5_WINDOWS_VM_CONNECTOR_PHASE0_VALIDATION.md`](MT5_WINDOWS_VM_CONNECTOR_PHASE0_VALIDATION.md):
-
-1. save one disposable FTMO Free Trial MT5 credential with the DPAPI helper;
-2. run the account probe and confirm demo mode plus exact login/server match;
-3. manually redact and schema-check any fixture before committing it;
-4. begin Phase 1 only after the credentialed gate passes.
+Phase 0 is complete. Host preflight, managed Python runtime, Rust build, six
+Rust tests, eight Python tests, and the credentialed FTMO Free Trial read-only
+gate pass. The manually redacted account evidence is schema-valid; continue
+with Phase 1 in
+[`UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md`](UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md).
 
 Security precedes performance and cost. Phase 1 must add private authenticated
 IPC, ACL/reparse checks, bounded per-account queues, process/job limits,

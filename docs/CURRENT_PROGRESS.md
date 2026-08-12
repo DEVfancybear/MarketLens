@@ -4,11 +4,13 @@
   the TickerAll/MetaApi plan. The authoritative broker-neutral path now uses a
   private Windows VM pool where one Rust `mt5-vm-agent` owns multiple isolated
   MT5 terminal/Python-adapter pairs; users remain browser-only. Installed the
-  ignored managed Python 3.12 x64 runtime with MetaTrader5 5.0.6090 and
+  ignored managed Python 3.14 x64 runtime with MetaTrader5 5.0.6090 and
   websockets 17.0.1, plus MSVC Build Tools/Windows SDK for Rust development.
   Host preflight passes, the Rust agent passes six tests, and the secret-safe
-  Python adapter passes seven tests. Phase 0 is `CONDITIONAL_PASS`: only a
-  DPAPI-protected FTMO Free Trial read-only account probe remains. Security is
+  Python adapter passes eight tests. Phase 0 is `PASS`: the DPAPI-protected
+  FTMO Free Trial read-only account probe confirmed demo mode, exact login and
+  server matches, terminal connectivity, and all read snapshots; its manually
+  redacted fixture is schema-valid. Phase 1 is next. Security is
   the first release gate; performance/density is measured only after isolation,
   fencing, redaction, bounded queues, and fault tests pass. See
   `UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md` and

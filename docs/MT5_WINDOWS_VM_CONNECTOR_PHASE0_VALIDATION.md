@@ -27,16 +27,16 @@ Observed host evidence:
 | MT5 terminal | `PASS` — signed MetaQuotes binary found at the standard path |
 | MT5 terminal version | `PASS` — 5.0.0.6090 |
 | Running terminal process | informational — none during preflight |
-| Managed Python | `PASS` — Python 3.12.13 x64 in ignored `backend/.venv-mt5` |
+| Managed Python | `PASS` — Python 3.14.6 x64 in ignored `backend/.venv-mt5` |
 | Python MT5 dependencies | `PASS` — MetaTrader5 5.0.6090, websockets 17.0.1 |
 | Rust Windows build chain | `PASS` — MSVC Build Tools 17.14 and Windows SDK |
 | Rust agent tests | `PASS` — 6 passed |
-| Python adapter tests | `PASS` — 7 passed |
-| FTMO account login | `BLOCKED` — DPAPI-protected MT5 demo credential not yet supplied |
+| Python adapter tests | `PASS` — 8 passed |
+| FTMO account login | `PASS` — credentialed read-only demo probe passed on 2026-08-12 |
 
-The initial managed-Python prerequisite was provisioned from the repository's
-bundled Python runtime. Its virtual environment is ignored by Git. The only
-remaining Phase 0 gate requires the operator's disposable FTMO demo credential.
+The managed-Python prerequisite was reprovisioned from the host's 64-bit Python
+runtime. Its virtual environment is ignored by Git. The disposable FTMO demo
+credential gate is now complete.
 
 ## 2. Delivered Phase 0 artifacts
 
@@ -97,26 +97,23 @@ mutation surface in Phase 0.
 | `AGT-05` | Zero lease generation fails closed | `PASS` by Rust test |
 | `AGT-06` | Config rejects parent-directory paths | `PASS` by Rust test |
 | `PERF-01` | Bounded preallocated O(1) runtime registry | `PASS` by implementation/test |
-| `ACC-01` | Initialize exact terminal instance | `BLOCKED` pending credential |
-| `ACC-02` | Exact requested/observed login match | `BLOCKED` pending credential |
-| `ACC-03` | Exact requested/observed server match | `BLOCKED` pending credential |
-| `ACC-04` | Account classified demo | `BLOCKED` pending credential |
-| `READ-01` | Account/terminal status | `BLOCKED` pending credential |
-| `READ-02` | Positions and pending-order counts | `BLOCKED` pending credential |
-| `READ-03` | Symbol specification and tick | `BLOCKED` pending credential |
-| `READ-04` | Seven-day orders/deals history | `BLOCKED` pending credential |
+| `ACC-01` | Initialize exact terminal instance | `PASS` |
+| `ACC-02` | Exact requested/observed login match | `PASS` |
+| `ACC-03` | Exact requested/observed server match | `PASS` |
+| `ACC-04` | Account classified demo | `PASS` |
+| `READ-01` | Account/terminal status | `PASS` |
+| `READ-02` | Positions and pending-order counts | `PASS` |
+| `READ-03` | Symbol specification and tick | `PASS` |
+| `READ-04` | Seven-day orders/deals history | `PASS` |
 
 ## 4. Exit decision
 
-Phase 0 implementation and host gate are complete. Overall status remains
-`CONDITIONAL_PASS` until the operator:
-
-1. saves the FTMO Free Trial MT5 credential through the DPAPI helper;
-2. runs `Invoke-MT5VmPhase0.ps1 -Mode Account`;
-3. confirms the observed account is demo, login/server match, terminal is
-   connected, and read snapshots pass;
-4. copies only a manually reviewed, schema-valid sanitized result to the
-   fixture directory.
+Phase 0 status is `PASS`. On 2026-08-12 the operator saved the disposable FTMO
+Free Trial credential through the DPAPI helper and the credentialed read-only
+probe confirmed demo mode, exact login/server matches, terminal connectivity,
+and all account/read snapshots. The manually reviewed sanitized account result
+is schema-valid at
+`fixtures/mt5-windows-vm-phase0/results.account.sanitized.json`.
 
 No later phase may infer that an account is safe for trading from this
 read-only gate.
