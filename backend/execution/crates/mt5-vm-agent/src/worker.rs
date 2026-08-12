@@ -450,8 +450,6 @@ impl<D: RuntimeDriver> Worker<D> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use serde_json::json;
 
     use super::*;
@@ -562,8 +560,8 @@ mod tests {
     }
 
     fn worker(driver: FakeDriver, queue_capacity: usize) -> Worker<FakeDriver> {
-        let registry = RuntimeRegistry::new(PathBuf::from(r"C:\MarketLens\phase1-worker-tests"), 4)
-            .expect("registry");
+        let data_root = std::env::temp_dir().join("marketlens-mt5-agent-worker-tests");
+        let registry = RuntimeRegistry::new(data_root, 4).expect("registry");
         Worker::new(
             registry,
             driver,
