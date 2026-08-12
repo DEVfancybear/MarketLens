@@ -4,6 +4,13 @@ use std::path::{Component, Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+pub mod job;
+pub mod process;
+pub mod protocol;
+pub mod queue;
+pub mod throttle;
+pub mod worker;
+
 pub const AGENT_PROTOCOL_VERSION: u32 = 1;
 pub const DEFAULT_MAX_TERMINALS: usize = 4;
 pub const HARD_MAX_TERMINALS: usize = 32;
@@ -74,6 +81,8 @@ pub enum AgentError {
     InvalidLeaseGeneration,
     #[error("runtime path escaped the configured data root")]
     UnsafeRuntimePath,
+    #[error("runtime state transition is invalid")]
+    InvalidStateTransition,
 }
 
 impl TryFrom<AgentConfigInput> for AgentConfig {
@@ -183,8 +192,52 @@ impl RuntimeRegistry {
         if slot.lease_generation != lease_generation {
             return Err(AgentError::StaleLeaseGeneration);
         }
+        if slot.state != state && !valid_state_transition(&slot.state, &state) {
+            return Err(AgentError::InvalidStateTransition);
+        }
         slot.state = state;
         Ok(slot)
+    }
+
+    pub fn set_process_ids(
+        &mut self,
+        account_id: &str,
+        lease_generation: u64,
+        terminal_pid: Option<u32>,
+        adapter_pid: Option<u32>,
+    ) -> Result<&RuntimeSlot, AgentError> {
+        let slot = self
+            .runtimes
+            .get_mut(account_id)
+            .ok_or(AgentError::RuntimeNotFound)?;
+        if slot.lease_generation != lease_generation {
+            return Err(AgentError::StaleLeaseGeneration);
+        }
+        slot.terminal_pid = terminal_pid;
+        slot.adapter_pid = adapter_pid;
+        Ok(slot)
+    }
+
+    pub fn require_lease(
+        &self,
+        account_id: &str,
+        lease_generation: u64,
+    ) -> Result<&RuntimeSlot, AgentError> {
+        let slot = self
+            .runtimes
+            .get(account_id)
+            .ok_or(AgentError::RuntimeNotFound)?;
+        if lease_generation == 0 {
+            return Err(AgentError::InvalidLeaseGeneration);
+        }
+        if slot.lease_generation != lease_generation {
+            return Err(AgentError::StaleLeaseGeneration);
+        }
+        Ok(slot)
+    }
+
+    pub fn slot(&self, account_id: &str) -> Option<&RuntimeSlot> {
+        self.runtimes.get(account_id)
     }
 
     pub fn remove(
@@ -211,6 +264,24 @@ impl RuntimeRegistry {
     pub fn available_capacity(&self) -> usize {
         self.max_terminals.saturating_sub(self.runtimes.len())
     }
+}
+
+fn valid_state_transition(from: &RuntimeState, to: &RuntimeState) -> bool {
+    if matches!(to, RuntimeState::Stopped) {
+        return !matches!(from, RuntimeState::Stopped);
+    }
+    matches!(
+        (from, to),
+        (RuntimeState::Provisioning, RuntimeState::TerminalStarting)
+            | (RuntimeState::TerminalStarting, RuntimeState::Authenticating)
+            | (RuntimeState::Authenticating, RuntimeState::Synchronizing)
+            | (RuntimeState::Synchronizing, RuntimeState::Ready)
+            | (RuntimeState::Ready, RuntimeState::Degraded)
+            | (RuntimeState::Ready, RuntimeState::Reconnecting)
+            | (RuntimeState::Degraded, RuntimeState::Reconnecting)
+            | (RuntimeState::Reconnecting, RuntimeState::Authenticating)
+            | (RuntimeState::Reconnecting, RuntimeState::TerminalStarting)
+    )
 }
 
 pub fn is_safe_identifier(value: &str) -> bool {
@@ -305,6 +376,28 @@ mod tests {
             registry.remove("account-a", 6).unwrap_err()
         );
         assert_eq!(1, registry.active_count());
+    }
+
+    #[test]
+    fn runtime_state_machine_rejects_skipped_transitions() {
+        let mut registry = RuntimeRegistry::new(absolute_test_path("states"), 4).expect("registry");
+        registry.provision("account-a", 1).expect("runtime");
+        assert_eq!(
+            AgentError::InvalidStateTransition,
+            registry
+                .transition("account-a", 1, RuntimeState::Ready)
+                .unwrap_err()
+        );
+        for state in [
+            RuntimeState::TerminalStarting,
+            RuntimeState::Authenticating,
+            RuntimeState::Synchronizing,
+            RuntimeState::Ready,
+        ] {
+            registry
+                .transition("account-a", 1, state)
+                .expect("valid transition");
+        }
     }
 
     #[test]

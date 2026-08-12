@@ -1,6 +1,6 @@
 # MT5 Windows VM connector Phase 0 validation
 
-- Status: **implemented; credentialed FTMO probe pending**
+- Status: **complete; credentialed FTMO probe passed**
 - Review date: 12 August 2026
 - Scope: Windows host feasibility, terminal/runtime discovery, secret-safe probe
 - Execution: strictly read-only

@@ -2,15 +2,21 @@
 
 > Universal MT5 Windows VM connector handoff (2026-08-12): read
 > `UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md` and
-> `MT5_WINDOWS_VM_CONNECTOR_PHASE0_VALIDATION.md` before connector work. The old
+> both Phase validation records before connector work. The old
 > TickerAll/MetaApi plan and fixtures were deleted. One Rust agent manages a
 > bounded set of isolated MT5 terminal/Python-adapter pairs per private Windows
-> VM; users connect from MarketLens web and install nothing. Phase 0 is complete:
-> host/runtime, fourteen unit tests, and the DPAPI-protected FTMO Free Trial
-> read-only account gate pass. Phase 1 is next. Security precedes performance: do not raise
-> terminal density until isolation, fencing, secret redaction, bounded queues,
-> process limits, and fault tests pass. Do not add public credential routes,
-> migrations, production secrets, or order execution during Phase 0.
+> VM; users connect from MarketLens web and install nothing. Phase 0 is complete.
+> The Phase 1 local prototype is implemented and 21 Rust plus nine Python tests
+> pass. Effective per-instance MCP disable, strict failed-start cleanup, and the
+> no-orphan regression are complete, but the real FTMO lifecycle is `BLOCKED` at
+> `MT5_IPC_TIMEOUT`. The installed terminal passes the control probe while the
+> isolated terminal times out even outside Rust's Job Object. Continue from
+> `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md`: resolve the multi-terminal
+> MetaTrader/Python IPC boundary, rerun the two-restart/forced-crash gate,
+> independently match FTMO web, then prove live
+> two-account isolation and idle load. Do not start Phase 2, raise terminal
+> density, or add public credential routes, migrations, production secrets, or
+> order execution before that exit gate passes.
 
 > Trade execution handoff (2026-07-26): never restore or follow the old FTMO
 > verifier/Connector workflow below. Continue from

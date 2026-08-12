@@ -17,9 +17,12 @@ license = "UNLICENSED"
 [workspace.dependencies]
 async-trait = "0.1"
 axum = { version = "0.8", features = ["json"] }
+base64 = "0.22"
 execution-adapters = { path = "crates/execution-adapters" }
 execution-domain = { path = "crates/execution-domain" }
 execution-engine = { path = "crates/execution-engine" }
+hmac = "0.12"
+md5 = { package = "md-5", version = "0.10" }
 rust_decimal = { version = "1", features = ["serde-with-str"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -41,3 +44,11 @@ tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1", features = ["v4"] }
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_JobObjects",
+  "Win32_System_Threading",
+] }
+zeroize = { version = "1", features = ["derive"] }

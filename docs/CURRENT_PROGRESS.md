@@ -1,6 +1,6 @@
 # Current Progress
 
-- Universal MT5 Windows VM connector Phase 0 (2026-08-12): replaced and deleted
+- Universal MT5 Windows VM connector Phases 0-1 (2026-08-12): replaced and deleted
   the TickerAll/MetaApi plan. The authoritative broker-neutral path now uses a
   private Windows VM pool where one Rust `mt5-vm-agent` owns multiple isolated
   MT5 terminal/Python-adapter pairs; users remain browser-only. Installed the
@@ -10,11 +10,20 @@
   Python adapter passes eight tests. Phase 0 is `PASS`: the DPAPI-protected
   FTMO Free Trial read-only account probe confirmed demo mode, exact login and
   server matches, terminal connectivity, and all read snapshots; its manually
-  redacted fixture is schema-valid. Phase 1 is next. Security is
-  the first release gate; performance/density is measured only after isolation,
-  fencing, redaction, bounded queues, and fault tests pass. See
+  redacted fixture is schema-valid. The Phase 1 prototype now has authenticated
+  versioned stdio frames, bounded queues, startup throttling, Windows Job Object
+  limits, isolated pinned runtimes, ACL/reparse validation, a read-only adapter,
+  and restart/crash harnesses; 21 Rust and nine Python Phase 1 tests pass.
+  Effective per-instance MCP disable, strict failed-start child cleanup, and a
+  no-orphan regression are complete. Phase 1 remains `BLOCKED`: credentialed
+  reruns now fail at the narrower `MT5_IPC_TIMEOUT`; the installed-terminal
+  control probe passes while the isolated terminal times out even outside the
+  Rust Job Object. A passing FTMO lifecycle, independent web comparison, live
+  two-account isolation, and idle-load evidence remain. Security is the first
+  release gate; performance/density is measured only after isolation, fencing,
+  redaction, bounded queues, and fault tests pass. See
   `UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md` and
-  `MT5_WINDOWS_VM_CONNECTOR_PHASE0_VALIDATION.md`.
+  `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md`.
 
 - Live-tail indicator viewport stability (2026-08-10): post-deploy Edge probes
   separated the remaining shake from MT5 ingress and controller resets. The
@@ -113,7 +122,7 @@
 > milestones below are historical. Current implementation and remaining native
 > venue work are tracked in `TRADE_EXECUTION_ARCHITECTURE.md`.
 
-Last updated: 2026-08-10
+Last updated: 2026-08-12
 
 - Chart drag/symbol-switch stability (2026-07-30): the production chart path
   now uses granular market-data subscriptions, revision-safe deferred viewport

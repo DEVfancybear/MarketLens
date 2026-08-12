@@ -4,6 +4,14 @@ _Post-monorepo update 2026-07-07._
 
 The historical issue log below is preserved. Current monorepo-specific issues:
 
+- MT5 Windows VM connector Phase 1 is blocked at the real-terminal gate.
+  Effective per-instance MCP disable and strict no-orphan failed-start cleanup
+  are implemented and covered. Credentialed reruns now return
+  `MT5_IPC_TIMEOUT`: the installed-terminal control probe passes, while the
+  isolated terminal times out even outside Rust's Job Object. Resolve the
+  supported multi-terminal MetaTrader/Python IPC boundary, then rerun the full
+  lifecycle, independent FTMO web comparison, and two-account isolation. See
+  `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md`.
 - Backend Phases 0-6 are complete: auth, settings/bootstrap, and watchlist persistence are live.
   Next backend persistence work starts at Phase 7 drawings/templates.
 - Frontend authenticated bootstrap now reads server UI settings, SMC settings, notification

@@ -1,9 +1,10 @@
-# MT5 Windows VM Phase 0 harness
+# MT5 Windows VM validation harnesses
 
-This directory contains the read-only feasibility harness for the
-MarketLens-managed Windows VM connector.
+This directory contains the read-only Phase 0 feasibility harness and Phase 1
+secure multi-runtime prototype validation for the MarketLens-managed Windows VM
+connector.
 
-It is not the production worker agent. It proves that a Windows host can find
+Phase 0 is not the production worker agent. It proves that a Windows host can find
 the approved terminal/runtime and can read a disposable MT5 demo account
 without putting its password in a command line, environment variable, log, or
 repository file.
@@ -73,3 +74,39 @@ The tests use a stub and do not require MT5:
 backend\.venv-mt5\Scripts\python.exe -m unittest `
   backend.bridge.mt5_vm.test_phase0_probe -v
 ```
+
+## Phase 1 prototype
+
+Phase 1 adds `phase1_adapter.py`, a local control harness, the PowerShell
+entrypoint/ACL helper, and the Rust `mt5-vm-agent --phase1-stdio` runtime. The
+adapter and control frames are authenticated and replay-protected, credentials
+travel only through redirected stdin, queues/events are bounded, and the
+adapter remains read-only.
+
+Run isolated tests:
+
+```powershell
+& "$env:USERPROFILE\.cargo\bin\cargo.exe" test `
+  --manifest-path backend/execution/Cargo.toml `
+  -p mt5-vm-agent --all-targets
+
+backend\.venv-mt5\Scripts\python.exe -m unittest `
+  backend.bridge.mt5_vm.test_phase1_adapter `
+  backend.bridge.mt5_vm.test_phase1_control_harness -v
+```
+
+Run the credentialed read-only lifecycle only with the disposable Phase 0 demo
+credential:
+
+```powershell
+.\backend\bridge\mt5_vm\Invoke-MT5VmPhase1.ps1 `
+  -AccountAlias ftmo-free-trial
+```
+
+Current status: 21 Rust and nine Python unit gates pass. Effective per-instance
+MCP disable and no-orphan failed-start cleanup are complete, but the real FTMO
+lifecycle is blocked at `MT5_IPC_TIMEOUT` on the isolated terminal. Do not use
+`-IndependentWebMatchConfirmed` until the
+reported snapshot has actually been checked against FTMO web. See
+`../../../docs/MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md` for the blocker
+and required follow-up.

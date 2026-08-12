@@ -17,7 +17,8 @@ owning package docs.
 | `CHANGELOG.md` | Dated log of major changes |
 | `TRADE_EXECUTION_ARCHITECTURE.md` | Durable multi-account web execution architecture and safety boundaries |
 | `UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md` | Authoritative Plans 0-9 for a secure broker-neutral Windows VM connector with multiple isolated MT5 terminals per Rust-managed worker |
-| `MT5_WINDOWS_VM_CONNECTOR_PHASE0_VALIDATION.md` | Current host/runtime evidence, secret-safe disposable-demo probe, tests, and remaining FTMO credential gate |
+| `MT5_WINDOWS_VM_CONNECTOR_PHASE0_VALIDATION.md` | Completed host/runtime and credential-safe FTMO Free Trial read-only evidence for Phase 0 |
+| `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md` | Implemented worker prototype, passing unit gates, blocked real-terminal lifecycle, and explicit follow-up checklist |
 | `PROP_RISK_GUARD.md` | Automated, versioned prop-firm drawdown protection on the web execution path |
 
 ## Package Docs
@@ -37,7 +38,8 @@ owning package docs.
 | `PINE_RUNTIME_GO_MIGRATION.md` | Cross-package plan for moving Pine parsing/compilation from frontend TypeScript to the Go backend |
 | `PIVOT_FORMATION_ALERT_PLAN.md` | Deferred cross-stack plan for backend-owned, durable Swing pivot-formation alerts |
 | `UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md` | Plans 0-9 for Rust worker control, credential security, multi-terminal isolation, durable execution, measured VM density, multi-broker certification, and rollout |
-| `MT5_WINDOWS_VM_CONNECTOR_PHASE0_VALIDATION.md` | Phase 0 execution record; host/runtime/tests pass and only the credentialed FTMO Free Trial read-only gate remains |
+| `MT5_WINDOWS_VM_CONNECTOR_PHASE0_VALIDATION.md` | Phase 0 execution record; host/runtime/tests and credentialed FTMO Free Trial read-only gate pass |
+| `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md` | Phase 1 execution record; prototype tests pass while the credentialed lifecycle remains blocked at MT5 initialization |
 
 ## Documentation Rules
 

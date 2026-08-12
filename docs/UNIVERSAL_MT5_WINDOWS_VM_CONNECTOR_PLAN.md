@@ -1,6 +1,6 @@
 # Universal MT5 Windows VM connector plan
 
-- Status: **approved architecture; Phase 0 implementation complete, credentialed demo gate pending**
+- Status: **approved architecture; Phase 0 complete; Phase 1 prototype implemented but live gate blocked**
 - Decision date: 12 August 2026
 - Replaces the deleted TickerAll/MetaApi cloud-provider plan
 - Runtime model: MarketLens-managed Windows VM pool, multiple terminals per VM
@@ -512,6 +512,18 @@ isolated terminal/adapter pairs. Prove provision, login, snapshot, heartbeat,
 graceful stop and full restart with an FTMO Free Trial. Add bounded queues,
 private authenticated IPC, process/job limits, ACL/reparse checks, redaction,
 and startup throttling before adding density. No public account-connect API yet.
+
+Current state (2026-08-12): the local stdio prototype, process isolation, bounded
+queues/throttling, read-only adapter, and unit/fake-driver lifecycle coverage are
+implemented. Rust tests pass `21/21` and Python Phase 1 tests pass `9/9`.
+Effective per-instance MCP disable, strict failed-start cleanup, and a Windows
+no-orphan regression are complete. The credentialed real-terminal harness is
+still `BLOCKED` at `MT5_IPC_TIMEOUT`: the installed terminal passes its control
+probe, while the isolated terminal times out even outside Rust's Job Object. A
+supported multi-terminal MetaTrader/Python IPC boundary, passing real lifecycle,
+independent FTMO web comparison, live two-account isolation, and idle-load
+evidence remain required. See
+`MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md`.
 
 Exit: account identity and all initial snapshots match an independent FTMO web
 view after two clean restarts and one forced terminal crash; cross-account,

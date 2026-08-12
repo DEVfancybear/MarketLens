@@ -4,6 +4,24 @@ All notable changes to the MarketLens. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Secure multi-runtime MT5 Windows VM connector Phase 1 prototype (2026-08-12)
+
+- Added authenticated, versioned HMAC control/adapter frames with replay,
+  expiry, identity, lease, frame-size, and redaction guards; bounded per-account
+  command/event queues; startup throttling; and explicit runtime transitions.
+- Added pinned isolated terminal runtimes, restrictive ACL/reparse validation,
+  Windows Job Object process/memory limits, a read-only single-account Python
+  adapter, and a local lifecycle harness for provision, two clean restarts,
+  forced crash recovery, heartbeat, and graceful stop.
+- Verified 21 Rust tests and nine Python Phase 1 tests. Added effective disabled
+  MCP configuration in the real MetaTrader instance directory, strict Job
+  inheritance before adapter bootstrap, safe Python IPC error classes, and a
+  Windows regression proving initialize failure leaves no terminal or adapter.
+  The credentialed lifecycle remains blocked at `MT5_IPC_TIMEOUT`: the installed
+  terminal control passes while the isolated terminal times out even outside
+  Rust's Job Object. The passing lifecycle, independent FTMO web comparison,
+  live two-account isolation, and idle-load evidence remain required.
+
 ### Added - Secure multi-terminal MT5 Windows VM connector Phase 0 (2026-08-12)
 
 - Replaced and deleted the TickerAll/MetaApi cloud-provider plan with the
