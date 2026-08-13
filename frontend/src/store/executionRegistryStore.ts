@@ -12,6 +12,11 @@ import {
 
 /** Broker-neutral projection populated from the Rust execution API. */
 export const executionAccountsAtom = atom<ExecutionAccountSummary[]>([]);
+export interface ExecutionConnectorCapabilities {
+  mt5Managed: boolean;
+}
+export const executionConnectorCapabilitiesAtom =
+  atom<ExecutionConnectorCapabilities>({ mt5Managed: false });
 export interface ExecutionAccountLayoutState {
   itemIds: string[];
   revision: number;
@@ -77,12 +82,20 @@ export const resetCopyRoutesAtom = atom(null, (_get, set) => {
 /** Clears every execution-registry projection owned by the current user. */
 export const resetExecutionRegistryAtom = atom(null, (_get, set) => {
   set(executionAccountsAtom, []);
+  set(executionConnectorCapabilitiesAtom, { mt5Managed: false });
   set(executionAccountLayoutAtom, { itemIds: [], revision: 0 });
   set(executionAccountLayoutPendingAtom, false);
   set(selectedExecutionAccountIdAtom, null);
   set(copyRoutesAtom, {});
   set(copyRoutesHydratedAtom, false);
 });
+
+export const applyExecutionConnectorCapabilitiesAtom = atom(
+  null,
+  (_get, set, capabilities: ExecutionConnectorCapabilities) => {
+    set(executionConnectorCapabilitiesAtom, capabilities);
+  },
+);
 
 export const applyExecutionAccountsAtom = atom(
   null,

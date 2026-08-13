@@ -31,6 +31,7 @@ import { ExecutionConnectionStatus } from "./ExecutionConnectionStatus";
 import { PropRiskCompactStatus } from "./PropRiskGuardCard";
 import { Mt5CommandLog } from "./Mt5CommandLog";
 import { Mt5EaSetupGuide } from "./Mt5EaSetupGuide";
+import { Mt5ManagedConnectionDialog } from "./Mt5ManagedConnectionDialog";
 import { ExecutionAccountManagementDialog } from "./ExecutionAccountManagementDialog";
 import {
   activeSimAccountAtom,
@@ -51,6 +52,7 @@ import {
   executionAccountLayoutAtom,
   executionAccountLayoutPendingAtom,
   executionAccountsAtom,
+  executionConnectorCapabilitiesAtom,
   selectedExecutionAccountAtom,
   selectedExecutionAccountIdAtom,
   applyCopyRoutesAtom,
@@ -94,7 +96,11 @@ import { pushToastAtom } from "@/store/toastStore";
 import { ContinuousCopierPanel } from "./ContinuousCopierPanel";
 import { CopierGuidePanel } from "./CopierGuidePanel";
 import { useI18n } from "@/hooks/useI18n";
-import type { Translate, TranslationKey } from "@/i18n/localization";
+import {
+  EXECUTION_STATUS_TRANSLATION_KEYS,
+  type Translate,
+  type TranslationKey,
+} from "@/i18n/localization";
 
 type WorkspaceTab = "positions" | "copy" | "activity";
 
@@ -221,17 +227,22 @@ export function TradeWorkspace() {
 function ExecutionAccountRail() {
   const [showSetup, setShowSetup] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
+  const [showManagedConnect, setShowManagedConnect] = useState(false);
   const [managedAccount, setManagedAccount] =
     useState<ExecutionAccountSummary | null>(null);
   const executionMode = useAtomValue(executionModeAtom);
   const simAccount = useAtomValue(activeSimAccountAtom);
   const simEquity = useAtomValue(equityAtom);
   const gatewayAccounts = useAtomValue(executionAccountsAtom);
+  const connectorCapabilities = useAtomValue(
+    executionConnectorCapabilitiesAtom,
+  );
   const [accountLayout, setAccountLayout] = useAtom(executionAccountLayoutAtom);
   const [layoutPending, setLayoutPending] = useAtom(
     executionAccountLayoutPendingAtom,
   );
   const pushToast = useSetAtom(pushToastAtom);
+  const { locale, t } = useI18n();
   const dragSession = useRef<{
     pointerId: number;
     sourceId: string;
@@ -494,7 +505,7 @@ function ExecutionAccountRail() {
           className="flex h-8 items-center gap-1.5 rounded-lg border border-terminal-border-strong px-2 text-[10px] font-semibold text-ink-muted transition-colors hover:border-brand/45 hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
         >
           <Plus size={12} aria-hidden="true" />
-          Add
+          {t("execution.add.button")}
         </button>
       </div>
       <span className="sr-only" aria-live="polite">
@@ -503,14 +514,40 @@ function ExecutionAccountRail() {
       {showSetup && (
         <div className="mx-2 mt-2 rounded-xl border border-brand/25 bg-brand/5 p-3 text-[10px] leading-4 text-ink-muted">
           <strong className="block text-[11px] text-ink">
-            Add an MT5 account
+            {t("execution.add.title")}
           </strong>
           <span className="mt-1 block">
-            Open one MT5 terminal per account, attach the common
-            MarketLensExecutionEA, allow the execution URL in WebRequest, then
-            enter a one-time pairing token. The account appears here
-            automatically.
+            {connectorCapabilities.mt5Managed
+              ? t("execution.add.managedDescription")
+              : t("execution.add.eaDescription")}
           </span>
+          {connectorCapabilities.mt5Managed && (
+            <button
+              type="button"
+              onClick={() => {
+                setShowSetup(false);
+                setShowManagedConnect(true);
+              }}
+              className="mt-2 flex w-full items-start gap-2 rounded-xl border border-bull/30 bg-bull/5 p-2.5 text-left transition-colors hover:border-bull/50 hover:bg-bull/10 focus-ring"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-bull/10 text-bull">
+                <Server size={16} aria-hidden="true" />
+              </span>
+              <span>
+                <strong className="block text-[11px] text-ink">
+                  {t("execution.add.backend.title")}
+                </strong>
+                <span className="mt-0.5 block text-[9px] leading-4 text-ink-muted">
+                  {t("execution.add.backend.description")}
+                </span>
+              </span>
+            </button>
+          )}
+          {connectorCapabilities.mt5Managed && (
+            <span className="mt-3 block font-semibold text-ink">
+              {t("execution.add.eaAlternative")}
+            </span>
+          )}
           <div className="mt-2 overflow-hidden rounded-lg border border-brand/25 bg-terminal-bg">
             <div className="flex items-center gap-2 p-2">
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand">
@@ -521,7 +558,9 @@ function ExecutionAccountRail() {
                   MarketLensExecutionEA.ex5
                 </strong>
                 <span className="block text-[8px] text-ink-faint">
-                  Version {eaDistribution.releaseVersion} · all MT5 brokers
+                  {t("execution.add.eaVersion", {
+                    version: eaDistribution.releaseVersion,
+                  })}
                 </span>
               </span>
             </div>
@@ -531,10 +570,10 @@ function ExecutionAccountRail() {
               className="mx-2 mb-2 flex h-8 items-center justify-center gap-1.5 rounded-lg bg-brand px-2.5 text-[10px] font-semibold text-white transition-colors hover:bg-brand/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 focus-visible:ring-offset-1 focus-visible:ring-offset-terminal-bg"
             >
               <Download size={12} aria-hidden="true" />
-              Download MT5 EA
+              {t("execution.add.downloadEa")}
             </a>
             <div className="flex items-center justify-between gap-2 border-t border-terminal-border px-2 py-1.5 text-[8px] text-ink-faint">
-              <span>Compiled release</span>
+              <span>{t("execution.add.compiledRelease")}</span>
               <a
                 href={eaDistribution.checksumUrl}
                 download="MarketLensExecutionEA.sha256.txt"
@@ -551,15 +590,17 @@ function ExecutionAccountRail() {
             className="mt-2 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-brand/30 bg-brand/5 px-2.5 text-[10px] font-semibold text-brand transition-colors hover:border-brand/50 hover:bg-brand/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
           >
             <BookOpen size={12} aria-hidden="true" />
-            Hướng dẫn cài đặt
+            {t("execution.add.installGuide")}
           </button>
           <div className="mt-2 rounded-lg border border-terminal-border bg-terminal-bg p-2">
             <div className="flex items-center justify-between gap-2">
-              <span className="font-semibold text-ink">EA gateway URL</span>
+              <span className="font-semibold text-ink">
+                {t("execution.add.gatewayUrl")}
+              </span>
               <button
                 type="button"
                 className="rounded p-1 text-brand hover:bg-brand/10"
-                aria-label="Copy EA gateway URL"
+                aria-label={t("execution.add.copyGatewayUrl")}
                 onClick={() =>
                   void navigator.clipboard.writeText(eaDistribution.gatewayUrl)
                 }
@@ -575,13 +616,16 @@ function ExecutionAccountRail() {
             <div className="mt-2 rounded-lg border border-bull/25 bg-bull/5 p-2">
               <div className="flex items-center justify-between gap-2">
                 <span className="font-semibold text-bull">
-                  One-time token · expires{" "}
-                  {new Date(pairing.expiresAtMs).toLocaleTimeString()}
+                  {t("execution.add.pairingExpires", {
+                    time: new Date(pairing.expiresAtMs).toLocaleTimeString(
+                      locale,
+                    ),
+                  })}
                 </span>
                 <button
                   type="button"
                   className="rounded p-1 text-bull hover:bg-bull/10"
-                  aria-label="Copy pairing token"
+                  aria-label={t("execution.manage.pairing.copy")}
                   onClick={() => void navigator.clipboard.writeText(pairing.token)}
                 >
                   <Clipboard size={12} />
@@ -601,7 +645,7 @@ function ExecutionAccountRail() {
                 ) : (
                   <KeyRound size={11} />
                 )}
-                Generate another token
+                {t("execution.add.pairingRegenerate")}
               </button>
             </div>
           ) : (
@@ -614,12 +658,12 @@ function ExecutionAccountRail() {
               {pairingLoading && (
                 <LoaderCircle size={12} className="animate-spin" />
               )}
-              Generate 5-minute token
+              {t("execution.add.pairingGenerate")}
             </button>
           )}
           {pairingFailed && (
             <span className="mt-2 block text-[9px] text-bear">
-              Could not issue a pairing token. Try again.
+              {t("execution.add.pairingError")}
             </span>
           )}
         </div>
@@ -718,7 +762,8 @@ function ExecutionAccountRail() {
                   )}
                   <span className="mt-2 flex items-center justify-between gap-2">
                     <span className="truncate text-[9px] text-ink-faint">
-                      {account.server ?? account.externalAccountRef}
+                      {account.server ?? account.externalAccountRef} ·{" "}
+                      {t(EXECUTION_STATUS_TRANSLATION_KEYS[account.status])}
                     </span>
                     <span className="tabular text-[10px] font-semibold text-ink">
                       {account.equity != null ? fmtMoney(account.equity) : "--"}
@@ -744,9 +789,14 @@ function ExecutionAccountRail() {
         })}
       </div>
       <div className="shrink-0 border-t border-terminal-border p-3 text-[10px] leading-4 text-ink-faint">
-        One MT5 terminal runs one account. Attach the same EA to every terminal
-        to populate this list.
+        {connectorCapabilities.mt5Managed
+          ? t("execution.add.footer.managed")
+          : t("execution.add.footer.ea")}
       </div>
+      <Mt5ManagedConnectionDialog
+        open={showManagedConnect}
+        onClose={() => setShowManagedConnect(false)}
+      />
       <Mt5EaSetupGuide
         open={showGuide}
         onClose={() => setShowGuide(false)}

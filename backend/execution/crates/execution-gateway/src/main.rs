@@ -46,6 +46,7 @@ mod sqlx {
 }
 
 mod copier;
+mod mt5_vm_connections;
 mod mt5_vm_control;
 
 use copier::{PortfolioChange, diff_portfolio};
@@ -828,6 +829,7 @@ async fn main() {
         .route("/v1/admin/orders", post(route_admin_order))
         .route("/v1/admin/commands", post(queue_command))
         .merge(mt5_vm_control::routes())
+        .merge(mt5_vm_connections::routes())
         .layer(DefaultBodyLimit::max(256 * 1024))
         .with_state(state);
     let ea_listener = tokio::net::TcpListener::bind(config.bind)

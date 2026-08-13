@@ -1,6 +1,6 @@
 # Current Progress
 
-- Universal MT5 Windows VM connector Phases 0-2 (2026-08-12): replaced and deleted
+- Universal MT5 Windows VM connector Phases 0-3 (2026-08-13): replaced and deleted
   the TickerAll/MetaApi plan. The authoritative broker-neutral path now uses a
   private Windows VM pool where one Rust `mt5-vm-agent` owns multiple isolated
   MT5 terminal/Python-adapter pairs; users remain browser-only. Installed the
@@ -34,7 +34,15 @@
   enrollment is disabled unless an independent bootstrap token is configured;
   operational activation still needs disposable-PostgreSQL restart and signed
   worker rotation/reassignment evidence. See
-  `MT5_WINDOWS_VM_CONNECTOR_PHASE2.md`.
+  `MT5_WINDOWS_VM_CONNECTOR_PHASE2.md`. Phase 3 repository work is complete
+  behind a disabled-by-default backend capability: additive migration `0039`,
+  Vault KV v2 credential lifecycle, authenticated owner-scoped connect/status/
+  reconnect/disconnect/remove APIs, one-time hashed worker grants, audit and
+  abuse limits, plus bilingual desktop/mobile UI. The frontend has no managed
+  connector feature env; Go advertises it only when the Vault address and token
+  file are configured. Gateway tests pass 67/67 and the Go, TypeScript and i18n
+  gates pass. Production activation still depends on the Phase 1/2 evidence and
+  the deployment checklist in `MT5_WINDOWS_VM_CONNECTOR_PHASE3.md`.
 
 - Live-tail indicator viewport stability (2026-08-10): post-deploy Edge probes
   separated the remaining shake from MT5 ingress and controller resets. The

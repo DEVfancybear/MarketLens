@@ -18,9 +18,10 @@ import (
 const maxGatewayResponseBytes = 2 * 1024 * 1024
 
 type Client struct {
-	baseURL    *url.URL
-	adminToken string
-	httpClient *http.Client
+	baseURL             *url.URL
+	adminToken          string
+	httpClient          *http.Client
+	mt5ConnectorEnabled bool
 }
 
 type GatewayError struct {
@@ -68,6 +69,17 @@ type Account struct {
 	EAVersion          string   `json:"eaVersion,omitempty"`
 	RequiredEAVersion  string   `json:"requiredEaVersion,omitempty"`
 	StatusReason       string   `json:"statusReason,omitempty"`
+	ConnectorKind      string   `json:"connectorKind,omitempty"`
+	ConnectionRevision uint64   `json:"connectionRevision,omitempty"`
+	Persistence        string   `json:"persistence,omitempty"`
+}
+
+// EnableMT5Connector turns on the additive Windows VM account projection only
+// after the Go API has a usable credential vault. Keeping this disabled by
+// default prevents an unavailable Phase 3 slice from breaking the legacy EA
+// account registry.
+func (c *Client) EnableMT5Connector() {
+	c.mt5ConnectorEnabled = true
 }
 
 type PairingToken struct {
@@ -199,7 +211,38 @@ func (c *Client) ListAccounts(ctx context.Context, ownerID string) ([]Account, e
 			StatusReason:       statusReason,
 		})
 	}
+	if c.mt5ConnectorEnabled {
+		managed, err := c.ListMT5ConnectorAccounts(ctx, ownerID)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range managed {
+			accounts = append(accounts, Account{
+				ID:                 item.AccountID,
+				Label:              item.Label,
+				VenueKind:          "metatrader5",
+				BrokerCode:         "mt5",
+				ExternalAccountRef: maskedLogin(item.MaskedLoginSuffix),
+				Server:             item.Server,
+				Mode:               "unknown",
+				Status:             item.ConnectionStatus,
+				Currency:           "",
+				TradeAllowed:       item.ConnectionStatus == "ready",
+				UpdatedAt:          item.UpdatedAtMS,
+				ConnectorKind:      "windows_vm",
+				ConnectionRevision: item.ConnectionRevision,
+				Persistence:        item.Persistence,
+			})
+		}
+	}
 	return accounts, nil
+}
+
+func maskedLogin(suffix string) string {
+	if suffix == "" {
+		return "MT5 account"
+	}
+	return "••••" + suffix
 }
 
 func (c *Client) AccountLayout(ctx context.Context, ownerID string) (AccountLayout, error) {

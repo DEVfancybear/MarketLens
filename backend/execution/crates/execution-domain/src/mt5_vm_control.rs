@@ -100,6 +100,8 @@ pub struct WorkerControlCommand {
     pub expires_at_ms: u64,
     pub kind: WorkerCommandKind,
     pub payload_json: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential_grant: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -169,6 +171,7 @@ mod tests {
             expires_at_ms: 20,
             kind: WorkerCommandKind::ProvisionAccount,
             payload_json: "{}".into(),
+            credential_grant: None,
         })
         .expect("control command serializes");
 

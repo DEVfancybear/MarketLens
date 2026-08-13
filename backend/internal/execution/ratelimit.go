@@ -9,14 +9,18 @@ import (
 )
 
 const (
-	executionRequestRateLimitMax     = 1200
-	executionRequestRateLimitWindow  = time.Minute
-	executionMutationRateLimitMax    = 180
-	executionMutationRateLimitWindow = time.Minute
-	executionTradingRateLimitMax     = 60
-	executionTradingRateLimitWindow  = time.Minute
-	executionPairingRateLimitMax     = 10
-	executionPairingRateLimitWindow  = 5 * time.Minute
+	executionRequestRateLimitMax            = 1200
+	executionRequestRateLimitWindow         = time.Minute
+	executionMutationRateLimitMax           = 180
+	executionMutationRateLimitWindow        = time.Minute
+	executionTradingRateLimitMax            = 60
+	executionTradingRateLimitWindow         = time.Minute
+	executionPairingRateLimitMax            = 10
+	executionPairingRateLimitWindow         = 5 * time.Minute
+	executionConnectorRateLimitMax          = 6
+	executionConnectorRateLimitWindow       = 5 * time.Minute
+	executionConnectorWorkerRateLimitMax    = 30
+	executionConnectorWorkerRateLimitWindow = time.Minute
 )
 
 func newExecutionRateLimiter(maximum int, window time.Duration) fiber.Handler {

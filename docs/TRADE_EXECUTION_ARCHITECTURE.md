@@ -7,8 +7,10 @@ implementations are complete.
 The approved web-only MT5 transport is specified in
 [`UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md`](UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md).
 It is additive to the current EA path and uses private Windows VMs with a Rust
-multi-terminal supervisor; do not treat credential routes, order execution, or
-the no-install user flow as available until their phase exit gates pass.
+multi-terminal supervisor. Phase 3 credential routes and capability-driven UI
+are implemented but remain disabled by default; do not treat the no-install flow
+as production-active until the Phase 1-3 operational gates pass. Order execution
+remains outside this phase.
 
 ## Goals
 

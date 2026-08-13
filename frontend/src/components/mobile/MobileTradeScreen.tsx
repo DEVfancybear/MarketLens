@@ -9,6 +9,7 @@ import {
   Download,
   Pencil,
   RotateCcw,
+  ServerCog,
   Settings2,
   X,
 } from "lucide-react";
@@ -18,6 +19,7 @@ import { ExecutionModeSwitch } from "@/components/trade/ExecutionModeSwitch";
 import { ExecutionConnectionStatus } from "@/components/trade/ExecutionConnectionStatus";
 import { Mt5CommandLog } from "@/components/trade/Mt5CommandLog";
 import { Mt5EaSetupGuide } from "@/components/trade/Mt5EaSetupGuide";
+import { Mt5ManagedConnectionDialog } from "@/components/trade/Mt5ManagedConnectionDialog";
 import { ExecutionAccountManagementDialog } from "@/components/trade/ExecutionAccountManagementDialog";
 import {
   CopyTradeDialog,
@@ -48,7 +50,11 @@ import { useSimTradingPersistence } from "@/hooks/useSimTradingPersistence";
 import { makeClientCommandId } from "@/services/execution/identifiers";
 import { executionEaDistribution } from "@/services/execution/eaDistribution";
 import { useExecutionPairingToken } from "@/hooks/useExecutionPairingToken";
-import { selectedExecutionAccountAtom } from "@/store/executionRegistryStore";
+import { useI18n } from "@/hooks/useI18n";
+import {
+  executionConnectorCapabilitiesAtom,
+  selectedExecutionAccountAtom,
+} from "@/store/executionRegistryStore";
 import { getMarketSymbol } from "@/services/market-data/symbols";
 import { fmtMoney, fmtPrice } from "@/utils/format";
 import { cn } from "@/utils/cn";
@@ -61,6 +67,7 @@ export function MobileTradeScreen() {
   useSimTradingPersistence();
   const [tab, setTab] = useState<TradeTab>("ticket");
   const [showEaGuide, setShowEaGuide] = useState(false);
+  const [showManagedConnect, setShowManagedConnect] = useState(false);
   const [showAccountManagement, setShowAccountManagement] = useState(false);
   const positions = useAtomValue(positionsAtom);
   const equity = useAtomValue(equityAtom);
@@ -70,9 +77,13 @@ export function MobileTradeScreen() {
   const mt5Positions = useAtomValue(mt5PositionsAtom);
   const mt5Pending = useAtomValue(mt5PendingOrdersAtom);
   const selectedExecutionAccount = useAtomValue(selectedExecutionAccountAtom);
+  const connectorCapabilities = useAtomValue(
+    executionConnectorCapabilitiesAtom,
+  );
   const reset = useSetAtom(resetPersistedTradeAtom);
   const replay = useReplayTrading();
   const { requestPrompt, requestConfirm, dialog } = usePlatformDialog();
+  const { t } = useI18n();
   const eaDistribution = executionEaDistribution();
   const {
     pairing,
@@ -127,9 +138,15 @@ export function MobileTradeScreen() {
     <div className="mobile-execution-bar"><ExecutionModeSwitch />{executionMode === "mt5" && <ExecutionConnectionStatus />}</div>
     <div className="mobile-kpi-row mobile-kpi-row--trade"><div><small>Open positions</small><strong>{openCount}</strong></div><div><small>Open P/L</small><strong className={pnl >= 0 ? "text-bull" : "text-bear"}>{fmtMoney(pnl)}</strong></div><div><small>Return</small><strong className={returnPct >= 0 ? "text-bull" : "text-bear"}>{returnPct >= 0 ? "+" : ""}{returnPct.toFixed(2)}%</strong></div></div>
     <div className="mobile-trade-account-actions">
+      {connectorCapabilities.mt5Managed && (
+        <button type="button" onClick={() => setShowManagedConnect(true)}>
+          <ServerCog size={17} />
+          {t("execution.add.mobileManaged")}
+        </button>
+      )}
       <button type="button" onClick={() => setShowEaGuide(true)}>
         <BookOpen size={17} />
-        Cài MT5 EA
+        {t("execution.add.mobileEa")}
       </button>
       {executionMode === "mt5" && selectedExecutionAccount && (
         <button
@@ -155,6 +172,10 @@ export function MobileTradeScreen() {
       {tab === "copier" && <CopyRoutingPanel />}
       {tab === "activity" && <div className="mobile-bridge-workspace"><ExecutionConnectionStatus /><Mt5CommandLog />{executionMode !== "mt5" && <div className="mobile-empty-state"><strong>Simulator mode is active</strong><span>Select an execution account to inspect account-scoped events.</span></div>}</div>}
     </div>
+    <Mt5ManagedConnectionDialog
+      open={showManagedConnect}
+      onClose={() => setShowManagedConnect(false)}
+    />
     <Mt5EaSetupGuide
       open={showEaGuide}
       onClose={() => setShowEaGuide(false)}

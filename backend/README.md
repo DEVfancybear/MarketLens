@@ -48,6 +48,22 @@ EXECUTION_MT5_VM_BOOTSTRAP_TOKEN=independent-32-random-characters
 EXECUTION_DATABASE_MAX_CONNECTIONS=10
 ```
 
+The managed, no-install MT5 connector is disabled by default. Enable its backend
+capability only after provisioning a narrow Vault KV v2 role:
+
+```dotenv
+MT5_VAULT_ADDR=https://vault.internal.example
+MT5_VAULT_API_TOKEN_FILE=C:\ProgramData\MarketLens\secrets\mt5-vault.token
+# Optional for Vault Enterprise namespaces:
+MT5_VAULT_NAMESPACE=
+```
+
+There is no frontend feature flag. Go advertises the connector in the
+authenticated account-registry response only when both required Vault settings
+are present. The KV mount and prefix are backend contracts, and the token itself
+must remain in the ACL-restricted file rather than an environment variable. See
+`../docs/MT5_WINDOWS_VM_CONNECTOR_PHASE3.md` before activation.
+
 The public EA URL is the existing Go API path, for example
 `https://api.tradingterminal.io.vn/execution-ea`. Go forwards only the exact
 health/session/poll/event allow-list to `:8790`. Never publish either Rust port

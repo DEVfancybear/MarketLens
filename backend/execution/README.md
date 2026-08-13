@@ -30,6 +30,11 @@ market data, Pine execution, or ordinary application CRUD.
   It remains disabled unless `EXECUTION_MT5_VM_BOOTSTRAP_TOKEN` is configured;
   all routes stay on the loopback admin listener and no credential or order
   execution payload is accepted by this phase.
+- Phase 3 adds owner-scoped account lifecycle state and one-time credential-grant
+  hashes to `execution-gateway`. Rust never receives a broker password: the
+  authenticated Go BFF owns Vault I/O and exchanges only opaque secret
+  references over the loopback admin listener. See
+  `../../docs/MT5_WINDOWS_VM_CONNECTOR_PHASE3.md`.
 
 The gateway refuses to start without PostgreSQL and an unpredictable
 `EXECUTION_ADMIN_TOKEN`. Commands and outcomes are tenant-scoped, target-scoped,

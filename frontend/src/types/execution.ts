@@ -10,9 +10,16 @@ export type ExecutionAccountStatus =
   | "disabled"
   | "offline"
   | "connecting"
+  | "queued"
+  | "provisioning"
+  | "synchronizing"
   | "ready"
   | "degraded"
-  | "blocked";
+  | "reconnecting"
+  | "credentials_required"
+  | "unsupported"
+  | "blocked"
+  | "disconnected";
 
 /** Broker-neutral account summary returned by the Rust execution gateway. */
 export interface ExecutionAccountSummary {
@@ -32,6 +39,9 @@ export interface ExecutionAccountSummary {
   eaVersion?: string;
   requiredEaVersion?: string;
   statusReason?: "ea_update_required" | "broker_trading_disabled";
+  connectorKind?: "ea" | "windows_vm";
+  connectionRevision?: number;
+  persistence?: "session" | "managed";
 }
 
 export type PropRiskDailyLossReference =

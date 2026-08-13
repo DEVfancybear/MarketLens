@@ -15,6 +15,23 @@ All notable changes to the MarketLens. Dates are UTC.
 - Added a regression check for the compact write response and documented Neon
   data-transfer quota failures as an external readiness/deployment blocker.
 
+### Added - MT5 Windows VM connector Phase 3 vault and account API (2026-08-13)
+
+- Added migration `0039` for credential revisions, restart-safe pending secret
+  references, removal state, and one-time worker grant hashes. PostgreSQL stores
+  no raw grant token or broker password.
+- Added a backend-owned Vault KV v2 client and authenticated connect, status,
+  reconnect/rotate, disconnect, and remove routes with owner injection, revision
+  fencing, rate limits, compensation, permanent credential-version deletion, and
+  audit. Worker grants are bound to the exact worker/session/lease/command and
+  consumed in Rust before Vault retrieval.
+- Added a backend capability response and bilingual English/Vietnamese desktop
+  and mobile UI. There is no frontend managed-connector feature env; the flow is
+  shown only when Go confirms Vault-backed support.
+- Verified the 67-test Rust gateway suite, Go config/execution/Vault/API tests,
+  TypeScript typecheck, i18n completeness, and whitespace checks. Operational
+  activation remains gated by `MT5_WINDOWS_VM_CONNECTOR_PHASE3.md`.
+
 ### Added - Durable MT5 Windows VM control plane Phase 2 (2026-08-12)
 
 - Added migration `0038` for non-secret VM account bindings, a versioned worker

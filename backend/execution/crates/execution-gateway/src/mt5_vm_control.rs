@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use axum::extract::State;
@@ -540,7 +540,7 @@ async fn worker_poll(
             dispatched_at = COALESCE(command.dispatched_at, now())
         FROM candidates
         WHERE command.id = candidates.id
-        RETURNING command.id, command.message_id, command.account_id,
+        RETURNING command.id, command.message_id, command.user_id, command.account_id,
                   command.lease_generation, command.command_kind, command.payload,
                   (extract(epoch from command.expires_at) * 1000)::bigint AS expires_at_ms
         "#,
@@ -552,6 +552,67 @@ async fn worker_poll(
     .fetch_all(&mut *transaction)
     .await
     .map_err(|error| ApiError::database("lease worker commands", error))?;
+    let mut credential_grants = HashMap::new();
+    for row in &rows {
+        let command_kind: String = row
+            .try_get("command_kind")
+            .map_err(|error| ApiError::database("decode command grant kind", error))?;
+        if command_kind != WorkerCommandKind::ProvisionAccount.as_str() {
+            continue;
+        }
+        let command_id: Uuid = row
+            .try_get("id")
+            .map_err(|error| ApiError::database("decode command grant id", error))?;
+        let owner_id: Uuid = row
+            .try_get("user_id")
+            .map_err(|error| ApiError::database("decode command grant owner", error))?;
+        let account_id: String = row
+            .try_get("account_id")
+            .map_err(|error| ApiError::database("decode command grant account", error))?;
+        let lease_generation: i64 = row
+            .try_get("lease_generation")
+            .map_err(|error| ApiError::database("decode command grant lease", error))?;
+        let raw_token = random_token();
+        let token_hash = sha256(raw_token.as_bytes());
+        let issued = sqlx_core::query::query(
+            r#"
+            INSERT INTO execution_mt5_vm_credential_grants (
+              user_id, account_id, command_id, worker_id,
+              worker_session_generation, lease_generation,
+              grant_token_hash, status, expires_at, issued_at, consumed_at
+            )
+            SELECT $1, $2, $3, $4, $5, $6, $7, 'issued',
+                   LEAST(command.expires_at, now() + interval '30 seconds'),
+                   now(), NULL
+            FROM execution_mt5_vm_control_commands command
+            JOIN execution_accounts registry
+              ON registry.user_id = command.user_id AND registry.id = command.account_id
+            WHERE command.id = $3 AND registry.connector_kind = 'windows_vm'
+              AND registry.secret_ref IS NOT NULL
+            ON CONFLICT (command_id) DO UPDATE SET
+              worker_id = EXCLUDED.worker_id,
+              worker_session_generation = EXCLUDED.worker_session_generation,
+              lease_generation = EXCLUDED.lease_generation,
+              grant_token_hash = EXCLUDED.grant_token_hash,
+              status = 'issued', expires_at = EXCLUDED.expires_at,
+              issued_at = now(), consumed_at = NULL
+            RETURNING command_id
+            "#,
+        )
+        .bind(owner_id)
+        .bind(&account_id)
+        .bind(command_id)
+        .bind(&request.worker_id)
+        .bind(auth.session_generation as i64)
+        .bind(lease_generation)
+        .bind(token_hash.to_vec())
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|error| ApiError::database("issue MT5 credential grant", error))?;
+        if issued.is_some() {
+            credential_grants.insert(command_id, raw_token);
+        }
+    }
     transaction
         .commit()
         .await
@@ -574,6 +635,9 @@ async fn worker_poll(
                 "durable worker command payload failed the secret boundary",
             ));
         }
+        let command_id = row
+            .try_get::<Uuid, _>("id")
+            .map_err(|error| ApiError::database("decode command id", error))?;
         commands.push(WorkerControlCommand {
             protocol_version: auth.protocol_version,
             worker_id: request.worker_id.clone(),
@@ -584,10 +648,7 @@ async fn worker_poll(
                 .try_get::<i64, _>("lease_generation")
                 .map_err(|error| ApiError::database("decode command lease", error))?
                 as u64,
-            command_id: row
-                .try_get::<Uuid, _>("id")
-                .map_err(|error| ApiError::database("decode command id", error))?
-                .to_string(),
+            command_id: command_id.to_string(),
             message_id: row
                 .try_get::<Uuid, _>("message_id")
                 .map_err(|error| ApiError::database("decode command message id", error))?
@@ -600,6 +661,7 @@ async fn worker_poll(
             kind,
             payload_json: serde_json::to_string(&payload)
                 .map_err(|error| ApiError::internal("encode worker command payload", error))?,
+            credential_grant: credential_grants.remove(&command_id),
         });
     }
     Ok(Json(WorkerPollResponse {
@@ -1772,6 +1834,7 @@ mod tests {
             expires_at_ms: 20,
             kind: WorkerCommandKind::ReconcileAccount,
             payload_json: "{}".into(),
+            credential_grant: None,
         };
         let value = serde_json::to_value(command).expect("command serializes");
         assert_eq!(value["leaseGeneration"], 2);

@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/rs/zerolog/log"
 	"github.com/marketlens/backend/internal/auth"
+	"github.com/rs/zerolog/log"
 )
 
 type Gateway interface {
@@ -35,14 +35,18 @@ type Gateway interface {
 const tradeAuthorizationHeader = "X-Trade-Authorization"
 
 type Handler struct {
-	gateway              Gateway
-	requireAuth          fiber.Handler
-	requireActiveSession fiber.Handler
-	requestRateLimit     fiber.Handler
-	mutationRateLimit    fiber.Handler
-	tradingRateLimit     fiber.Handler
-	pairingRateLimit     fiber.Handler
-	eaProxy              *EAProxy
+	gateway                  Gateway
+	requireAuth              fiber.Handler
+	requireActiveSession     fiber.Handler
+	requestRateLimit         fiber.Handler
+	mutationRateLimit        fiber.Handler
+	tradingRateLimit         fiber.Handler
+	pairingRateLimit         fiber.Handler
+	connectorRateLimit       fiber.Handler
+	connectorWorkerRateLimit fiber.Handler
+	eaProxy                  *EAProxy
+	mt5ConnectorGateway      MT5ConnectorGateway
+	mt5Vault                 MT5CredentialStore
 }
 
 func NewHandler(
@@ -70,11 +74,28 @@ func NewHandler(
 			executionPairingRateLimitMax,
 			executionPairingRateLimitWindow,
 		),
+		connectorRateLimit: newExecutionRateLimiter(
+			executionConnectorRateLimitMax,
+			executionConnectorRateLimitWindow,
+		),
+		connectorWorkerRateLimit: newExecutionRateLimiter(
+			executionConnectorWorkerRateLimitMax,
+			executionConnectorWorkerRateLimitWindow,
+		),
 	}
 }
 
 func (h *Handler) WithEAProxy(proxy *EAProxy) *Handler {
 	h.eaProxy = proxy
+	return h
+}
+
+func (h *Handler) WithMT5ConnectorVault(vault MT5CredentialStore) *Handler {
+	connector, ok := h.gateway.(MT5ConnectorGateway)
+	if ok && vault != nil {
+		h.mt5ConnectorGateway = connector
+		h.mt5Vault = vault
+	}
 	return h
 }
 
@@ -95,6 +116,9 @@ func (h *Handler) Register(router fiber.Router) {
 	router.Post("/execution/pairing-tokens", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.pairingRateLimit, h.issuePairingToken)
 	router.Post("/execution/orders", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.tradingRateLimit, h.routeOrder)
 	router.Post("/execution/commands", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.tradingRateLimit, h.queueCommand)
+	if h.mt5ConnectorGateway != nil && h.mt5Vault != nil {
+		h.registerMT5ConnectorRoutes(router)
+	}
 }
 
 func (h *Handler) listCopyGroups(c fiber.Ctx) error {
@@ -401,9 +425,18 @@ func (h *Handler) listAccounts(c fiber.Ctx) error {
 	if err != nil {
 		return gatewayHTTPError(err)
 	}
+	c.Set(fiber.HeaderCacheControl, "no-store")
 	return c.JSON(struct {
-		Accounts []Account `json:"accounts"`
-	}{Accounts: accounts})
+		Accounts   []Account `json:"accounts"`
+		Connectors struct {
+			MT5Managed bool `json:"mt5Managed"`
+		} `json:"connectors"`
+	}{
+		Accounts: accounts,
+		Connectors: struct {
+			MT5Managed bool `json:"mt5Managed"`
+		}{MT5Managed: h.mt5ConnectorGateway != nil && h.mt5Vault != nil},
+	})
 }
 
 func (h *Handler) accountLayout(c fiber.Ctx) error {

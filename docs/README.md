@@ -19,6 +19,8 @@ owning package docs.
 | `UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md` | Authoritative Plans 0-9 for a secure broker-neutral Windows VM connector with multiple isolated MT5 terminals per Rust-managed worker |
 | `MT5_WINDOWS_VM_CONNECTOR_PHASE0_VALIDATION.md` | Completed host/runtime and credential-safe FTMO Free Trial read-only evidence for Phase 0 |
 | `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md` | Implemented worker prototype, passing unit gates, blocked real-terminal lifecycle, and explicit follow-up checklist |
+| `MT5_WINDOWS_VM_CONNECTOR_PHASE2.md` | Durable control-plane repository implementation and remaining operational activation gates |
+| `MT5_WINDOWS_VM_CONNECTOR_PHASE3.md` | Vault/authenticated connection API implementation, security boundaries, verification record, and activation runbook |
 | `PROP_RISK_GUARD.md` | Automated, versioned prop-firm drawdown protection on the web execution path |
 
 ## Package Docs
@@ -40,6 +42,8 @@ owning package docs.
 | `UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md` | Plans 0-9 for Rust worker control, credential security, multi-terminal isolation, durable execution, measured VM density, multi-broker certification, and rollout |
 | `MT5_WINDOWS_VM_CONNECTOR_PHASE0_VALIDATION.md` | Phase 0 execution record; host/runtime/tests and credentialed FTMO Free Trial read-only gate pass |
 | `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md` | Phase 1 execution record; prototype tests pass while the credentialed lifecycle remains blocked at MT5 initialization |
+| `MT5_WINDOWS_VM_CONNECTOR_PHASE2.md` | Phase 2 durable worker-control implementation and restart/reassignment gates |
+| `MT5_WINDOWS_VM_CONNECTOR_PHASE3.md` | Phase 3 vault, account lifecycle, one-time grant, UI, and deployment record |
 
 ## Documentation Rules
 

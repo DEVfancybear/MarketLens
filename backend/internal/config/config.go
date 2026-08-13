@@ -6,6 +6,7 @@ import (
 	"net/mail"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -28,9 +29,14 @@ type Config struct {
 
 	DatabaseURL string
 
-	ExecutionEAURL      string
-	ExecutionAdminURL   string
-	ExecutionAdminToken string
+	ExecutionEAURL       string
+	ExecutionAdminURL    string
+	ExecutionAdminToken  string
+	MT5VaultAddress      string
+	MT5VaultAPITokenFile string
+	MT5VaultNamespace    string
+	MT5VaultMount        string
+	MT5VaultPrefix       string
 
 	AuthJWTSecret          string
 	PushWorkerSecret       string
@@ -97,6 +103,15 @@ func (c Config) ObjectStorageConfigured() bool {
 	return c.ObjectStorageBucket != "" && c.ObjectStorageAccessKey != "" && c.ObjectStorageSecretKey != ""
 }
 
+// MT5VaultConfigured reports whether the Phase 3 managed connector boundary is
+// fully configured. Partial configuration is rejected during validation.
+func (c Config) MT5VaultConfigured() bool {
+	return strings.TrimSpace(c.MT5VaultAddress) != "" &&
+		strings.TrimSpace(c.MT5VaultAPITokenFile) != "" &&
+		strings.TrimSpace(c.MT5VaultMount) != "" &&
+		strings.TrimSpace(c.MT5VaultPrefix) != ""
+}
+
 // TradeRecoveryEmailConfigured reports whether the backend can deliver trade
 // password recovery codes. Authentication is optional for local SMTP relays,
 // but username/password must always be supplied as a pair.
@@ -125,13 +140,19 @@ func Load() (Config, error) {
 	corsAllowedOrigins := splitAndTrim(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000"))
 	alertEvaluatorEnabled := getEnvBool("ALERT_EVALUATOR_ENABLED", true)
 	cfg := Config{
-		Port:                   getEnvInt("PORT", 8080),
-		Env:                    env,
-		AuthCookieSecure:       &authCookieSecure,
-		DatabaseURL:            os.Getenv("DATABASE_URL"),
-		ExecutionEAURL:         getEnv("EXECUTION_EA_URL", "http://127.0.0.1:8790"),
-		ExecutionAdminURL:      getEnv("EXECUTION_ADMIN_URL", "http://127.0.0.1:8791"),
-		ExecutionAdminToken:    os.Getenv("EXECUTION_ADMIN_TOKEN"),
+		Port:                 getEnvInt("PORT", 8080),
+		Env:                  env,
+		AuthCookieSecure:     &authCookieSecure,
+		DatabaseURL:          os.Getenv("DATABASE_URL"),
+		ExecutionEAURL:       getEnv("EXECUTION_EA_URL", "http://127.0.0.1:8790"),
+		ExecutionAdminURL:    getEnv("EXECUTION_ADMIN_URL", "http://127.0.0.1:8791"),
+		ExecutionAdminToken:  os.Getenv("EXECUTION_ADMIN_TOKEN"),
+		MT5VaultAddress:      strings.TrimSpace(os.Getenv("MT5_VAULT_ADDR")),
+		MT5VaultAPITokenFile: strings.TrimSpace(os.Getenv("MT5_VAULT_API_TOKEN_FILE")),
+		MT5VaultNamespace:    strings.TrimSpace(os.Getenv("MT5_VAULT_NAMESPACE")),
+		// KV layout is a backend contract, not deployment/UI configuration.
+		MT5VaultMount:          "secret",
+		MT5VaultPrefix:         "marketlens/mt5",
 		AuthJWTSecret:          os.Getenv("AUTH_JWT_SECRET"),
 		PushWorkerSecret:       os.Getenv("PUSH_WORKER_SECRET"),
 		AlertEvaluatorEnabled:  alertEvaluatorEnabled,
@@ -237,6 +258,9 @@ func (c Config) validate() error {
 			return fmt.Errorf("TRADE_AUTHORIZATION_TTL must be between 10s and 2m")
 		}
 	}
+	if err := validateMT5Vault(c); err != nil {
+		return err
+	}
 	if err := c.validateTradeRecoveryEmail(); err != nil {
 		return err
 	}
@@ -295,6 +319,34 @@ func (c Config) validate() error {
 	}
 	if !c.AuthCookiesSecure() {
 		return fmt.Errorf("AUTH_COOKIE_SECURE cannot be disabled in production")
+	}
+	return nil
+}
+
+func validateMT5Vault(c Config) error {
+	addressSet := strings.TrimSpace(c.MT5VaultAddress) != ""
+	tokenFileSet := strings.TrimSpace(c.MT5VaultAPITokenFile) != ""
+	if !addressSet && !tokenFileSet {
+		if strings.TrimSpace(c.MT5VaultNamespace) != "" {
+			return fmt.Errorf("MT5_VAULT_NAMESPACE requires the MT5 credential vault settings")
+		}
+		return nil
+	}
+	if !addressSet || !tokenFileSet {
+		return fmt.Errorf("MT5_VAULT_ADDR and MT5_VAULT_API_TOKEN_FILE must be configured together")
+	}
+	u, err := url.Parse(strings.TrimRight(strings.TrimSpace(c.MT5VaultAddress), "/"))
+	if err != nil || u.Hostname() == "" || u.User != nil || u.Path != "" ||
+		u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("MT5_VAULT_ADDR must be an absolute origin")
+	}
+	ip := net.ParseIP(u.Hostname())
+	loopback := strings.EqualFold(u.Hostname(), "localhost") || (ip != nil && ip.IsLoopback())
+	if u.Scheme != "https" && !(u.Scheme == "http" && loopback) {
+		return fmt.Errorf("MT5_VAULT_ADDR must use HTTPS or loopback HTTP")
+	}
+	if !filepath.IsAbs(c.MT5VaultAPITokenFile) {
+		return fmt.Errorf("MT5_VAULT_API_TOKEN_FILE must be an absolute path")
 	}
 	return nil
 }

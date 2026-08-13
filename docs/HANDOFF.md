@@ -17,9 +17,9 @@
 > credential and second installed slot to prove live cross-account isolation and
 > aggregate idle load. Continue from
 > `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md`. Phase 2's isolated server-side
-> control plane does not close those security gates. Do not raise terminal density
-> or add public credential routes, production credentials, or order execution
-> before the required evidence exists.
+> control plane does not close those security gates. Do not raise terminal density,
+> use production credentials, or add order execution before the required evidence
+> exists.
 >
 > Phase 2 repository handoff (2026-08-12): migration `0038` and the private
 > Rust control-plane module are implemented. They provide a durable worker
@@ -29,8 +29,17 @@
 > enrollment is disabled unless `EXECUTION_MT5_VM_BOOTSTRAP_TOKEN` is set.
 > Before calling Phase 2 operationally active, complete the disposable-Postgres
 > restart and signed-worker session-rotation/reassignment gates in
-> `MT5_WINDOWS_VM_CONNECTOR_PHASE2.md`. Do not start public credential/vault or
-> order work from this handoff.
+> `MT5_WINDOWS_VM_CONNECTOR_PHASE2.md`.
+>
+> Phase 3 repository handoff (2026-08-13): migration `0039`, Vault KV v2 client,
+> authenticated owner-scoped account routes, one-time hashed worker grants,
+> lifecycle audit/rate limits, and capability-driven bilingual desktop/mobile UI
+> are implemented and tested. The frontend has no managed connector feature env;
+> Go advertises capability only when its Vault address and token file are present.
+> Rust gateway tests pass 67/67; Go config/execution/Vault/API tests, TypeScript,
+> and i18n tests pass. Read `MT5_WINDOWS_VM_CONNECTOR_PHASE3.md` before activation.
+> Phase 1/2 operational gates remain open, the worker route must stay private,
+> and no live/production credential or order test has been performed.
 
 > Trade execution handoff (2026-07-26): never restore or follow the old FTMO
 > verifier/Connector workflow below. Continue from

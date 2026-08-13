@@ -554,6 +554,17 @@ survives backend restart.
 Implement session/managed credential modes, vault grants, account connection
 state, same-origin public routes, owner scoping, rate limits, audit and UI.
 
+Current state (2026-08-13): repository implementation and tests are complete
+behind a backend capability that remains disabled unless the Vault address and
+token-file settings are both present. Migration `0039` stores only opaque secret
+references and one-time grant hashes. Go owns Vault I/O and authenticated public
+routes; Rust owns revisions, lifecycle state, owner-scoped persistence, audit and
+worker/session/lease/command-bound grant consumption. The browser has no managed
+connector feature env and includes bilingual connect/reconnect/rotate/disconnect/
+remove UI. Production activation remains blocked on the Phase 1/2 operational
+gates and the Phase 3 deployment exercise documented in
+`MT5_WINDOWS_VM_CONNECTOR_PHASE3.md`.
+
 Exit: cross-user tests, credential redaction tests, rotation/deletion tests and
 abuse limits pass.
 

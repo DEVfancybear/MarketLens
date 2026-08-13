@@ -6,6 +6,7 @@ import {
   getExecutionAccountState,
   getExecutionAccountLayout,
   getExecutionAccounts,
+  getExecutionRegistry,
   getExecutionInstruments,
   routeExecutionOrder,
   submitExecutionCommand,
@@ -31,6 +32,7 @@ import { setExecutionRuntimeHandlers } from "@/services/execution/runtime";
 import { userFacingErrorMessage } from "@/services/feedback/errorReporter";
 import {
   applyExecutionAccountsAtom,
+  applyExecutionConnectorCapabilitiesAtom,
   applyExecutionAccountLayoutAtom,
   applyCopyRoutesAtom,
   copyRoutesHydratedAtom,
@@ -73,6 +75,9 @@ const STATE_REFRESH_INTERVAL_MS = 2_000;
 /** Hydrates the broker-neutral account registry through the authenticated BFF. */
 export function useExecutionRegistry() {
   const applyAccounts = useSetAtom(applyExecutionAccountsAtom);
+  const applyConnectorCapabilities = useSetAtom(
+    applyExecutionConnectorCapabilitiesAtom,
+  );
   const applyAccountLayout = useSetAtom(applyExecutionAccountLayoutAtom);
   const applyCopyRoutes = useSetAtom(applyCopyRoutesAtom);
   const copyRoutesHydrated = useAtomValue(copyRoutesHydratedAtom);
@@ -129,12 +134,15 @@ export function useExecutionRegistry() {
       if (running || document.visibilityState === "hidden") return;
       running = true;
       try {
-        const [accounts, layout] = await Promise.all([
-          getExecutionAccounts(),
+        const [registry, layout] = await Promise.all([
+          getExecutionRegistry(),
           getExecutionAccountLayout(),
         ]);
         if (!cancelled) {
-          applyAccounts(accounts);
+          applyAccounts(registry.accounts);
+          applyConnectorCapabilities({
+            mt5Managed: registry.connectors?.mt5Managed === true,
+          });
           applyAccountLayout(layout);
         }
       } catch {
@@ -159,6 +167,7 @@ export function useExecutionRegistry() {
   }, [
     applyAccountLayout,
     applyAccounts,
+    applyConnectorCapabilities,
     backendSession,
     backendSessionResolved,
     resetExecutionRegistry,

@@ -192,3 +192,36 @@ func TestValidateTradeRecoveryEmailConfiguration(t *testing.T) {
 		t.Fatalf("local development SMTP was rejected: %v", err)
 	}
 }
+
+func TestValidateMT5VaultConfiguration(t *testing.T) {
+	base := Config{
+		Env: "development", ChartTimeZone: "UTC",
+		MT5VaultAddress:      "https://vault.example.com",
+		MT5VaultAPITokenFile: `C:\ProgramData\MarketLens\vault-api-token`,
+		MT5VaultMount:        "secret", MT5VaultPrefix: "marketlens/mt5",
+	}
+	if err := validateMT5Vault(base); err != nil {
+		t.Fatalf("valid vault config rejected: %v", err)
+	}
+	if !base.MT5VaultConfigured() {
+		t.Fatal("complete vault configuration was not detected")
+	}
+
+	partial := base
+	partial.MT5VaultAPITokenFile = ""
+	if err := validateMT5Vault(partial); err == nil {
+		t.Fatal("partial vault configuration was accepted")
+	}
+
+	remoteHTTP := base
+	remoteHTTP.MT5VaultAddress = "http://vault.example.com"
+	if err := validateMT5Vault(remoteHTTP); err == nil {
+		t.Fatal("remote plaintext vault endpoint was accepted")
+	}
+
+	loopbackHTTP := base
+	loopbackHTTP.MT5VaultAddress = "http://127.0.0.1:8200"
+	if err := validateMT5Vault(loopbackHTTP); err != nil {
+		t.Fatalf("loopback development vault rejected: %v", err)
+	}
+}

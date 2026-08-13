@@ -535,6 +535,9 @@ func TestListAccountsAlwaysUsesAuthenticatedOwner(t *testing.T) {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", response.StatusCode)
 	}
+	if response.Header.Get(fiber.HeaderCacheControl) != "no-store" {
+		t.Fatalf("account registry cache control = %q", response.Header.Get(fiber.HeaderCacheControl))
+	}
 	if gateway.accountsOwner != "11111111-1111-4111-8111-111111111111" {
 		t.Fatalf("gateway owner = %q", gateway.accountsOwner)
 	}

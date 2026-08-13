@@ -31,8 +31,19 @@ import {
 
 export type { ExecutionOrderResponse, ExecutionTargetSubmission };
 
-interface ExecutionAccountsResponse {
+export interface ExecutionAccountsResponse {
   accounts: ExecutionAccountSummary[];
+  connectors?: { mt5Managed?: boolean };
+}
+
+export async function getExecutionRegistry(): Promise<ExecutionAccountsResponse> {
+  const response = await getJson<ExecutionAccountsResponse>("execution/accounts", {
+    retry: { limit: 1, methods: ["get"] },
+  });
+  return {
+    accounts: response.accounts,
+    connectors: { mt5Managed: response.connectors?.mt5Managed === true },
+  };
 }
 
 export interface ExecutionAccountLayout {
@@ -49,14 +60,66 @@ export interface ExecutionPairingToken {
 export async function getExecutionAccounts(): Promise<
   ExecutionAccountSummary[]
 > {
-  const response = await getJson<ExecutionAccountsResponse>(
-    "execution/accounts",
-    {
-      retry: { limit: 1, methods: ["get"] },
-    },
-  );
+  const response = await getExecutionRegistry();
   return response.accounts;
 }
+
+export interface ManagedMT5Mutation {
+  accountId: string;
+  connectionStatus: ExecutionAccountSummary["status"];
+  connectionRevision: number;
+}
+
+export interface ManagedMT5ConnectInput {
+  platform: "mt5";
+  login: string;
+  password: string;
+  server: string;
+  label: string;
+  persistence: "session" | "managed";
+}
+
+export const connectManagedMT5Account = (
+  input: ManagedMT5ConnectInput,
+): Promise<ManagedMT5Mutation> =>
+  postJson<ManagedMT5Mutation>("execution/connectors/mt5/accounts", input, {
+    retry: { limit: 0 },
+    timeout: 15_000,
+  });
+
+export const reconnectManagedMT5Account = (
+  accountId: string,
+  input: {
+    expectedRevision: number;
+    login?: string;
+    password?: string;
+    server?: string;
+  },
+): Promise<ManagedMT5Mutation> =>
+  postJson<ManagedMT5Mutation>(
+    `execution/connectors/accounts/${encodeURIComponent(accountId)}/reconnect`,
+    input,
+    { retry: { limit: 0 }, timeout: 15_000 },
+  );
+
+export const disconnectManagedMT5Account = (
+  accountId: string,
+  expectedRevision: number,
+): Promise<ManagedMT5Mutation> =>
+  postJson<ManagedMT5Mutation>(
+    `execution/connectors/accounts/${encodeURIComponent(accountId)}/disconnect`,
+    { expectedRevision },
+    { retry: { limit: 0 } },
+  );
+
+export const removeManagedMT5Account = (
+  accountId: string,
+  expectedRevision: number,
+): Promise<ManagedMT5Mutation | { ok: true }> =>
+  deleteJson<ManagedMT5Mutation | { ok: true }>(
+    `execution/connectors/accounts/${encodeURIComponent(accountId)}`,
+    { json: { expectedRevision }, retry: { limit: 0 } },
+  );
 
 export const getExecutionAccountLayout = (): Promise<ExecutionAccountLayout> =>
   getJson<ExecutionAccountLayout>("execution/account-layout", {

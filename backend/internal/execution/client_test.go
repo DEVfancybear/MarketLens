@@ -81,6 +81,38 @@ func TestListAccountsUsesGatewayMinimumEAVersion(t *testing.T) {
 	}
 }
 
+func TestListAccountsAddsManagedConnectorOnlyAfterBackendCapabilityIsEnabled(t *testing.T) {
+	const token = "admin-token-with-at-least-32-characters"
+	managedCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if request.URL.Path == "/v1/admin/mt5-vm/accounts" {
+			managedCalls++
+			_, _ = w.Write([]byte(`[{"accountId":"mt5vm-account","label":"Managed demo","server":"Broker-Demo","maskedLoginSuffix":"5678","persistence":"managed","connectionStatus":"ready","connectionRevision":4,"updatedAtMs":123}]`))
+			return
+		}
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+	client, err := NewClient(server.URL, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := "11111111-1111-4111-8111-111111111111"
+	accounts, err := client.ListAccounts(t.Context(), owner)
+	if err != nil || len(accounts) != 0 || managedCalls != 0 {
+		t.Fatalf("disabled accounts=%v calls=%d err=%v", accounts, managedCalls, err)
+	}
+	client.EnableMT5Connector()
+	accounts, err = client.ListAccounts(t.Context(), owner)
+	if err != nil || len(accounts) != 1 || managedCalls != 1 {
+		t.Fatalf("enabled accounts=%v calls=%d err=%v", accounts, managedCalls, err)
+	}
+	if accounts[0].ExternalAccountRef != "••••5678" || !accounts[0].TradeAllowed || accounts[0].ConnectorKind != "windows_vm" {
+		t.Fatalf("unexpected managed projection: %+v", accounts[0])
+	}
+}
+
 func TestClientScopesAccountActionsAndKeepsAdminTokenServerSide(t *testing.T) {
 	const token = "admin-token-with-at-least-32-characters"
 	const owner = "11111111-1111-4111-8111-111111111111"
