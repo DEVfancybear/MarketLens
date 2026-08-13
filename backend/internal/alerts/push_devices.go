@@ -152,7 +152,8 @@ func (r *Repo) PutPushDevice(
 		uid = resolved
 	}
 
-	updated, _, err := scanPushDeviceWithOwner(r.pool.QueryRow(ctx, `
+	var updated PushDevice
+	err = r.pool.QueryRow(ctx, `
 UPDATE push_tokens SET
   delivery_token = NULLIF($3, ''),
   notification_time_zone = $4,
@@ -167,7 +168,7 @@ UPDATE push_tokens SET
 WHERE fcm_token = $1
   AND state_version = $2
   AND ($11::uuid IS NULL OR user_id = $11)
-RETURNING `+pushDeviceColumns,
+RETURNING fcm_token, state_version`,
 		device.Token,
 		input.ExpectedVersion,
 		device.DeliveryToken,
@@ -179,7 +180,7 @@ RETURNING `+pushDeviceColumns,
 		device.LastPrices,
 		device.AlertState,
 		uid,
-	))
+	).Scan(&updated.Token, &updated.Version)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return PushDevice{}, fmt.Errorf("%w: push device changed concurrently", ErrConflict)
 	}

@@ -26,7 +26,7 @@ type Scheduler struct {
 
 func New(cfg Config) *Scheduler {
 	if cfg.Interval <= 0 {
-		cfg.Interval = 15 * time.Second
+		cfg.Interval = time.Minute
 	}
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 30 * time.Second

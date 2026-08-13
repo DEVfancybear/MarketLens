@@ -200,6 +200,12 @@ after a concurrent browser/evaluator update. Evaluator state merges preserve
 newer alert definitions and already completed channel progress while retaining
 a frozen failed delivery after the active one-time alert disappears.
 
+The persistent Go scheduler evaluates durable alert state every 60 seconds by
+default. A successful worker-device compare-and-swap returns only the token and
+new `state_version`; the evaluator does not need the full JSONB snapshot it just
+wrote. This keeps PostgreSQL network transfer bounded while preserving the
+existing reload-and-merge behavior after a `409` conflict.
+
 FCM token registration is idempotent and receives one bounded retry for a
 transient network/timeout abort. Next persists through the Go worker API and
 PostgreSQL, so Firestore quota and transport availability are not part of the

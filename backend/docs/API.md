@@ -1370,6 +1370,13 @@ call them directly.
 | POST   | `/api/v1/push/worker-devices/put`    | Compare-and-swap a complete device snapshot |
 | POST   | `/api/v1/push/worker-devices/delete` | Delete an owned device row |
 
+A successful `POST /api/v1/push/worker-devices/put` returns the compact CAS
+acknowledgement `{ "ok": true, "device": { "token": string, "version": number } }`.
+The request remains a complete device snapshot, but the response deliberately
+does not echo alerts, prices, or evaluator-state JSON. Callers that lose a CAS
+race receive `409` and must reload the current device before merging and
+retrying.
+
 The browser-facing Next route `POST /api/push/alerts/sync` is intentionally outside the Go
 `/api/v1` prefix. It verifies the Firebase bearer token, validates the complete device snapshot,
 then calls the worker-device API with an eight-second end-to-end deadline:

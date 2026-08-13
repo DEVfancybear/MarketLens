@@ -136,7 +136,7 @@ func Load() (Config, error) {
 		PushWorkerSecret:       os.Getenv("PUSH_WORKER_SECRET"),
 		AlertEvaluatorEnabled:  alertEvaluatorEnabled,
 		AlertEvaluatorURL:      getEnv("ALERT_EVALUATOR_URL", defaultAlertEvaluatorURL(env, corsAllowedOrigins)),
-		AlertEvaluatorInterval: getEnvDuration("ALERT_EVALUATOR_INTERVAL", 15*time.Second),
+		AlertEvaluatorInterval: getEnvDuration("ALERT_EVALUATOR_INTERVAL", time.Minute),
 		AlertEvaluatorTimeout:  getEnvDuration("ALERT_EVALUATOR_TIMEOUT", 30*time.Second),
 		AuthAccessTTL:          getEnvDuration("AUTH_ACCESS_TTL", 15*time.Minute),
 		AuthRefreshTTL:         getEnvDuration("AUTH_REFRESH_TTL", 720*time.Hour),

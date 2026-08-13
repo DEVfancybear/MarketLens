@@ -481,6 +481,7 @@ statuses must never trigger fallback.
 | Firebase `ACCESS_TOKEN_EXPIRED` | Synchronize Windows Time with an NTP peer, then restart Next. |
 | Migration reports `dirty=true` | Stop before replacing services. Inspect the failed migration and actual schema first. Use `migrate force` only when the schema version has been proven and the failed transaction's effects are understood; never use `force` or `down` as a blind retry. Commit any migration correction so the canonical runner retains its clean-worktree gate. |
 | `/health/ready` says database down | Verify `DATABASE_URL`, network access, and migration version before restarting the API. |
+| Neon reports `Your project has exceeded the data transfer quota` | The provider is rejecting database connections, so migrations and readiness cannot pass. Restore quota by waiting for the billing-cycle reset or upgrading the Neon plan, then rerun `run-backend-production.ps1`. Do not bypass migrations or readiness. Review evaluator cadence and wide/high-frequency query results before restoring traffic. |
 
 ## Safe cleanup
 

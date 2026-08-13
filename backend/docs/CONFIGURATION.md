@@ -99,7 +99,7 @@ must never use a `NEXT_PUBLIC_` prefix.
 |---|---|---|
 | `ALERT_EVALUATOR_ENABLED` | `true` | Run the scheduler inside the persistent Go API process |
 | `ALERT_EVALUATOR_URL` | Development: `http://localhost:3000/api/push/evaluate`; production: first non-local HTTPS CORS origin + `/api/push/evaluate` | Next evaluator endpoint; an explicit production URL remains recommended |
-| `ALERT_EVALUATOR_INTERVAL` | `15s` | Delay between sequential evaluation calls |
+| `ALERT_EVALUATOR_INTERVAL` | `60s` | Delay between sequential evaluation calls; keep this conservative because each evaluation reads durable PostgreSQL alert state |
 | `ALERT_EVALUATOR_TIMEOUT` | `30s` | HTTP timeout for one evaluation |
 | `PUSH_WORKER_SECRET` | empty in dev | Shared evaluator/service authentication; use 32+ random bytes whenever the evaluator is enabled; required in production |
 

@@ -4,6 +4,17 @@ All notable changes to the MarketLens. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - Bounded PostgreSQL push-evaluator egress (2026-08-13)
+
+- Reduced the default durable alert-evaluator cadence from 15 seconds to 60
+  seconds so closed-browser alert polling does not generate unnecessary
+  PostgreSQL reads and compare-and-swap writes during idle periods.
+- Changed push-device compare-and-swap writes to return only the FCM token and
+  new state version. The API no longer reads or echoes the wide alert,
+  last-price, and evaluator-state JSONB columns after every successful update.
+- Added a regression check for the compact write response and documented Neon
+  data-transfer quota failures as an external readiness/deployment blocker.
+
 ### Added - Durable MT5 Windows VM control plane Phase 2 (2026-08-12)
 
 - Added migration `0038` for non-secret VM account bindings, a versioned worker

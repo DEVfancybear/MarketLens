@@ -258,7 +258,13 @@ func (h *Handler) workerPutPushDevice(c fiber.Ctx) error {
 	if err != nil {
 		return apiError(err)
 	}
-	return c.JSON(fiber.Map{"ok": true, "device": device})
+	return c.JSON(fiber.Map{
+		"ok": true,
+		"device": fiber.Map{
+			"token":   device.Token,
+			"version": device.Version,
+		},
+	})
 }
 
 func (h *Handler) workerDeletePushDevice(c fiber.Ctx) error {

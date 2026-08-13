@@ -306,7 +306,7 @@ func (f *fakeStore) PutPushDevice(_ context.Context, input PushDevicePutInput) (
 	input.Device.Version++
 	input.Device.UpdatedAt++
 	f.devices[input.Device.Token] = input.Device
-	return input.Device, nil
+	return PushDevice{Token: input.Device.Token, Version: input.Device.Version}, nil
 }
 
 func (f *fakeStore) DeletePushDevice(_ context.Context, firebaseUID, token string) error {
@@ -938,8 +938,14 @@ func TestPostgresPushDeviceWorkerRoutesAndOptimisticWrites(t *testing.T) {
 	if err := json.NewDecoder(put.Body).Decode(&updated); err != nil {
 		t.Fatalf("decode updated push device: %v", err)
 	}
-	if updated.Device.Version != 2 || !updated.Device.SettingsPush {
+	if updated.Device.Token != "fcm-token-1" || updated.Device.Version != 2 {
 		t.Fatalf("updated push device = %+v", updated.Device)
+	}
+	if updated.Device.Alerts != nil || updated.Device.AlertState != nil {
+		t.Fatalf("updated push device response includes wide state: %+v", updated.Device)
+	}
+	if stored := store.devices["fcm-token-1"]; !stored.SettingsPush {
+		t.Fatalf("stored push device = %+v", stored)
 	}
 
 	stale := doWorkerPathRequest(
