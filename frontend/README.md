@@ -1,8 +1,11 @@
 # MarketLens - Frontend
 
-MarketLens is a TradingView-inspired web terminal for Smart Money Concept backtesting,
-multi-chart saved layouts, synchronized replay, chart drawing, Pine-like indicators, alerts,
-simulated trading, journaling, and analytics.
+MarketLens is a bilingual TradingView-inspired web terminal for advanced
+charting, Smart Money Concept research, synchronized replay, Pine-like
+indicators, alerts, simulated trading, journaling, analytics, centralized risk
+controls, and secure multi-account MT5 execution. Connector availability and
+account lifecycle come from the authenticated backend rather than frontend
+feature flags.
 
 ## Current Stack
 

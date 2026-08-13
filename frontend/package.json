@@ -2,7 +2,7 @@
   "name": "marketlens",
   "version": "1.0.0",
   "private": true,
-  "description": "MarketLens is a production-grade TradingView-inspired workspace for charting, replay, risk-aware MT5 execution, alerts, journaling, and analytics.",
+  "description": "MarketLens is a bilingual TradingView-inspired web terminal for advanced charting, replay, risk management, alerts, analytics, and secure multi-account MT5 execution.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

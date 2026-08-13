@@ -1,10 +1,12 @@
 # MarketLens Backend
 
-MarketLens provides a production-grade charting and trading workspace with market replay,
-risk-aware MT5 execution, alerts, and analytics. Its backend owns the secure runtime boundaries
-that make those workflows dependable.
+MarketLens is a broker-neutral trading backend for authenticated charting,
+market replay, alerts, centralized risk controls, durable multi-account MT5
+execution, and backend-managed Windows VM terminals. Go owns the browser-facing
+security boundary, Rust owns execution authority and lifecycle state, and Vault
+keeps broker credentials outside browsers and PostgreSQL.
 
-The production backend has four deliberately separated surfaces:
+The backend has six deliberately separated runtime boundaries:
 
 1. **Go API/BFF (`:8080`)** authenticates users, injects the owner identity into
    execution calls, owns ordinary CRUD, replay, alerts, and browser market data.
@@ -15,7 +17,13 @@ The production backend has four deliberately separated surfaces:
    `8790`.
 3. **Common MT5 EA** is attached once per terminal/account. It supports FTMO,
    Exness, and other MT5 brokers without broker-specific binaries or passwords.
-4. **MT5 market-data sidecar (`:8765`)** is private and read-only. It is not an
+4. **Rust MT5 Windows VM agent** supervises a bounded set of isolated terminal
+   and adapter pairs through private, lease-fenced worker sessions. This
+   no-install path remains activation-gated independently of the EA path.
+5. **Vault KV v2** holds managed MT5 credentials behind opaque references and
+   one-time worker/session/lease/command-bound grants. PostgreSQL never stores a
+   broker password or raw grant token.
+6. **MT5 market-data sidecar (`:8765`)** is private and read-only. It is not an
    order connector and cannot authorize execution.
 
 Demo and Live MT5 accounts follow the same path. A broker's own

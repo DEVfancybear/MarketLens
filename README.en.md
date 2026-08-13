@@ -6,8 +6,8 @@
 
 ### See the market clearly. Rehearse every idea. Execute with confidence.
 
-**MarketLens is a production-grade, TradingView-inspired workspace that brings advanced charting,**<br>
-**market replay, risk-aware MT5 execution, alerts, and trading intelligence into one terminal.**
+**MarketLens is a private-source, TradingView-inspired research and execution platform that brings advanced charting,**<br>
+**market replay, risk management, and multi-account MT5 execution into one bilingual web terminal.**
 
 [![Production](https://img.shields.io/badge/Production-Live-00C853?style=for-the-badge&logo=vercel&logoColor=white)](https://tradingterminal.io.vn)
 ![Next.js](https://img.shields.io/badge/Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)
@@ -63,7 +63,7 @@ return, the journal and analytics help turn outcomes into experience.
 | --- | --- |
 | **Drawings are more than decoration** | A drawing can create an alert, prepare a trade plan, and retain links to order and position state. |
 | **Replay is more than playback** | Historical data becomes a practice environment for validating process and decisions before risking real capital. |
-| **Execution is more than a button** | Go, Rust, and the MT5 EA work together to authenticate, control risk, persist commands, and preserve private execution boundaries. |
+| **Execution is more than a button** | Go, Rust, the MT5 EA, and Windows VM workers authenticate users, control risk, persist commands, and keep credentials inside private backend boundaries. |
 | **Multi-account does not mean blind copying** | Every copy target has independent symbol mapping, risk limits, and an auditable state trail. |
 
 ### Built beyond the chart
@@ -74,8 +74,11 @@ return, the journal and analytics help turn outcomes into experience.
   journaling, screenshots, analytics, and backtesting workflows.
 - **Production execution** — broker-neutral MT5 routing, multi-account copy
   targets, centralized risk checks, durable commands, and auditable state.
-- **Security by design** — private execution boundaries and no stored MT5
-  passwords; every account remains attached through the common EA runtime.
+- **Security by design** — browsers and PostgreSQL never store MT5 passwords;
+  Vault-backed credentials use one-time grants bound to the exact worker,
+  session, lease, and command.
+- **Two MT5 connection modes** — self-manage a terminal with the common EA, or
+  use the backend-managed Windows VM connector once its operational gates are enabled.
 - **One consistent experience** — desktop and mobile surfaces, English and
   Vietnamese localization, live alerts, and backend-synchronized settings.
 
@@ -90,18 +93,22 @@ return, the journal and analytics help turn outcomes into experience.
 | `backend/` | Go authenticated BFF, persistence, alerts, replay, and market data |
 | `backend/execution/` | Rust risk, copy routing, durable command ledger, and venue adapters |
 | `backend/bridge/mt5_ea/` | One common MT5 EA for FTMO, Exness, and other MT5 brokers |
+| `backend/execution/crates/mt5-vm-agent/` | Lease-fenced Windows worker supervising multiple isolated MT5 terminals |
 | `backend/bridge/mt5_stream/` | Private Python MT5 market-data sidecar; it never executes orders |
 | `docs/` | Monorepo operations, security, and design documentation |
 | `.codebase-memory/` | Shared compressed code knowledge graph for coding agents |
 
 Trade is a top-level workspace and is not hosted in the resizable bottom panel.
-Each MT5 account runs in its own terminal and attaches the same EA. Demo and
-Live accounts use the same execution path. Broker symbol aliases are mapped per
+Each MT5 account runs in its own terminal through either the self-managed EA or
+the backend-provisioned Windows VM connector. Demo and Live accounts share the
+same risk-control domain. Broker symbol aliases are mapped per
 account, and every copy target is risk-checked and recorded independently.
 
 The former FTMO Python Connector, downloadable Connector, credential verifier,
 browser-to-loopback execution protocol, and stored MT5 passwords have been
-removed. The application never needs a user's MT5 password.
+removed. When the managed connector is enabled, a password travels once through
+the authenticated backend into Vault and is never persisted by the browser or
+application database.
 
 Current execution design and release gates:
 

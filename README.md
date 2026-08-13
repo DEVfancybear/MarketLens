@@ -6,8 +6,8 @@
 
 ### Thấu thị trường. Thử mọi ý tưởng. Giao dịch vững tin.
 
-**MarketLens là không gian giao dịch chuẩn production lấy cảm hứng từ TradingView—nơi biểu đồ chuyên sâu,**<br>
-**phát lại thị trường, thực thi MT5 có kiểm soát rủi ro, cảnh báo và dữ liệu thông minh hội tụ trong một terminal.**
+**MarketLens là nền tảng nghiên cứu và thực thi giao dịch mã nguồn riêng lấy cảm hứng từ TradingView—nơi biểu đồ chuyên sâu,**<br>
+**market replay, quản trị rủi ro và thực thi MT5 đa tài khoản hội tụ trong một terminal web song ngữ.**
 
 [![Production](https://img.shields.io/badge/Production-Live-00C853?style=for-the-badge&logo=vercel&logoColor=white)](https://tradingterminal.io.vn)
 ![Next.js](https://img.shields.io/badge/Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)
@@ -64,7 +64,7 @@ khi quay lại, journal và analytics giúp biến kết quả thành kinh nghi�
 | --- | --- |
 | **Hình vẽ không chỉ để trang trí** | Drawing có thể tạo cảnh báo, chuẩn bị kế hoạch giao dịch và duy trì liên kết với trạng thái lệnh/vị thế. |
 | **Replay không chỉ là xem lại** | Dữ liệu lịch sử trở thành môi trường luyện tập để kiểm chứng quy trình và quyết định trước khi dùng vốn thật. |
-| **Thực thi không chỉ là một nút bấm** | Go, Rust và EA MT5 phối hợp để xác thực, kiểm tra rủi ro, lưu lệnh bền vững và giữ biên thực thi riêng tư. |
+| **Thực thi không chỉ là một nút bấm** | Go, Rust, MT5 EA và worker Windows VM phối hợp để xác thực, kiểm tra rủi ro, lưu lệnh bền vững và giữ credential trong biên backend riêng tư. |
 | **Đa tài khoản không đồng nghĩa sao chép mù quáng** | Mỗi copy target có ánh xạ symbol, giới hạn rủi ro và dấu vết trạng thái độc lập. |
 
 ### Hơn cả một biểu đồ
@@ -75,8 +75,11 @@ khi quay lại, journal và analytics giúp biến kết quả thành kinh nghi�
   nhật ký, ảnh chụp, phân tích và quy trình backtest.
 - **Thực thi production** — định tuyến MT5 trung lập với broker, sao chép đa tài
   khoản, kiểm soát rủi ro tập trung, lệnh bền vững và trạng thái có thể kiểm toán.
-- **Bảo mật từ thiết kế** — biên thực thi riêng tư và không lưu mật khẩu MT5;
-  mỗi tài khoản luôn kết nối qua EA runtime dùng chung.
+- **Bảo mật từ thiết kế** — trình duyệt và PostgreSQL không lưu mật khẩu MT5;
+  credential được quản lý qua Vault và grant một lần, gắn với đúng worker,
+  session, lease và command.
+- **Hai cách kết nối MT5** — tự quản lý terminal bằng EA dùng chung, hoặc dùng
+  connector Windows VM do backend quản lý sau khi các gate vận hành được bật.
 - **Một trải nghiệm nhất quán** — xuyên suốt desktop, mobile, tiếng Anh, tiếng
   Việt, cảnh báo trực tiếp và cài đặt đồng bộ với backend.
 
@@ -91,13 +94,15 @@ khi quay lại, journal và analytics giúp biến kết quả thành kinh nghi�
 | `backend/` | BFF Go có xác thực, lưu trữ, cảnh báo, Replay và dữ liệu thị trường |
 | `backend/execution/` | Kiểm soát rủi ro Rust, copy routing, sổ lệnh bền vững và venue adapter |
 | `backend/bridge/mt5_ea/` | Một EA MT5 dùng chung cho FTMO, Exness và các broker MT5 khác |
+| `backend/execution/crates/mt5-vm-agent/` | Worker Windows quản lý nhiều terminal MT5 cô lập, có lease và giới hạn tài nguyên |
 | `backend/bridge/mt5_stream/` | Sidecar Python MT5 riêng tư chỉ phục vụ dữ liệu thị trường, không thực thi lệnh |
 | `docs/` | Tài liệu vận hành, bảo mật và thiết kế của monorepo |
 | `.codebase-memory/` | Knowledge graph nén và dùng chung cho coding agent |
 
 Giao dịch là một workspace cấp cao nhất, không nằm trong bảng dưới có thể thay
-đổi kích thước. Mỗi tài khoản MT5 chạy trong terminal riêng và kết nối với cùng
-một EA. Tài khoản Demo và Live đi qua cùng một luồng thực thi. Alias symbol của
+đổi kích thước. Mỗi tài khoản MT5 chạy trong terminal riêng, thông qua EA tự
+quản lý hoặc connector Windows VM được backend cấp phát. Tài khoản Demo và Live
+đi qua cùng một miền kiểm soát rủi ro. Alias symbol của
 broker được ánh xạ theo từng tài khoản; mỗi copy target đều được kiểm tra rủi ro
 và ghi nhận độc lập.
 
