@@ -1,6 +1,7 @@
 package config
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -197,7 +198,7 @@ func TestValidateMT5VaultConfiguration(t *testing.T) {
 	base := Config{
 		Env: "development", ChartTimeZone: "UTC",
 		MT5VaultAddress:      "https://vault.example.com",
-		MT5VaultAPITokenFile: `C:\ProgramData\MarketLens\vault-api-token`,
+		MT5VaultAPITokenFile: filepath.Join(t.TempDir(), "vault-api-token"),
 		MT5VaultMount:        "secret", MT5VaultPrefix: "marketlens/mt5",
 	}
 	if err := validateMT5Vault(base); err != nil {
