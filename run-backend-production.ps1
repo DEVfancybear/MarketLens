@@ -151,11 +151,20 @@ New-Item -ItemType Directory -Path $runtimeLogs -Force | Out-Null
 
 $databaseUrl = Get-BackendEnvValue "DATABASE_URL"
 $executionAdminToken = Get-BackendEnvValue "EXECUTION_ADMIN_TOKEN"
+$executionMt5VmBootstrapToken = Get-BackendEnvValue "EXECUTION_MT5_VM_BOOTSTRAP_TOKEN"
 if ([string]::IsNullOrWhiteSpace($databaseUrl)) {
   throw "DATABASE_URL is required by both the API and durable Rust execution gateway."
 }
 if ([string]::IsNullOrWhiteSpace($executionAdminToken) -or $executionAdminToken.Length -lt 32) {
   throw "EXECUTION_ADMIN_TOKEN must be an unpredictable secret of at least 32 characters."
+}
+if (-not [string]::IsNullOrWhiteSpace($executionMt5VmBootstrapToken) -and
+    $executionMt5VmBootstrapToken.Length -lt 32) {
+  throw "EXECUTION_MT5_VM_BOOTSTRAP_TOKEN must contain at least 32 characters when configured."
+}
+if (-not [string]::IsNullOrWhiteSpace($executionMt5VmBootstrapToken) -and
+    $executionMt5VmBootstrapToken -ceq $executionAdminToken) {
+  throw "EXECUTION_MT5_VM_BOOTSTRAP_TOKEN must be distinct from EXECUTION_ADMIN_TOKEN."
 }
 $executionGatewayBind = Get-BackendEnvValue "EXECUTION_GATEWAY_BIND"
 if ([string]::IsNullOrWhiteSpace($executionGatewayBind)) {
@@ -180,6 +189,11 @@ $executionAdminPort = Get-BindPort -Bind $executionAdminBind -Name "EXECUTION_AD
 # does not read dotenv files by itself.
 $env:DATABASE_URL = $databaseUrl
 $env:EXECUTION_ADMIN_TOKEN = $executionAdminToken
+if ([string]::IsNullOrWhiteSpace($executionMt5VmBootstrapToken)) {
+  Remove-Item Env:EXECUTION_MT5_VM_BOOTSTRAP_TOKEN -ErrorAction SilentlyContinue
+} else {
+  $env:EXECUTION_MT5_VM_BOOTSTRAP_TOKEN = $executionMt5VmBootstrapToken
+}
 $env:EXECUTION_GATEWAY_BIND = $executionGatewayBind
 $env:EXECUTION_ADMIN_BIND = $executionAdminBind
 $env:EXECUTION_EA_URL = "http://$executionGatewayBind"

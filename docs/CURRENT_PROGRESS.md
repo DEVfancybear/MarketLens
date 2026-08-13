@@ -1,6 +1,6 @@
 # Current Progress
 
-- Universal MT5 Windows VM connector Phases 0-1 (2026-08-12): replaced and deleted
+- Universal MT5 Windows VM connector Phases 0-2 (2026-08-12): replaced and deleted
   the TickerAll/MetaApi plan. The authoritative broker-neutral path now uses a
   private Windows VM pool where one Rust `mt5-vm-agent` owns multiple isolated
   MT5 terminal/Python-adapter pairs; users remain browser-only. Installed the
@@ -26,7 +26,15 @@
   release gate; performance/density is measured only after isolation, fencing,
   redaction, bounded queues, and fault tests pass. See
   `UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md` and
-  `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md`.
+  `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md`. Phase 2's repository control
+  plane is now implemented with additive migration `0038`, private versioned
+  worker routes, hashed generation-fenced sessions, monotonic account leases,
+  compatible four-slot placement, durable lifecycle command redelivery, and
+  idempotent acknowledgements. The gateway suite passes 64 tests. Worker
+  enrollment is disabled unless an independent bootstrap token is configured;
+  operational activation still needs disposable-PostgreSQL restart and signed
+  worker rotation/reassignment evidence. See
+  `MT5_WINDOWS_VM_CONNECTOR_PHASE2.md`.
 
 - Live-tail indicator viewport stability (2026-08-10): post-deploy Edge probes
   separated the remaining shake from MT5 ingress and controller resets. The

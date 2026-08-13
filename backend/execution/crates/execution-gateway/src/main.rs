@@ -20,11 +20,10 @@ use execution_domain::{
     EaInstrumentSnapshot, EaPendingOrderSnapshot, EaPositionSnapshot, EaSessionRequest,
     EaSessionResponse, ExecutionAccount, IdempotencyKey, InstrumentSpec, ModifyPendingOrderCommand,
     ModifyPositionCommand, OrderIntent, OrderKind, OrderSizing, PropRiskActions,
-    PropRiskDailyLossReference, PropRiskEvaluation, PropRiskEvaluationInput,
-    PropRiskHistoryQuality, PropRiskMaxLossMode, PropRiskReason, PropRiskRules, PropRiskStatus,
-    QuantityUnit, RiskPolicy, RouteRejectCode, RouteTargetContext, RouteWarning, RoutedOrder,
-    SessionId, Side, TargetRouteResult, VenueKind, evaluate_prop_risk, prop_risk_money,
-    should_repair_legacy_prop_risk_daily_lock,
+    PropRiskEvaluation, PropRiskEvaluationInput, PropRiskHistoryQuality, PropRiskMaxLossMode,
+    PropRiskReason, PropRiskRules, PropRiskStatus, QuantityUnit, RiskPolicy, RouteRejectCode,
+    RouteTargetContext, RouteWarning, RoutedOrder, SessionId, Side, TargetRouteResult, VenueKind,
+    evaluate_prop_risk, prop_risk_money, should_repair_legacy_prop_risk_daily_lock,
 };
 use execution_engine::route_order;
 use rust_decimal::Decimal;
@@ -47,6 +46,7 @@ mod sqlx {
 }
 
 mod copier;
+mod mt5_vm_control;
 
 use copier::{PortfolioChange, diff_portfolio};
 
@@ -77,6 +77,7 @@ struct GatewayState {
 
 struct GatewayInner {
     admin_token_hash: [u8; 32],
+    mt5_vm_bootstrap_token_hash: Option<[u8; 32]>,
     database: Option<PgPool>,
     pairing_tokens: Mutex<HashMap<[u8; 32], PairingGrant>>,
     sessions: Mutex<HashMap<[u8; 32], EaSession>>,
@@ -779,7 +780,11 @@ async fn main() {
         .connect(&config.database_url)
         .await
         .unwrap_or_else(|error| panic!("failed to connect execution database: {error}"));
-    let state = GatewayState::new_production(&config.admin_token, database);
+    let state = GatewayState::new_production(
+        &config.admin_token,
+        config.mt5_vm_bootstrap_token.as_deref(),
+        database,
+    );
     let deferred_expiry_state = state.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(DEFERRED_EXPIRY_SWEEP_INTERVAL);
@@ -790,6 +795,7 @@ async fn main() {
             }
         }
     });
+    mt5_vm_control::spawn_scheduler(state.clone());
     let ea_app = Router::new()
         .route("/health", get(health))
         .route("/v1/ea/sessions", post(create_ea_session))
@@ -821,6 +827,7 @@ async fn main() {
         .route("/v1/admin/accounts/remove", post(remove_account))
         .route("/v1/admin/orders", post(route_admin_order))
         .route("/v1/admin/commands", post(queue_command))
+        .merge(mt5_vm_control::routes())
         .layer(DefaultBodyLimit::max(256 * 1024))
         .with_state(state);
     let ea_listener = tokio::net::TcpListener::bind(config.bind)
@@ -851,6 +858,7 @@ struct Config {
     bind: SocketAddr,
     admin_bind: SocketAddr,
     admin_token: String,
+    mt5_vm_bootstrap_token: Option<String>,
     database_url: String,
     database_max_connections: u32,
 }
@@ -858,6 +866,13 @@ struct Config {
 impl Config {
     fn from_env() -> Result<Self, String> {
         let admin_token = required_secret("EXECUTION_ADMIN_TOKEN")?;
+        let mt5_vm_bootstrap_token = optional_secret("EXECUTION_MT5_VM_BOOTSTRAP_TOKEN")?;
+        if mt5_vm_bootstrap_token.as_deref() == Some(admin_token.as_str()) {
+            return Err(
+                "EXECUTION_MT5_VM_BOOTSTRAP_TOKEN must be distinct from EXECUTION_ADMIN_TOKEN"
+                    .into(),
+            );
+        }
         let database_url = env::var("DATABASE_URL")
             .map_err(|_| "DATABASE_URL is required; in-memory production state is forbidden")?;
         let database_max_connections = env::var("EXECUTION_DATABASE_MAX_CONNECTIONS")
@@ -879,6 +894,7 @@ impl Config {
             bind,
             admin_bind,
             admin_token,
+            mt5_vm_bootstrap_token,
             database_url,
             database_max_connections,
         })
@@ -905,6 +921,17 @@ fn required_secret(name: &str) -> Result<String, String> {
     Ok(value)
 }
 
+fn optional_secret(name: &str) -> Result<Option<String>, String> {
+    match env::var(name) {
+        Ok(value) => {
+            validate_secret(name, &value)?;
+            Ok(Some(value))
+        }
+        Err(env::VarError::NotPresent) => Ok(None),
+        Err(env::VarError::NotUnicode(_)) => Err(format!("{name} must be valid Unicode")),
+    }
+}
+
 fn validate_secret(name: &str, value: &str) -> Result<(), String> {
     if value.trim().len() < 32 {
         return Err(format!("{name} must contain at least 32 characters"));
@@ -913,14 +940,29 @@ fn validate_secret(name: &str, value: &str) -> Result<(), String> {
 }
 
 impl GatewayState {
-    fn new_production(admin_token: &str, database: PgPool) -> Self {
-        Self::new(admin_token, Some(database))
+    fn new_production(
+        admin_token: &str,
+        mt5_vm_bootstrap_token: Option<&str>,
+        database: PgPool,
+    ) -> Self {
+        Self::new_with_mt5_vm(admin_token, mt5_vm_bootstrap_token, Some(database))
     }
 
+    #[cfg(test)]
     fn new(admin_token: &str, database: Option<PgPool>) -> Self {
+        Self::new_with_mt5_vm(admin_token, None, database)
+    }
+
+    fn new_with_mt5_vm(
+        admin_token: &str,
+        mt5_vm_bootstrap_token: Option<&str>,
+        database: Option<PgPool>,
+    ) -> Self {
         Self {
             inner: Arc::new(GatewayInner {
                 admin_token_hash: sha256(admin_token.as_bytes()),
+                mt5_vm_bootstrap_token_hash: mt5_vm_bootstrap_token
+                    .map(|token| sha256(token.as_bytes())),
                 database,
                 pairing_tokens: Mutex::new(HashMap::new()),
                 sessions: Mutex::new(HashMap::new()),
@@ -12899,7 +12941,7 @@ mod tests {
     use super::*;
     use execution_domain::{
         AccountMode, CommandId, CopyAllocation, IdempotencyKey, InstrumentSpec, OrderKind,
-        OrderSizing, QuantityUnit, RoutedOrder, Side, VenueKind,
+        OrderSizing, PropRiskDailyLossReference, QuantityUnit, RoutedOrder, Side, VenueKind,
     };
     use rust_decimal::Decimal;
     use std::collections::BTreeMap;

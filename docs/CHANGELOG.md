@@ -4,6 +4,24 @@ All notable changes to the MarketLens. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Durable MT5 Windows VM control plane Phase 2 (2026-08-12)
+
+- Added migration `0038` for non-secret VM account bindings, a versioned worker
+  registry, hashed generation-fenced worker sessions, monotonic account leases,
+  and durable lifecycle commands/acknowledgements. Existing accounts remain on
+  `connector_kind=ea` unless explicitly migrated to `windows_vm`.
+- Added private execution-gateway worker hello, heartbeat, poll, and ack routes;
+  admin registry/command routes; compatible `SKIP LOCKED` placement; heartbeat,
+  lease, and deadline fencing; bounded command redelivery; and a complete-sync
+  ready gate. Scheduling remains capped at four terminals per worker.
+- Added an independent optional worker bootstrap secret. Enrollment is disabled
+  when it is absent, stores only worker-session token hashes, and cannot use the
+  execution admin credential. No public credential or order route was added.
+- Added shared strict Phase 2 DTOs and eight control-plane regression tests. The
+  full execution-gateway suite passes 64 tests; operational activation remains
+  gated on disposable-PostgreSQL restart and signed-worker rotation/reassignment
+  evidence documented in `MT5_WINDOWS_VM_CONNECTOR_PHASE2.md`.
+
 ### Added - Secure multi-runtime MT5 Windows VM connector Phase 1 prototype (2026-08-12)
 
 - Added authenticated, versioned HMAC control/adapter frames with replay,

@@ -23,6 +23,13 @@ market data, Pine execution, or ordinary application CRUD.
   remains conditional on a signed normal-agent rerun, independent FTMO web
   comparison, and live two-account isolation; see
   `../../docs/MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md`.
+- The Phase 2 MT5 VM control plane is PostgreSQL-backed inside
+  `execution-gateway`: private worker enrollment/version negotiation, hashed and
+  generation-fenced sessions, heartbeat/lease renewal, compatible placement,
+  durable lifecycle command polling/redelivery, and idempotent acknowledgements.
+  It remains disabled unless `EXECUTION_MT5_VM_BOOTSTRAP_TOKEN` is configured;
+  all routes stay on the loopback admin listener and no credential or order
+  execution payload is accepted by this phase.
 
 The gateway refuses to start without PostgreSQL and an unpredictable
 `EXECUTION_ADMIN_TOKEN`. Commands and outcomes are tenant-scoped, target-scoped,

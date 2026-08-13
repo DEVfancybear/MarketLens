@@ -5,6 +5,8 @@ use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 
+pub mod mt5_vm_control;
+
 /// Strict JSON codec for optional monetary values.
 ///
 /// Values are encoded as decimal strings to avoid binary floating-point loss,
@@ -1325,6 +1327,10 @@ pub struct CancelOrderCommand {
     pub broker_order_id: String,
 }
 
+// The wire enum mirrors the complete MT5 transaction payload. Boxing individual
+// optional fields would change its public DTO shape and add heap indirection to
+// every event solely to optimize the uncommon in-process enum size.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(
     tag = "type",

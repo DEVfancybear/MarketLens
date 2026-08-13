@@ -16,9 +16,21 @@
 > stdio path, independently match FTMO web, then use a second disposable demo
 > credential and second installed slot to prove live cross-account isolation and
 > aggregate idle load. Continue from
-> `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md`. Do not start Phase 2, raise terminal
-> density, or add public credential routes, migrations, production secrets, or
-> order execution before that exit gate passes.
+> `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md`. Phase 2's isolated server-side
+> control plane does not close those security gates. Do not raise terminal density
+> or add public credential routes, production credentials, or order execution
+> before the required evidence exists.
+>
+> Phase 2 repository handoff (2026-08-12): migration `0038` and the private
+> Rust control-plane module are implemented. They provide a durable worker
+> registry, hashed generation-fenced sessions, monotonic account leases,
+> compatible four-slot scheduling, durable lifecycle polling/redelivery, and
+> idempotent acknowledgements. The legacy EA path is unchanged and worker
+> enrollment is disabled unless `EXECUTION_MT5_VM_BOOTSTRAP_TOKEN` is set.
+> Before calling Phase 2 operationally active, complete the disposable-Postgres
+> restart and signed-worker session-rotation/reassignment gates in
+> `MT5_WINDOWS_VM_CONNECTOR_PHASE2.md`. Do not start public credential/vault or
+> order work from this handoff.
 
 > Trade execution handoff (2026-07-26): never restore or follow the old FTMO
 > verifier/Connector workflow below. Continue from

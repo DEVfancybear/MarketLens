@@ -22,6 +22,15 @@ evidence. Follow
 [`MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md`](MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md)
 and do not claim the Phase 1 exit gate has passed until that evidence exists.
 
+The Phase 2 durable control-plane repository slice is implemented behind a
+disabled-by-default private boundary: migration `0038`, version negotiation,
+worker registry/session fencing, monotonic account leases, four-slot scheduler,
+durable lifecycle queue, and idempotent worker acknowledgements. Next, perform
+the disposable-PostgreSQL restart and signed-worker rotation/reassignment gates
+in [`MT5_WINDOWS_VM_CONNECTOR_PHASE2.md`](MT5_WINDOWS_VM_CONNECTOR_PHASE2.md).
+This does not authorize the Phase 3 public password/vault surface or Phase 5
+order execution.
+
 Security precedes performance and cost. The prototype includes private
 authenticated stdio, ACL/reparse checks, bounded per-account queues, process/job
 limits, redaction tests, startup throttling, and installed-slot artifact pins.

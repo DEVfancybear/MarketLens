@@ -1,6 +1,6 @@
 # Universal MT5 Windows VM connector plan
 
-- Status: **approved architecture; Phase 0 complete; Phase 1 lifecycle conditional pass**
+- Status: **approved architecture; Phase 0 complete; Phase 1 conditional; Phase 2 control plane implemented and activation-gated**
 - Decision date: 12 August 2026
 - Replaces the deleted TickerAll/MetaApi cloud-provider plan
 - Runtime model: MarketLens-managed Windows VM pool, multiple terminals per VM
@@ -534,6 +534,17 @@ secret-leak, stale-lease, queue-overflow, and idle-load tests pass.
 Add worker registry, fenced leases, version negotiation, scheduler, command
 queue and agent acknowledgements. Keep the conservative four-terminal default;
 placement may use fewer slots when resource or tenant-isolation policy requires.
+
+Current state (2026-08-12): repository implementation is complete behind a
+disabled-by-default private boundary. Additive migration `0038` supplies the
+worker registry, non-secret runtime bindings, monotonic account leases, and
+durable lifecycle commands. `execution-gateway` now owns protocol negotiation,
+hashed generation-fenced worker sessions, heartbeat/lease expiry, compatible
+`SKIP LOCKED` placement, bounded poll redelivery, and idempotent acknowledgements.
+The existing EA path is unchanged; no public credential or order route was
+added. Operational activation still requires disposable-PostgreSQL restart
+evidence and a signed worker session-rotation/reassignment exercise. See
+`MT5_WINDOWS_VM_CONNECTOR_PHASE2.md`.
 
 Exit: stale agents cannot act after reassignment and all control-plane state
 survives backend restart.

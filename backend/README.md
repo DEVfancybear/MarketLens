@@ -44,6 +44,7 @@ EXECUTION_ADMIN_BIND=127.0.0.1:8791
 EXECUTION_EA_URL=http://127.0.0.1:8790
 EXECUTION_ADMIN_URL=http://127.0.0.1:8791
 EXECUTION_ADMIN_TOKEN=at-least-32-random-characters
+EXECUTION_MT5_VM_BOOTSTRAP_TOKEN=independent-32-random-characters
 EXECUTION_DATABASE_MAX_CONNECTIONS=10
 ```
 
@@ -51,6 +52,9 @@ The public EA URL is the existing Go API path, for example
 `https://api.tradingterminal.io.vn/execution-ea`. Go forwards only the exact
 health/session/poll/event allow-list to `:8790`. Never publish either Rust port
 directly or place `EXECUTION_ADMIN_TOKEN` in the browser or EA.
+`EXECUTION_MT5_VM_BOOTSTRAP_TOKEN` is optional until private VM workers are
+enrolled. When absent, worker enrollment fails closed while existing EA routes
+continue normally. Never reuse the admin token for worker enrollment.
 
 ## MT5 account setup
 
