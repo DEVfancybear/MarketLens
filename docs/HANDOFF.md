@@ -6,15 +6,17 @@
 > TickerAll/MetaApi plan and fixtures were deleted. One Rust agent manages a
 > bounded set of isolated MT5 terminal/Python-adapter pairs per private Windows
 > VM; users connect from MarketLens web and install nothing. Phase 0 is complete.
-> The Phase 1 local prototype is implemented and 21 Rust plus nine Python tests
-> pass. Effective per-instance MCP disable, strict failed-start cleanup, and the
-> no-orphan regression are complete, but the real FTMO lifecycle is `BLOCKED` at
-> `MT5_IPC_TIMEOUT`. The installed terminal passes the control probe while the
-> isolated terminal times out even outside Rust's Job Object. Continue from
-> `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md`: resolve the multi-terminal
-> MetaTrader/Python IPC boundary, rerun the two-restart/forced-crash gate,
-> independently match FTMO web, then prove live
-> two-account isolation and idle load. Do not start Phase 2, raise terminal
+> The Phase 1 local prototype is implemented and 21 Rust plus ten Python tests
+> pass; the credentialed live test is ignored by default. The driver now owns a
+> pool of separately installed signed terminal slots with pinned instance server
+> catalogs. The FTMO provision, two clean restarts, forced-crash recovery,
+> heartbeat, graceful stop, and settled one-pair resource sample pass through the
+> explicit Application Control test host. Phase 1 is `CONDITIONAL_PASS`, not
+> complete: produce a signed/reputable agent and rerun the normal authenticated
+> stdio path, independently match FTMO web, then use a second disposable demo
+> credential and second installed slot to prove live cross-account isolation and
+> aggregate idle load. Continue from
+> `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md`. Do not start Phase 2, raise terminal
 > density, or add public credential routes, migrations, production secrets, or
 > order execution before that exit gate passes.
 

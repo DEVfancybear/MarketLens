@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +12,71 @@ from . import phase1_control_harness as harness
 
 
 class Phase1ControlHarnessTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "win32", "PowerShell entrypoint is Windows-only")
+    def test_entrypoint_requires_slots_and_separates_signed_agent_from_live_host(self) -> None:
+        script = Path(__file__).with_name("Invoke-MT5VmPhase1.ps1").resolve()
+        metadata = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                (
+                    "$command=Get-Command -Name $env:PHASE1_ENTRYPOINT;"
+                    "$parameter=$command.Parameters['TerminalPath'];"
+                    "$mandatory=$parameter.Attributes|Where-Object{"
+                    "$_.TypeId.Name -eq 'ParameterAttribute' -and $_.Mandatory};"
+                    "if($parameter.ParameterType -ne [string[]] -or $null -eq $mandatory){exit 2}"
+                ),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            env={**os.environ, "PHASE1_ENTRYPOINT": str(script)},
+        )
+        self.assertEqual(0, metadata.returncode, metadata.stderr)
+
+        normal = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-File",
+                str(script),
+                "-AccountAlias",
+                "boundary-test",
+                "-TerminalPath",
+                r"C:\missing-slot\terminal64.exe",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(0, normal.returncode)
+        self.assertIn("AgentPath is required", normal.stderr)
+
+        live_host = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-File",
+                str(script),
+                "-AccountAlias",
+                "boundary-test",
+                "-TerminalPath",
+                r"C:\missing-slot\terminal64.exe",
+                "-AgentPath",
+                r"C:\unsigned\mt5-vm-agent.exe",
+                "-ApplicationControlTestHost",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(0, live_host.returncode)
+        self.assertIn("AgentPath cannot be combined", live_host.stderr)
+
     def test_control_channel_detects_tamper_replay_and_cross_account(self) -> None:
         channel = harness.ControlChannel(bytearray([9] * 32), "worker-01")
         frame = channel.sign("account-a", 4, "agent_heartbeat", {})
@@ -55,14 +123,18 @@ class Phase1ControlHarnessTests(unittest.TestCase):
                 "account_id": "account-a",
                 "lease_generation": 1,
                 "data_root": str(root / "data"),
-                "terminal_base": str(root / "terminal64.exe"),
+                "terminal_slots": [
+                    {
+                        "terminal_path": str(root / "terminal64.exe"),
+                        "terminal_sha256": "a" * 64,
+                        "servers_sha256": "a" * 64,
+                        "terminal_license_sha256": "a" * 64,
+                    }
+                ],
                 "python_path": str(root / "python.exe"),
                 "adapter_path": str(root / "adapter.py"),
                 "acl_helper_path": str(root / "acl.ps1"),
                 "powershell_path": str(root / "powershell.exe"),
-                "terminal_sha256": "a" * 64,
-                "servers_sha256": "a" * 64,
-                "terminal_license_sha256": "a" * 64,
                 "python_sha256": "b" * 64,
                 "adapter_sha256": "c" * 64,
                 "login": "12345678",

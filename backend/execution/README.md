@@ -17,10 +17,11 @@ market data, Pine execution, or ordinary application CRUD.
 - `mt5-vm-agent`: the Windows VM supervisor prototype. It owns a bounded,
   preallocated O(1) runtime registry, authenticated/replay-protected stdio,
   bounded per-account queues, startup throttling, Windows Job Object limits,
-  pinned isolated terminal/adapter pairs, and lease/state fencing. It does not
-  store broker credentials. Unit gates and failed-start cleanup pass, but the
-  real Phase 1 FTMO lifecycle remains blocked at isolated-terminal
-  `MT5_IPC_TIMEOUT`; see
+  separately installed and artifact-pinned terminal slots, isolated adapters,
+  and lease/state fencing. It does not store broker credentials. Unit gates,
+  failed-start cleanup, and the credentialed FTMO lifecycle pass. Phase 1
+  remains conditional on a signed normal-agent rerun, independent FTMO web
+  comparison, and live two-account isolation; see
   `../../docs/MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md`.
 
 The gateway refuses to start without PostgreSQL and an unpredictable

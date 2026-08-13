@@ -13,13 +13,16 @@
   redacted fixture is schema-valid. The Phase 1 prototype now has authenticated
   versioned stdio frames, bounded queues, startup throttling, Windows Job Object
   limits, isolated pinned runtimes, ACL/reparse validation, a read-only adapter,
-  and restart/crash harnesses; 21 Rust and nine Python Phase 1 tests pass.
-  Effective per-instance MCP disable, strict failed-start child cleanup, and a
-  no-orphan regression are complete. Phase 1 remains `BLOCKED`: credentialed
-  reruns now fail at the narrower `MT5_IPC_TIMEOUT`; the installed-terminal
-  control probe passes while the isolated terminal times out even outside the
-  Rust Job Object. A passing FTMO lifecycle, independent web comparison, live
-  two-account isolation, and idle-load evidence remain. Security is the first
+  and restart/crash harnesses; 21 Rust and ten Python Phase 1 tests pass (the
+  credentialed Rust live test is ignored by default). The driver now allocates
+  separately installed, signed, artifact-pinned terminal slots instead of copied
+  portable executables. After enrolling the broker catalog in the slot instance,
+  the FTMO provision, two clean restarts, forced-crash recovery, heartbeat,
+  graceful stop, and settled one-pair CPU/RSS observation pass. Phase 1 is
+  `CONDITIONAL_PASS`: Smart App Control requires a signed/reputable agent for the
+  normal control-path live rerun; independent FTMO web comparison and live
+  two-account isolation still require a second demo credential and installed
+  slot. Security is the first
   release gate; performance/density is measured only after isolation, fencing,
   redaction, bounded queues, and fault tests pass. See
   `UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md` and

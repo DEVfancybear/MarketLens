@@ -22,8 +22,17 @@ class MT5Stub:
     def __init__(self) -> None:
         self.shutdown_calls = 0
 
-    def initialize(self, path: str, timeout: int, portable: bool) -> bool:
-        self.initialize_args = (path, timeout, portable)
+    def initialize(
+        self,
+        path: str,
+        *,
+        login: int,
+        password: str,
+        server: str,
+        timeout: int,
+        portable: bool,
+    ) -> bool:
+        self.initialize_args = (path, login, password, server, timeout, portable)
         return True
 
     def login(self, login: int, *, password: str, server: str, timeout: int) -> bool:
@@ -123,7 +132,14 @@ class Phase1AdapterTests(unittest.TestCase):
         self.assertNotIn(self.bootstrap["password"], serialized)
         self.assertNotIn(self.bootstrap["server"], serialized)
         self.assertEqual(
-            (self.bootstrap["terminal_path"], 12_000, True),
+            (
+                self.bootstrap["terminal_path"],
+                int(self.bootstrap["login"]),
+                self.bootstrap["password"],
+                self.bootstrap["server"],
+                12_000,
+                False,
+            ),
             stub.initialize_args,
         )
 

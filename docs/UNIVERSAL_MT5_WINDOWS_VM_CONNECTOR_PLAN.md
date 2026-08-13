@@ -1,6 +1,6 @@
 # Universal MT5 Windows VM connector plan
 
-- Status: **approved architecture; Phase 0 complete; Phase 1 prototype implemented but live gate blocked**
+- Status: **approved architecture; Phase 0 complete; Phase 1 lifecycle conditional pass**
 - Decision date: 12 August 2026
 - Replaces the deleted TickerAll/MetaApi cloud-provider plan
 - Runtime model: MarketLens-managed Windows VM pool, multiple terminals per VM
@@ -515,14 +515,14 @@ and startup throttling before adding density. No public account-connect API yet.
 
 Current state (2026-08-12): the local stdio prototype, process isolation, bounded
 queues/throttling, read-only adapter, and unit/fake-driver lifecycle coverage are
-implemented. Rust tests pass `21/21` and Python Phase 1 tests pass `9/9`.
-Effective per-instance MCP disable, strict failed-start cleanup, and a Windows
-no-orphan regression are complete. The credentialed real-terminal harness is
-still `BLOCKED` at `MT5_IPC_TIMEOUT`: the installed terminal passes its control
-probe, while the isolated terminal times out even outside Rust's Job Object. A
-supported multi-terminal MetaTrader/Python IPC boundary, passing real lifecycle,
-independent FTMO web comparison, live two-account isolation, and idle-load
-evidence remain required. See
+implemented. Rust tests pass `21/21` with one credentialed live test ignored by
+default, and Python Phase 1 tests pass `10/10`. The driver now allocates pinned,
+separately installed signed terminal slots and no longer derives a portable
+runtime from a copied executable. The FTMO provision, two clean restarts,
+forced-crash recovery, heartbeat, graceful stop, and one-pair settled resource
+observation pass through the Application Control live-test host. Phase 1 remains
+conditional until a signed/reputable normal agent run, independent FTMO web
+comparison, and live two-account fault-isolation/resource gate pass. See
 `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md`.
 
 Exit: account identity and all initial snapshots match an independent FTMO web

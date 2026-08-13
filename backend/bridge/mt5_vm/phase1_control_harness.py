@@ -30,14 +30,11 @@ INPUT_KEYS = {
     "account_id",
     "lease_generation",
     "data_root",
-    "terminal_base",
+    "terminal_slots",
     "python_path",
     "adapter_path",
     "acl_helper_path",
     "powershell_path",
-    "terminal_sha256",
-    "servers_sha256",
-    "terminal_license_sha256",
     "python_sha256",
     "adapter_sha256",
     "login",
@@ -77,7 +74,6 @@ def validate_request(raw: Any) -> dict[str, Any]:
     for field in (
         "agent_path",
         "data_root",
-        "terminal_base",
         "python_path",
         "adapter_path",
         "acl_helper_path",
@@ -89,7 +85,6 @@ def validate_request(raw: Any) -> dict[str, Any]:
         paths[field] = str(path)
     for field in (
         "agent_path",
-        "terminal_base",
         "python_path",
         "adapter_path",
         "acl_helper_path",
@@ -97,6 +92,39 @@ def validate_request(raw: Any) -> dict[str, Any]:
     ):
         if not Path(paths[field]).is_file():
             raise HarnessError("VALIDATION_ARTIFACT_MISSING")
+    raw_slots = raw.get("terminal_slots")
+    if not isinstance(raw_slots, list) or not raw_slots or len(raw_slots) > 32:
+        raise HarnessError("VALIDATION_TERMINAL_SLOTS_INVALID")
+    terminal_slots: list[dict[str, str]] = []
+    seen_paths: set[str] = set()
+    for raw_slot in raw_slots:
+        if not isinstance(raw_slot, dict) or set(raw_slot) != {
+            "terminal_path",
+            "terminal_sha256",
+            "servers_sha256",
+            "terminal_license_sha256",
+        }:
+            raise HarnessError("VALIDATION_TERMINAL_SLOT_INVALID")
+        terminal_path = Path(str(raw_slot.get("terminal_path", "")))
+        normalized = str(terminal_path).casefold()
+        if (
+            not terminal_path.is_absolute()
+            or terminal_path.name.casefold() != "terminal64.exe"
+            or not terminal_path.is_file()
+            or normalized in seen_paths
+        ):
+            raise HarnessError("VALIDATION_TERMINAL_SLOT_INVALID")
+        seen_paths.add(normalized)
+        terminal_slots.append(
+            {
+                "terminal_path": str(terminal_path),
+                "terminal_sha256": _validate_hash(raw_slot["terminal_sha256"]),
+                "servers_sha256": _validate_hash(raw_slot["servers_sha256"]),
+                "terminal_license_sha256": _validate_hash(
+                    raw_slot["terminal_license_sha256"]
+                ),
+            }
+        )
     login = str(raw.get("login", ""))
     password = raw.get("password")
     server = str(raw.get("server", "")).strip()
@@ -109,12 +137,10 @@ def validate_request(raw: Any) -> dict[str, Any]:
         raise HarnessError("VALIDATION_SYMBOL_INVALID")
     return {
         **paths,
+        "terminal_slots": terminal_slots,
         "worker_id": worker_id,
         "account_id": account_id,
         "lease_generation": lease_generation,
-        "terminal_sha256": _validate_hash(raw["terminal_sha256"]),
-        "servers_sha256": _validate_hash(raw["servers_sha256"]),
-        "terminal_license_sha256": _validate_hash(raw["terminal_license_sha256"]),
         "python_sha256": _validate_hash(raw["python_sha256"]),
         "adapter_sha256": _validate_hash(raw["adapter_sha256"]),
         "login": login,
@@ -223,16 +249,21 @@ class ControlChannel:
 class AgentProcess:
     def __init__(self, cfg: dict[str, Any], channel: ControlChannel, key_hex: str) -> None:
         creation_flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-        self._process = subprocess.Popen(
-            [cfg["agent_path"], "--phase1-stdio"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            encoding="utf-8",
-            bufsize=1,
-            creationflags=creation_flags,
-        )
+        try:
+            self._process = subprocess.Popen(
+                [cfg["agent_path"], "--phase1-stdio"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                encoding="utf-8",
+                bufsize=1,
+                creationflags=creation_flags,
+            )
+        except OSError as exc:
+            if getattr(exc, "winerror", None) == 4551:
+                raise HarnessError("AGENT_APPLICATION_CONTROL_BLOCKED") from exc
+            raise HarnessError("AGENT_START_FAILED") from exc
         if self._process.stdin is None or self._process.stdout is None:
             raise HarnessError("AGENT_PIPE_UNAVAILABLE")
         self._events: queue.Queue[str | None] = queue.Queue(maxsize=16)
@@ -244,15 +275,12 @@ class AgentProcess:
             "process": {
                 "worker_id": cfg["worker_id"],
                 "data_root": cfg["data_root"],
-                "terminal_base": cfg["terminal_base"],
+                "terminal_slots": cfg["terminal_slots"],
                 "python_path": cfg["python_path"],
                 "adapter_path": cfg["adapter_path"],
                 "acl_helper_path": cfg["acl_helper_path"],
                 "powershell_path": cfg["powershell_path"],
                 "artifact_pins": {
-                    "terminal_sha256": cfg["terminal_sha256"],
-                    "servers_sha256": cfg["servers_sha256"],
-                    "terminal_license_sha256": cfg["terminal_license_sha256"],
                     "python_sha256": cfg["python_sha256"],
                     "adapter_sha256": cfg["adapter_sha256"],
                 },
@@ -263,7 +291,7 @@ class AgentProcess:
                 "graceful_stop_timeout_ms": 5_000,
                 "restart_spacing_ms": 2_000,
             },
-            "max_terminals": 4,
+            "max_terminals": len(cfg["terminal_slots"]),
             "command_queue_capacity": 32,
             "startup_throttle": {
                 "window_ms": 60_000,
@@ -307,8 +335,11 @@ class AgentProcess:
         return self._read(timeout_seconds)
 
     def close(self) -> None:
-        if self._process.stdin is not None:
-            self._process.stdin.close()
+        if self._process.stdin is not None and not self._process.stdin.closed:
+            try:
+                self._process.stdin.close()
+            except OSError:
+                pass
         try:
             self._process.wait(timeout=5)
         except subprocess.TimeoutExpired:

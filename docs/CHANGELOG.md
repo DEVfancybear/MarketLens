@@ -9,18 +9,26 @@ All notable changes to the MarketLens. Dates are UTC.
 - Added authenticated, versioned HMAC control/adapter frames with replay,
   expiry, identity, lease, frame-size, and redaction guards; bounded per-account
   command/event queues; startup throttling; and explicit runtime transitions.
-- Added pinned isolated terminal runtimes, restrictive ACL/reparse validation,
+- Added a pool of separately installed, signed and pinned terminal slots,
+  restrictive ACL/reparse validation,
   Windows Job Object process/memory limits, a read-only single-account Python
   adapter, and a local lifecycle harness for provision, two clean restarts,
   forced crash recovery, heartbeat, and graceful stop.
-- Verified 21 Rust tests and nine Python Phase 1 tests. Added effective disabled
+- Verified 21 Rust tests and ten Python Phase 1 tests. Added effective disabled
   MCP configuration in the real MetaTrader instance directory, strict Job
   inheritance before adapter bootstrap, safe Python IPC error classes, and a
   Windows regression proving initialize failure leaves no terminal or adapter.
-  The credentialed lifecycle remains blocked at `MT5_IPC_TIMEOUT`: the installed
-  terminal control passes while the isolated terminal times out even outside
-  Rust's Job Object. The passing lifecycle, independent FTMO web comparison,
-  live two-account isolation, and idle-load evidence remain required.
+  Resolved the fresh-start IPC blocker by using the supported installed-slot,
+  non-portable boundary and pinning the enrolled broker catalog from the actual
+  MetaTrader instance directory. The credentialed FTMO provision, two clean
+  restarts, forced crash recovery, heartbeat, graceful stop, and one-pair settled
+  CPU/RSS observation pass. Smart App Control blocks the unsigned debug agent,
+  so the explicit ignored Rust live-test host supplies driver/Job Object evidence;
+  a signed normal-agent rerun, independent FTMO web comparison, and live
+  two-account isolation remain before Phase 1 can move beyond conditional pass.
+  The Phase 1 entrypoint has no default shared terminal, requires an explicit
+  valid Authenticode agent on the normal path, and keeps `-AgentPath` mutually
+  exclusive with its Cargo-only Application Control live-test path.
 
 ### Added - Secure multi-terminal MT5 Windows VM connector Phase 0 (2026-08-12)
 

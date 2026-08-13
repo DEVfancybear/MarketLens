@@ -7,11 +7,13 @@ param(
   [string]$CredentialPath,
   [string]$AgentPath,
   [string]$DataRoot,
-  [string]$TerminalPath = 'C:\Program Files\MetaTrader 5\terminal64.exe',
+  [Parameter(Mandatory = $true)]
+  [string[]]$TerminalPath,
   [string]$PythonPath,
   [ValidateLength(0, 64)]
   [string]$Symbol = '',
   [switch]$IndependentWebMatchConfirmed,
+  [switch]$ApplicationControlTestHost,
   [string]$OutputPath
 )
 
@@ -24,18 +26,22 @@ $repoRoot = [System.IO.Path]::GetFullPath(
 $credentialRoot = [System.IO.Path]::GetFullPath(
   (Join-Path $env:LOCALAPPDATA 'MarketLens')
 ).TrimEnd('\')
-$defaultAgent = Join-Path $repoRoot 'backend\execution\target\debug\mt5-vm-agent.exe'
 $defaultPython = Join-Path $repoRoot 'backend\.venv-mt5\Scripts\python.exe'
 $adapterPath = Join-Path $PSScriptRoot 'phase1_adapter.py'
 $harnessPath = Join-Path $PSScriptRoot 'phase1_control_harness.py'
 $aclHelperPath = Join-Path $PSScriptRoot 'Set-MT5VmPhase1RuntimeAcl.ps1'
 $powershellPath = Join-Path $PSHOME 'powershell.exe'
+$cargoPath = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe'
 
 if ([string]::IsNullOrWhiteSpace($CredentialPath)) {
   $CredentialPath = Join-Path $credentialRoot "mt5-vm-phase0-$AccountAlias.dpapi.json"
 }
-if ([string]::IsNullOrWhiteSpace($AgentPath)) {
-  $AgentPath = $defaultAgent
+if ($ApplicationControlTestHost) {
+  if (-not [string]::IsNullOrWhiteSpace($AgentPath)) {
+    throw 'AgentPath cannot be combined with ApplicationControlTestHost; the live-test host is built and run only through Cargo.'
+  }
+} elseif ([string]::IsNullOrWhiteSpace($AgentPath)) {
+  throw 'AgentPath is required for the normal Phase 1 path and must identify a valid Authenticode-signed agent.'
 }
 if ([string]::IsNullOrWhiteSpace($DataRoot)) {
   $DataRoot = Join-Path $credentialRoot 'phase1-runtimes'
@@ -45,9 +51,21 @@ if ([string]::IsNullOrWhiteSpace($PythonPath)) {
 }
 
 $fullCredentialPath = [System.IO.Path]::GetFullPath($CredentialPath)
-$fullAgentPath = [System.IO.Path]::GetFullPath($AgentPath)
+$fullAgentPath = if ($ApplicationControlTestHost) {
+  [System.IO.Path]::GetFullPath($cargoPath)
+} else {
+  [System.IO.Path]::GetFullPath($AgentPath)
+}
 $fullDataRoot = [System.IO.Path]::GetFullPath($DataRoot)
-$fullTerminalPath = [System.IO.Path]::GetFullPath($TerminalPath)
+$fullTerminalPaths = @($TerminalPath | ForEach-Object {
+  [System.IO.Path]::GetFullPath($_)
+})
+if ($fullTerminalPaths.Count -eq 0 -or $fullTerminalPaths.Count -gt 32) {
+  throw 'Provide between one and 32 separately installed terminal slots.'
+}
+if (@($fullTerminalPaths | Sort-Object -Unique).Count -ne $fullTerminalPaths.Count) {
+  throw 'TerminalPath entries must be unique installed slots.'
+}
 $fullPythonPath = [System.IO.Path]::GetFullPath($PythonPath)
 
 $credentialPrefix = $credentialRoot + [System.IO.Path]::DirectorySeparatorChar
@@ -57,22 +75,23 @@ if (-not $fullCredentialPath.StartsWith($credentialPrefix, [StringComparison]::O
 if (-not $fullDataRoot.StartsWith($credentialPrefix, [StringComparison]::OrdinalIgnoreCase)) {
   throw 'DataRoot must remain under the current user LocalAppData\MarketLens directory for Phase 1 validation.'
 }
-foreach ($requiredPath in @(
-  $fullCredentialPath,
-  $fullAgentPath,
-  $fullTerminalPath,
-  $fullPythonPath,
-  $adapterPath,
-  $harnessPath,
-  $aclHelperPath,
-  $powershellPath
-)) {
+$requiredArtifacts = @($fullCredentialPath, $fullAgentPath) + $fullTerminalPaths + @(
+  $fullPythonPath, $adapterPath, $harnessPath, $aclHelperPath, $powershellPath
+)
+foreach ($requiredPath in $requiredArtifacts) {
   if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
     throw 'A required Phase 1 artifact is missing. Build the Rust agent and provision managed Python first.'
   }
   $item = Get-Item -LiteralPath $requiredPath -Force
   if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
     throw 'Phase 1 artifacts cannot be reparse points.'
+  }
+}
+if (-not $ApplicationControlTestHost) {
+  $agentSignature = Get-AuthenticodeSignature -FilePath $fullAgentPath
+  if ($agentSignature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
+      $null -eq $agentSignature.SignerCertificate) {
+    throw 'The normal Phase 1 path requires a valid Authenticode-signed agent.'
   }
 }
 
@@ -128,20 +147,45 @@ try {
     throw 'The decrypted MT5 credential payload is malformed.'
   }
 
-  $terminalHash = (Get-FileHash -LiteralPath $fullTerminalPath -Algorithm SHA256).Hash.ToLowerInvariant()
-  $terminalConfigRoot = Join-Path (Split-Path -Parent $fullTerminalPath) 'Config'
-  $serversPath = Join-Path $terminalConfigRoot 'servers.dat'
-  $terminalLicensePath = Join-Path $terminalConfigRoot 'terminal.lic'
-  foreach ($requiredConfigPath in @($serversPath, $terminalLicensePath)) {
-    if (-not (Test-Path -LiteralPath $requiredConfigPath -PathType Leaf)) {
-      throw 'The approved MT5 base is missing a required pinned bootstrap artifact.'
+  $terminalSlots = @()
+  foreach ($slotPath in $fullTerminalPaths) {
+    $signature = Get-AuthenticodeSignature -FilePath $slotPath
+    if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
+        $null -eq $signature.SignerCertificate -or
+        $signature.SignerCertificate.Subject -notmatch 'MetaQuotes') {
+      throw 'Every terminal slot must have a valid MetaQuotes Authenticode signature.'
     }
-    if ((Get-Item -LiteralPath $requiredConfigPath -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
-      throw 'MT5 bootstrap artifacts cannot be reparse points.'
+    $runningSlot = Get-CimInstance Win32_Process -Filter "Name='terminal64.exe'" |
+      Where-Object { $_.ExecutablePath -eq $slotPath }
+    if ($null -ne $runningSlot) {
+      throw 'Every terminal slot must be stopped before Phase 1 validation.'
+    }
+    $terminalDirectory = Split-Path -Parent $slotPath
+    $terminalLicensePath = Join-Path $terminalDirectory 'Config\terminal.lic'
+    $instanceBytes = [Text.Encoding]::Unicode.GetBytes($terminalDirectory.ToUpperInvariant())
+    $md5 = [Security.Cryptography.MD5]::Create()
+    try {
+      $instanceId = ([BitConverter]::ToString($md5.ComputeHash($instanceBytes))).Replace('-', '')
+    } finally {
+      $md5.Dispose()
+      [Array]::Clear($instanceBytes, 0, $instanceBytes.Length)
+    }
+    $serversPath = Join-Path $env:APPDATA "MetaQuotes\Terminal\$instanceId\Config\servers.dat"
+    foreach ($requiredConfigPath in @($serversPath, $terminalLicensePath)) {
+      if (-not (Test-Path -LiteralPath $requiredConfigPath -PathType Leaf)) {
+        throw 'A terminal slot is missing its enrolled server catalog or terminal license.'
+      }
+      if ((Get-Item -LiteralPath $requiredConfigPath -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw 'MT5 slot artifacts cannot be reparse points.'
+      }
+    }
+    $terminalSlots += [ordered]@{
+      terminal_path = $slotPath
+      terminal_sha256 = (Get-FileHash -LiteralPath $slotPath -Algorithm SHA256).Hash.ToLowerInvariant()
+      servers_sha256 = (Get-FileHash -LiteralPath $serversPath -Algorithm SHA256).Hash.ToLowerInvariant()
+      terminal_license_sha256 = (Get-FileHash -LiteralPath $terminalLicensePath -Algorithm SHA256).Hash.ToLowerInvariant()
     }
   }
-  $serversHash = (Get-FileHash -LiteralPath $serversPath -Algorithm SHA256).Hash.ToLowerInvariant()
-  $terminalLicenseHash = (Get-FileHash -LiteralPath $terminalLicensePath -Algorithm SHA256).Hash.ToLowerInvariant()
   $pythonHash = (Get-FileHash -LiteralPath $fullPythonPath -Algorithm SHA256).Hash.ToLowerInvariant()
   $adapterHash = (Get-FileHash -LiteralPath $adapterPath -Algorithm SHA256).Hash.ToLowerInvariant()
   $request = [ordered]@{
@@ -151,14 +195,11 @@ try {
     account_id = $AccountAlias
     lease_generation = 1
     data_root = $fullDataRoot
-    terminal_base = $fullTerminalPath
+    terminal_slots = @($terminalSlots)
     python_path = $fullPythonPath
     adapter_path = $adapterPath
     acl_helper_path = $aclHelperPath
     powershell_path = $powershellPath
-    terminal_sha256 = $terminalHash
-    servers_sha256 = $serversHash
-    terminal_license_sha256 = $terminalLicenseHash
     python_sha256 = $pythonHash
     adapter_sha256 = $adapterHash
     login = [string]$secret.login
@@ -168,6 +209,72 @@ try {
     independent_web_match_confirmed = [bool]$IndependentWebMatchConfirmed
   }
   $requestJson = $request | ConvertTo-Json -Compress
+
+  if ($ApplicationControlTestHost) {
+    $manifestPath = Join-Path $repoRoot 'backend\execution\Cargo.toml'
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $cargoPath
+    $startInfo.Arguments = 'test --manifest-path "' + $manifestPath +
+      '" -p mt5-vm-agent --lib process::tests::live_installed_slot_lifecycle_from_stdin' +
+      ' -- --ignored --exact --nocapture --test-threads=1'
+    $startInfo.WorkingDirectory = $repoRoot
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardInput = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $startInfo
+    if (-not $process.Start()) {
+      throw 'Failed to start the Application Control live-test host.'
+    }
+    $process.StandardInput.Write($requestJson)
+    $process.StandardInput.Close()
+    $request.login = $null
+    $request.password = $null
+    $request.server = $null
+    $requestJson = $null
+
+    $stdout = $process.StandardOutput.ReadToEnd()
+    $stderr = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+    $matches = [Regex]::Matches(
+      $stdout,
+      'PHASE1_LIVE_RESULT=(\{[^\r\n]+\})'
+    )
+    if ($matches.Count -ne 1) {
+      throw 'The Application Control live-test host returned no unique safe result.'
+    }
+    $safeResultJson = $matches[0].Groups[1].Value
+    $result = $safeResultJson | ConvertFrom-Json
+    if ($result.phase -ne 'mt5_windows_vm_phase1' -or
+        $result.status -notin @('PASS', 'CONDITIONAL_PASS', 'BLOCKED')) {
+      throw 'The Application Control live-test host returned an invalid result.'
+    }
+    if ([string]::IsNullOrWhiteSpace($OutputPath)) {
+      $resultDir = Join-Path $credentialRoot 'phase1-results'
+      $OutputPath = Join-Path $resultDir "mt5-vm-$AccountAlias.json"
+    }
+    $fullOutputPath = [System.IO.Path]::GetFullPath($OutputPath)
+    $repoPrefix = $repoRoot + [System.IO.Path]::DirectorySeparatorChar
+    if ($fullOutputPath.StartsWith($repoPrefix, [StringComparison]::OrdinalIgnoreCase) -or
+        -not $fullOutputPath.StartsWith($credentialPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+      throw 'Phase 1 validation output must remain under LocalAppData\MarketLens and outside the repository.'
+    }
+    $outputDirectory = Split-Path -Parent $fullOutputPath
+    New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
+    Set-Content -LiteralPath $fullOutputPath -Value $safeResultJson -Encoding UTF8
+    Write-Host "Result: $fullOutputPath"
+    $safeResultJson
+    if ($process.ExitCode -ne 0 -or $result.status -eq 'BLOCKED') {
+      if (-not [string]::IsNullOrWhiteSpace($stderr)) {
+        Write-Warning 'The live-test host failed; detailed cargo stderr was intentionally suppressed.'
+      }
+      exit 2
+    }
+    exit 0
+  }
 
   $startInfo = New-Object System.Diagnostics.ProcessStartInfo
   $startInfo.FileName = $fullPythonPath

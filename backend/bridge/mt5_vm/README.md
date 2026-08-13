@@ -100,13 +100,25 @@ credential:
 
 ```powershell
 .\backend\bridge\mt5_vm\Invoke-MT5VmPhase1.ps1 `
-  -AccountAlias ftmo-free-trial
+  -AccountAlias ftmo-free-trial `
+  -TerminalPath 'C:\path\to\installed-slot\terminal64.exe' `
+  -AgentPath 'C:\path\to\signed\mt5-vm-agent.exe'
 ```
 
-Current status: 21 Rust and nine Python unit gates pass. Effective per-instance
-MCP disable and no-orphan failed-start cleanup are complete, but the real FTMO
-lifecycle is blocked at `MT5_IPC_TIMEOUT` on the isolated terminal. Do not use
-`-IndependentWebMatchConfirmed` until the
-reported snapshot has actually been checked against FTMO web. See
-`../../../docs/MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md` for the blocker
-and required follow-up.
+The driver now consumes a pool of separately installed, MetaQuotes-signed
+terminal slots and uses each slot's pinned instance server catalog. The FTMO
+provision, two clean restarts, forced-crash recovery, heartbeat, graceful stop,
+and settled one-pair CPU/memory observation pass. The result remains
+`CONDITIONAL_PASS`: independent FTMO web comparison, a signed/reputable agent
+run, and live two-account isolation still remain.
+
+`-TerminalPath` is mandatory and has no shared standard-terminal fallback. The
+normal path also requires an explicit agent with a valid Authenticode signature.
+On a development host where Smart App Control blocks the unsigned debug agent,
+omit `-AgentPath` and add `-ApplicationControlTestHost`. That mutually exclusive
+path builds and runs the same Rust process driver and Job Object lifecycle as an
+ignored Cargo live test; it does not replace a signed production agent. Do not
+use `-IndependentWebMatchConfirmed` until the reported snapshot has actually
+been checked against FTMO web. See
+`../../../docs/MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md` for the current
+evidence and remaining exit gates.

@@ -10,23 +10,24 @@ and exact server in MarketLens web and install nothing locally. The old
 TickerAll/MetaApi cloud-provider plan and fixtures have been deleted.
 
 Phase 0 is complete. The Phase 1 local prototype is implemented and its 21 Rust
-tests plus nine Python tests pass, but Phase 1 is **not complete**. Effective
-per-instance MCP disable, strict failed-start cleanup, and the no-orphan
-regression are done. Credentialed reruns are blocked at `MT5_IPC_TIMEOUT`: the
-installed-terminal control probe passes, while the isolated terminal times out
-even outside Rust's Job Object. Resolve that supported multi-terminal Python IPC
-boundary, rerun the two-restart plus forced-crash harness, independently compare
-the snapshots with FTMO web, and
-run live two-account isolation/idle-load checks. Follow
+tests plus ten Python tests pass, but Phase 1 is **not complete**. The driver now
+uses separately installed, signed, pinned terminal slots; the FTMO provision,
+two clean restarts, forced-crash recovery, heartbeat, graceful stop, and settled
+one-pair resource observation pass through the explicit Application Control
+test host. The normal path has no shared terminal fallback, requires an explicit
+valid Authenticode-signed agent, and is mutually exclusive with the Cargo-only
+live-test switch. Phase 1 remains conditional on a signed normal-agent rerun,
+independent FTMO web comparison, and live two-account isolation/aggregate-load
+evidence. Follow
 [`MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md`](MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md)
-and do not begin Phase 2 until the Phase 1 exit gate passes.
+and do not claim the Phase 1 exit gate has passed until that evidence exists.
 
 Security precedes performance and cost. The prototype includes private
 authenticated stdio, ACL/reparse checks, bounded per-account queues, process/job
-limits, redaction tests, and startup throttling; these boundaries still need the
-real-terminal and multi-account evidence above before raising the default
-four-terminal density. Do not add a public password route, production vault
-secret, migration, or order execution while closing Phase 1.
+limits, redaction tests, startup throttling, and installed-slot artifact pins.
+Do not raise the default four-terminal density, add a public password route,
+production vault secret, or order execution while the remaining Phase 1 gates
+are open.
 
 > Trade execution update (2026-07-26): older Phase 6 verifier/Connector tasks
 > are cancelled, not pending. The only native-venue completion sequence is the

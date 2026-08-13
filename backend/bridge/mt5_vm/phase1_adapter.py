@@ -297,7 +297,12 @@ def _symbol_snapshot(mt5: Any, symbol: str) -> dict[str, Any]:
 def initialize_and_snapshot(mt5: Any, cfg: dict[str, Any]) -> dict[str, Any]:
     initialized = bool(
         mt5.initialize(
-            cfg["terminal_path"], timeout=cfg["timeout_ms"], portable=True
+            cfg["terminal_path"],
+            login=cfg["login"],
+            password=cfg["password"],
+            server=cfg["server"],
+            timeout=cfg["timeout_ms"],
+            portable=False,
         )
     )
     if not initialized:

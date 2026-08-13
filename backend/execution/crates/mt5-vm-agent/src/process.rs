@@ -30,18 +30,23 @@ pub const DEFAULT_JOB_PROCESS_MEMORY_LIMIT: usize = 1_500 * 1024 * 1024;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct ArtifactPins {
+    pub python_sha256: String,
+    pub adapter_sha256: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct TerminalSlotConfig {
+    pub terminal_path: PathBuf,
     pub terminal_sha256: String,
     pub servers_sha256: String,
     pub terminal_license_sha256: String,
-    pub python_sha256: String,
-    pub adapter_sha256: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ProcessDriverConfigInput {
     pub worker_id: String,
     pub data_root: PathBuf,
-    pub terminal_base: PathBuf,
+    pub terminal_slots: Vec<TerminalSlotConfig>,
     pub python_path: PathBuf,
     pub adapter_path: PathBuf,
     pub acl_helper_path: PathBuf,
@@ -62,7 +67,7 @@ impl TryFrom<ProcessDriverConfigInput> for ProcessDriverConfig {
         let config = Self {
             worker_id: input.worker_id,
             data_root: input.data_root,
-            terminal_base: input.terminal_base,
+            terminal_slots: input.terminal_slots,
             python_path: input.python_path,
             adapter_path: input.adapter_path,
             acl_helper_path: input.acl_helper_path,
@@ -92,7 +97,7 @@ impl TryFrom<ProcessDriverConfigInput> for ProcessDriverConfig {
 pub struct ProcessDriverConfig {
     pub worker_id: String,
     pub data_root: PathBuf,
-    pub terminal_base: PathBuf,
+    pub terminal_slots: Vec<TerminalSlotConfig>,
     pub python_path: PathBuf,
     pub adapter_path: PathBuf,
     pub acl_helper_path: PathBuf,
@@ -110,7 +115,6 @@ impl ProcessDriverConfig {
     pub fn validate(&self) -> Result<(), DriverError> {
         if !crate::is_safe_identifier(&self.worker_id)
             || !self.data_root.is_absolute()
-            || !self.terminal_base.is_absolute()
             || !self.python_path.is_absolute()
             || !self.adapter_path.is_absolute()
             || !self.acl_helper_path.is_absolute()
@@ -120,7 +124,6 @@ impl ProcessDriverConfig {
         }
         if [
             &self.data_root,
-            &self.terminal_base,
             &self.python_path,
             &self.adapter_path,
             &self.acl_helper_path,
@@ -133,6 +136,9 @@ impl ProcessDriverConfig {
         }) {
             return Err(DriverError::new("UNSAFE_PROCESS_CONFIG_PATH"));
         }
+        if self.terminal_slots.is_empty() || self.terminal_slots.len() > crate::HARD_MAX_TERMINALS {
+            return Err(DriverError::new("INVALID_TERMINAL_SLOTS"));
+        }
         if self.adapter_event_capacity == 0
             || self.adapter_event_capacity > HARD_MAX_ADAPTER_EVENT_CAPACITY
             || self.job_active_process_limit == 0
@@ -143,7 +149,6 @@ impl ProcessDriverConfig {
             return Err(DriverError::new("INVALID_PROCESS_LIMIT"));
         }
         for path in [
-            &self.terminal_base,
             &self.python_path,
             &self.adapter_path,
             &self.acl_helper_path,
@@ -154,24 +159,51 @@ impl ProcessDriverConfig {
             }
             assert_no_reparse_components(path)?;
         }
-        let base_directory = self
-            .terminal_base
-            .parent()
-            .ok_or_else(|| DriverError::new("TERMINAL_BASE_INVALID"))?;
-        let servers_path = base_directory.join("Config").join("servers.dat");
-        let terminal_license_path = base_directory.join("Config").join("terminal.lic");
-        for path in [&servers_path, &terminal_license_path] {
-            if !path.is_file() {
-                return Err(DriverError::new("REQUIRED_ARTIFACT_MISSING"));
+        let mut canonical_slots = Vec::with_capacity(self.terminal_slots.len());
+        for slot in &self.terminal_slots {
+            if !slot.terminal_path.is_absolute()
+                || !slot
+                    .terminal_path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.eq_ignore_ascii_case("terminal64.exe"))
+                || slot
+                    .terminal_path
+                    .components()
+                    .any(|component| matches!(component, Component::ParentDir))
+                || !slot.terminal_path.is_file()
+            {
+                return Err(DriverError::new("INVALID_TERMINAL_SLOT"));
             }
-            assert_no_reparse_components(path)?;
+            assert_no_reparse_components(&slot.terminal_path)?;
+            let install_directory = slot
+                .terminal_path
+                .parent()
+                .ok_or_else(|| DriverError::new("TERMINAL_SLOT_INVALID"))?;
+            let terminal_license_path = install_directory.join("Config").join("terminal.lic");
+            let (terminal_state_root, terminal_state_config) =
+                terminal_instance_config_directory(&slot.terminal_path)?;
+            let servers_path = terminal_state_config.join("servers.dat");
+            for path in [&servers_path, &terminal_license_path] {
+                if !path.is_file() {
+                    return Err(DriverError::new("REQUIRED_ARTIFACT_MISSING"));
+                }
+                assert_no_reparse_components(path)?;
+            }
+            assert_no_reparse_below(&terminal_state_root, &servers_path)?;
+            verify_sha256(&slot.terminal_path, &slot.terminal_sha256)?;
+            verify_sha256(&servers_path, &slot.servers_sha256)?;
+            verify_sha256(&terminal_license_path, &slot.terminal_license_sha256)?;
+            let canonical = fs::canonicalize(&slot.terminal_path)
+                .map_err(|_| DriverError::new("TERMINAL_SLOT_INVALID"))?;
+            if canonical_slots
+                .iter()
+                .any(|existing| existing == &canonical)
+            {
+                return Err(DriverError::new("DUPLICATE_TERMINAL_SLOT"));
+            }
+            canonical_slots.push(canonical);
         }
-        verify_sha256(&self.terminal_base, &self.artifact_pins.terminal_sha256)?;
-        verify_sha256(&servers_path, &self.artifact_pins.servers_sha256)?;
-        verify_sha256(
-            &terminal_license_path,
-            &self.artifact_pins.terminal_license_sha256,
-        )?;
         verify_sha256(&self.python_path, &self.artifact_pins.python_sha256)?;
         verify_sha256(&self.adapter_path, &self.artifact_pins.adapter_sha256)?;
         Ok(())
@@ -282,39 +314,28 @@ impl ProcessRuntimeDriver {
         run_acl_helper(&self.config, &runtime_directory)?;
         assert_no_reparse_below(&self.config.data_root, &runtime_directory)?;
 
-        let terminal_directory = runtime_directory.join("terminal");
-        fs::create_dir_all(&terminal_directory)
-            .map_err(|_| DriverError::new("RUNTIME_DIRECTORY_CREATE_FAILED"))?;
-        assert_no_reparse_below(&self.config.data_root, &terminal_directory)?;
-        let terminal_path = terminal_directory.join("terminal64.exe");
-        copy_pinned_file(
-            &self.config.data_root,
-            &self.config.terminal_base,
-            &terminal_path,
-            &self.config.artifact_pins.terminal_sha256,
-        )?;
-        let source_config_directory = self
+        let terminal_path = self
             .config
-            .terminal_base
+            .terminal_slots
+            .iter()
+            .map(|slot| &slot.terminal_path)
+            .find(|candidate| {
+                !self
+                    .runtimes
+                    .values()
+                    .any(|runtime| runtime.layout.terminal_path == **candidate)
+            })
+            .cloned()
+            .ok_or_else(|| DriverError::new("TERMINAL_SLOT_CAPACITY_EXHAUSTED"))?;
+        if find_process_id_by_path(&terminal_path).is_some() {
+            return Err(DriverError::new("TERMINAL_SLOT_ALREADY_RUNNING"));
+        }
+        let terminal_install_root = terminal_path
             .parent()
-            .ok_or_else(|| DriverError::new("TERMINAL_BASE_INVALID"))?
-            .join("Config");
-        let runtime_config_directory = terminal_directory.join("Config");
-        fs::create_dir_all(&runtime_config_directory)
-            .map_err(|_| DriverError::new("RUNTIME_DIRECTORY_CREATE_FAILED"))?;
-        assert_no_reparse_below(&self.config.data_root, &runtime_config_directory)?;
-        refresh_pinned_bootstrap(
-            &self.config.data_root,
-            &source_config_directory.join("servers.dat"),
-            &runtime_config_directory.join("servers.dat"),
-            &self.config.artifact_pins.servers_sha256,
-        )?;
-        refresh_pinned_bootstrap(
-            &self.config.data_root,
-            &source_config_directory.join("terminal.lic"),
-            &runtime_config_directory.join("terminal.lic"),
-            &self.config.artifact_pins.terminal_license_sha256,
-        )?;
+            .ok_or_else(|| DriverError::new("TERMINAL_SLOT_INVALID"))?;
+        let terminal_install_config = terminal_install_root.join("Config");
+        assert_no_reparse_components(terminal_install_root)?;
+        assert_no_reparse_below(terminal_install_root, &terminal_install_config)?;
         let mcp_port = (24_000_u16..=31_998_u16)
             .step_by(2)
             .find(|port| {
@@ -324,7 +345,7 @@ impl ProcessRuntimeDriver {
                     .any(|runtime| runtime.layout.mcp_port == *port)
             })
             .ok_or_else(|| DriverError::new("MCP_LOOPBACK_PORTS_EXHAUSTED"))?;
-        write_disabled_mcp_config(&self.config.data_root, &runtime_config_directory, mcp_port)?;
+        write_disabled_mcp_config(terminal_install_root, &terminal_install_config, mcp_port)?;
         let (terminal_state_root, terminal_state_config) =
             terminal_instance_config_directory(&terminal_path)?;
         write_disabled_mcp_config(&terminal_state_root, &terminal_state_config, mcp_port)?;
@@ -760,38 +781,6 @@ fn verify_sha256(path: &Path, expected: &str) -> Result<(), DriverError> {
     Ok(())
 }
 
-fn copy_pinned_file(
-    data_root: &Path,
-    source: &Path,
-    destination: &Path,
-    expected_sha256: &str,
-) -> Result<(), DriverError> {
-    assert_no_reparse_components(source)?;
-    if destination.exists() {
-        assert_no_reparse_below(data_root, destination)?;
-        return verify_sha256(destination, expected_sha256);
-    }
-    fs::copy(source, destination).map_err(|_| DriverError::new("ARTIFACT_COPY_FAILED"))?;
-    assert_no_reparse_below(data_root, destination)?;
-    verify_sha256(destination, expected_sha256)
-}
-
-fn refresh_pinned_bootstrap(
-    data_root: &Path,
-    source: &Path,
-    destination: &Path,
-    expected_sha256: &str,
-) -> Result<(), DriverError> {
-    assert_no_reparse_components(source)?;
-    verify_sha256(source, expected_sha256)?;
-    if destination.exists() {
-        assert_no_reparse_below(data_root, destination)?;
-    }
-    fs::copy(source, destination).map_err(|_| DriverError::new("ARTIFACT_COPY_FAILED"))?;
-    assert_no_reparse_below(data_root, destination)?;
-    verify_sha256(destination, expected_sha256)
-}
-
 fn write_disabled_mcp_config(
     data_root: &Path,
     runtime_config_directory: &Path,
@@ -988,6 +977,269 @@ mod tests {
     use super::*;
 
     #[cfg(windows)]
+    #[derive(Clone, Copy)]
+    struct ProcessResourceSample {
+        cpu_100ns: u64,
+        working_set_bytes: u64,
+    }
+
+    #[cfg(windows)]
+    fn process_resource_sample(pid: u32) -> Result<ProcessResourceSample, &'static str> {
+        use windows_sys::Win32::Foundation::{CloseHandle, FILETIME};
+        use windows_sys::Win32::System::ProcessStatus::{
+            K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+        };
+        use windows_sys::Win32::System::Threading::{
+            GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_VM_READ,
+        };
+
+        let process =
+            unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, 0, pid) };
+        if process.is_null() {
+            return Err("RESOURCE_SAMPLE_PROCESS_UNAVAILABLE");
+        }
+        let mut created = FILETIME::default();
+        let mut exited = FILETIME::default();
+        let mut kernel = FILETIME::default();
+        let mut user = FILETIME::default();
+        let times_ok =
+            unsafe { GetProcessTimes(process, &mut created, &mut exited, &mut kernel, &mut user) }
+                != 0;
+        let mut memory = PROCESS_MEMORY_COUNTERS {
+            cb: std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+            ..Default::default()
+        };
+        let memory_ok = unsafe {
+            K32GetProcessMemoryInfo(
+                process,
+                &mut memory,
+                std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+            )
+        } != 0;
+        unsafe { CloseHandle(process) };
+        if !times_ok || !memory_ok {
+            return Err("RESOURCE_SAMPLE_FAILED");
+        }
+        let filetime =
+            |value: FILETIME| ((value.dwHighDateTime as u64) << 32) | value.dwLowDateTime as u64;
+        Ok(ProcessResourceSample {
+            cpu_100ns: filetime(kernel).saturating_add(filetime(user)),
+            working_set_bytes: memory.WorkingSetSize as u64,
+        })
+    }
+
+    #[cfg(windows)]
+    fn aggregate_resource_sample(
+        process_ids: ProcessIds,
+    ) -> Result<ProcessResourceSample, &'static str> {
+        let mut aggregate = ProcessResourceSample {
+            cpu_100ns: 0,
+            working_set_bytes: 0,
+        };
+        for pid in [process_ids.terminal_pid, process_ids.adapter_pid]
+            .into_iter()
+            .flatten()
+        {
+            let sample = process_resource_sample(pid)?;
+            aggregate.cpu_100ns = aggregate.cpu_100ns.saturating_add(sample.cpu_100ns);
+            aggregate.working_set_bytes = aggregate
+                .working_set_bytes
+                .saturating_add(sample.working_set_bytes);
+        }
+        Ok(aggregate)
+    }
+
+    #[derive(Deserialize)]
+    struct LiveValidationRequest {
+        schema_version: u32,
+        agent_path: PathBuf,
+        worker_id: String,
+        account_id: String,
+        lease_generation: u64,
+        data_root: PathBuf,
+        terminal_slots: Vec<TerminalSlotConfig>,
+        python_path: PathBuf,
+        adapter_path: PathBuf,
+        acl_helper_path: PathBuf,
+        powershell_path: PathBuf,
+        python_sha256: String,
+        adapter_sha256: String,
+        login: String,
+        password: String,
+        server: String,
+        symbol: String,
+        independent_web_match_confirmed: bool,
+    }
+
+    impl Drop for LiveValidationRequest {
+        fn drop(&mut self) {
+            self.login.zeroize();
+            self.password.zeroize();
+            self.server.zeroize();
+        }
+    }
+
+    fn run_live_installed_slot_lifecycle(
+        request: LiveValidationRequest,
+    ) -> Result<Value, &'static str> {
+        if request.schema_version != 1
+            || !request.agent_path.is_absolute()
+            || !crate::is_safe_identifier(&request.account_id)
+            || request.lease_generation == 0
+        {
+            return Err("LIVE_VALIDATION_REQUEST_INVALID");
+        }
+        let independent_web_match_confirmed = request.independent_web_match_confirmed;
+        let account_id = request.account_id.clone();
+        let lease_generation = request.lease_generation;
+        let symbol = request.symbol.clone();
+        let credential = CredentialMaterial::new(
+            request.login.clone(),
+            request.password.clone(),
+            request.server.clone(),
+        )
+        .map_err(|_| "CREDENTIAL_INVALID")?;
+        let config = ProcessDriverConfig::try_from(ProcessDriverConfigInput {
+            worker_id: request.worker_id.clone(),
+            data_root: request.data_root.clone(),
+            terminal_slots: request.terminal_slots.clone(),
+            python_path: request.python_path.clone(),
+            adapter_path: request.adapter_path.clone(),
+            acl_helper_path: request.acl_helper_path.clone(),
+            powershell_path: request.powershell_path.clone(),
+            artifact_pins: ArtifactPins {
+                python_sha256: request.python_sha256.clone(),
+                adapter_sha256: request.adapter_sha256.clone(),
+            },
+            adapter_event_capacity: Some(DEFAULT_ADAPTER_EVENT_CAPACITY),
+            job_active_process_limit: Some(DEFAULT_JOB_ACTIVE_PROCESS_LIMIT),
+            job_process_memory_limit: Some(DEFAULT_JOB_PROCESS_MEMORY_LIMIT),
+            io_timeout_ms: Some(75_000),
+            graceful_stop_timeout_ms: Some(5_000),
+            restart_spacing_ms: Some(2_000),
+        })
+        .map_err(|error| error.error_class)?;
+        let mut driver = ProcessRuntimeDriver::new(config).map_err(|error| error.error_class)?;
+        let started_at = Instant::now();
+        let first = driver
+            .start(&account_id, lease_generation, credential, &symbol)
+            .map_err(|error| error.error_class)?;
+        let first_ms = started_at.elapsed().as_millis() as u64;
+        let started_at = Instant::now();
+        let second = driver
+            .clean_restart(&account_id, lease_generation)
+            .map_err(|error| error.error_class)?;
+        let second_ms = started_at.elapsed().as_millis() as u64;
+        let started_at = Instant::now();
+        let third = driver
+            .clean_restart(&account_id, lease_generation)
+            .map_err(|error| error.error_class)?;
+        let third_ms = started_at.elapsed().as_millis() as u64;
+        let started_at = Instant::now();
+        let fourth = driver
+            .force_crash_and_recover(&account_id, lease_generation)
+            .map_err(|error| error.error_class)?;
+        let fourth_ms = started_at.elapsed().as_millis() as u64;
+        let heartbeat = driver
+            .heartbeat(&account_id, lease_generation)
+            .map_err(|error| error.error_class)?;
+        #[cfg(windows)]
+        let idle_resources = {
+            let settlement = Duration::from_secs(15);
+            let interval = Duration::from_secs(10);
+            thread::sleep(settlement);
+            let before = aggregate_resource_sample(fourth.process_ids)?;
+            thread::sleep(interval);
+            let after = aggregate_resource_sample(fourth.process_ids)?;
+            let cpu_delta = after.cpu_100ns.saturating_sub(before.cpu_100ns);
+            json!({
+                "settlement_ms": settlement.as_millis() as u64,
+                "observation_ms": interval.as_millis() as u64,
+                "aggregate_working_set_bytes": after.working_set_bytes,
+                "aggregate_cpu_core_percent": cpu_delta as f64
+                    / (interval.as_secs_f64() * 10_000_000.0)
+                    * 100.0,
+            })
+        };
+        #[cfg(not(windows))]
+        let idle_resources = Value::Null;
+        let snapshots = vec![
+            first.snapshot,
+            second.snapshot,
+            third.snapshot,
+            fourth.snapshot,
+        ];
+        let snapshots_pass = snapshots
+            .iter()
+            .all(SnapshotSummary::passes_phase1_demo_gate);
+        let heartbeat_pass =
+            heartbeat.healthy && heartbeat.login_matches && heartbeat.server_matches;
+        driver
+            .stop(&account_id, lease_generation)
+            .map_err(|error| error.error_class)?;
+        if !snapshots_pass || !heartbeat_pass {
+            return Err("LIVE_SNAPSHOT_GATE_FAILED");
+        }
+        Ok(json!({
+            "schema_version": 1,
+            "phase": "mt5_windows_vm_phase1",
+            "status": if independent_web_match_confirmed { "PASS" } else { "CONDITIONAL_PASS" },
+            "lifecycle": {
+                "provision": true,
+                "clean_restarts": 2,
+                "forced_terminal_crash_recovered": true,
+                "heartbeat_after_recovery": true,
+                "graceful_stop": true,
+                "independent_web_match_confirmed": independent_web_match_confirmed,
+            },
+            "security": {
+                "authenticated_control_frames": "covered_by_unit_tests",
+                "authenticated_adapter_stdio": true,
+                "bounded_adapter_events": true,
+                "per_runtime_job_limits": true,
+                "acl_and_reparse_checks": true,
+                "artifact_pins_verified": true,
+                "credentials_absent_from_process_arguments": true,
+                "application_control_test_host": true,
+            },
+            "snapshots": snapshots,
+            "lifecycle_latency_ms": [first_ms, second_ms, third_ms, fourth_ms],
+            "idle_resources": idle_resources,
+            "error_class": Value::Null,
+        }))
+    }
+
+    #[test]
+    #[ignore = "credentialed Windows validation; request is read only from redirected stdin"]
+    fn live_installed_slot_lifecycle_from_stdin() {
+        use std::io::Read;
+
+        let mut raw = Zeroizing::new(String::new());
+        let result = match std::io::stdin().read_to_string(&mut raw) {
+            Ok(_) => match serde_json::from_str::<LiveValidationRequest>(&raw) {
+                Ok(request) => run_live_installed_slot_lifecycle(request),
+                Err(_) => Err("LIVE_VALIDATION_REQUEST_INVALID"),
+            },
+            Err(_) => Err("LIVE_VALIDATION_REQUEST_INVALID"),
+        };
+        raw.zeroize();
+        let passed = result.is_ok();
+        let output = result.unwrap_or_else(|error_class| {
+            json!({
+                "schema_version": 1,
+                "phase": "mt5_windows_vm_phase1",
+                "status": "BLOCKED",
+                "error_class": error_class,
+            })
+        });
+        println!(
+            "PHASE1_LIVE_RESULT={}",
+            serde_json::to_string(&output).expect("safe validation result must serialize")
+        );
+        assert!(passed, "credentialed Phase 1 lifecycle did not pass");
+    }
+
+    #[cfg(windows)]
     fn process_is_running(pid: u32) -> bool {
         use windows_sys::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
         use windows_sys::Win32::System::Threading::{
@@ -1009,15 +1261,17 @@ mod tests {
         let config = ProcessDriverConfig {
             worker_id: "worker-01".to_owned(),
             data_root: PathBuf::from("relative"),
-            terminal_base: PathBuf::from("terminal64.exe"),
+            terminal_slots: vec![TerminalSlotConfig {
+                terminal_path: PathBuf::from("terminal64.exe"),
+                terminal_sha256: String::new(),
+                servers_sha256: String::new(),
+                terminal_license_sha256: String::new(),
+            }],
             python_path: PathBuf::from("python.exe"),
             adapter_path: PathBuf::from("phase1_adapter.py"),
             acl_helper_path: PathBuf::from("acl.ps1"),
             powershell_path: PathBuf::from("powershell.exe"),
             artifact_pins: ArtifactPins {
-                terminal_sha256: String::new(),
-                servers_sha256: String::new(),
-                terminal_license_sha256: String::new(),
                 python_sha256: String::new(),
                 adapter_sha256: String::new(),
             },
