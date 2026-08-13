@@ -28,6 +28,28 @@ relevant architecture/package documentation, and inspect the required source bef
 
 See `docs/CODEBASE_MEMORY.md` for installation, maintenance, verification, and recovery commands.
 
+## Mandatory Playwright automation for debugging and delivery
+
+Use the globally installed `playwright-automation` skill by default for every debugging, bug-fix,
+reproduction, retest, and fix-verification task in this repository. Read the skill's `SKILL.md`
+before acting and follow the relevant route/reference for the task. Do not guess selectors or
+declare a fix from code inspection alone when the behavior can be exercised through UI, API, or
+CI automation.
+
+Before committing or pushing a code change:
+
+1. Invoke `playwright-automation` and select the verification route that matches the change
+   (UI E2E, API, visual/responsive, accessibility, network mocking, flaky/CI diagnosis, or another
+   route defined by the skill).
+2. Run the smallest meaningful regression that proves the changed behavior, preserving traces,
+   screenshots, reports, or command output for failures. Deterministic Playwright regression tests
+   must pass twice consecutively when the skill requires it.
+3. If Playwright is not applicable (for example, a compile-only or platform-native backend change),
+   run the closest code-native tests and state explicitly why browser/API automation does not cover
+   the change. Do not skip verification silently.
+4. Commit only files intended for the requested change, then push only after the selected
+   verification passes or the user explicitly accepts a clearly reported blocker.
+
 ## Production backend command
 
 When the user says **build backend production** or **run backend**, execute this command from the
