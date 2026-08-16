@@ -28,6 +28,40 @@ relevant architecture/package documentation, and inspect the required source bef
 
 See `docs/CODEBASE_MEMORY.md` for installation, maintenance, verification, and recovery commands.
 
+## Mandatory old-coder evidence-first workflow
+
+Every coding agent and subagent working in this repository must invoke the globally installed
+`old-coder` skill for every task that changes code or code-adjacent configuration, regardless of
+the skill's normal trigger description, the apparent size of the change, or the agent's chosen
+workflow. Read the skill's complete `SKILL.md` and every task-relevant referenced file before
+acting. If the installed skill cannot be found or read, stop before implementation and report the
+blocker; do not silently substitute a lighter workflow.
+
+After completing the codebase-memory startup gate above, follow the skill's evidence-first loop:
+
+1. Classify the task as old-coder Tier 1, 2, or 3 and write an executable SPEC to a file. Name its
+   absolute path, include concrete positive and negative acceptance criteria, and disclose all
+   planned dependencies, tools, generated files, git operations, and verification commands.
+2. Obtain explicit approval of that exact SPEC before implementation. If the execution context is
+   explicitly autonomous and cannot pause, proceed only as the skill permits and record
+   `spec approval: not obtained (autonomous run)` in EVIDENCE; never imply approval.
+3. Use RED -> GREEN -> REFACTOR for behavioral changes. Bug fixes require a reproducing test that
+   is observed failing before the fix. Do not edit assertions and implementation in the same step,
+   weaken tests, invent results, or skip an applicable layer without recording the reason.
+4. Run the complete risk-calibrated gauntlet, including the repository's mandatory Playwright route
+   below whenever applicable. Persist a single rerunnable entry-point command and retain relevant
+   traces, screenshots, reports, and failure output.
+5. Write EVIDENCE to a file at the end. Map every SPEC behavior and invariant to a test or an
+   explicitly unverified/skipped layer, report exact results from one fresh final run, identify the
+   source state and toolchain, and list every limitation honestly.
+
+A failing gauntlet blocks completion, commit, and push unless the user explicitly accepts the
+reported blocker. The codebase-memory, old-coder, and Playwright requirements are cumulative:
+codebase-memory governs discovery, old-coder governs specification/TDD/evidence, and Playwright
+governs executable UI/API/debugging verification. Before delegating code work, the parent agent
+must pass the approved SPEC path, selected old-coder tier, required gauntlet layers, graph project
+and relevant symbols/paths, and instruct the subagent to read and apply `old-coder` itself.
+
 ## Mandatory Playwright automation for debugging and delivery
 
 Use the globally installed `playwright-automation` skill by default for every debugging, bug-fix,
