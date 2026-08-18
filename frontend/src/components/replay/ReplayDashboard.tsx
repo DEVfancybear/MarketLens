@@ -16,7 +16,7 @@ import { getMarketSymbol } from "@/services/market-data/symbols";
 
 function Stat({ label, value, accent }: { label: string; value: React.ReactNode; accent?: string }) {
   return (
-    <div className="rounded border border-terminal-border bg-terminal-panel-2 px-3 py-1.5">
+    <div className="rounded-sm border border-terminal-border bg-terminal-panel-2 px-3 py-1.5">
       <div className="text-[10px] uppercase tracking-wide text-ink-faint">{label}</div>
       <div className="text-xs font-semibold" style={{ color: accent }}>{value}</div>
     </div>
@@ -73,9 +73,9 @@ export function ReplayDashboard() {
             onChange={(event) => setDateInput(event.target.value)}
             onKeyDown={(event) => event.key === "Enter" && jump()}
             placeholder="YYYY-MM-DD HH:mm"
-            className="w-40 rounded border border-terminal-border bg-terminal-bg px-2 py-1 text-2xs text-ink outline-none focus:border-brand"
+            className="w-40 rounded-sm border border-terminal-border bg-terminal-bg px-2 py-1 text-2xs text-ink outline-hidden focus:border-brand"
           />
-          <button onClick={jump} className="rounded bg-terminal-hover px-2 py-1 text-2xs text-ink hover:bg-brand hover:text-white">
+          <button onClick={jump} className="rounded-sm bg-terminal-hover px-2 py-1 text-2xs text-ink hover:bg-brand hover:text-white">
             Jump
           </button>
         </div>
@@ -109,7 +109,7 @@ export function ReplayDashboard() {
               const bars = projection.barsByTrack[item.id] ?? [];
               const last = bars[bars.length - 1];
               return (
-                <div key={item.id} className="rounded border border-terminal-border bg-terminal-panel-2 px-2 py-1.5">
+                <div key={item.id} className="rounded-sm border border-terminal-border bg-terminal-panel-2 px-2 py-1.5">
                   <div className="text-2xs font-semibold text-ink">{item.symbol} · {item.chartTimeframe}</div>
                   <div className="text-2xs text-ink-muted">{last ? fmtPrice(last.close, precision) : "—"}</div>
                 </div>

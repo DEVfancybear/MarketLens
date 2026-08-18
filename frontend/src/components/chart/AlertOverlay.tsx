@@ -548,7 +548,7 @@ export function AlertOverlay({
                 alertLineRegistry.delete(registryKey);
               }
             }}
-            className="absolute flex h-5 w-5 items-center justify-center rounded bg-bear text-white shadow hover:brightness-110 z-50"
+            className="absolute flex h-5 w-5 items-center justify-center rounded-sm bg-bear text-white shadow-sm hover:brightness-110 z-50"
             data-alert-delete=""
             style={{ top: y - 10, left: 8, pointerEvents: "auto" }}
             title="Delete alert (Del)"

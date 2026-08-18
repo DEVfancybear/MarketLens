@@ -34,7 +34,7 @@ export function DrawingIntervalVisibilityFields({
                 aria-pressed={active}
                 onClick={() => onChange(intervalVisibilityForPreset(preset.id, currentTimeframe))}
                 className={cn(
-                  "rounded border px-2 py-1.5 text-left text-[11px] transition-colors",
+                  "rounded-sm border px-2 py-1.5 text-left text-[11px] transition-colors",
                   active
                     ? "border-[#2962ff] bg-[#2962ff]/15 text-ink"
                     : "border-terminal-border-strong text-ink-muted hover:bg-terminal-hover",
@@ -62,13 +62,13 @@ export function DrawingIntervalVisibilityFields({
                 aria-label={`Show on ${timeframe}`}
                 onClick={() => onChange(toggleDrawingInterval(value, timeframe))}
                 className={cn(
-                  "flex h-8 items-center justify-center gap-1 rounded border text-[11px]",
+                  "flex h-8 items-center justify-center gap-1 rounded-sm border text-[11px]",
                   checked
                     ? "border-[#6a6d75] bg-terminal-hover text-ink"
                     : "border-[#3f4248] text-[#737780]",
                 )}
               >
-                <span className="flex h-3.5 w-3.5 items-center justify-center rounded-sm border border-current">
+                <span className="flex h-3.5 w-3.5 items-center justify-center rounded-xs border border-current">
                   {checked && <Check size={10} />}
                 </span>
                 {timeframe}

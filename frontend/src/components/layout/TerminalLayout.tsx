@@ -61,7 +61,7 @@ export function TerminalLayout({
 
         {/* Center column = chart (+ bottom dock) */}
         <div className="surface-panel relative flex min-w-0 flex-1 flex-col overflow-hidden">
-          <div className="min-h-0 flex-1 bg-[var(--chart-bg)]">{chart}</div>
+          <div className="min-h-0 flex-1 bg-(--chart-bg)">{chart}</div>
 
           {bottomOpen && (
             <>
@@ -102,7 +102,7 @@ export function TerminalLayout({
               aria-label="Show bottom panel"
               title="Show bottom panel"
               onClick={() => setBottomOpen(true)}
-              className="absolute bottom-10 left-1/2 z-30 flex h-8 w-12 -translate-x-1/2 items-center justify-center rounded-full border border-terminal-border-strong bg-terminal-raised/95 text-ink-muted shadow-terminal backdrop-blur hover:bg-terminal-hover hover:text-ink"
+              className="absolute bottom-10 left-1/2 z-30 flex h-8 w-12 -translate-x-1/2 items-center justify-center rounded-full border border-terminal-border-strong bg-terminal-raised/95 text-ink-muted shadow-terminal backdrop-blur-sm hover:bg-terminal-hover hover:text-ink"
             >
               <ChevronUp size={16} />
             </button>

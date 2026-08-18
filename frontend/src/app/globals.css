@@ -1,9 +1,67 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+@theme {
+  --color-terminal-bg: rgb(var(--bg-rgb));
+  --color-terminal-panel: rgb(var(--panel-rgb));
+  --color-terminal-panel-2: rgb(var(--panel-2-rgb));
+  --color-terminal-panel-3: rgb(var(--panel-3-rgb));
+  --color-terminal-raised: rgb(var(--surface-raised-rgb));
+  --color-terminal-border: rgb(var(--border-rgb));
+  --color-terminal-border-strong: rgb(var(--border-strong-rgb));
+  --color-terminal-hover: rgb(var(--hover-rgb));
+  --color-terminal-pressed: rgb(var(--pressed-rgb));
+
+  --color-ink: rgb(var(--text-rgb));
+  --color-ink-muted: rgb(var(--text-muted-rgb));
+  --color-ink-faint: rgb(var(--text-faint-rgb));
+
+  --color-brand: rgb(var(--accent-rgb));
+  --color-brand-hover: var(--accent-hover);
+
+  --color-bull: rgb(var(--bull-rgb));
+  --color-bear: rgb(var(--bear-rgb));
+  --color-bos: rgb(var(--bos-rgb));
+  --color-choch: rgb(var(--choch-rgb));
+  --color-fvg: rgb(var(--fvg-rgb));
+  --color-ob: rgb(var(--ob-rgb));
+  --color-liquidity: rgb(var(--liquidity-rgb));
+
+  --font-sans: var(--font-sans), system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, monospace;
+
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+
+  --default-transition-duration: 160ms;
+
+  --radius-terminal: 10px;
+
+  --shadow-terminal: var(--shadow-panel);
+  --shadow-accent: var(--glow-accent);
+  --shadow-floating: var(--shadow-panel);
+  --shadow-glow: var(--glow-accent);
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
 
 /* =========================================================
-   THEME TOKENS — TradingView-style professional dark theme
+   THEME TOKENS ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â TradingView-style professional dark theme
    ========================================================= */
 :root,
 .theme-dark {
@@ -112,25 +170,36 @@
     --liquidity-rgb: 189 54 126;
 }
 
-* {
-    box-sizing: border-box;
-}
+/*
+  Element-level resets must live in `@layer base`. Tailwind v4 emits its
+  utilities inside real CSS cascade layers, and unlayered rules outrank every
+  layer regardless of specificity - an unlayered `button { font: inherit }`
+  would silently kill `text-*`, `font-*`, `leading-*` and `tracking-*` on every
+  button in the app. Declaring them here keeps the Tailwind v3 relationship:
+  these win over Tailwind's own preflight (same layer, later in source) and
+  utilities still win over these.
+*/
+@layer base {
+    * {
+        box-sizing: border-box;
+    }
 
-*::selection { background: var(--accent); color: var(--accent-contrast); }
+    *::selection { background: var(--accent); color: var(--accent-contrast); }
 
-html,
-body {
-    height: 100%;
-    margin: 0;
-    padding: 0;
-}
+    html,
+    body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+    }
 
-button, [role="button"] { cursor: pointer; }
-button, input, select, textarea { font: inherit; }
-button:disabled { cursor: not-allowed; }
-button:focus-visible, [role="button"]:focus-visible, input:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
+    button, [role="button"] { cursor: pointer; }
+    button, input, select, textarea { font: inherit; }
+    button:disabled { cursor: not-allowed; }
+    button:focus-visible, [role="button"]:focus-visible, input:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+    }
 }
 
 /* Mobile is a separate application shell; desktop layout rules cannot leak in. */
@@ -184,33 +253,35 @@ button:focus-visible, [role="button"]:focus-visible, input:focus-visible {
     .mobile-sheet { height: 92dvh; }
 }
 
-body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--font-sans);
-    font-size: 13px;
-    -webkit-font-smoothing: antialiased;
-    text-rendering: optimizeLegibility;
-    overflow: hidden; /* full-screen terminal, panels scroll internally */
-}
+@layer base {
+    body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font-sans);
+        font-size: 13px;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+        overflow: hidden; /* full-screen terminal, panels scroll internally */
+    }
 
-/* Low-noise scrollbars for dense workspaces. */
-::-webkit-scrollbar {
-    width: 7px;
-    height: 7px;
-}
-::-webkit-scrollbar-track {
-    background: transparent;
-}
-::-webkit-scrollbar-thumb {
-    background: var(--border-strong);
-    border: 2px solid transparent;
-    background-clip: padding-box;
-    border-radius: 999px;
-}
-::-webkit-scrollbar-thumb:hover {
-    background: var(--text-faint);
-    background-clip: padding-box;
+    /* Low-noise scrollbars for dense workspaces. */
+    ::-webkit-scrollbar {
+        width: 7px;
+        height: 7px;
+    }
+    ::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+        background: var(--border-strong);
+        border: 2px solid transparent;
+        background-clip: padding-box;
+        border-radius: 999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: var(--text-faint);
+        background-clip: padding-box;
+    }
 }
 
 /* Numeric tabular alignment for prices */
@@ -281,7 +352,7 @@ body {
     }
 }
 
-/* Watchlist tick flash — TradingView style: the Last cell alone flashes a
+/* Watchlist tick flash ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â TradingView style: the Last cell alone flashes a
    text color briefly; rows and cells keep their background stable. */
 @keyframes wlFlashUp {
     0% {
@@ -365,7 +436,7 @@ body {
 }
 
 /* =========================================================
-   MOBILE PLATFORM — independent presentation layer
+   MOBILE PLATFORM ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â independent presentation layer
    ========================================================= */
 .mobile-terminal {
     --control-height: 44px;

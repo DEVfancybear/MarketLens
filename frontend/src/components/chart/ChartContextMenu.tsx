@@ -304,7 +304,7 @@ export function ChartContextMenu({
         transformOrigin: "top left",
       }}
       className={cn(
-        "context-menu-pop fixed z-[1000] min-w-[260px] overflow-x-hidden overflow-y-auto rounded-xl border border-terminal-border-strong bg-terminal-raised p-1.5 shadow-floating",
+        "context-menu-pop fixed z-1000 min-w-[260px] overflow-x-hidden overflow-y-auto rounded-xl border border-terminal-border-strong bg-terminal-raised p-1.5 shadow-floating",
         mobile && "mobile-chart-popup-portal",
       )}
     >
@@ -322,7 +322,7 @@ export function ChartContextMenu({
             disabled={(it as Exclude<MenuItem, { divider: true }>).disabled}
             onClick={(it as Exclude<MenuItem, { divider: true }>).onClick}
             className={cn(
-              "flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-xs text-ink outline-none transition-colors",
+              "flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-xs text-ink outline-hidden transition-colors",
               "hover:bg-terminal-hover focus:bg-terminal-hover",
               "disabled:cursor-not-allowed disabled:text-ink-faint disabled:hover:bg-transparent disabled:focus:bg-transparent",
             )}

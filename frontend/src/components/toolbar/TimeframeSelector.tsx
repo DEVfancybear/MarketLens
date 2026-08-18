@@ -144,11 +144,11 @@ export function TimeframeSelector({
                               toggleFavorite(item.timeframe!);
                             }}
                             className={cn(
-                              "flex h-6 w-6 shrink-0 items-center justify-center rounded-sm",
+                              "flex h-6 w-6 shrink-0 items-center justify-center rounded-xs",
                               active
                                 ? favorite
-                                  ? "text-[var(--accent-contrast)]"
-                                  : "text-[var(--accent-contrast)]/60"
+                                  ? "text-(--accent-contrast)"
+                                  : "text-(--accent-contrast)/60"
                                 : favorite
                                   ? "text-ink"
                                   : "text-ink-faint opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100",
@@ -229,7 +229,7 @@ function CustomIntervalDialog({
   return createPortal(
     <div
       data-chart-ui
-      className="platform-dialog-overlay fixed inset-0 z-[900] bg-[var(--scrim)] backdrop-blur-sm"
+      className="platform-dialog-overlay fixed inset-0 z-900 bg-(--scrim) backdrop-blur-xs"
       onMouseDown={onClose}
     >
       <div
@@ -256,7 +256,7 @@ function CustomIntervalDialog({
             type="button"
             aria-label="Close"
             onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted hover:bg-terminal-hover hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted hover:bg-terminal-hover hover:text-ink focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-brand"
           >
             <X size={22} />
           </button>
@@ -283,7 +283,7 @@ function CustomIntervalDialog({
                 />
               </button>
               {typeOpen && (
-                <div className="mobile-popover absolute left-0 top-[44px] z-[95] min-w-[132px] overflow-hidden rounded-xl border border-terminal-border-strong bg-terminal-raised p-1.5 shadow-floating">
+                <div className="mobile-popover absolute left-0 top-[44px] z-95 min-w-[132px] overflow-hidden rounded-xl border border-terminal-border-strong bg-terminal-raised p-1.5 shadow-floating">
                   {CUSTOM_INTERVAL_TYPES.map((item) => (
                     <button
                       key={item}
@@ -295,7 +295,7 @@ function CustomIntervalDialog({
                       className={cn(
                         "h-9 w-full rounded-lg px-3 text-left text-sm font-semibold transition-colors hover:bg-terminal-hover",
                         item === type
-                          ? "bg-brand text-[var(--accent-contrast)]"
+                          ? "bg-brand text-(--accent-contrast)"
                           : "text-ink-muted",
                       )}
                     >
@@ -326,7 +326,7 @@ function CustomIntervalDialog({
               onKeyDown={(event) => {
                 if (event.key === "Enter") add();
               }}
-              className="h-10 rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 text-sm font-semibold text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/15"
+              className="h-10 rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 text-sm font-semibold text-ink outline-hidden focus:border-brand focus:ring-2 focus:ring-brand/15"
             />
           </div>
         </div>
@@ -343,7 +343,7 @@ function CustomIntervalDialog({
             type="button"
             disabled={!resolved}
             onClick={add}
-            className="min-h-10 rounded-xl bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover disabled:cursor-default disabled:opacity-40"
+            className="min-h-10 rounded-xl bg-brand px-4 text-sm font-semibold text-(--accent-contrast) hover:bg-brand-hover disabled:cursor-default disabled:opacity-40"
           >
             Add
           </button>

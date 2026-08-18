@@ -850,7 +850,7 @@ function FollowerEditor({
           aria-label={t("copier.continuous.enableFollower", {
             account: account?.label ?? target.accountId,
           })}
-          className="h-4 w-4 shrink-0 accent-[var(--accent)] focus-ring"
+          className="h-4 w-4 shrink-0 accent-(--accent) focus-ring"
         />
         <span className="min-w-0 flex-1">
           <strong className="block truncate text-[11px] text-ink">
@@ -1304,7 +1304,7 @@ function Toggle({
         checked={checked}
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
-        className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent)] focus-ring"
+        className="mt-0.5 h-4 w-4 shrink-0 accent-(--accent) focus-ring"
       />
       <span className="min-w-0">
         <strong className="block text-[10px] text-ink">{label}</strong>
@@ -1532,4 +1532,4 @@ function localizeContinuousValidation(t: Translate, message: string): string {
 }
 
 const inputClass =
-  "h-11 min-w-0 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-base text-ink outline-none placeholder:text-ink-faint focus:border-brand focus-visible:ring-2 focus-visible:ring-brand/35 sm:h-9 sm:text-[10px]";
+  "h-11 min-w-0 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-base text-ink outline-hidden placeholder:text-ink-faint focus:border-brand focus-visible:ring-2 focus-visible:ring-brand/35 sm:h-9 sm:text-[10px]";

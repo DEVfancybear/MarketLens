@@ -50,7 +50,7 @@ export function ExecutionConnectionStatus() {
     <div className="flex min-w-0 items-center gap-2 text-[10px]">
       <span
         className={cn(
-          "inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-semibold uppercase",
+          "inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 font-semibold uppercase",
           STATUS_STYLE[selected.status],
         )}
         role="status"

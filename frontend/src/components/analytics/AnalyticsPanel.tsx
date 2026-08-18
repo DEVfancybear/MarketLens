@@ -107,7 +107,7 @@ export function AnalyticsPanel() {
       <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <SectionTitle>Equity & Drawdown Curve</SectionTitle>
-          <div className="h-48 rounded border border-terminal-border bg-terminal-panel-2">
+          <div className="h-48 rounded-sm border border-terminal-border bg-terminal-panel-2">
             <EquityChart equity={report.equity} />
           </div>
         </div>
@@ -115,7 +115,7 @@ export function AnalyticsPanel() {
         {/* R distribution */}
         <div>
           <SectionTitle>Win / Loss Distribution (R)</SectionTitle>
-          <div className="space-y-1 rounded border border-terminal-border bg-terminal-panel-2 p-3">
+          <div className="space-y-1 rounded-sm border border-terminal-border bg-terminal-panel-2 p-3">
             {report.distribution.map((d) => {
               const win = !d.label.includes("-") && !d.label.startsWith("≤");
               return (
@@ -126,9 +126,9 @@ export function AnalyticsPanel() {
                   <span className="w-14 shrink-0 text-ink-faint">
                     {d.label}
                   </span>
-                  <div className="h-3 flex-1 overflow-hidden rounded bg-terminal-bg">
+                  <div className="h-3 flex-1 overflow-hidden rounded-sm bg-terminal-bg">
                     <div
-                      className="h-full rounded"
+                      className="h-full rounded-sm"
                       style={{
                         width: `${(d.count / maxBar) * 100}%`,
                         background: win ? "var(--bull)" : "var(--bear)",
@@ -148,7 +148,7 @@ export function AnalyticsPanel() {
       {/* Monthly performance */}
       <div className="mt-3">
         <SectionTitle>Monthly Performance</SectionTitle>
-        <div className="flex items-end gap-2 overflow-x-auto rounded border border-terminal-border bg-terminal-panel-2 p-3">
+        <div className="flex items-end gap-2 overflow-x-auto rounded-sm border border-terminal-border bg-terminal-panel-2 p-3">
           {report.monthly.map((m) => {
             const h = (Math.abs(m.pnl) / maxMonth) * 60;
             const up = m.pnl >= 0;
@@ -199,7 +199,7 @@ function Kpi({
   small?: boolean;
 }) {
   return (
-    <div className="rounded border border-terminal-border bg-terminal-panel-2 px-3 py-2">
+    <div className="rounded-sm border border-terminal-border bg-terminal-panel-2 px-3 py-2">
       <div className="text-[10px] uppercase tracking-wide text-ink-faint">
         {label}
       </div>

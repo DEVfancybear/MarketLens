@@ -1076,7 +1076,7 @@ export function DrawingLayer() {
           className={
             shapeLabelTarget.drawing.text
               ? "absolute z-10 -translate-x-1/2 -translate-y-1/2 cursor-text"
-              : "absolute z-10 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 whitespace-nowrap rounded px-2 py-1 text-[12px] text-ink-muted hover:bg-terminal-hover/70 hover:text-ink"
+              : "absolute z-10 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 whitespace-nowrap rounded-sm px-2 py-1 text-[12px] text-ink-muted hover:bg-terminal-hover/70 hover:text-ink"
           }
           style={{
             left: shapeLabelTarget.x,

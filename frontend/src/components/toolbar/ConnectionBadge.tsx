@@ -17,7 +17,7 @@ export function ConnectionBadge() {
 
   return (
     <div
-      className="flex h-7 items-center gap-1.5 rounded px-2 text-2xs text-ink-muted"
+      className="flex h-7 items-center gap-1.5 rounded-sm px-2 text-2xs text-ink-muted"
       title={`Market data: ${label}`}
       aria-label={`Market data ${label}`}
     >

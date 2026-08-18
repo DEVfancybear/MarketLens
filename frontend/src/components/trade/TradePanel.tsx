@@ -79,12 +79,12 @@ export function TradePanel() {
               />
               <button
                 onClick={() => replayMode ? void replayTrading.reset() : void reset()}
-                className="ml-auto flex items-center gap-1 rounded-sm px-2 py-1 text-ink-muted hover:bg-terminal-hover hover:text-ink"
+                className="ml-auto flex items-center gap-1 rounded-xs px-2 py-1 text-ink-muted hover:bg-terminal-hover hover:text-ink"
               >
                 <RotateCcw size={12} /> Reset account
               </button>
               {replayMode && (
-                <button onClick={() => void exportReplayReport()} className="rounded-sm px-2 py-1 text-ink-muted hover:bg-terminal-hover hover:text-ink">
+                <button onClick={() => void exportReplayReport()} className="rounded-xs px-2 py-1 text-ink-muted hover:bg-terminal-hover hover:text-ink">
                   Export report
                 </button>
               )}

@@ -1,5 +1,27 @@
 # NEXT TASKS
 
+## Immediate
+
+1. **Review and commit the frontend framework upgrade** (2026-08-18, complexity:
+   low). Next 16.3.1 / Tailwind 4.3.3 / TypeScript 7.0.2 are in the working tree,
+   verified but deliberately uncommitted. Read
+   `docs/agent-evidence/frontend-framework-upgrade/EVIDENCE.md`, rerun
+   `tools/verify-frontend-framework-upgrade.ps1`, then commit and push.
+2. **Decide the `SMC Terminal` brand-label breakpoint** (complexity: low).
+   `platformUi.spec.ts:227` expects the label visible at 1366px while
+   `TopToolbar.tsx` gates it behind `hidden min-[1720px]:block`. This predates the
+   upgrade. Fix the component or the expectation - not both.
+3. **Fix the missing mobile watchlist delete confirmation** (complexity: low-medium).
+   `platformUi.spec.ts:184` expects a `Delete "Mobile list"?` platform dialog that
+   `MobileMarkets.tsx` never renders. Also pre-existing.
+4. **Restore the zero-finding production audit** (complexity: medium).
+   `npm audit --omit=dev --audit-level=low` in `frontend/` reports one high advisory,
+   `nanoid@3.3.16` (GHSA-2v37-7h3g-55p8), reached through the repository's pinned
+   `postcss@8.5.23` override. Pre-existing, not caused by the framework upgrade.
+   Advancing the override requires a clean production audit and build per
+   `docs/SECURITY.md`.
+
+
 ## Approved universal MT5 Windows VM connector initiative
 
 The authoritative initiative is

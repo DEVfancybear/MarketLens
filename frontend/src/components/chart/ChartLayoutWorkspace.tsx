@@ -290,10 +290,10 @@ export function ChartLayoutWorkspace({
             data-active-chart={active || undefined}
             aria-label={`Chart ${slot + 1}${active ? ", active" : ""}`}
             className={cn(
-              "relative min-h-0 min-w-0 overflow-hidden bg-[var(--chart-bg)]",
-              active && preset !== "single" && "z-[1] ring-1 ring-inset ring-brand",
+              "relative min-h-0 min-w-0 overflow-hidden bg-(--chart-bg)",
+              active && preset !== "single" && "z-1 ring-1 ring-inset ring-brand",
               chartDropPreview?.slot === slot &&
-                "z-[2] ring-2 ring-inset ring-brand",
+                "z-2 ring-2 ring-inset ring-brand",
             )}
           >
             {preset === "single" ? (
@@ -313,7 +313,7 @@ export function ChartLayoutWorkspace({
                 {active && (
                   <div
                     data-active-chart-surface
-                    className="absolute inset-0 z-10 min-h-0 min-w-0 bg-[var(--chart-bg)]"
+                    className="absolute inset-0 z-10 min-h-0 min-w-0 bg-(--chart-bg)"
                   >
                     {activeChart}
                   </div>
@@ -407,7 +407,7 @@ function ChartPreviewPane({
       data-chart-preview
       aria-hidden={active || undefined}
       className={cn(
-        "relative h-full min-h-0 w-full min-w-0 overflow-hidden bg-[var(--chart-bg)]",
+        "relative h-full min-h-0 w-full min-w-0 overflow-hidden bg-(--chart-bg)",
         active && "pointer-events-none",
       )}
     >
@@ -436,7 +436,7 @@ function ChartPreviewPane({
       </PriceChart>
       {!active && (
         <>
-          <div className="pointer-events-none absolute left-2 top-2 z-20 rounded-lg border border-terminal-border bg-terminal-panel/82 px-2 py-1.5 text-[10px] shadow-terminal backdrop-blur">
+          <div className="pointer-events-none absolute left-2 top-2 z-20 rounded-lg border border-terminal-border bg-terminal-panel/82 px-2 py-1.5 text-[10px] shadow-terminal backdrop-blur-sm">
             <div className="flex items-center gap-1 text-ink-muted">
               <strong className="text-xs text-ink">{pane.symbol || "Chart"}</strong>
               {market?.exchange && <span>· {market.exchange}</span>}
@@ -457,7 +457,7 @@ function ChartPreviewPane({
             type="button"
             aria-label={`Activate chart ${pane.slot + 1}: ${pane.symbol || "empty chart"} ${pane.timeframe}`}
             onClick={onActivate}
-            className="absolute inset-0 z-30 cursor-pointer bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
+            className="absolute inset-0 z-30 cursor-pointer bg-transparent focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
           >
             <span className="sr-only">Activate chart {pane.slot + 1}</span>
           </button>

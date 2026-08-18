@@ -63,7 +63,7 @@ export function PlatformContentDialog({
 
   return createPortal(
     <div
-      className="platform-dialog-overlay fixed inset-0 z-[1400] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center"
+      className="platform-dialog-overlay fixed inset-0 z-1400 flex items-end justify-center bg-(--scrim) p-3 backdrop-blur-xs sm:items-center"
       data-chart-ui
       data-platform-dialog
       role="presentation"
@@ -228,7 +228,7 @@ function PlatformDialogHost({
 
   return createPortal(
     <div
-      className="platform-dialog-overlay fixed inset-0 z-[1400] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center"
+      className="platform-dialog-overlay fixed inset-0 z-1400 flex items-end justify-center bg-(--scrim) p-3 backdrop-blur-xs sm:items-center"
       data-chart-ui
       data-platform-dialog
       role="presentation"
@@ -300,7 +300,7 @@ function PlatformPromptDialog({
             }
           }}
           placeholder={options.placeholder}
-          className="h-11 w-full rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 text-sm font-medium text-ink outline-none selection:bg-brand selection:text-[var(--accent-contrast)] focus:border-brand focus:ring-2 focus:ring-brand/15"
+          className="h-11 w-full rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 text-sm font-medium text-ink outline-hidden selection:bg-brand selection:text-(--accent-contrast) focus:border-brand focus:ring-2 focus:ring-brand/15"
         />
       </div>
       <DialogFooter cancelLabel={options.cancelLabel} confirmLabel={options.confirmLabel} onCancel={onCancel} onConfirm={() => onConfirm(value)} />
@@ -351,7 +351,7 @@ function PlatformConfirmDialog({
       </div>
       <div data-dialog-footer className="flex justify-end gap-2 border-t border-terminal-border px-5 py-3">
         <button ref={cancelRef} type="button" onClick={onCancel} className="min-h-10 rounded-xl border border-terminal-border-strong bg-transparent px-3.5 text-sm font-semibold text-ink transition-colors hover:bg-terminal-hover focus-ring">{options.cancelLabel ?? "Cancel"}</button>
-        <button ref={confirmRef} type="button" onClick={onConfirm} className={cn("min-h-10 rounded-xl border px-4 text-sm font-semibold transition-colors focus-ring", options.tone === "danger" ? "border-bear bg-bear text-white hover:bg-bear/90" : "border-brand bg-brand text-[var(--accent-contrast)] hover:bg-brand-hover")}>{options.confirmLabel ?? "Ok"}</button>
+        <button ref={confirmRef} type="button" onClick={onConfirm} className={cn("min-h-10 rounded-xl border px-4 text-sm font-semibold transition-colors focus-ring", options.tone === "danger" ? "border-bear bg-bear text-white hover:bg-bear/90" : "border-brand bg-brand text-(--accent-contrast) hover:bg-brand-hover")}>{options.confirmLabel ?? "Ok"}</button>
       </div>
     </div>
   );
@@ -371,7 +371,7 @@ function DialogFooter({
   return (
     <div data-dialog-footer className="flex justify-end gap-2 border-t border-terminal-border px-5 py-3">
       <button type="button" onClick={onCancel} className="min-h-10 rounded-xl border border-terminal-border-strong bg-transparent px-3.5 text-sm font-semibold text-ink transition-colors hover:bg-terminal-hover focus-ring">{cancelLabel ?? "Cancel"}</button>
-      <button type="button" onClick={onConfirm} className="min-h-10 rounded-xl border border-brand bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] transition-colors hover:bg-brand-hover focus-ring">{confirmLabel ?? "Ok"}</button>
+      <button type="button" onClick={onConfirm} className="min-h-10 rounded-xl border border-brand bg-brand px-4 text-sm font-semibold text-(--accent-contrast) transition-colors hover:bg-brand-hover focus-ring">{confirmLabel ?? "Ok"}</button>
     </div>
   );
 }

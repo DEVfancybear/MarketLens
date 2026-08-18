@@ -465,7 +465,7 @@ function MobileJournalCard({
               }}
               onBlur={commitNotes}
               placeholder="What was the setup, thesis and lesson?"
-              className="min-h-24 w-full resize-y rounded-xl border border-terminal-border-strong bg-terminal-bg px-3 py-2.5 text-base leading-6 text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-brand focus:ring-2 focus:ring-brand/20"
+              className="min-h-24 w-full resize-y rounded-xl border border-terminal-border-strong bg-terminal-bg px-3 py-2.5 text-base leading-6 text-ink outline-hidden transition-colors placeholder:text-ink-faint focus:border-brand focus:ring-2 focus:ring-brand/20"
             />
             <p className="mt-1 text-[10px] leading-4 text-ink-faint">
               Notes save when you leave this field.
@@ -578,10 +578,10 @@ function JournalSkeleton() {
         >
           <div className="h-10 w-10 rounded-xl bg-terminal-panel-3" />
           <div className="min-w-0 flex-1 space-y-2">
-            <div className="h-3 w-24 rounded bg-terminal-panel-3" />
-            <div className="h-2.5 w-36 rounded bg-terminal-panel-3" />
+            <div className="h-3 w-24 rounded-sm bg-terminal-panel-3" />
+            <div className="h-2.5 w-36 rounded-sm bg-terminal-panel-3" />
           </div>
-          <div className="h-4 w-16 rounded bg-terminal-panel-3" />
+          <div className="h-4 w-16 rounded-sm bg-terminal-panel-3" />
         </div>
       ))}
     </div>

@@ -4,7 +4,7 @@
  */
 export function Splash() {
   return (
-    <div className="relative flex h-[100dvh] w-screen items-center justify-center overflow-hidden bg-terminal-bg text-ink">
+    <div className="relative flex h-dvh w-screen items-center justify-center overflow-hidden bg-terminal-bg text-ink">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_42%,rgb(var(--accent-rgb)/0.14),transparent_34%)]" />
       <div className="relative flex flex-col items-center gap-5">
         <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-brand/30 bg-brand/10 shadow-[0_0_44px_rgb(var(--accent-rgb)/0.16)]">

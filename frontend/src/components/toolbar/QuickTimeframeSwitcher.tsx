@@ -93,7 +93,7 @@ export function QuickTimeframeSwitcher() {
       role="dialog"
       aria-modal="false"
       aria-labelledby="quick-timeframe-title"
-      className="fixed left-1/2 top-[72px] z-[950] w-[min(360px,calc(100vw-24px))] -translate-x-1/2 overflow-hidden rounded-2xl border border-terminal-border-strong bg-terminal-raised text-ink shadow-floating"
+      className="fixed left-1/2 top-[72px] z-950 w-[min(360px,calc(100vw-24px))] -translate-x-1/2 overflow-hidden rounded-2xl border border-terminal-border-strong bg-terminal-raised text-ink shadow-floating"
     >
       <div className="flex items-center gap-3 border-b border-terminal-border px-4 py-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand/15 text-brand">
@@ -114,7 +114,7 @@ export function QuickTimeframeSwitcher() {
           type="button"
           aria-label="Close interval switcher"
           onClick={close}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-brand"
         >
           <X size={16} aria-hidden="true" />
         </button>
@@ -145,14 +145,14 @@ export function QuickTimeframeSwitcher() {
                 close();
               }
             }}
-            className="h-9 min-w-0 flex-1 bg-transparent px-2 text-base font-semibold text-ink outline-none placeholder:font-normal placeholder:text-ink-faint"
+            className="h-9 min-w-0 flex-1 bg-transparent px-2 text-base font-semibold text-ink outline-hidden placeholder:font-normal placeholder:text-ink-faint"
           />
           <button
             type="button"
             disabled={!resolved}
             aria-label={resolved ? `Switch to ${resolved}` : "Enter a supported interval"}
             onClick={apply}
-            className="flex h-9 min-w-9 items-center justify-center rounded-lg bg-brand px-2.5 text-[var(--accent-contrast)] transition-colors hover:bg-brand-hover disabled:cursor-default disabled:bg-terminal-hover disabled:text-ink-faint"
+            className="flex h-9 min-w-9 items-center justify-center rounded-lg bg-brand px-2.5 text-(--accent-contrast) transition-colors hover:bg-brand-hover disabled:cursor-default disabled:bg-terminal-hover disabled:text-ink-faint"
           >
             <CornerDownLeft size={16} aria-hidden="true" />
           </button>
@@ -162,7 +162,7 @@ export function QuickTimeframeSwitcher() {
           role="status"
           aria-live="polite"
           className={`mt-2 px-1 text-xs ${
-            hasValue && !resolved ? "text-[var(--bear)]" : "text-ink-muted"
+            hasValue && !resolved ? "text-(--bear)" : "text-ink-muted"
           }`}
         >
           {status}

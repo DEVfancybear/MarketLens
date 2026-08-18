@@ -121,7 +121,7 @@ export function NumberField({
         }
       }}
       className={cn(
-        "h-[34px] rounded-[5px] border border-terminal-border-strong bg-terminal-raised px-2.5 text-[13px] text-ink-muted outline-none transition-colors focus:border-brand focus:ring-1 focus:ring-brand",
+        "h-[34px] rounded-[5px] border border-terminal-border-strong bg-terminal-raised px-2.5 text-[13px] text-ink-muted outline-hidden transition-colors focus:border-brand focus:ring-1 focus:ring-brand",
         className,
       )}
     />
@@ -168,7 +168,7 @@ function CheckBox({
       className={cn(
         "flex h-[18px] w-[18px] items-center justify-center rounded-[3px] border transition-colors",
         checked
-          ? "border-brand bg-brand text-[var(--accent-contrast)]"
+          ? "border-brand bg-brand text-(--accent-contrast)"
           : "border-terminal-border-strong bg-transparent hover:border-brand",
       )}
     >
@@ -196,7 +196,7 @@ function Select<T extends string | number>({
         if (match) onChange(match.value);
       }}
       className={cn(
-        "h-[34px] rounded-[5px] border border-terminal-border-strong bg-terminal-raised px-2.5 text-[13px] text-ink-muted outline-none transition-colors focus:border-brand focus:ring-1 focus:ring-brand",
+        "h-[34px] rounded-[5px] border border-terminal-border-strong bg-terminal-raised px-2.5 text-[13px] text-ink-muted outline-hidden transition-colors focus:border-brand focus:ring-1 focus:ring-brand",
         className,
       )}
     >
@@ -262,7 +262,7 @@ function LineButton({
         }}
         className="flex h-[34px] items-center gap-2 rounded-md border border-terminal-border-strong bg-terminal-raised px-2 hover:border-brand"
       >
-        <span className="h-6 w-6 rounded bg-terminal-border-strong" />
+        <span className="h-6 w-6 rounded-sm bg-terminal-border-strong" />
         <svg width="31" height="14" className="text-ink" style={{ color }}>
           <line
             x1="1"
@@ -297,7 +297,7 @@ function LineButton({
             <button
               key={s}
               onClick={() => onStyle(s)}
-              className="flex w-full items-center justify-between rounded px-2 py-1.5 hover:bg-terminal-hover"
+              className="flex w-full items-center justify-between rounded-sm px-2 py-1.5 hover:bg-terminal-hover"
             >
               <svg width="82" height="12" className="text-ink">
                 <line
@@ -361,13 +361,13 @@ function StatsSelect({
             <button
               key={s.id}
               onClick={() => toggle(s.id)}
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12px] text-ink hover:bg-terminal-hover"
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[12px] text-ink hover:bg-terminal-hover"
             >
               <span
                 className={cn(
                   "flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[3px] border",
                   active.includes(s.id)
-                    ? "border-brand bg-brand text-[var(--accent-contrast)]"
+                    ? "border-brand bg-brand text-(--accent-contrast)"
                     : "border-terminal-border-strong bg-transparent",
                 )}
               >
@@ -543,7 +543,7 @@ export function PositionSettingsDialog() {
   return createPortal(
     <div
       data-chart-ui
-      className="platform-dialog-overlay fixed inset-0 z-[110] flex items-start justify-center bg-[var(--scrim)] backdrop-blur-sm pt-10"
+      className="platform-dialog-overlay fixed inset-0 z-110 flex items-start justify-center bg-(--scrim) backdrop-blur-xs pt-10"
       onClick={(e) => {
         if (e.target === e.currentTarget) cancel();
       }}
@@ -586,7 +586,7 @@ export function PositionSettingsDialog() {
           <button
             onClick={cancel}
             aria-label="Close settings"
-            className="rounded-sm p-1 text-ink-muted hover:bg-terminal-hover hover:text-ink"
+            className="rounded-xs p-1 text-ink-muted hover:bg-terminal-hover hover:text-ink"
           >
             <X size={24} strokeWidth={1.5} />
           </button>
@@ -817,9 +817,9 @@ export function PositionSettingsDialog() {
                 <button
                   onClick={() => patch({ showLabels: drawing.showLabels === false })}
                   className={cn(
-                    "rounded border px-2.5 py-1 text-xs transition-colors",
+                    "rounded-sm border px-2.5 py-1 text-xs transition-colors",
                     drawing.showLabels !== false
-                      ? "border-terminal-border-strong bg-brand text-[var(--accent-contrast)]"
+                      ? "border-terminal-border-strong bg-brand text-(--accent-contrast)"
                       : "border-terminal-border-strong text-ink-muted hover:bg-terminal-hover hover:text-ink",
                   )}
                 >
@@ -853,7 +853,7 @@ export function PositionSettingsDialog() {
             <button
               type="button"
               onClick={ok}
-              className="h-[34px] rounded-[5px] border border-terminal-border-strong bg-brand px-4 text-[14px] font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover"
+              className="h-[34px] rounded-[5px] border border-terminal-border-strong bg-brand px-4 text-[14px] font-semibold text-(--accent-contrast) hover:bg-brand-hover"
             >
               Ok
             </button>

@@ -150,11 +150,11 @@ export function EmojiPickerPopover({
         aria-pressed={selected}
         onClick={() => onSelect(itemSelection)}
         className={cn(
-          "group flex items-center justify-center rounded-md outline-none transition-colors motion-reduce:transition-none",
+          "group flex items-center justify-center rounded-md outline-hidden transition-colors motion-reduce:transition-none",
           "focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-1 focus-visible:ring-offset-terminal-raised",
           mode === "emoji" && "h-9 w-9 text-[25px] hover:bg-terminal-hover",
           mode === "sticker" &&
-            "h-12 min-w-0 bg-terminal-panel-2 text-[21px] shadow-sm hover:bg-terminal-hover",
+            "h-12 min-w-0 bg-terminal-panel-2 text-[21px] shadow-xs hover:bg-terminal-hover",
           mode === "icon" &&
             "h-9 w-9 font-sans text-[23px] text-ink hover:bg-terminal-hover",
           selected && "bg-brand/15 ring-1 ring-brand/70",
@@ -192,7 +192,7 @@ export function EmojiPickerPopover({
               aria-pressed={activeCategory === id}
               onClick={() => chooseCategory(id)}
               className={cn(
-                "relative flex h-11 items-center justify-center text-ink-muted outline-none transition-colors",
+                "relative flex h-11 items-center justify-center text-ink-muted outline-hidden transition-colors",
                 "hover:text-ink focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand",
                 activeCategory === id && "text-ink",
               )}
@@ -321,7 +321,7 @@ export function EmojiPickerPopover({
             tabIndex={activeTab === kind ? 0 : -1}
             onClick={() => selectTab(kind)}
             className={cn(
-              "h-10 text-xs font-semibold outline-none transition-colors",
+              "h-10 text-xs font-semibold outline-hidden transition-colors",
               "hover:bg-terminal-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand",
               activeTab === kind ? "text-brand" : "text-ink-muted",
             )}

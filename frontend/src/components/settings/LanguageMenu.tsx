@@ -36,7 +36,7 @@ export function LanguageMenu({
           aria-haspopup="menu"
           aria-expanded={open}
           className={cn(
-            "flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-semibold text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60",
+            "flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-semibold text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand/60",
             className,
           )}
         >

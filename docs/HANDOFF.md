@@ -1,5 +1,40 @@
 # HANDOFF
 
+> Frontend framework toolchain upgrade (2026-08-18): **complete and committed to `master`.**
+> The frontend runs Next.js + `eslint-config-next` `16.3.1`, Tailwind CSS `4.3.3`
+> (CSS-first `@theme`; `tailwind.config.ts` deleted), and the TypeScript 7.0.2
+> native CLI via the `@typescript/native` alias. `typescript` deliberately
+> resolves to `@typescript/typescript6@6.0.2` because TypeScript 7 ships no
+> JavaScript compiler API and typescript-eslint needs one; its binary is `tsc6`
+> and it reports build `6.0.3`. `autoprefixer` is removed. Read
+> `docs/agent-evidence/frontend-framework-upgrade/EVIDENCE.md` before touching
+> frontend CSS, tsconfig, or the ESLint/TypeScript setup.
+>
+> Three things a follow-up agent must not undo:
+> 1. Element-level resets in `frontend/src/app/globals.css` live in `@layer base`.
+>    Tailwind v4 emits utilities inside real CSS cascade layers, so any unlayered
+>    rule outranks every utility regardless of specificity. Moving that block back
+>    out silently kills `text-*`/`font-*`/`leading-*`/`tracking-*` on every button
+>    and input. Component classes (`.mobile-*`, `.desktop-terminal`) stay unlayered
+>    on purpose.
+> 2. `experimental.useTypeScriptCli` stays `false`. Next resolves its CLI checker
+>    strictly as `typescript/bin/tsc`, which this dependency layout does not
+>    provide. Build type checking still runs (through the TS6 API) and
+>    `typescript.ignoreBuildErrors` must stay unset; TypeScript 7 checks the same
+>    project via `npm run typecheck`.
+> 3. `baseUrl` is gone from all three tsconfigs and the test/tools projects use
+>    `moduleResolution: "bundler"` with `module: "CommonJS"`. TypeScript 7 removed
+>    both `baseUrl` and node10 resolution; `node16`/`nodenext` is not an option
+>    because `lightweight-charts` is ESM-only.
+>
+> Rerun everything with:
+> `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\verify-frontend-framework-upgrade.ps1`
+> Two `platformUi.spec.ts` assertions fail; both fail identically on the
+> pre-upgrade tree and are recorded in `docs/KNOWN_ISSUES.md`, together with a
+> pre-existing `nanoid` production-audit advisory that this upgrade did not
+> introduce but which now breaks the zero-finding gate in `docs/SECURITY.md`.
+
+
 > Universal MT5 Windows VM connector handoff (2026-08-12): read
 > `UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md` and
 > both Phase validation records before connector work. The old

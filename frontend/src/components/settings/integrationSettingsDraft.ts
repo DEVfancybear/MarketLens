@@ -4,7 +4,7 @@ import type {
 } from "@/services/api/resources/integrationsApi";
 
 /** Must remain above mobile workspace sheets (z-index 1000). */
-export const APP_SETTINGS_OVERLAY_STACK_CLASS = "z-[1400]";
+export const APP_SETTINGS_OVERLAY_STACK_CLASS = "z-1400";
 
 export type IntegrationDraftField =
   | "telegram.chatId"

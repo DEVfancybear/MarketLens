@@ -163,7 +163,7 @@ export function ObjectTreePanel() {
       }}
       onClick={(event) => event.stopPropagation()}
       aria-label={`Rename ${target.kind}`}
-      className="min-w-0 flex-1 rounded border border-brand bg-terminal-bg px-1 py-0.5 text-xs text-ink outline-none"
+      className="min-w-0 flex-1 rounded-sm border border-brand bg-terminal-bg px-1 py-0.5 text-xs text-ink outline-hidden"
     />
   );
 
@@ -187,9 +187,9 @@ export function ObjectTreePanel() {
         <div className="relative">
           <TreeButton label={`Sync: ${mode}`} onClick={() => setSyncMenu(syncMenu === nodeId ? null : nodeId)}><Globe2 size={12} /></TreeButton>
           {syncMenu === nodeId && (
-            <div className="mobile-popover absolute right-0 top-full z-50 mt-1 w-40 rounded border border-terminal-border bg-terminal-panel-2 p-1 shadow-xl">
+            <div className="mobile-popover absolute right-0 top-full z-50 mt-1 w-40 rounded-sm border border-terminal-border bg-terminal-panel-2 p-1 shadow-xl">
               {DRAWING_SYNC_MODE_OPTIONS.map((option) => (
-                <button key={option.id} type="button" aria-label={`${option.label} ${nodeId}`} onClick={(event) => { event.stopPropagation(); setSyncMode(members, option.id); }} className={cn("w-full rounded px-2 py-1.5 text-left text-[10px] hover:bg-terminal-hover", mode === option.id ? "text-brand" : "text-ink")}>{option.label}</button>
+                <button key={option.id} type="button" aria-label={`${option.label} ${nodeId}`} onClick={(event) => { event.stopPropagation(); setSyncMode(members, option.id); }} className={cn("w-full rounded-sm px-2 py-1.5 text-left text-[10px] hover:bg-terminal-hover", mode === option.id ? "text-brand" : "text-ink")}>{option.label}</button>
               ))}
             </div>
           )}
@@ -257,5 +257,5 @@ function toggleId(values: ReadonlySet<string>, id: string): Set<string> {
 }
 
 function TreeButton({ label, children, ...props }: { label: string; children: React.ReactNode } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return <button type="button" title={label} aria-label={label} className="flex h-7 w-7 items-center justify-center rounded text-ink-muted hover:bg-terminal-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-30" {...props}>{children}</button>;
+  return <button type="button" title={label} aria-label={label} className="flex h-7 w-7 items-center justify-center rounded-sm text-ink-muted hover:bg-terminal-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-30" {...props}>{children}</button>;
 }

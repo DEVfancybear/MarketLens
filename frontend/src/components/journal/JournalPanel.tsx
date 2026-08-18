@@ -86,14 +86,14 @@ export function JournalPanel() {
           <button
             onClick={() => exportCSV(entries)}
             disabled={!entries.length}
-            className="flex items-center gap-1 rounded px-2 py-1 text-ink-muted hover:bg-terminal-hover hover:text-ink disabled:opacity-40"
+            className="flex items-center gap-1 rounded-sm px-2 py-1 text-ink-muted hover:bg-terminal-hover hover:text-ink disabled:opacity-40"
           >
             <Download size={12} /> CSV
           </button>
           <button
             onClick={() => exportExcel(entries)}
             disabled={!entries.length}
-            className="flex items-center gap-1 rounded px-2 py-1 text-ink-muted hover:bg-terminal-hover hover:text-ink disabled:opacity-40"
+            className="flex items-center gap-1 rounded-sm px-2 py-1 text-ink-muted hover:bg-terminal-hover hover:text-ink disabled:opacity-40"
           >
             <FileSpreadsheet size={12} /> Excel
           </button>
@@ -181,7 +181,7 @@ export function JournalPanel() {
                     defaultValue={e.notes ?? ""}
                     onBlur={(ev) => update(e.id, { notes: ev.target.value })}
                     placeholder="Trade notes / rationale…"
-                    className="h-14 w-full resize-none rounded border border-terminal-border bg-terminal-bg p-2 text-2xs text-ink outline-none focus:border-brand"
+                    className="h-14 w-full resize-none rounded-sm border border-terminal-border bg-terminal-bg p-2 text-2xs text-ink outline-hidden focus:border-brand"
                   />
 
                   {/* Screenshots */}
@@ -190,7 +190,7 @@ export function JournalPanel() {
                       <button
                         key={p.phase}
                         onClick={() => capture(e.id, p.phase)}
-                        className="flex items-center gap-1 rounded border border-terminal-border px-2 py-1 text-[10px] text-ink-muted hover:bg-terminal-hover hover:text-ink"
+                        className="flex items-center gap-1 rounded-sm border border-terminal-border px-2 py-1 text-[10px] text-ink-muted hover:bg-terminal-hover hover:text-ink"
                       >
                         <Camera size={11} /> {p.label}
                       </button>
@@ -210,10 +210,10 @@ export function JournalPanel() {
                             <img
                               src={s.thumb}
                               alt={s.phase}
-                              className="h-16 w-28 rounded border border-terminal-border object-cover"
+                              className="h-16 w-28 rounded-sm border border-terminal-border object-cover"
                             />
                           ) : (
-                            <span className="flex h-16 w-28 items-center justify-center rounded border border-terminal-border text-[9px] text-ink-faint">
+                            <span className="flex h-16 w-28 items-center justify-center rounded-sm border border-terminal-border text-[9px] text-ink-faint">
                               Preview unavailable
                             </span>
                           )}

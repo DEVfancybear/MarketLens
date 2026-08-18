@@ -58,7 +58,7 @@ function ToastCard({ toast }: { toast: Toast }) {
       <div className="min-w-0 flex-1">
         <div data-toast-title className="text-[13px] font-semibold text-ink">{toast.title}</div>
         {toast.message && (
-          <div data-toast-message className="mt-1 whitespace-pre-line break-words text-xs leading-5 text-ink-muted">
+          <div data-toast-message className="mt-1 whitespace-pre-line wrap-break-word text-xs leading-5 text-ink-muted">
             {toast.message}
           </div>
         )}
@@ -66,7 +66,7 @@ function ToastCard({ toast }: { toast: Toast }) {
       <button
         type="button"
         onClick={() => dismiss(toast.id)}
-        className="toast-close pointer-events-auto shrink-0 rounded-lg text-ink-faint transition-colors hover:bg-terminal-hover hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+        className="toast-close pointer-events-auto shrink-0 rounded-lg text-ink-faint transition-colors hover:bg-terminal-hover hover:text-ink focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
         aria-label="Dismiss"
       >
         <X size={14} />
@@ -84,7 +84,7 @@ export function Toaster() {
       role="region"
       aria-label="Notifications"
       className={cn(
-        "toast-stack pointer-events-none fixed z-[1400] flex w-[356px] max-w-[calc(100vw-1.5rem)] flex-col gap-2.5",
+        "toast-stack pointer-events-none fixed z-1400 flex w-[356px] max-w-[calc(100vw-1.5rem)] flex-col gap-2.5",
       )}
     >
       {toasts.map((t) => (

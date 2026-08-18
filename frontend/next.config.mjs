@@ -42,6 +42,16 @@ loadRepoRootEnvIfMissing(".env");
 const nextConfig = {
   // Charts manage their own imperative lifecycle; double-invoke in dev breaks them.
   reactStrictMode: false,
+  // Build-time type checking runs through the TypeScript JS API, not the CLI.
+  // Next resolves the CLI strictly as `typescript/bin/tsc`, and this project
+  // installs `typescript` as the TypeScript 6 API-compatibility package (bin
+  // `tsc6`) so ESLint/typescript-eslint keep a working compiler API; the
+  // TypeScript 7 native compiler owns `tsc` under the `@typescript/native`
+  // alias and checks the same project via `npm run typecheck`. Type errors are
+  // never ignored here - `typescript.ignoreBuildErrors` stays unset.
+  experimental: {
+    useTypeScriptCli: false,
+  },
   // Keep the framework dev badge from covering app controls on compact viewports.
   devIndicators: false,
   // Native Web Workers via `new Worker(new URL('./x.worker.ts', import.meta.url))`

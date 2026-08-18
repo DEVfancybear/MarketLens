@@ -56,7 +56,7 @@ export function WatchlistContextMenu({ state, onClose, onRemove, onCreateAlert, 
   return createPortal(
     <div
       ref={ref}
-      className="context-menu-pop fixed z-[120] min-w-[200px] rounded-md border border-terminal-border bg-terminal-panel-2 py-1 shadow-2xl"
+      className="context-menu-pop fixed z-120 min-w-[200px] rounded-md border border-terminal-border bg-terminal-panel-2 py-1 shadow-2xl"
       style={{
         left: layout.x,
         top: layout.y,

@@ -507,7 +507,7 @@ export function ReplaySelectionLayer({ candidates }: { candidates: Candle[] }) {
           event.preventDefault();
           cancelSelection();
         }}
-        className="absolute inset-0 h-full w-full outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
+        className="absolute inset-0 h-full w-full outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand"
         style={{
           zIndex: 30,
           pointerEvents: active ? "auto" : "none",
@@ -536,7 +536,7 @@ export function ReplaySelectionLayer({ candidates }: { candidates: Candle[] }) {
               aria-label="Use selected Replay bar"
               disabled={!previewCandle}
               onClick={() => commitSelection(previewIndexRef.current)}
-              className="flex h-11 min-w-11 items-center justify-center rounded-xl bg-brand px-3 text-[var(--accent-contrast)] transition-colors active:bg-brand-hover disabled:opacity-45"
+              className="flex h-11 min-w-11 items-center justify-center rounded-xl bg-brand px-3 text-(--accent-contrast) transition-colors active:bg-brand-hover disabled:opacity-45"
             >
               <Check size={18} />
             </button>

@@ -196,7 +196,7 @@ export function SymbolLogo({ id, size = 18 }: { id: string; size?: number }) {
             size={size}
             fallback={meta?.base?.[0] ?? "?"}
             assetClass={meta?.assetClass}
-            className="absolute left-0 top-0 z-[1]"
+            className="absolute left-0 top-0 z-1"
             style={{
               position: "absolute",
               left: 0,

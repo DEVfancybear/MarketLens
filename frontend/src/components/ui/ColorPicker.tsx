@@ -204,7 +204,7 @@ export function ColorPickerPopover({
       role="dialog"
       aria-label="Color picker"
       className={cn(
-        "mobile-popover fixed z-[1500] w-[242px] overflow-y-auto rounded-md border border-terminal-border-strong bg-terminal-panel-2 p-2 shadow-floating",
+        "mobile-popover fixed z-1500 w-[242px] overflow-y-auto rounded-md border border-terminal-border-strong bg-terminal-panel-2 p-2 shadow-floating",
         className,
       )}
       style={{
@@ -297,7 +297,7 @@ function PaletteView({
           aria-label="Add custom color"
           title="Add custom color"
           onClick={onOpenCustom}
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink focus-ring"
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-xs text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink focus-ring"
         >
           <Plus size={15} />
         </button>
@@ -313,7 +313,7 @@ function PaletteView({
           <button
             type="button"
             onClick={onClear}
-            className="ml-auto whitespace-nowrap rounded px-1.5 py-1 text-[10px] text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink focus-ring"
+            className="ml-auto whitespace-nowrap rounded-sm px-1.5 py-1 text-[10px] text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink focus-ring"
           >
             {noneLabel}
           </button>
@@ -353,10 +353,10 @@ function PaletteView({
                 onChange={(event) =>
                   onOpacityChange(Number(event.target.value) / 100)
                 }
-                className="absolute -inset-x-0.5 -inset-y-[7px] h-6 w-[calc(100%+4px)] cursor-pointer appearance-none bg-transparent accent-white [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-terminal-panel-2 [&::-moz-range-thumb]:bg-white [&::-webkit-slider-thumb]:mt-[5px] [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-terminal-panel-2 [&::-webkit-slider-thumb]:bg-white"
+                className="absolute -inset-x-0.5 inset-y-[-7px] h-6 w-[calc(100%+4px)] cursor-pointer appearance-none bg-transparent accent-white [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-terminal-panel-2 [&::-moz-range-thumb]:bg-white [&::-webkit-slider-thumb]:mt-[5px] [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-terminal-panel-2 [&::-webkit-slider-thumb]:bg-white"
               />
             </div>
-            <div className="flex h-7 w-[54px] items-center rounded border border-terminal-border-strong bg-terminal-raised px-1">
+            <div className="flex h-7 w-[54px] items-center rounded-sm border border-terminal-border-strong bg-terminal-raised px-1">
               <input
                 aria-label="Opacity percent"
                 type="number"
@@ -369,7 +369,7 @@ function PaletteView({
                       100,
                   )
                 }
-                className="min-w-0 flex-1 appearance-none bg-transparent text-right text-[11px] font-semibold text-ink outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                className="min-w-0 flex-1 appearance-none bg-transparent text-right text-[11px] font-semibold text-ink outline-hidden [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               />
               <span className="text-[11px] font-semibold text-ink-muted">%</span>
             </div>
@@ -399,7 +399,7 @@ function PaletteColor({
       className={cn(
         "relative h-[18px] w-[18px] rounded-[2px] border border-black/10 transition-transform hover:scale-110 focus-ring",
         selected &&
-          "ring-2 ring-white ring-offset-1 ring-offset-terminal-panel-2 after:absolute after:-inset-[3px] after:rounded-[4px] after:border after:border-black",
+          "ring-2 ring-white ring-offset-1 ring-offset-terminal-panel-2 after:absolute after:inset-[-3px] after:rounded-[4px] after:border after:border-black",
       )}
       style={{ backgroundColor: color }}
     >
@@ -408,7 +408,7 @@ function PaletteColor({
           size={11}
           strokeWidth={3}
           className={cn(
-            "absolute inset-0 m-auto drop-shadow",
+            "absolute inset-0 m-auto drop-shadow-sm",
             isLightColor(color) ? "text-black/75" : "text-white",
           )}
         />
@@ -442,7 +442,7 @@ function CustomColorView({
       <div className="mb-2 flex items-center gap-2">
         <span
           aria-hidden="true"
-          className="h-7 w-7 shrink-0 rounded border border-terminal-border-strong"
+          className="h-7 w-7 shrink-0 rounded-sm border border-terminal-border-strong"
           style={{ backgroundColor: validHex ? hex : hueColor }}
         />
         <input
@@ -458,7 +458,7 @@ function CustomColorView({
             if (event.key === "Enter" && validHex) onAdd();
           }}
           className={cn(
-            "h-7 min-w-0 flex-1 rounded border bg-terminal-raised px-2 text-[12px] font-semibold text-ink outline-none transition-colors focus:ring-1",
+            "h-7 min-w-0 flex-1 rounded-sm border bg-terminal-raised px-2 text-[12px] font-semibold text-ink outline-hidden transition-colors focus:ring-1",
             validHex
               ? "border-terminal-border-strong focus:border-brand focus:ring-brand"
               : "border-bear focus:border-bear focus:ring-bear",
@@ -536,7 +536,7 @@ function SaturationValueArea({
       aria-valuemax={100}
       aria-valuenow={Math.round(hsv.saturation * 100)}
       aria-valuetext={`${Math.round(hsv.saturation * 100)}% saturation, ${Math.round(hsv.value * 100)}% brightness`}
-      className="relative min-w-0 flex-1 cursor-crosshair overflow-hidden rounded-sm focus-ring"
+      className="relative min-w-0 flex-1 cursor-crosshair overflow-hidden rounded-xs focus-ring"
       style={{
         backgroundColor: hueColor,
         backgroundImage:
@@ -601,7 +601,7 @@ function HueRail({
       aria-valuemin={0}
       aria-valuemax={360}
       aria-valuenow={Math.round(hsv.hue)}
-      className="relative w-[17px] shrink-0 cursor-ns-resize rounded-sm focus-ring"
+      className="relative w-[17px] shrink-0 cursor-ns-resize rounded-xs focus-ring"
       style={{
         background:
           "linear-gradient(to bottom,#f00 0%,#ff0 16.67%,#0f0 33.33%,#0ff 50%,#00f 66.67%,#f0f 83.33%,#f00 100%)",
@@ -618,7 +618,7 @@ function HueRail({
       onKeyDown={onKeyDown}
     >
       <span
-        className="pointer-events-none absolute -left-[2px] h-[5px] w-[21px] -translate-y-1/2 rounded-[2px] border border-white bg-transparent shadow-[0_0_0_1px_rgb(0_0_0/.65)]"
+        className="pointer-events-none absolute left-[-2px] h-[5px] w-[21px] -translate-y-1/2 rounded-[2px] border border-white bg-transparent shadow-[0_0_0_1px_rgb(0_0_0/.65)]"
         style={{ top: `${(hsv.hue / 360) * 100}%` }}
       />
     </div>

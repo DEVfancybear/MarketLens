@@ -59,7 +59,7 @@ export function Mt5CommandLog({
           type="button"
           disabled={logs.length === 0}
           onClick={() => clear(accountId)}
-          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-ink-faint transition-colors hover:bg-terminal-hover hover:text-ink disabled:pointer-events-none disabled:opacity-40"
+          className="inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-ink-faint transition-colors hover:bg-terminal-hover hover:text-ink disabled:pointer-events-none disabled:opacity-40"
           aria-label="Clear execution activity for this account"
         >
           {expanded && <Trash2 size={11} aria-hidden="true" />}
@@ -113,7 +113,7 @@ export function Mt5CommandLog({
                 <span className="truncate font-medium text-ink-faint">
                   {entry.type}
                 </span>
-                <span className="min-w-0 break-words leading-4 text-ink-muted">
+                <span className="min-w-0 wrap-break-word leading-4 text-ink-muted">
                   {entry.message}
                 </span>
               </div>

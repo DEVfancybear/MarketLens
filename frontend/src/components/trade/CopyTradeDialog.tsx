@@ -215,7 +215,7 @@ export function CopyTradeDialog({
             type="button"
             disabled={busy || selectedCount === 0}
             onClick={() => void submit()}
-            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-50 focus-ring"
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-(--accent-contrast) hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-50 focus-ring"
           >
             {busy ? (
               <LoaderCircle size={15} className="animate-spin" />
@@ -292,7 +292,7 @@ export function CopyTradeDialog({
                     else next.delete(account.id);
                     setSelectedIds(next);
                   }}
-                  className="h-4 w-4 shrink-0 accent-[var(--accent)] focus-ring"
+                  className="h-4 w-4 shrink-0 accent-(--accent) focus-ring"
                 />
                 <span className="min-w-0 flex-1">
                   <strong className="block truncate text-[11px] text-ink">

@@ -224,7 +224,7 @@ export function DrawingSettingsToolbar() {
                     patch({ fontSize: s });
                     setMenu(null);
                   }}
-                  className="flex w-full items-center justify-between gap-3 rounded px-2 py-1.5 text-left text-[11px] text-ink hover:bg-terminal-hover"
+                  className="flex w-full items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-left text-[11px] text-ink hover:bg-terminal-hover"
                 >
                   <span>{s}px</span>
                   {(drawing.fontSize ?? 13) === s && (
@@ -306,10 +306,10 @@ export function DrawingSettingsToolbar() {
                     patch({ lineWidth: w });
                     setMenu(null);
                   }}
-                  className="flex w-full items-center justify-between gap-3 rounded px-2 py-1.5 text-left text-[11px] text-ink hover:bg-terminal-hover"
+                  className="flex w-full items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-left text-[11px] text-ink hover:bg-terminal-hover"
                 >
                   <span
-                    className="w-16 rounded bg-ink"
+                    className="w-16 rounded-sm bg-ink"
                     style={{ height: w }}
                   />
                   <span className="text-ink-muted">{w}px</span>
@@ -351,7 +351,7 @@ export function DrawingSettingsToolbar() {
                     patch({ lineStyle: s.value });
                     setMenu(null);
                   }}
-                  className="flex w-full items-center justify-between gap-3 rounded px-2 py-1.5 text-left text-[11px] text-ink hover:bg-terminal-hover"
+                  className="flex w-full items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-left text-[11px] text-ink hover:bg-terminal-hover"
                 >
                   <svg width="40" height="10">
                     <line
@@ -398,7 +398,7 @@ export function DrawingSettingsToolbar() {
         <Popover>
           <button
             onClick={onSaveTemplate}
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[11px] text-ink hover:bg-terminal-hover"
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[11px] text-ink hover:bg-terminal-hover"
           >
             <Plus size={13} className="text-ink-muted" />
             Save as template…
@@ -409,7 +409,7 @@ export function DrawingSettingsToolbar() {
           {familyTemplates.map((t) => (
             <div
               key={t.name}
-              className="group flex items-center gap-2 rounded px-2 py-1.5 text-[11px] text-ink hover:bg-terminal-hover"
+              className="group flex items-center gap-2 rounded-sm px-2 py-1.5 text-[11px] text-ink hover:bg-terminal-hover"
             >
               <button
                 onClick={() => {
@@ -430,7 +430,7 @@ export function DrawingSettingsToolbar() {
                 onClick={() =>
                   deleteTemplate({ name: t.name, family: t.family })
                 }
-                className="rounded p-0.5 text-ink-faint opacity-0 hover:text-bear group-hover:opacity-100"
+                className="rounded-sm p-0.5 text-ink-faint opacity-0 hover:text-bear group-hover:opacity-100"
               >
                 <X size={12} />
               </button>
@@ -487,7 +487,7 @@ export function DrawingSettingsToolbar() {
                 key={i}
                 onClick={it.onClick}
                 className={cn(
-                  "flex w-full items-center gap-2.5 rounded px-2 py-1.5 text-left text-[11px] transition-colors hover:bg-terminal-hover",
+                  "flex w-full items-center gap-2.5 rounded-sm px-2 py-1.5 text-left text-[11px] transition-colors hover:bg-terminal-hover",
                   "danger" in it && it.danger ? "text-bear" : "text-ink",
                 )}
               >
@@ -532,7 +532,7 @@ function ToolbarButton({
       aria-label={label}
       onClick={onClick}
       className={cn(
-        "flex h-7 items-center justify-center rounded px-1.5 transition-colors hover:bg-terminal-hover",
+        "flex h-7 items-center justify-center rounded-sm px-1.5 transition-colors hover:bg-terminal-hover",
         active && "bg-terminal-hover text-brand",
         danger ? "text-bear" : "text-ink",
       )}

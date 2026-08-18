@@ -30,7 +30,7 @@ export function ExecutionModeSwitch() {
 
   return (
     <div
-      className="flex items-center gap-1 rounded-sm border border-terminal-border bg-terminal-bg p-0.5"
+      className="flex items-center gap-1 rounded-xs border border-terminal-border bg-terminal-bg p-0.5"
       role="group"
       aria-label="Execution mode"
     >
@@ -44,7 +44,7 @@ export function ExecutionModeSwitch() {
             onClick={() => setMode(item.value)}
             aria-pressed={active}
             className={cn(
-              "flex h-6 items-center gap-1 rounded-sm px-2 text-[10px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50",
+              "flex h-6 items-center gap-1 rounded-xs px-2 text-[10px] font-semibold transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand/50",
               active
                 ? item.value === "mt5"
                   ? "bg-bear/15 text-bear"

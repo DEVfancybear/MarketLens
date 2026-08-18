@@ -58,10 +58,17 @@ prove the absence of every vulnerability.
 ## Dependency/runtime requirements
 
 - Frontend runtime dependencies are locked and must pass
-  `npm audit --omit=dev --audit-level=low` with zero findings. Run the full `npm audit` as an
-  informational second gate. As of 2026-07-26, its remaining findings are confined to the ESLint
-  development dependency chain: forcing ESLint 10 breaks the React plugin bundled by
-  `eslint-config-next@16.2.12`, and forcing one `brace-expansion` major breaks Minimatch. These
+  `npm audit --omit=dev --audit-level=low` with zero findings. **This gate is currently failing
+  with one high advisory** and must be restored: `nanoid@3.3.16`
+  (GHSA-2v37-7h3g-55p8) reaches the production tree through the repository's own
+  `postcss@8.5.23` override. The dependency and its version are byte-identical to commit
+  `f94e346`, so the 2026-08-18 Next/Tailwind/TypeScript upgrade did not introduce it; the
+  advisory was published after this section was last written. Fixing it means moving the
+  pinned PostCSS override forward, which needs its own clean production audit and build.
+  Run the full `npm audit` as an informational second gate. As of 2026-08-18 it reports three
+  high advisories - `brace-expansion`, `js-yaml`, `nanoid` - unchanged in count and identity by
+  that upgrade. The first two are confined to the ESLint development dependency chain: forcing ESLint 10 breaks the React plugin bundled by
+  `eslint-config-next@16.3.1`, and forcing one `brace-expansion` major breaks Minimatch. These
   packages are not included in the production bundle; remove this temporary exception as soon as
   the Next ESLint stack supports the fixed major.
 - Next, Firebase, PostCSS, Sharp, `fast-xml-parser`, and `protobufjs` are pinned/resolved to patched

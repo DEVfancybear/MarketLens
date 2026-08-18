@@ -27,7 +27,7 @@ export function SmcMenu() {
           aria-expanded={open}
           aria-controls={menuId}
           className={cn(
-            "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand",
+            "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold transition-colors focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand",
             open
               ? "bg-brand/15 text-brand"
               : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
@@ -83,11 +83,11 @@ export function SmcMenu() {
               aria-checked={settings[it.key]}
               tabIndex={-1}
               onClick={() => toggle(it.key)}
-              className="flex min-h-9 w-full items-center gap-2.5 px-3 py-1.5 text-left text-xs hover:bg-terminal-hover focus-visible:bg-terminal-hover focus-visible:outline-none"
+              className="flex min-h-9 w-full items-center gap-2.5 px-3 py-1.5 text-left text-xs hover:bg-terminal-hover focus-visible:bg-terminal-hover focus-visible:outline-hidden"
             >
               <span
                 className={cn(
-                  "flex h-3.5 w-3.5 items-center justify-center rounded-sm border",
+                  "flex h-3.5 w-3.5 items-center justify-center rounded-xs border",
                   settings[it.key]
                     ? "border-transparent"
                     : "border-terminal-border",

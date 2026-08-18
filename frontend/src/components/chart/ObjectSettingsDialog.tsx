@@ -439,7 +439,7 @@ export function ObjectSettingsDialog() {
       <>
         <div
           data-chart-ui
-          className="platform-dialog-overlay fixed inset-0 z-[110] flex items-start justify-center bg-[var(--scrim)] backdrop-blur-sm p-4"
+          className="platform-dialog-overlay fixed inset-0 z-110 flex items-start justify-center bg-(--scrim) backdrop-blur-xs p-4"
           onClick={(e) => {
             if (e.target === e.currentTarget) cancel();
           }}
@@ -475,7 +475,7 @@ export function ObjectSettingsDialog() {
               <button
                 onClick={cancel}
                 aria-label="Close settings"
-                className="rounded-sm p-1 text-ink-muted hover:bg-terminal-hover hover:text-ink"
+                className="rounded-xs p-1 text-ink-muted hover:bg-terminal-hover hover:text-ink"
               >
                 <X size={24} strokeWidth={1.5} />
               </button>
@@ -542,7 +542,7 @@ export function ObjectSettingsDialog() {
                     value={drawing.text ?? ""}
                     onChange={(e) => patch({ text: e.target.value })}
                     rows={8}
-                    className="mb-4 h-[176px] w-full resize-none rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 py-2.5 text-[13px] text-ink outline-none placeholder:text-ink-faint focus:border-brand focus:ring-2 focus:ring-brand/15"
+                    className="mb-4 h-[176px] w-full resize-none rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 py-2.5 text-[13px] text-ink outline-hidden placeholder:text-ink-faint focus:border-brand focus:ring-2 focus:ring-brand/15"
                   />
 
                   <div className="space-y-4">
@@ -652,9 +652,9 @@ export function ObjectSettingsDialog() {
                     <button
                       onClick={() => patch({ visible: drawing.visible === false })}
                       className={cn(
-                        "rounded border px-2.5 py-1 text-xs transition-colors",
+                        "rounded-sm border px-2.5 py-1 text-xs transition-colors",
                         drawing.visible !== false
-                          ? "border-terminal-border-strong bg-brand text-[var(--accent-contrast)]"
+                          ? "border-terminal-border-strong bg-brand text-(--accent-contrast)"
                           : "border-terminal-border-strong text-ink-muted hover:bg-terminal-hover hover:text-ink",
                       )}
                     >
@@ -690,7 +690,7 @@ export function ObjectSettingsDialog() {
                   >
                     <button
                       onClick={onSaveTemplate}
-                      className="w-full rounded px-2 py-1.5 text-left text-[11px] text-ink hover:bg-terminal-hover"
+                      className="w-full rounded-sm px-2 py-1.5 text-left text-[11px] text-ink hover:bg-terminal-hover"
                     >
                       Save as template...
                     </button>
@@ -700,7 +700,7 @@ export function ObjectSettingsDialog() {
                     {familyTemplates.map((t) => (
                       <div
                         key={t.name}
-                        className="group flex items-center gap-2 rounded px-2 py-1.5 text-[11px] text-ink hover:bg-terminal-hover"
+                        className="group flex items-center gap-2 rounded-sm px-2 py-1.5 text-[11px] text-ink hover:bg-terminal-hover"
                       >
                         <button
                           onClick={() => {
@@ -723,7 +723,7 @@ export function ObjectSettingsDialog() {
                               family: t.family,
                             })
                           }
-                          className="rounded px-1 text-ink-faint opacity-0 hover:text-bear group-hover:opacity-100"
+                          className="rounded-sm px-1 text-ink-faint opacity-0 hover:text-bear group-hover:opacity-100"
                         >
                           x
                         </button>
@@ -741,7 +741,7 @@ export function ObjectSettingsDialog() {
                 </button>
                 <button
                   onClick={ok}
-                  className="h-[34px] rounded-[5px] border border-terminal-border-strong bg-brand px-4 text-[14px] font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover"
+                  className="h-[34px] rounded-[5px] border border-terminal-border-strong bg-brand px-4 text-[14px] font-semibold text-(--accent-contrast) hover:bg-brand-hover"
                 >
                   Ok
                 </button>
@@ -792,7 +792,7 @@ export function ObjectSettingsDialog() {
     <>
       <div
       data-chart-ui
-      className="platform-dialog-overlay fixed inset-0 z-[110] flex items-start justify-center bg-[var(--scrim)] backdrop-blur-sm p-4"
+      className="platform-dialog-overlay fixed inset-0 z-110 flex items-start justify-center bg-(--scrim) backdrop-blur-xs p-4"
       onClick={(e) => {
         if (e.target === e.currentTarget) cancel();
       }}
@@ -833,7 +833,7 @@ export function ObjectSettingsDialog() {
             <button
               onClick={cancel}
               aria-label="Close settings"
-              className="rounded-sm p-1 text-ink-muted hover:bg-terminal-hover hover:text-ink"
+              className="rounded-xs p-1 text-ink-muted hover:bg-terminal-hover hover:text-ink"
             >
               <X size={24} strokeWidth={1.5} />
             </button>
@@ -1058,7 +1058,7 @@ export function ObjectSettingsDialog() {
                             value={level.text ?? ""}
                             onChange={(event) => patchFibLevel(index, { text: event.target.value })}
                             placeholder="Level text"
-                            className="h-[34px] min-w-0 flex-1 rounded-[5px] border border-terminal-border-strong bg-terminal-raised px-2.5 text-[13px] text-ink-muted outline-none focus:border-brand"
+                            className="h-[34px] min-w-0 flex-1 rounded-[5px] border border-terminal-border-strong bg-terminal-raised px-2.5 text-[13px] text-ink-muted outline-hidden focus:border-brand"
                           />
                         </div>
                       ))}
@@ -1595,10 +1595,10 @@ export function ObjectSettingsDialog() {
                       <div key={`${index}-${level.value}`} className="flex items-center gap-2">
                         <CheckBox checked={level.enabled} onChange={(enabled) => patchChannelLevel(index, { enabled })} />
                         <NumberField value={level.value} onCommit={(value) => patchChannelLevel(index, { value })} className="h-[34px] flex-1" />
-                        <button aria-label={`Remove channel level ${index + 1}`} onClick={() => patch({ channelLevels: channelLevels.filter((_, itemIndex) => itemIndex !== index) })} className="rounded px-2 py-1 text-xs text-ink-faint hover:bg-terminal-hover hover:text-bear">Remove</button>
+                        <button aria-label={`Remove channel level ${index + 1}`} onClick={() => patch({ channelLevels: channelLevels.filter((_, itemIndex) => itemIndex !== index) })} className="rounded-sm px-2 py-1 text-xs text-ink-faint hover:bg-terminal-hover hover:text-bear">Remove</button>
                       </div>
                     ))}
-                    <button onClick={() => patch({ channelLevels: [...channelLevels, { value: 0.25, enabled: true }] })} className="rounded border border-terminal-border-strong px-2.5 py-1.5 text-xs text-ink-muted hover:bg-terminal-hover">Add level</button>
+                    <button onClick={() => patch({ channelLevels: [...channelLevels, { value: 0.25, enabled: true }] })} className="rounded-sm border border-terminal-border-strong px-2.5 py-1.5 text-xs text-ink-muted hover:bg-terminal-hover">Add level</button>
                   </div>
                 )}
                 </>
@@ -1667,7 +1667,7 @@ export function ObjectSettingsDialog() {
                 <button
                   onClick={() => patch({ bold: !drawing.bold })}
                   className={cn(
-                    "flex h-8 w-8 items-center justify-center rounded border transition-colors",
+                    "flex h-8 w-8 items-center justify-center rounded-sm border transition-colors",
                     drawing.bold
                       ? "border-terminal-border-strong bg-terminal-hover text-ink"
                       : "border-terminal-border-strong text-ink hover:border-brand hover:bg-terminal-hover",
@@ -1678,7 +1678,7 @@ export function ObjectSettingsDialog() {
                 <button
                   onClick={() => patch({ italic: !drawing.italic })}
                   className={cn(
-                    "flex h-8 w-8 items-center justify-center rounded border transition-colors",
+                    "flex h-8 w-8 items-center justify-center rounded-sm border transition-colors",
                     drawing.italic
                       ? "border-terminal-border-strong bg-terminal-hover text-ink"
                       : "border-terminal-border-strong text-ink hover:border-brand hover:bg-terminal-hover",
@@ -1692,7 +1692,7 @@ export function ObjectSettingsDialog() {
                 onChange={(e) => patch({ text: e.target.value })}
                 placeholder="Add text"
                 rows={isShape ? 4 : 3}
-                className="w-full resize-none rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 py-2.5 text-[13px] text-ink outline-none placeholder:text-ink-faint focus:border-brand focus:ring-2 focus:ring-brand/15"
+                className="w-full resize-none rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 py-2.5 text-[13px] text-ink outline-hidden placeholder:text-ink-faint focus:border-brand focus:ring-2 focus:ring-brand/15"
               />
               {isShape && (
                 <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -1730,9 +1730,9 @@ export function ObjectSettingsDialog() {
                 <button
                   onClick={() => patch({ visible: drawing.visible === false })}
                   className={cn(
-                    "rounded border px-2.5 py-1 text-xs transition-colors",
+                    "rounded-sm border px-2.5 py-1 text-xs transition-colors",
                     drawing.visible !== false
-                      ? "border-terminal-border-strong bg-brand text-[var(--accent-contrast)]"
+                      ? "border-terminal-border-strong bg-brand text-(--accent-contrast)"
                       : "border-terminal-border-strong text-ink-muted hover:bg-terminal-hover hover:text-ink",
                   )}
                 >
@@ -1782,7 +1782,7 @@ export function ObjectSettingsDialog() {
               >
                 <button
                   onClick={onSaveTemplate}
-                  className="w-full rounded px-2 py-1.5 text-left text-[11px] text-ink hover:bg-terminal-hover"
+                  className="w-full rounded-sm px-2 py-1.5 text-left text-[11px] text-ink hover:bg-terminal-hover"
                 >
                   Save as template…
                 </button>
@@ -1792,7 +1792,7 @@ export function ObjectSettingsDialog() {
                 {familyTemplates.map((t) => (
                   <div
                     key={t.name}
-                    className="group flex items-center gap-2 rounded px-2 py-1.5 text-[11px] text-ink hover:bg-terminal-hover"
+                    className="group flex items-center gap-2 rounded-sm px-2 py-1.5 text-[11px] text-ink hover:bg-terminal-hover"
                   >
                     <button
                       onClick={() => {
@@ -1812,7 +1812,7 @@ export function ObjectSettingsDialog() {
                       onClick={() =>
                         deleteTemplate({ name: t.name, family: t.family })
                       }
-                      className="rounded px-1 text-ink-faint opacity-0 hover:text-bear group-hover:opacity-100"
+                      className="rounded-sm px-1 text-ink-faint opacity-0 hover:text-bear group-hover:opacity-100"
                     >
                       ✕
                     </button>
@@ -1838,8 +1838,8 @@ export function ObjectSettingsDialog() {
               className={cn(
                 "rounded-md px-5 py-1.5 text-xs font-medium",
                 isFib
-                  ? "h-[34px] border border-terminal-border-strong bg-brand px-4 text-[14px] font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover"
-                  : "h-[34px] border border-terminal-border-strong bg-brand px-4 text-[14px] font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover",
+                  ? "h-[34px] border border-terminal-border-strong bg-brand px-4 text-[14px] font-semibold text-(--accent-contrast) hover:bg-brand-hover"
+                  : "h-[34px] border border-terminal-border-strong bg-brand px-4 text-[14px] font-semibold text-(--accent-contrast) hover:bg-brand-hover",
               )}
             >
               Ok

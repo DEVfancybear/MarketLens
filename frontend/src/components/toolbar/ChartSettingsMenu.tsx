@@ -34,7 +34,7 @@ export function ChartSettingsMenu() {
           aria-expanded={open}
           aria-controls={menuId}
           className={cn(
-            "flex h-7 w-7 items-center justify-center rounded text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink",
+            "flex h-7 w-7 items-center justify-center rounded-sm text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink",
             open && "bg-terminal-hover text-ink",
           )}
           title="Chart settings"

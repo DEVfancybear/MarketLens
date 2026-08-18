@@ -93,7 +93,7 @@ export function CopierGuidePanel({
   return (
     <div className="h-full min-h-0 overflow-auto p-3 sm:p-5">
       <div className="mx-auto max-w-5xl space-y-5 pb-4">
-        <header className="overflow-hidden rounded-2xl border border-brand/25 bg-gradient-to-br from-brand/15 via-terminal-panel-2 to-terminal-panel p-4 sm:p-6">
+        <header className="overflow-hidden rounded-2xl border border-brand/25 bg-linear-to-br from-brand/15 via-terminal-panel-2 to-terminal-panel p-4 sm:p-6">
           <div className="flex items-start gap-3">
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-brand/25 bg-brand/15 text-brand">
               <ListChecks size={19} aria-hidden="true" />

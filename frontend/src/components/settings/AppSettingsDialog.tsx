@@ -35,7 +35,7 @@ import {
 } from "./integrationSettingsDraft";
 
 const fieldClassName =
-  "h-11 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-3 text-base text-ink outline-none transition-[border-color,box-shadow,background-color] placeholder:text-ink-faint hover:border-terminal-border-strong focus:border-brand focus:ring-2 focus:ring-brand/20 sm:h-10 sm:text-sm";
+  "h-11 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-3 text-base text-ink outline-hidden transition-[border-color,box-shadow,background-color] placeholder:text-ink-faint hover:border-terminal-border-strong focus:border-brand focus:ring-2 focus:ring-brand/20 sm:h-10 sm:text-sm";
 
 export function AppSettingsDialog() {
   const [open, setOpen] = useAtom(integrationSettingsOpenAtom);
@@ -220,7 +220,7 @@ export function AppSettingsDialog() {
 
   return (
     <div
-      className={`platform-dialog-overlay fixed inset-0 ${APP_SETTINGS_OVERLAY_STACK_CLASS} flex items-stretch justify-center bg-[var(--scrim)] sm:items-center sm:p-4 sm:backdrop-blur-sm`}
+      className={`platform-dialog-overlay fixed inset-0 ${APP_SETTINGS_OVERLAY_STACK_CLASS} flex items-stretch justify-center bg-(--scrim) sm:items-center sm:p-4 sm:backdrop-blur-xs`}
       role="presentation"
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) setOpen(false);
@@ -433,7 +433,7 @@ export function AppSettingsDialog() {
             type="button"
             disabled={busy || !backendSession}
             onClick={() => void save()}
-            className="flex h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-brand px-5 text-sm font-semibold text-[var(--accent-contrast)] shadow-accent transition-colors hover:bg-brand-hover active:brightness-95 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
+            className="flex h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-brand px-5 text-sm font-semibold text-(--accent-contrast) shadow-accent transition-colors hover:bg-brand-hover active:brightness-95 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto"
           >
             {busy ? (
               <Loader2 size={16} className="animate-spin" aria-hidden="true" />
@@ -464,7 +464,7 @@ function Section({
   children: ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-terminal-border bg-terminal-panel-2/60 shadow-sm">
+    <section className="overflow-hidden rounded-2xl border border-terminal-border bg-terminal-panel-2/60 shadow-xs">
       <div className="flex items-start gap-3 border-b border-terminal-border px-4 py-3.5 sm:px-5">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-brand">
           {icon}
@@ -604,7 +604,7 @@ function Toggle({
         aria-hidden="true"
       >
         <span
-          className={`absolute top-0.5 h-[18px] w-[18px] rounded-full bg-[var(--accent-contrast)] shadow-sm transition-transform ${
+          className={`absolute top-0.5 h-[18px] w-[18px] rounded-full bg-(--accent-contrast) shadow-xs transition-transform ${
             checked ? "translate-x-[20px]" : "translate-x-0.5"
           }`}
         />

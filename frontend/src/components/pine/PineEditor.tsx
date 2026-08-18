@@ -219,12 +219,12 @@ export function PineEditor() {
     <div className="flex h-full min-h-0 flex-col bg-terminal-bg">
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-terminal-border bg-terminal-panel-2 px-3">
         <div className="mr-2 text-xs font-semibold text-ink">Pine Editor</div>
-        <div className="min-w-0 max-w-[280px] truncate rounded px-2 py-1 text-sm font-semibold text-ink">
+        <div className="min-w-0 max-w-[280px] truncate rounded-sm px-2 py-1 text-sm font-semibold text-ink">
           {dirtyTitle}
         </div>
         <button
           onClick={newScript}
-          className="flex h-8 w-8 items-center justify-center rounded border border-terminal-border text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink"
+          className="flex h-8 w-8 items-center justify-center rounded-sm border border-terminal-border text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink"
           title="New script"
           aria-label="New script"
         >
@@ -232,7 +232,7 @@ export function PineEditor() {
         </button>
         <button
           onClick={handleRun}
-          className="flex h-8 w-8 items-center justify-center rounded border border-terminal-border text-ink-muted transition-colors hover:border-brand/60 hover:bg-brand/15 hover:text-brand"
+          className="flex h-8 w-8 items-center justify-center rounded-sm border border-terminal-border text-ink-muted transition-colors hover:border-brand/60 hover:bg-brand/15 hover:text-brand"
           title="Save and add to chart"
           aria-label="Save and add to chart"
         >
@@ -241,7 +241,7 @@ export function PineEditor() {
         <button
           onClick={handlePublish}
           disabled={publishing}
-          className="ml-auto flex h-8 items-center gap-1.5 rounded border border-terminal-border px-3 text-xs font-medium text-ink transition-colors hover:bg-terminal-hover disabled:cursor-not-allowed disabled:opacity-60"
+          className="ml-auto flex h-8 items-center gap-1.5 rounded-sm border border-terminal-border px-3 text-xs font-medium text-ink transition-colors hover:bg-terminal-hover disabled:cursor-not-allowed disabled:opacity-60"
           title="Publish script"
           aria-label="Publish script"
         >
@@ -250,7 +250,7 @@ export function PineEditor() {
         </button>
         <button
           onClick={handleSave}
-          className="flex h-8 items-center gap-1.5 rounded border border-terminal-border px-3 text-xs font-medium text-ink transition-colors hover:bg-terminal-hover"
+          className="flex h-8 items-center gap-1.5 rounded-sm border border-terminal-border px-3 text-xs font-medium text-ink transition-colors hover:bg-terminal-hover"
         >
           <Save size={14} />
           Save
@@ -269,7 +269,7 @@ export function PineEditor() {
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search"
-                className="h-full min-w-0 flex-1 bg-transparent text-xs text-ink outline-none placeholder:text-ink-muted"
+                className="h-full min-w-0 flex-1 bg-transparent text-xs text-ink outline-hidden placeholder:text-ink-muted"
               />
             </div>
           </div>
@@ -283,7 +283,7 @@ export function PineEditor() {
                 <div
                   key={script.id}
                   className={cn(
-                    "group rounded px-2 py-2 text-xs text-ink transition-colors hover:bg-terminal-hover",
+                    "group rounded-sm px-2 py-2 text-xs text-ink transition-colors hover:bg-terminal-hover",
                     script.id === scriptId && "bg-brand/15",
                   )}
                 >
@@ -291,7 +291,7 @@ export function PineEditor() {
                     <button
                       onClick={() => toggleFavorite(script.id)}
                       className={cn(
-                        "shrink-0 rounded p-0.5 text-ink-muted hover:text-choch",
+                        "shrink-0 rounded-sm p-0.5 text-ink-muted hover:text-choch",
                         script.favorite && "text-choch",
                       )}
                       title="Favorite"
@@ -313,13 +313,13 @@ export function PineEditor() {
                   <div className="mt-1 flex items-center gap-1 pl-5">
                     <button
                       onClick={() => handleAddSaved(script)}
-                      className="rounded bg-brand px-2 py-0.5 text-2xs font-semibold text-white hover:bg-brand/80"
+                      className="rounded-sm bg-brand px-2 py-0.5 text-2xs font-semibold text-white hover:bg-brand/80"
                     >
                       Add
                     </button>
                     <button
                       onClick={() => handleLoad(script)}
-                      className="flex h-6 w-6 items-center justify-center rounded text-ink-muted hover:bg-terminal-hover hover:text-ink"
+                      className="flex h-6 w-6 items-center justify-center rounded-sm text-ink-muted hover:bg-terminal-hover hover:text-ink"
                       title="Edit"
                       aria-label="Edit"
                     >
@@ -327,7 +327,7 @@ export function PineEditor() {
                     </button>
                     <button
                       onClick={() => handleDelete(script)}
-                      className="flex h-6 w-6 items-center justify-center rounded text-ink-muted hover:bg-bear/10 hover:text-bear"
+                      className="flex h-6 w-6 items-center justify-center rounded-sm text-ink-muted hover:bg-bear/10 hover:text-bear"
                       title="Delete"
                       aria-label="Delete"
                     >
@@ -348,7 +348,7 @@ export function PineEditor() {
             <input
               value={title}
               onChange={(event) => setTitle(event.target.value)}
-              className="h-6 w-[260px] rounded border border-terminal-border bg-terminal-bg px-2 text-xs text-ink outline-none focus:border-brand"
+              className="h-6 w-[260px] rounded-sm border border-terminal-border bg-terminal-bg px-2 text-xs text-ink outline-hidden focus:border-brand"
             />
             <span className="text-2xs text-ink-faint">
               {meta.overlay ? "Overlay" : "Separate pane"}
@@ -387,7 +387,7 @@ export function PineEditor() {
               onScroll={syncScroll}
               spellCheck={false}
               aria-label="Pine source code"
-              className="h-full w-full resize-none overflow-auto bg-terminal-bg px-3 py-2 font-mono text-[12px] leading-5 text-ink outline-none selection:bg-brand/30"
+              className="h-full w-full resize-none overflow-auto bg-terminal-bg px-3 py-2 font-mono text-[12px] leading-5 text-ink outline-hidden selection:bg-brand/30"
             />
           </div>
         </div>

@@ -133,7 +133,7 @@ export function MobileReplayWorkspace({
             <button
               type="button"
               onClick={returnToChart}
-              className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] shadow-accent transition-colors active:bg-brand-hover"
+              className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-(--accent-contrast) shadow-accent transition-colors active:bg-brand-hover"
             >
               <BarChart3 size={18} /> Return to chart
             </button>
@@ -184,7 +184,7 @@ export function MobileReplayWorkspace({
             type="button"
             disabled={disabled}
             onClick={startFromChart}
-            className="mt-6 flex min-h-12 w-full max-w-sm items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] shadow-accent transition-colors active:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-45"
+            className="mt-6 flex min-h-12 w-full max-w-sm items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-(--accent-contrast) shadow-accent transition-colors active:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-45"
           >
             {connecting ? (
               <LoaderCircle size={18} className="animate-spin motion-reduce:animate-none" />
@@ -263,7 +263,7 @@ export function MobileReplayWorkspace({
         <ConnectionStatus connection={projection.connection} />
       </header>
 
-      <div className="mt-4 rounded-2xl border border-terminal-border bg-terminal-panel p-3 shadow-sm">
+      <div className="mt-4 rounded-2xl border border-terminal-border bg-terminal-panel p-3 shadow-xs">
         <div className="mb-2 flex items-center justify-between text-xs">
           <span className="font-medium text-ink-muted">Dataset progress</span>
           <span className="font-semibold tabular text-ink">{Math.round(progress)}%</span>
@@ -277,7 +277,7 @@ export function MobileReplayWorkspace({
           className="h-2 overflow-hidden rounded-full bg-terminal-panel-3"
         >
           <div
-            className="h-full origin-left rounded-full bg-brand transition-transform duration-[160ms] motion-reduce:transition-none"
+            className="h-full origin-left rounded-full bg-brand transition-transform duration-160 motion-reduce:transition-none"
             style={{ transform: `scaleX(${progress / 100})` }}
           />
         </div>
@@ -461,7 +461,7 @@ function TransportButton({
       className={cn(
         "flex min-h-14 min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl border px-2 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45",
         primary
-          ? "border-brand bg-brand text-[var(--accent-contrast)] shadow-accent active:bg-brand-hover"
+          ? "border-brand bg-brand text-(--accent-contrast) shadow-accent active:bg-brand-hover"
           : "border-terminal-border bg-terminal-panel-2 text-ink active:bg-terminal-pressed",
       )}
     >

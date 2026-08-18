@@ -265,7 +265,7 @@ export function ChartArea({
   const last = displayedCandles[displayedCandles.length - 1];
 
   return (
-    <div className="chart-workspace relative isolate flex h-full min-w-0 w-full flex-col overflow-hidden bg-[var(--chart-bg)]">
+    <div className="chart-workspace relative isolate flex h-full min-w-0 w-full flex-col overflow-hidden bg-(--chart-bg)">
       <ChartPerformanceOverlay />
       {/* Chart header: symbol · exchange · TF + OHLC row */}
       <ChartHud

@@ -4,6 +4,50 @@ All notable changes to the MarketLens. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Frontend framework toolchain upgrade: Next 16.3.1, Tailwind 4.3.3, TypeScript 7.0.2 (2026-08-18)
+
+- Upgraded Next.js and `eslint-config-next` to `16.3.1`, Tailwind CSS to `4.3.3`
+  with the dedicated `@tailwindcss/postcss` plugin, and the TypeScript CLI to
+  `7.0.2` (npm alias `@typescript/native`). `typescript` now resolves to
+  `@typescript/typescript6@6.0.2`, which keeps the JavaScript compiler API that
+  typescript-eslint requires; TypeScript 7 has none. Removed direct
+  `autoprefixer`, which Tailwind v4 subsumes.
+- Migrated Tailwind to the CSS-first theme: every terminal, ink, brand, market,
+  font, radius, shadow and transition token now lives in `@theme` inside
+  `src/app/globals.css`, and `tailwind.config.ts` is deleted.
+- Fixed a Tailwind v4 cascade-layer regression: v4 emits utilities inside real
+  CSS layers, so the unlayered `button, input, select, textarea { font: inherit }`
+  reset in `globals.css` began outranking every `text-*`/`font-*` utility on
+  buttons and inputs. Element-level resets now live in `@layer base`, restoring
+  the v3 relationship. This had widened the desktop toolbar past its container.
+- Reverted three upgrader rewrites of runtime strings: the DOM event name
+  `"blur"` had been renamed to `"blur-sm"` in `PriceChart.tsx` and
+  `TradeWorkspace.tsx` (leaking window listeners) and in the `commitMode` union
+  in `PositionSettingsDialog.tsx`.
+- Removed `baseUrl` from all three tsconfigs and moved the test/tools projects
+  from `moduleResolution: "Node"` to `"bundler"`; TypeScript 7 removed both
+  options. CommonJS emit for `node --test` is unchanged.
+- Fixed two issues reported by the React Compiler lint rules that ship enabled in
+  `eslint-config-next@16.3.1`: a cursor write through a borrowed ref in
+  `CursorModeOverlay.tsx` and a non-memoized `useMemo` dependency in
+  `TradeWorkspace.tsx`.
+- Build-time type checking runs through the TypeScript 6 API rather than the
+  TypeScript 7 CLI, because Next resolves its CLI strictly as `typescript/bin/tsc`.
+  Type errors are never ignored, and TypeScript 7 checks the same project through
+  `npm run typecheck`.
+- Added `tools/verify-frontend-framework-upgrade.ps1` (nine-layer fail-closed
+  gauntlet) and `frontend/tests/architecture/frameworkToolchainUpgrade.test.ts`.
+- Files modified: `frontend/package.json`, `frontend/package-lock.json`,
+  `frontend/postcss.config.mjs`, `frontend/next.config.mjs`,
+  `frontend/src/app/globals.css`, `frontend/tsconfig.json`,
+  `frontend/tsconfig.test.json`, `frontend/tsconfig.tools.json`,
+  `frontend/tailwind.config.ts` (deleted), 78 Tailwind-utility-bearing
+  `frontend/src/**/*.tsx` files, `frontend/tests/architecture/frameworkToolchainUpgrade.test.ts`,
+  `tools/verify-frontend-framework-upgrade.ps1`,
+  `docs/agent-evidence/frontend-framework-upgrade/{SPEC,EVIDENCE}.md`,
+  `docs/{CURRENT_PROGRESS,NEXT_TASKS,HANDOFF,KNOWN_ISSUES,SECURITY}.md`,
+  `frontend/docs/{ARCHITECTURE,PLATFORM_UI_ARCHITECTURE}.md`.
+
 ### Fixed - Bounded PostgreSQL push-evaluator egress (2026-08-13)
 
 - Reduced the default durable alert-evaluator cadence from 15 seconds to 60

@@ -420,7 +420,7 @@ export function DrawingToolbar() {
                   setMagnetMenuOpen(false);
                 }}
                 className={cn(
-                  "flex w-full items-center rounded px-2 py-1.5 text-left text-[11px] capitalize hover:bg-terminal-hover",
+                  "flex w-full items-center rounded-sm px-2 py-1.5 text-left text-[11px] capitalize hover:bg-terminal-hover",
                   drawingPreferences.magnetEnabled && drawingPreferences.magnetMode === mode
                     ? "text-brand"
                     : "text-ink",
@@ -436,7 +436,7 @@ export function DrawingToolbar() {
               aria-pressed={drawingPreferences.snapToIndicators}
               onClick={() => setSnapToIndicators(!drawingPreferences.snapToIndicators)}
               className={cn(
-                "flex w-full items-center rounded px-2 py-1.5 text-left text-[11px] hover:bg-terminal-hover",
+                "flex w-full items-center rounded-sm px-2 py-1.5 text-left text-[11px] hover:bg-terminal-hover",
                 drawingPreferences.snapToIndicators ? "text-brand" : "text-ink",
                 !hasIndicatorMagnets && "cursor-not-allowed opacity-40",
               )}
@@ -470,7 +470,7 @@ export function DrawingToolbar() {
                   setNewDrawingSyncMode(option.id);
                   setSyncMenuOpen(false);
                 }}
-                className={cn("flex w-full flex-col rounded px-2 py-1.5 text-left hover:bg-terminal-hover", newDrawingSyncMode === option.id ? "text-brand" : "text-ink")}
+                className={cn("flex w-full flex-col rounded-sm px-2 py-1.5 text-left hover:bg-terminal-hover", newDrawingSyncMode === option.id ? "text-brand" : "text-ink")}
               >
                 <span className="text-[11px] font-semibold">{option.label}</span>
                 <span className="text-[9px] text-ink-faint">{option.description}</span>
@@ -535,13 +535,13 @@ function FavoriteToolsPopup({
       data-chart-ui
       data-drawing-toolbar
       style={{ left: 64, top: 76, ...dialogStyle }}
-      className="fixed z-[45] flex max-w-[calc(100vw-80px)] items-center gap-1 rounded-xl border border-terminal-border-strong bg-terminal-raised/95 px-1.5 py-1 shadow-floating backdrop-blur-xl"
+      className="fixed z-45 flex max-w-[calc(100vw-80px)] items-center gap-1 rounded-xl border border-terminal-border-strong bg-terminal-raised/95 px-1.5 py-1 shadow-floating backdrop-blur-xl"
       onContextMenu={(event) => event.preventDefault()}
     >
       <div
         {...dragHandleProps}
         className={cn(
-          "flex h-7 w-4 shrink-0 items-center justify-center rounded-sm text-ink-faint hover:bg-terminal-hover hover:text-ink",
+          "flex h-7 w-4 shrink-0 items-center justify-center rounded-xs text-ink-faint hover:bg-terminal-hover hover:text-ink",
           dragHandleClassName,
         )}
         title={t("drawing.moveFavorites")}
@@ -562,7 +562,7 @@ function FavoriteToolsPopup({
               onRemove(tool.tool);
             }}
             className={cn(
-              "flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink",
+              "flex h-7 w-7 shrink-0 items-center justify-center rounded-xs text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink",
               activeTool === tool.tool && "bg-brand/15 text-brand",
             )}
           >

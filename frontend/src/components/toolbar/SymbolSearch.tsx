@@ -58,7 +58,7 @@ export function SymbolSearch() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search symbol…"
-              className="h-9 w-full rounded-lg border border-terminal-border-strong bg-terminal-panel px-3 text-xs text-ink outline-none placeholder:text-ink-faint focus:border-brand focus:ring-2 focus:ring-brand/15"
+              className="h-9 w-full rounded-lg border border-terminal-border-strong bg-terminal-panel px-3 text-xs text-ink outline-hidden placeholder:text-ink-faint focus:border-brand focus:ring-2 focus:ring-brand/15"
             />
           </div>
           <div className="max-h-72 overflow-auto">
@@ -79,7 +79,7 @@ export function SymbolSearch() {
                 <span className="ml-2 truncate text-2xs text-ink-muted">
                   {s.name}
                 </span>
-                <span className="ml-auto rounded bg-terminal-hover px-1.5 py-0.5 text-[9px] uppercase text-ink-faint">
+                <span className="ml-auto rounded-sm bg-terminal-hover px-1.5 py-0.5 text-[9px] uppercase text-ink-faint">
                   {s.exchange}
                 </span>
               </button>

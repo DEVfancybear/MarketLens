@@ -138,7 +138,7 @@ export function Mt5ManagedConnectionDialog({
             type="submit"
             form={formId}
             disabled={busy}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover disabled:opacity-60 focus-ring"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-(--accent-contrast) hover:bg-brand-hover disabled:opacity-60 focus-ring"
           >
             {busy ? (
               <LoaderCircle size={16} className="animate-spin" aria-hidden="true" />
@@ -338,7 +338,7 @@ function PersistenceOption({
         value={value}
         checked={checked}
         onChange={onChange}
-        className="mt-1 accent-[var(--accent)]"
+        className="mt-1 accent-(--accent)"
       />
       <span>
         <strong className="block text-xs text-ink">{title}</strong>

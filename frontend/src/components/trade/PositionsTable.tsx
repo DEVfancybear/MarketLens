@@ -112,7 +112,7 @@ export function PositionsTable() {
                         onClick={() =>
                           setEditingTrade({ kind: "pendingOrder", order })
                         }
-                        className="inline-flex h-5 w-5 items-center justify-center rounded-sm bg-terminal-hover text-ink hover:bg-brand hover:text-white focus-ring"
+                        className="inline-flex h-5 w-5 items-center justify-center rounded-xs bg-terminal-hover text-ink hover:bg-brand hover:text-white focus-ring"
                         title="Edit pending entry, stop loss, and take profit"
                         aria-label={`Edit pending order ${order.ticket}`}
                       >
@@ -123,7 +123,7 @@ export function PositionsTable() {
                         onClick={() =>
                           setCopyTrade({ kind: "pendingOrder", order })
                         }
-                        className="inline-flex h-5 w-5 items-center justify-center rounded-sm bg-terminal-hover text-ink hover:bg-brand hover:text-white focus-ring"
+                        className="inline-flex h-5 w-5 items-center justify-center rounded-xs bg-terminal-hover text-ink hover:bg-brand hover:text-white focus-ring"
                         title="Copy pending order"
                         aria-label={`Copy pending order ${order.ticket}`}
                       >
@@ -146,7 +146,7 @@ export function PositionsTable() {
                             });
                           });
                         }}
-                        className="inline-flex h-5 w-5 items-center justify-center rounded-sm bg-terminal-hover text-ink hover:bg-bear hover:text-white"
+                        className="inline-flex h-5 w-5 items-center justify-center rounded-xs bg-terminal-hover text-ink hover:bg-bear hover:text-white"
                         title="Cancel pending order"
                         aria-label={`Cancel pending order ${order.ticket}`}
                       >
@@ -200,7 +200,7 @@ export function PositionsTable() {
                       onClick={() =>
                         setEditingTrade({ kind: "position", position })
                       }
-                      className="inline-flex h-5 w-5 items-center justify-center rounded-sm bg-terminal-hover text-ink hover:bg-brand hover:text-white focus-ring"
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-xs bg-terminal-hover text-ink hover:bg-brand hover:text-white focus-ring"
                       title="Edit stop loss and take profit"
                       aria-label={`Edit position ${position.ticket}`}
                     >
@@ -209,7 +209,7 @@ export function PositionsTable() {
                     <button
                       type="button"
                       onClick={() => setCopyTrade({ kind: "position", position })}
-                      className="inline-flex h-5 w-5 items-center justify-center rounded-sm bg-terminal-hover text-ink hover:bg-brand hover:text-white focus-ring"
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-xs bg-terminal-hover text-ink hover:bg-brand hover:text-white focus-ring"
                       title="Copy position"
                       aria-label={`Copy position ${position.ticket}`}
                     >
@@ -231,7 +231,7 @@ export function PositionsTable() {
                           });
                         });
                       }}
-                      className="inline-flex h-5 w-5 items-center justify-center rounded-sm bg-terminal-hover text-ink hover:bg-bear hover:text-white"
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-xs bg-terminal-hover text-ink hover:bg-bear hover:text-white"
                       title="Close position"
                       aria-label={`Close position ${position.ticket}`}
                     >
@@ -331,11 +331,11 @@ export function PositionsTable() {
                   <td className="tabular text-ink-muted">{position.stopLoss ? fmtPrice(position.stopLoss, prec) : "-"}</td>
                   <td className="tabular text-ink-muted">{position.takeProfit ? fmtPrice(position.takeProfit, prec) : "-"}</td>
                   <td className="tabular text-right" style={{ color: position.unrealizedPnl >= 0 ? "var(--bull)" : "var(--bear)" }}>{fmtMoney(position.unrealizedPnl)}</td>
-                  <td><span className="rounded-sm bg-bull/15 px-1.5 py-0.5 text-[9px] uppercase text-bull">open</span></td>
+                  <td><span className="rounded-xs bg-bull/15 px-1.5 py-0.5 text-[9px] uppercase text-bull">open</span></td>
                   <td className="text-right"><div className="flex items-center justify-end gap-1">
-                    <button disabled={!entryOrder} onClick={editBracket} title="Edit replay bracket" className="inline-flex h-5 w-5 items-center justify-center rounded-sm bg-terminal-hover text-ink hover:bg-brand hover:text-white disabled:opacity-40"><Pencil size={11} /></button>
-                    <button onClick={() => void replayTrading.close(position.id, 0.5)} className="inline-flex h-5 min-w-5 items-center justify-center rounded-sm bg-terminal-hover px-1 text-[9px] text-ink hover:bg-brand hover:text-white">1/2</button>
-                    <button onClick={() => void replayTrading.close(position.id)} className="inline-flex h-5 w-5 items-center justify-center rounded-sm bg-terminal-hover text-ink hover:bg-bear hover:text-white"><X size={12} /></button>
+                    <button disabled={!entryOrder} onClick={editBracket} title="Edit replay bracket" className="inline-flex h-5 w-5 items-center justify-center rounded-xs bg-terminal-hover text-ink hover:bg-brand hover:text-white disabled:opacity-40"><Pencil size={11} /></button>
+                    <button onClick={() => void replayTrading.close(position.id, 0.5)} className="inline-flex h-5 min-w-5 items-center justify-center rounded-xs bg-terminal-hover px-1 text-[9px] text-ink hover:bg-brand hover:text-white">1/2</button>
+                    <button onClick={() => void replayTrading.close(position.id)} className="inline-flex h-5 w-5 items-center justify-center rounded-xs bg-terminal-hover text-ink hover:bg-bear hover:text-white"><X size={12} /></button>
                   </div></td>
                 </tr>
               );
@@ -354,8 +354,8 @@ export function PositionsTable() {
                   <td className="tabular text-ink-muted">{order.stopLoss ? fmtPrice(order.stopLoss, prec) : "-"}</td>
                   <td className="tabular text-ink-muted">{order.takeProfit ? fmtPrice(order.takeProfit, prec) : "-"}</td>
                   <td className="text-right text-ink-faint">-</td>
-                  <td><span className="rounded-sm bg-choch/15 px-1.5 py-0.5 text-[9px] uppercase text-choch">pending</span></td>
-                  <td className="text-right"><button onClick={() => void replayTrading.cancel(order.id)} className="inline-flex h-5 w-5 items-center justify-center rounded-sm bg-terminal-hover text-ink-faint hover:text-bear"><Ban size={12} /></button></td>
+                  <td><span className="rounded-xs bg-choch/15 px-1.5 py-0.5 text-[9px] uppercase text-choch">pending</span></td>
+                  <td className="text-right"><button onClick={() => void replayTrading.cancel(order.id)} className="inline-flex h-5 w-5 items-center justify-center rounded-xs bg-terminal-hover text-ink-faint hover:text-bear"><Ban size={12} /></button></td>
                 </tr>
               );
             })}
@@ -429,7 +429,7 @@ export function PositionsTable() {
                 <td>
                   <span
                     className={cn(
-                      "rounded-sm px-1.5 py-0.5 text-[9px] uppercase",
+                      "rounded-xs px-1.5 py-0.5 text-[9px] uppercase",
                       p.status === "open"
                         ? "bg-bull/15 text-bull"
                         : "bg-choch/15 text-choch",
@@ -446,7 +446,7 @@ export function PositionsTable() {
                           onClick={() =>
                             closePosition({ id: p.id, fraction: 0.5 })
                           }
-                          className="inline-flex h-5 min-w-5 items-center justify-center rounded-sm bg-terminal-hover px-1 text-[9px] text-ink hover:bg-brand hover:text-white"
+                          className="inline-flex h-5 min-w-5 items-center justify-center rounded-xs bg-terminal-hover px-1 text-[9px] text-ink hover:bg-brand hover:text-white"
                           title="Close 50%"
                         >
                           1/2
@@ -455,7 +455,7 @@ export function PositionsTable() {
                           onClick={() =>
                             closePosition({ id: p.id, fraction: 1 })
                           }
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-sm bg-terminal-hover text-ink hover:bg-bear hover:text-white"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-xs bg-terminal-hover text-ink hover:bg-bear hover:text-white"
                           title="Close 100%"
                         >
                           <X size={12} />
@@ -466,7 +466,7 @@ export function PositionsTable() {
                       <button
                         onClick={() => cancelPending(p.id)}
                         title="Cancel"
-                        className="inline-flex h-5 w-5 items-center justify-center rounded-sm bg-terminal-hover text-ink-faint hover:text-bear"
+                        className="inline-flex h-5 w-5 items-center justify-center rounded-xs bg-terminal-hover text-ink-faint hover:text-bear"
                       >
                         <Ban size={12} />
                       </button>

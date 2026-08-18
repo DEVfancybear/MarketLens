@@ -80,7 +80,7 @@ export function MobilePineWorkspace() {
         <button type="button" onClick={() => void save()} disabled={status.kind === "working"} className="ml-auto flex min-h-11 items-center gap-2 rounded-xl border border-terminal-border bg-terminal-panel-2 px-3 text-sm font-semibold text-ink disabled:opacity-50 active:bg-terminal-pressed">
           <Save size={17} /> Save
         </button>
-        <button type="button" onClick={() => void run()} disabled={status.kind === "working"} className="flex min-h-11 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] shadow-glow disabled:opacity-50">
+        <button type="button" onClick={() => void run()} disabled={status.kind === "working"} className="flex min-h-11 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-(--accent-contrast) shadow-glow disabled:opacity-50">
           <Play size={17} fill="currentColor" /> Run
         </button>
       </div>
@@ -88,7 +88,7 @@ export function MobilePineWorkspace() {
       <div className="space-y-3 p-3">
         <label className="block">
           <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Script name</span>
-          <input value={title} onChange={(event) => setTitle(event.target.value)} className="min-h-12 w-full rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 text-base font-semibold text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20" />
+          <input value={title} onChange={(event) => setTitle(event.target.value)} className="min-h-12 w-full rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 text-base font-semibold text-ink outline-hidden focus:border-brand focus:ring-2 focus:ring-brand/20" />
         </label>
         <label className="block">
           <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.14em] text-ink-faint">Pine source</span>
@@ -96,7 +96,7 @@ export function MobilePineWorkspace() {
             value={source}
             onChange={(event) => setSource(event.target.value)}
             spellCheck={false}
-            className="min-h-[42dvh] w-full resize-y rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 py-3 font-mono text-base leading-6 text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+            className="min-h-[42dvh] w-full resize-y rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 py-3 font-mono text-base leading-6 text-ink outline-hidden focus:border-brand focus:ring-2 focus:ring-brand/20"
           />
         </label>
         <div aria-live="polite" className={`flex min-h-11 items-center gap-2 rounded-xl border px-3 text-xs ${status.kind === "error" ? "border-bear/30 bg-bear/10 text-bear" : status.kind === "success" ? "border-bull/30 bg-bull/10 text-bull" : "border-terminal-border bg-terminal-panel-2 text-ink-muted"}`}>

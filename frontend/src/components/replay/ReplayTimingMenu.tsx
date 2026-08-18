@@ -107,7 +107,7 @@ export function ReplayTimingMenu({ compact = false }: { compact?: boolean }) {
         <button
           type="button"
           className={cn(
-            "flex items-center gap-2 rounded text-left font-medium transition-colors",
+            "flex items-center gap-2 rounded-sm text-left font-medium transition-colors",
             compact ? "h-8 px-2 text-[11px]" : "h-9 px-2.5 text-xs",
             open ? "bg-brand text-white" : "text-ink hover:bg-terminal-hover",
           )}
@@ -130,7 +130,7 @@ export function ReplayTimingMenu({ compact = false }: { compact?: boolean }) {
                 type="datetime-local"
                 value={dateInput}
                 onChange={(event) => setDateInput(event.target.value)}
-                className="h-8 w-full rounded border border-terminal-border bg-terminal-bg px-2 text-[11px] text-ink outline-none focus:border-brand"
+                className="h-8 w-full rounded-sm border border-terminal-border bg-terminal-bg px-2 text-[11px] text-ink outline-hidden focus:border-brand"
               />
               <div className="grid grid-cols-2 gap-2">
                 <button
@@ -142,7 +142,7 @@ export function ReplayTimingMenu({ compact = false }: { compact?: boolean }) {
                     setDateMode(false);
                   }}
                   disabled={!canReplay}
-                  className="flex h-8 items-center justify-center gap-1.5 rounded border border-terminal-border text-[11px] text-ink-muted hover:bg-terminal-hover disabled:opacity-40"
+                  className="flex h-8 items-center justify-center gap-1.5 rounded-sm border border-terminal-border text-[11px] text-ink-muted hover:bg-terminal-hover disabled:opacity-40"
                 >
                   <ChevronsLeft size={13} /> First day
                 </button>
@@ -154,7 +154,7 @@ export function ReplayTimingMenu({ compact = false }: { compact?: boolean }) {
                     setDateMode(false);
                   }}
                   disabled={!canReplay}
-                  className="h-8 rounded bg-brand px-2 text-[11px] font-semibold text-white hover:bg-brand-hover disabled:opacity-40"
+                  className="h-8 rounded-sm bg-brand px-2 text-[11px] font-semibold text-white hover:bg-brand-hover disabled:opacity-40"
                 >
                   Jump
                 </button>

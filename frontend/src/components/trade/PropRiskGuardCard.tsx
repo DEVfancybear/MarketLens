@@ -364,7 +364,7 @@ export function PropRiskGuardCard({
                   current ? { ...current, enabled: event.target.checked } : current,
                 )
               }
-              className="size-4 accent-[var(--accent)]"
+              className="size-4 accent-(--accent)"
               aria-label="Bật bảo vệ tài khoản quỹ tự động"
             />
           </label>
@@ -402,7 +402,7 @@ export function PropRiskGuardCard({
                 if (profile) chooseProfile(profile);
               }}
               disabled={guard.profiles.length === 0}
-              className="h-10 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-[11px] text-ink outline-none disabled:cursor-not-allowed disabled:opacity-60 focus:border-brand focus-ring"
+              className="h-10 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-[11px] text-ink outline-hidden disabled:cursor-not-allowed disabled:opacity-60 focus:border-brand focus-ring"
             >
               <option value="">Chọn chương trình / giai đoạn</option>
               {profileGroups.map(([providerCode, profiles]) => (
@@ -503,7 +503,7 @@ export function PropRiskGuardCard({
             type="button"
             disabled={saving || !selectedProfile}
             onClick={() => void save()}
-            className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-brand px-4 text-[10px] font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-50 focus-ring"
+            className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-brand px-4 text-[10px] font-semibold text-(--accent-contrast) hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-50 focus-ring"
           >
             {saving ? (
               <LoaderCircle size={13} className="animate-spin" />
@@ -1012,7 +1012,7 @@ function CapitalSelect({
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-[11px] tabular-nums text-ink outline-none focus:border-brand focus-ring"
+        className="h-10 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-[11px] tabular-nums text-ink outline-hidden focus:border-brand focus-ring"
       >
         <option value="">Chọn vốn gốc</option>
         {balances.map((balance) => (
@@ -1049,7 +1049,7 @@ function Field({
         readOnly={readOnly}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-[11px] tabular-nums text-ink outline-none read-only:text-ink-faint disabled:cursor-not-allowed disabled:opacity-55 focus:border-brand focus-ring"
+        className="h-10 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-[11px] tabular-nums text-ink outline-hidden read-only:text-ink-faint disabled:cursor-not-allowed disabled:opacity-55 focus:border-brand focus-ring"
       />
     </label>
   );
@@ -1072,7 +1072,7 @@ function SelectField({
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-[11px] text-ink outline-none focus:border-brand focus-ring"
+        className="h-10 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-[11px] text-ink outline-hidden focus:border-brand focus-ring"
       >
         {options.map(([optionValue, optionLabel]) => (
           <option key={optionValue} value={optionValue}>
@@ -1113,7 +1113,7 @@ function IntegerField({
           const parsed = Number(next);
           if (Number.isInteger(parsed)) onChange(parsed);
         }}
-        className="h-10 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-[11px] tabular-nums text-ink outline-none focus:border-brand focus-ring"
+        className="h-10 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-[11px] tabular-nums text-ink outline-hidden focus:border-brand focus-ring"
       />
     </label>
   );
@@ -1153,7 +1153,7 @@ function PercentField({
             const percent = Number(next);
             if (Number.isFinite(percent)) onChange(Math.round(percent * 100));
           }}
-          className="h-10 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 pr-7 text-[11px] tabular-nums text-ink outline-none focus:border-brand focus-ring"
+          className="h-10 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 pr-7 text-[11px] tabular-nums text-ink outline-hidden focus:border-brand focus-ring"
         />
         <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] text-ink-faint">
           %
@@ -1178,7 +1178,7 @@ function ActionToggle({
         type="checkbox"
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
-        className="size-3.5 accent-[var(--accent)]"
+        className="size-3.5 accent-(--accent)"
       />
       {label}
     </label>

@@ -4,6 +4,38 @@ _Post-monorepo update 2026-07-07._
 
 The historical issue log below is preserved. Current monorepo-specific issues:
 
+- `npm audit --omit=dev --audit-level=low` in `frontend/` no longer passes with zero
+  findings: `nanoid@3.3.16` (GHSA-2v37-7h3g-55p8) is pulled into the production tree
+  by the repository's own `postcss@8.5.23` override. Verified identical at commit
+  `f94e346`, so the 2026-08-18 framework upgrade did not cause it - the advisory is
+  simply newer than the last audit review. Resolving it means advancing the pinned
+  PostCSS override, which `docs/SECURITY.md` requires be done with its own clean
+  production audit and build.
+
+- Two `frontend/tests/browser/platformUi.spec.ts` assertions fail and predate the
+  2026-08-18 framework upgrade (verified by running the same specs against a clean
+  worktree at `f94e346` with the old dependency set):
+  - `mobile watchlist actions use the shared platform dialog` expects a
+    `Delete "Mobile list"?` confirm dialog that the mobile watchlist manager never
+    renders.
+  - `desktop loads only the command-center presentation` expects the `SMC Terminal`
+    brand label visible at 1366px, but `TopToolbar.tsx` gates it behind
+    `hidden min-[1720px]:block`. Either the label's breakpoint or the test's
+    expectation is wrong; decide which before changing either.
+  `tools/verify-frontend-framework-upgrade.ps1` records both by name and still
+  fails closed on any browser failure outside that set.
+- Tailwind v4 caveat for future CSS work: v4 emits utilities inside real CSS
+  cascade layers, so any **unlayered** rule in `frontend/src/app/globals.css`
+  outranks every Tailwind utility regardless of specificity. Element-level resets
+  belong in `@layer base`. Component classes (`.mobile-*`, `.desktop-terminal`)
+  are intentionally left unlayered because their specificity already beat
+  utilities under v3.
+- Next.js 16.3.1's `experimental.useTypeScriptCli` cannot be enabled here: Next
+  resolves its CLI checker strictly as `typescript/bin/tsc`, and the `typescript`
+  package name is held by the TypeScript 6 API-compatibility package (bin `tsc6`)
+  so typescript-eslint keeps a compiler API. Build-time type checking runs through
+  that API instead; TypeScript 7 checks the same project via `npm run typecheck`.
+
 - MT5 Windows VM connector Phase 1 is blocked at the real-terminal gate.
   Effective per-instance MCP disable and strict no-orphan failed-start cleanup
   are implemented and covered. Credentialed reruns now return

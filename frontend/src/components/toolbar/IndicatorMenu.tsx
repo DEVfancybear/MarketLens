@@ -414,7 +414,7 @@ export function IndicatorMenu({
         typeof document !== "undefined" &&
         createPortal(
           <div
-            className="platform-dialog-overlay fixed inset-0 z-[1000] bg-[var(--scrim)] px-3 pt-14 backdrop-blur-sm"
+            className="platform-dialog-overlay fixed inset-0 z-1000 bg-(--scrim) px-3 pt-14 backdrop-blur-xs"
             onMouseDown={(event) => {
               if (event.target === event.currentTarget) closeBrowser();
             }}
@@ -444,7 +444,7 @@ export function IndicatorMenu({
                 <button
                   type="button"
                   onClick={closeBrowser}
-                  className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-brand"
                   aria-label="Close"
                   title="Close"
                 >
@@ -464,7 +464,7 @@ export function IndicatorMenu({
                     onChange={(event) => setQuery(event.target.value)}
                     aria-label="Search indicators"
                     placeholder="Search"
-                    className="h-full min-w-0 flex-1 border-0 bg-transparent text-[15px] text-ink outline-none placeholder:text-ink-muted focus-visible:!outline-none"
+                    className="h-full min-w-0 flex-1 border-0 bg-transparent text-[15px] text-ink outline-hidden placeholder:text-ink-muted focus-visible:outline-hidden!"
                   />
                 </div>
               </div>
@@ -573,7 +573,7 @@ export function IndicatorMenu({
 
             {deleteTarget && (
               <div
-                className="platform-dialog-overlay fixed inset-0 z-[1001] flex items-center justify-center bg-[var(--scrim)] px-4 backdrop-blur-sm"
+                className="platform-dialog-overlay fixed inset-0 z-1001 flex items-center justify-center bg-(--scrim) px-4 backdrop-blur-xs"
                 onMouseDown={(event) => {
                   if (event.target === event.currentTarget)
                     setDeleteTarget(null);
@@ -602,7 +602,7 @@ export function IndicatorMenu({
                     <button
                       type="button"
                       onClick={() => setDeleteTarget(null)}
-                      className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand"
+                      className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-brand"
                       aria-label="Cancel delete"
                       title="Cancel"
                     >
@@ -737,7 +737,7 @@ function CatalogIndicatorRow({
   return (
     <div className="group grid min-h-8 grid-cols-[minmax(220px,1fr)_128px_92px] items-center rounded-md px-1 text-[13px] text-ink transition-colors hover:bg-terminal-hover">
       <div className="flex min-w-0 items-center gap-2">
-        <ChartNoAxesCombined size={16} className="h-7 w-7 shrink-0 rounded p-1.5 text-brand" />
+        <ChartNoAxesCombined size={16} className="h-7 w-7 shrink-0 rounded-sm p-1.5 text-brand" />
         <button
           type="button"
           onClick={onAdd}
@@ -777,7 +777,7 @@ function ScriptRow({
           type="button"
           onClick={onFavorite}
           className={cn(
-            "flex h-7 w-7 shrink-0 items-center justify-center rounded text-ink-muted transition-colors hover:bg-terminal-hover hover:text-choch",
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-ink-muted transition-colors hover:bg-terminal-hover hover:text-choch",
             script.favorite && "text-choch",
           )}
           aria-label="Add to favorites"
@@ -799,7 +799,7 @@ function ScriptRow({
         <button
           type="button"
           onClick={onSource}
-          className="flex h-7 w-7 items-center justify-center rounded text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink"
+          className="flex h-7 w-7 items-center justify-center rounded-sm text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink"
           aria-label="Open source"
           title="Open source"
         >
@@ -808,7 +808,7 @@ function ScriptRow({
         <button
           type="button"
           onClick={onDelete}
-          className="flex h-7 w-7 items-center justify-center rounded text-ink-muted transition-colors hover:bg-terminal-hover hover:text-bear"
+          className="flex h-7 w-7 items-center justify-center rounded-sm text-ink-muted transition-colors hover:bg-terminal-hover hover:text-bear"
           aria-label="Delete script"
           title="Delete script"
         >
@@ -835,7 +835,7 @@ function StoreRow({
           <Star
             size={16}
             fill="none"
-            className="h-7 w-7 shrink-0 rounded p-1.5 text-ink-muted"
+            className="h-7 w-7 shrink-0 rounded-sm p-1.5 text-ink-muted"
           />
         )}
         <button

@@ -28,7 +28,7 @@ function Chk({ on, onClick, label }: { on: boolean; onClick: () => void; label: 
     <button
       onClick={onClick}
       className={cn(
-        'rounded border px-2 py-1 text-2xs font-medium transition-colors',
+        'rounded-sm border px-2 py-1 text-2xs font-medium transition-colors',
         on ? 'border-brand/40 bg-brand/15 text-brand' : 'border-terminal-border text-ink-muted hover:bg-terminal-hover',
       )}
       aria-pressed={on}
@@ -128,7 +128,7 @@ export function AlertEditDialog() {
   };
 
   return createPortal(
-    <div data-chart-ui className="platform-dialog-overlay fixed inset-0 z-[1300] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center" onClick={close}>
+    <div data-chart-ui className="platform-dialog-overlay fixed inset-0 z-1300 flex items-end justify-center bg-(--scrim) p-3 backdrop-blur-xs sm:items-center" onClick={close}>
       <div
         ref={dialogRef}
         style={dialogStyle}
@@ -160,7 +160,7 @@ export function AlertEditDialog() {
                 onClick={() => setCondition(c)}
                 disabled={alert.technicalTarget?.kind === "dynamic-channel"}
                 className={cn(
-                  'flex items-center justify-center gap-1 rounded border px-2 py-1 text-2xs font-medium transition-colors',
+                  'flex items-center justify-center gap-1 rounded-sm border px-2 py-1 text-2xs font-medium transition-colors',
                   condition === c ? 'border-brand/40 bg-brand/15 text-brand' : 'border-terminal-border text-ink-muted hover:bg-terminal-hover',
                 )}
               >
@@ -179,7 +179,7 @@ export function AlertEditDialog() {
               onChange={(e) => setPrice(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && save()}
               disabled={geometryLocked}
-              className="h-10 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/15"
+              className="h-10 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-hidden focus:border-brand focus:ring-2 focus:ring-brand/15"
             />
           </label>
 
@@ -195,7 +195,7 @@ export function AlertEditDialog() {
                 )
               }
               placeholder="Shown in the notification"
-              className="h-10 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/15"
+              className="h-10 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-hidden focus:border-brand focus:ring-2 focus:ring-brand/15"
             />
           </label>
 
@@ -219,7 +219,7 @@ export function AlertEditDialog() {
           </button>
           <div className="flex gap-2">
             <button type="button" onClick={close} className="min-h-10 rounded-xl border border-terminal-border-strong px-3 text-xs font-semibold text-ink-muted hover:bg-terminal-hover">Cancel</button>
-            <button type="button" onClick={save} className="min-h-10 rounded-xl bg-brand px-4 text-xs font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover">Save</button>
+            <button type="button" onClick={save} className="min-h-10 rounded-xl bg-brand px-4 text-xs font-semibold text-(--accent-contrast) hover:bg-brand-hover">Save</button>
           </div>
         </div>
       </div>

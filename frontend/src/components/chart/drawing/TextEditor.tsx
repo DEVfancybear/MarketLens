@@ -155,7 +155,7 @@ export function TextEditor({
         e.stopPropagation();
       }}
       onBlur={commit}
-      className="absolute z-[100] appearance-none border-0 bg-transparent p-0 text-ink outline-none shadow-none ring-0 placeholder:text-current placeholder:opacity-70 focus:border-transparent focus:bg-transparent focus:outline-none focus:ring-0"
+      className="absolute z-100 appearance-none border-0 bg-transparent p-0 text-ink outline-hidden shadow-none ring-0 placeholder:text-current placeholder:opacity-70 focus:border-transparent focus:bg-transparent focus:outline-hidden focus:ring-0"
       style={{
         left: position.x,
         top: position.y,

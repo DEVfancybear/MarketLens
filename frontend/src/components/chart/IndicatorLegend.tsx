@@ -206,7 +206,7 @@ function LegendButton({
         if (!disabled) onClick();
       }}
       className={[
-        "flex h-5 w-5 items-center justify-center rounded text-ink/75 opacity-0 transition hover:bg-terminal-hover hover:text-ink focus:opacity-100 disabled:cursor-not-allowed disabled:text-ink/25 disabled:hover:bg-transparent group-hover:opacity-100",
+        "flex h-5 w-5 items-center justify-center rounded-sm text-ink/75 opacity-0 transition hover:bg-terminal-hover hover:text-ink focus:opacity-100 disabled:cursor-not-allowed disabled:text-ink/25 disabled:hover:bg-transparent group-hover:opacity-100",
         danger ? "hover:text-red-300" : "",
       ].join(" ")}
     >

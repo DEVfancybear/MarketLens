@@ -42,7 +42,7 @@ export function DrawingContextMenu({ state, onClose }: Props) {
       onDismiss={onClose}
       consumeOutsidePointerDown={mobile}
       className={cn(
-        "context-menu-pop fixed z-[120] min-w-[190px] overflow-x-hidden overflow-y-auto rounded-md border border-terminal-border bg-terminal-panel-2 py-1 shadow-2xl",
+        "context-menu-pop fixed z-120 min-w-[190px] overflow-x-hidden overflow-y-auto rounded-md border border-terminal-border bg-terminal-panel-2 py-1 shadow-2xl",
         mobile && "mobile-chart-popup-portal",
       )}
       style={{

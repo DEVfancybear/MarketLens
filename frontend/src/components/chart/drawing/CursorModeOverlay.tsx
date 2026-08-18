@@ -56,17 +56,21 @@ export function CursorModeOverlay({
   const nextStrokeIdRef = useRef(1);
   const frameRef = useRef<number | null>(null);
   const pointerRef = useRef<LocalPoint | null>(null);
+  const overlayRef = useRef<SVGSVGElement | null>(null);
   const [frame, setFrame] = useState(0);
 
+  // The overlay svg is rendered as a sibling of the drawing canvas, so its
+  // parent is the same interaction container. Reaching the container through
+  // this component's own ref keeps the cursor write off the borrowed canvasRef.
   useEffect(() => {
-    const root = canvasRef.current?.parentElement;
+    const root = overlayRef.current?.parentElement;
     if (!root) return;
     const previousCursor = root.style.cursor;
     root.style.cursor = cursorFor(activeTool);
     return () => {
       root.style.cursor = previousCursor;
     };
-  }, [activeTool, canvasRef]);
+  }, [activeTool]);
 
   useEffect(() => {
     const root = canvasRef.current?.parentElement;
@@ -179,9 +183,10 @@ export function CursorModeOverlay({
 
   return (
     <svg
+      ref={overlayRef}
       data-cursor-mode-overlay
       aria-hidden="true"
-      className="pointer-events-none absolute inset-0 z-[6] h-full w-full overflow-visible"
+      className="pointer-events-none absolute inset-0 z-6 h-full w-full overflow-visible"
     >
       {strokesRef.current.map((stroke) => {
         const remaining = stroke.expiresAt - now;

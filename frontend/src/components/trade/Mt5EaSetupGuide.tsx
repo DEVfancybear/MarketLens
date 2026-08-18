@@ -67,7 +67,7 @@ export function Mt5EaSetupGuide({
         <button
           type="button"
           onClick={onClose}
-          className="min-h-10 rounded-xl border border-brand bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] transition-colors hover:bg-brand-hover focus-ring"
+          className="min-h-10 rounded-xl border border-brand bg-brand px-4 text-sm font-semibold text-(--accent-contrast) transition-colors hover:bg-brand-hover focus-ring"
         >
           Đã hiểu
         </button>
@@ -116,7 +116,7 @@ export function Mt5EaSetupGuide({
             <a
               href={downloadUrl}
               download="MarketLensExecutionEA.ex5"
-              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-brand px-3 text-[11px] font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover focus-ring"
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-brand px-3 text-[11px] font-semibold text-(--accent-contrast) hover:bg-brand-hover focus-ring"
             >
               <Download size={13} aria-hidden="true" />
               Tải MarketLensExecutionEA.ex5
@@ -219,7 +219,7 @@ export function Mt5EaSetupGuide({
               type="button"
               disabled={pairingLoading}
               onClick={() => void onGeneratePairingToken()}
-              className="mt-3 inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-brand px-3 text-[11px] font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-60 focus-ring"
+              className="mt-3 inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-brand px-3 text-[11px] font-semibold text-(--accent-contrast) hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-60 focus-ring"
             >
               {pairingLoading ? (
                 <LoaderCircle size={13} className="animate-spin" />
@@ -325,7 +325,7 @@ function GuideStep({
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand">
           {icon}
         </span>
-        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-[9px] font-bold text-[var(--accent-contrast)]">
+        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-[9px] font-bold text-(--accent-contrast)">
           {number}
         </span>
         <h3 className="text-xs font-bold text-ink sm:text-[13px]">{title}</h3>
@@ -440,7 +440,7 @@ function CheckLine({ children }: { children: ReactNode }) {
 
 function InlineCode({ children }: { children: ReactNode }) {
   return (
-    <code className="rounded bg-terminal-bg px-1 py-0.5 text-[10px] text-brand">
+    <code className="rounded-sm bg-terminal-bg px-1 py-0.5 text-[10px] text-brand">
       {children}
     </code>
   );

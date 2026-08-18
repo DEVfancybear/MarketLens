@@ -105,7 +105,7 @@ export function DrawingPreviewLayer({
       ref={canvasRef}
       data-drawing-preview-canvas
       data-drawing-count={visibleDrawings.length}
-      className="pointer-events-none absolute inset-0 z-[5] h-full w-full"
+      className="pointer-events-none absolute inset-0 z-5 h-full w-full"
     />
   );
 }

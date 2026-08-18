@@ -339,7 +339,7 @@ export function IndicatorSettingsDialog() {
 
   return createPortal(
     <div
-      className="platform-dialog-overlay fixed inset-0 z-[1100] flex items-center justify-center bg-[var(--scrim)] backdrop-blur-sm"
+      className="platform-dialog-overlay fixed inset-0 z-1100 flex items-center justify-center bg-(--scrim) backdrop-blur-xs"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) close();
       }}
@@ -367,7 +367,7 @@ export function IndicatorSettingsDialog() {
           <button
             type="button"
             onClick={close}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink"
             aria-label="Close"
             title="Close"
           >
@@ -389,7 +389,7 @@ export function IndicatorSettingsDialog() {
               >
                 {tab.label}
                 {activeTab === tab.id && (
-                  <span className="absolute -bottom-[3px] left-0 h-[3px] w-full rounded-full bg-brand" />
+                  <span className="absolute bottom-[-3px] left-0 h-[3px] w-full rounded-full bg-brand" />
                 )}
               </button>
             ))}
@@ -454,7 +454,7 @@ export function IndicatorSettingsDialog() {
             <button
               type="button"
               onClick={save}
-              className="h-[34px] rounded-md border border-terminal-border-strong bg-brand px-4 text-[14px] font-semibold text-[var(--accent-contrast)] transition-colors hover:bg-brand-hover"
+              className="h-[34px] rounded-md border border-terminal-border-strong bg-brand px-4 text-[14px] font-semibold text-(--accent-contrast) transition-colors hover:bg-brand-hover"
             >
               Ok
             </button>
@@ -632,7 +632,7 @@ function StyleRow({
           type="checkbox"
           checked={visible === true}
           onChange={(event) => onChange(visibleKey, event.target.checked)}
-          className="h-[18px] w-[18px] rounded border-terminal-border-strong accent-brand"
+          className="h-[18px] w-[18px] rounded-sm border-terminal-border-strong accent-brand"
         />
         <span className="min-w-0 truncate">{field.title}</span>
       </label>
@@ -650,7 +650,7 @@ function StyleRow({
           <select
             value={Number.isFinite(width) ? String(width) : String(field.defaultLineWidth ?? 2)}
             onChange={(event) => onChange(widthKey, Number(event.target.value))}
-            className="h-[30px] w-[54px] rounded-md border border-terminal-border-strong bg-terminal-raised px-2 text-[13px] text-ink-muted outline-none transition-colors focus:border-brand focus:ring-1 focus:ring-brand"
+            className="h-[30px] w-[54px] rounded-md border border-terminal-border-strong bg-terminal-raised px-2 text-[13px] text-ink-muted outline-hidden transition-colors focus:border-brand focus:ring-1 focus:ring-brand"
             aria-label={`${field.title} line width`}
           >
             {LINE_WIDTH_OPTIONS.map((option) => (
@@ -664,7 +664,7 @@ function StyleRow({
           <select
             value={Number.isFinite(lineStyleValue) ? String(lineStyleValue) : String(field.defaultLineStyle ?? 0)}
             onChange={(event) => onChange(lineStyleKey, Number(event.target.value))}
-            className="h-[30px] w-[104px] rounded-md border border-terminal-border-strong bg-terminal-raised px-2 text-[13px] text-ink-muted outline-none transition-colors focus:border-brand focus:ring-1 focus:ring-brand"
+            className="h-[30px] w-[104px] rounded-md border border-terminal-border-strong bg-terminal-raised px-2 text-[13px] text-ink-muted outline-hidden transition-colors focus:border-brand focus:ring-1 focus:ring-brand"
             aria-label={`${field.title} line style`}
           >
             {LINE_STYLE_OPTIONS.map((option) => (
@@ -728,7 +728,7 @@ function InputInlineRow({
               type="checkbox"
               checked={currentFieldValue(first, values) === true || currentFieldValue(first, values) === "true"}
               onChange={(event) => onChange(first.key, event.target.checked)}
-              className="h-[18px] w-[18px] rounded border-terminal-border-strong accent-brand"
+              className="h-[18px] w-[18px] rounded-sm border-terminal-border-strong accent-brand"
             />
             <span className="min-w-0 truncate">{label}</span>
           </label>
@@ -772,7 +772,7 @@ function InputControl({
           type="checkbox"
           checked={value === true || value === "true"}
           onChange={(event) => onChange(event.target.checked)}
-          className="h-[18px] w-[18px] rounded border-terminal-border-strong accent-brand"
+          className="h-[18px] w-[18px] rounded-sm border-terminal-border-strong accent-brand"
         />
         {field.title && <span className="min-w-0 truncate">{field.title}</span>}
       </label>
@@ -830,7 +830,7 @@ function InputControl({
         value={String(value)}
         onChange={(event) => onChange(event.target.value)}
         onBlur={(event) => onChange(coerceFieldValue(field, event.target.value))}
-        className="h-[34px] w-[100px] shrink-0 rounded-md border border-terminal-border-strong bg-terminal-raised px-3 text-[14px] text-ink-muted outline-none transition-colors focus:border-brand focus:ring-1 focus:ring-brand"
+        className="h-[34px] w-[100px] shrink-0 rounded-md border border-terminal-border-strong bg-terminal-raised px-3 text-[14px] text-ink-muted outline-hidden transition-colors focus:border-brand focus:ring-1 focus:ring-brand"
       />
     );
   }
@@ -840,7 +840,7 @@ function InputControl({
       value={String(value)}
       onChange={(event) => onChange(event.target.value)}
       className={cn(
-        "h-[34px] shrink-0 rounded-md border border-terminal-border-strong bg-terminal-raised px-3 text-[14px] text-ink-muted outline-none transition-colors focus:border-brand focus:ring-1 focus:ring-brand",
+        "h-[34px] shrink-0 rounded-md border border-terminal-border-strong bg-terminal-raised px-3 text-[14px] text-ink-muted outline-hidden transition-colors focus:border-brand focus:ring-1 focus:ring-brand",
         compact ? "w-[108px]" : "w-[160px]",
       )}
     />
@@ -879,7 +879,7 @@ function CheckboxRow({
         type="checkbox"
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
-        className="h-[18px] w-[18px] rounded border-terminal-border-strong accent-brand"
+        className="h-[18px] w-[18px] rounded-sm border-terminal-border-strong accent-brand"
       />
       <span className="min-w-0">{label}</span>
     </label>
@@ -902,7 +902,7 @@ function SelectControl({
       value={value}
       onChange={(event) => onChange(event.target.value)}
       className={cn(
-        "h-[34px] min-w-[100px] shrink-0 rounded-md border border-terminal-border-strong bg-terminal-raised px-2 text-[14px] text-ink-muted outline-none transition-colors focus:border-brand focus:ring-1 focus:ring-brand",
+        "h-[34px] min-w-[100px] shrink-0 rounded-md border border-terminal-border-strong bg-terminal-raised px-2 text-[14px] text-ink-muted outline-hidden transition-colors focus:border-brand focus:ring-1 focus:ring-brand",
         className,
       )}
     >

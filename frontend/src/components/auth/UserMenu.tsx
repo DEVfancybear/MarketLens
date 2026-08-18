@@ -28,7 +28,7 @@ export function UserMenu({ user }: { user: AuthUser }) {
       width={220}
       trigger={() => (
         <button
-          className="flex h-7 items-center gap-1.5 rounded px-1.5 text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink"
+          className="flex h-7 items-center gap-1.5 rounded-sm px-1.5 text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink"
           title={user.email ?? user.displayName ?? "Account"}
           aria-label="Account menu"
         >

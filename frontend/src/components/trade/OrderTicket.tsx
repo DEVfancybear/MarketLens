@@ -440,7 +440,7 @@ export function OrderTicket({
           {plannedSide && (
             <span
               className={cn(
-                "rounded-sm px-1.5 py-0.5 text-[9px] font-semibold uppercase",
+                "rounded-xs px-1.5 py-0.5 text-[9px] font-semibold uppercase",
                 plannedSide === "long"
                   ? "bg-bull/15 text-bull"
                   : "bg-bear/15 text-bear",
@@ -452,7 +452,7 @@ export function OrderTicket({
         </div>
         <div className="flex items-center gap-1.5">
           {executionMode === "mt5" && (
-            <span className="rounded-sm bg-bear/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-bear">
+            <span className="rounded-xs bg-bear/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-bear">
               live
             </span>
           )}
@@ -471,7 +471,7 @@ export function OrderTicket({
               className={cn(
                 "h-8 rounded-lg px-2 text-2xs font-semibold capitalize transition-colors",
                 type === t
-                  ? "bg-brand text-[var(--accent-contrast)] shadow-sm"
+                  ? "bg-brand text-(--accent-contrast) shadow-xs"
                   : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
               )}
             >
@@ -560,7 +560,7 @@ export function OrderTicket({
                 onChange={(event) =>
                   setCommissionType(event.target.value as Mt5CommissionType)
                 }
-                className="h-7 rounded-md border border-terminal-border-strong bg-terminal-bg px-1.5 text-[10px] text-ink outline-none focus:border-brand"
+                className="h-7 rounded-md border border-terminal-border-strong bg-terminal-bg px-1.5 text-[10px] text-ink outline-hidden focus:border-brand"
               >
                 <option value="currency">
                   {mt5Account?.currency ?? "Account currency"}
@@ -647,7 +647,7 @@ export function OrderTicket({
             onClick={() => submit("long")}
             disabled={replayPreparing}
             className={cn(
-              "h-11 rounded-xl bg-bull text-xs font-bold text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-45",
+              "h-11 rounded-xl bg-bull text-xs font-bold text-white shadow-xs transition-opacity hover:opacity-90 disabled:opacity-45",
               plannedSide === "long" && "ring-2 ring-bull/45 ring-offset-2 ring-offset-terminal-panel",
             )}
           >
@@ -657,7 +657,7 @@ export function OrderTicket({
             onClick={() => submit("short")}
             disabled={replayPreparing}
             className={cn(
-              "h-11 rounded-xl bg-bear text-xs font-bold text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-45",
+              "h-11 rounded-xl bg-bear text-xs font-bold text-white shadow-xs transition-opacity hover:opacity-90 disabled:opacity-45",
               plannedSide === "short" && "ring-2 ring-bear/45 ring-offset-2 ring-offset-terminal-panel",
             )}
           >
@@ -706,7 +706,7 @@ function TradeInput({
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         readOnly={readOnly}
-        className="h-9 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-none transition-colors placeholder:text-ink-faint read-only:cursor-default read-only:bg-terminal-panel-2 read-only:text-ink-muted focus:border-brand focus:ring-2 focus:ring-brand/15"
+        className="h-9 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-hidden transition-colors placeholder:text-ink-faint read-only:cursor-default read-only:bg-terminal-panel-2 read-only:text-ink-muted focus:border-brand focus:ring-2 focus:ring-brand/15"
       />
     </label>
   );
@@ -732,7 +732,7 @@ function InlineSelect({
         aria-label={label}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-9 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-xs text-ink outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/15"
+        className="h-9 w-full rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-xs text-ink outline-hidden transition-colors focus:border-brand focus:ring-2 focus:ring-brand/15"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>

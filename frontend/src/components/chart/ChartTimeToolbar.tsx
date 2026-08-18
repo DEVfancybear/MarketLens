@@ -195,7 +195,7 @@ function TimeZoneMenu({
   );
 
   return createPortal(
-    <div data-chart-ui className="fixed inset-0 z-[85]">
+    <div data-chart-ui className="fixed inset-0 z-85">
       <ChartPopupSurface
         dragLabel="Move time zone menu"
         showDragHandle={mobile}
@@ -593,7 +593,7 @@ export function ChartTimeToolbar({
         createPortal(
           <div
             data-chart-ui
-            className="pointer-events-none fixed z-[95] -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-lg border border-terminal-border-strong bg-terminal-raised px-2.5 py-1.5 text-xs font-semibold text-ink shadow-terminal"
+            className="pointer-events-none fixed z-95 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-lg border border-terminal-border-strong bg-terminal-raised px-2.5 py-1.5 text-xs font-semibold text-ink shadow-terminal"
             style={{ left: tooltipState.left, top: tooltipState.top }}
           >
             {tooltipState.text}
@@ -707,7 +707,7 @@ function GoToDialog({
   const dialog = (
     <div
       data-chart-ui
-      className="platform-dialog-overlay fixed inset-0 z-[900] bg-[var(--scrim)]/70 backdrop-blur-[2px]"
+      className="platform-dialog-overlay fixed inset-0 z-900 bg-(--scrim)/70 backdrop-blur-[2px]"
       onMouseDown={isApplying ? undefined : onClose}
     >
       <div
@@ -743,7 +743,7 @@ function GoToDialog({
             aria-label="Close"
             disabled={isApplying}
             onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted hover:bg-terminal-hover hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand disabled:cursor-wait disabled:opacity-50"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted hover:bg-terminal-hover hover:text-ink focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-brand disabled:cursor-wait disabled:opacity-50"
           >
             <X size={20} />
           </button>
@@ -815,7 +815,7 @@ function GoToDialog({
                   className={cn(
                     "mx-auto flex h-9 w-9 items-center justify-center rounded-md border-b-4 border-transparent",
                     cell.inMonth ? "text-ink" : "text-ink-faint",
-                    selected && "bg-brand font-bold text-[var(--accent-contrast)]",
+                    selected && "bg-brand font-bold text-(--accent-contrast)",
                     !selected && today && "border-brand",
                     !selected && "hover:bg-terminal-hover",
                   )}
@@ -840,7 +840,7 @@ function GoToDialog({
             type="button"
             disabled={isApplying}
             onClick={() => void apply()}
-            className="flex h-10 min-w-[68px] items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover disabled:cursor-wait disabled:opacity-70"
+            className="flex h-10 min-w-[68px] items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-(--accent-contrast) hover:bg-brand-hover disabled:cursor-wait disabled:opacity-70"
           >
             {isApplying && <Loader2 size={15} className="animate-spin" />}
             {isApplying ? "Loading" : "Go to"}
@@ -866,7 +866,7 @@ function DateInput({
         aria-label="Date"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="min-w-0 flex-1 bg-transparent tabular-nums outline-none focus-visible:!outline-none"
+        className="min-w-0 flex-1 bg-transparent tabular-nums outline-hidden focus-visible:outline-hidden!"
       />
       <CalendarDays size={16} className="shrink-0 text-ink-faint" />
     </label>
@@ -889,7 +889,7 @@ function TimeInput({
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className="min-w-0 flex-1 bg-transparent tabular-nums outline-none focus-visible:!outline-none disabled:cursor-not-allowed"
+        className="min-w-0 flex-1 bg-transparent tabular-nums outline-hidden focus-visible:outline-hidden! disabled:cursor-not-allowed"
       />
       <Clock3 size={16} className="shrink-0 text-ink-faint" />
     </label>
@@ -989,7 +989,7 @@ function GoToJumpMarker({
   return createPortal(
     <div
       data-chart-ui
-      className="pointer-events-none fixed z-[80]"
+      className="pointer-events-none fixed z-80"
       style={{
         left: position.x,
         top: position.top,

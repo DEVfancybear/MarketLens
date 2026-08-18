@@ -99,7 +99,7 @@ export function DrawingAlertDialog() {
   };
 
   return createPortal(
-    <div data-chart-ui className="platform-dialog-overlay fixed inset-0 z-[1350] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center" onClick={() => close(null)}>
+    <div data-chart-ui className="platform-dialog-overlay fixed inset-0 z-1350 flex items-end justify-center bg-(--scrim) p-3 backdrop-blur-xs sm:items-center" onClick={() => close(null)}>
       <div role="dialog" aria-modal="true" aria-label="Create drawing alert" className="platform-dialog w-full max-w-[420px] rounded-2xl border border-terminal-border-strong bg-terminal-raised shadow-floating" onClick={(event) => event.stopPropagation()}>
         <div data-dialog-header className="flex min-h-14 items-center gap-2 border-b border-terminal-border px-4">
           <Bell size={16} className="text-brand" />
@@ -109,7 +109,7 @@ export function DrawingAlertDialog() {
         <div data-dialog-body className="space-y-3 overflow-y-auto p-3">
           <label className="flex flex-col gap-1">
             <span className="text-2xs text-ink-faint">Drawing target</span>
-            <select aria-label="Drawing alert target" value={target.id} onChange={(event) => { const next = targets.find((candidate) => candidate.id === event.target.value); setTargetId(event.target.value); if (next) setCondition(inferCondition(next.price, quote?.last)); }} className="h-10 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/15">
+            <select aria-label="Drawing alert target" value={target.id} onChange={(event) => { const next = targets.find((candidate) => candidate.id === event.target.value); setTargetId(event.target.value); if (next) setCondition(inferCondition(next.price, quote?.last)); }} className="h-10 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-hidden focus:border-brand focus:ring-2 focus:ring-brand/15">
               {targets.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.label} · {candidate.price}</option>)}
             </select>
           </label>
@@ -120,7 +120,7 @@ export function DrawingAlertDialog() {
           ) : (
             <div className="grid grid-cols-2 gap-1">
               {CONDITIONS.map((candidate) => (
-                <button key={candidate} type="button" aria-pressed={condition === candidate} onClick={() => setCondition(candidate)} className={cn("rounded border px-2 py-1.5 text-2xs", condition === candidate ? "border-brand/40 bg-brand/15 text-brand" : "border-terminal-border text-ink-muted hover:bg-terminal-hover")}>
+                <button key={candidate} type="button" aria-pressed={condition === candidate} onClick={() => setCondition(candidate)} className={cn("rounded-sm border px-2 py-1.5 text-2xs", condition === candidate ? "border-brand/40 bg-brand/15 text-brand" : "border-terminal-border text-ink-muted hover:bg-terminal-hover")}>
                   {CONDITION_SYMBOL[candidate]} {CONDITION_LABEL[candidate]}
                 </button>
               ))}
@@ -128,14 +128,14 @@ export function DrawingAlertDialog() {
           )}
           <label className="flex flex-col gap-1">
             <span className="text-2xs text-ink-faint">Message (optional)</span>
-            <input aria-label="Drawing alert message" value={note} onChange={(event) => setNote(event.target.value)} className="h-10 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/15" />
+            <input aria-label="Drawing alert message" value={note} onChange={(event) => setNote(event.target.value)} className="h-10 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2.5 text-xs text-ink outline-hidden focus:border-brand focus:ring-2 focus:ring-brand/15" />
           </label>
-          <button type="button" aria-pressed={recurring} onClick={() => setRecurring((value) => !value)} className={cn("rounded border px-2 py-1.5 text-2xs", recurring ? "border-brand/40 bg-brand/15 text-brand" : "border-terminal-border text-ink-muted")}>{recurring ? "Every time" : "Only once"}</button>
+          <button type="button" aria-pressed={recurring} onClick={() => setRecurring((value) => !value)} className={cn("rounded-sm border px-2 py-1.5 text-2xs", recurring ? "border-brand/40 bg-brand/15 text-brand" : "border-terminal-border text-ink-muted")}>{recurring ? "Every time" : "Only once"}</button>
           <p className="text-[10px] leading-4 text-ink-faint">{target.technicalTarget?.kind === "dynamic-line" || target.technicalTarget?.kind === "dynamic-channel" ? "The drawing geometry is snapshotted now and evaluated at each market timestamp." : "The target price is snapshotted now. Moving or deleting the drawing will not change this alert."}</p>
         </div>
         <div data-dialog-footer className="flex justify-end gap-2 border-t border-terminal-border px-3 py-2">
           <button type="button" onClick={() => close(null)} className="min-h-10 rounded-xl border border-terminal-border-strong px-3 text-xs font-semibold text-ink-muted hover:bg-terminal-hover">Cancel</button>
-          <button type="button" onClick={submit} className="min-h-10 rounded-xl bg-brand px-4 text-xs font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover">Create alert</button>
+          <button type="button" onClick={submit} className="min-h-10 rounded-xl bg-brand px-4 text-xs font-semibold text-(--accent-contrast) hover:bg-brand-hover">Create alert</button>
         </div>
       </div>
     </div>,

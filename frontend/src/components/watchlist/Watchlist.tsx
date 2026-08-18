@@ -854,7 +854,7 @@ export function Watchlist() {
                 if (e.key === "Enter") commitRename();
                 if (e.key === "Escape") cancelRename();
               }}
-              className="min-w-0 flex-1 bg-transparent text-[14px] font-semibold text-ink outline-none selection:bg-brand selection:text-white"
+              className="min-w-0 flex-1 bg-transparent text-[14px] font-semibold text-ink outline-hidden selection:bg-brand selection:text-white"
               aria-label="Rename watchlist"
             />
           </div>
@@ -965,7 +965,7 @@ export function Watchlist() {
       {dragState?.active && (
         <div
           ref={dragGhostRef}
-          className="pointer-events-none fixed left-0 top-0 z-[9999] rounded-lg bg-terminal-raised/95 px-2.5 py-1.5 text-xs font-semibold text-ink shadow-terminal ring-1 ring-terminal-border-strong will-change-transform"
+          className="pointer-events-none fixed left-0 top-0 z-9999 rounded-lg bg-terminal-raised/95 px-2.5 py-1.5 text-xs font-semibold text-ink shadow-terminal ring-1 ring-terminal-border-strong will-change-transform"
           style={{
             transform: `translate3d(${dragState.x + 12}px, ${dragState.y + 12}px, 0)`,
           }}
@@ -1019,7 +1019,7 @@ function WatchlistTitleMenu({
       trigger={(open) => (
         <button
           className={cn(
-            "-ml-1.5 flex max-w-[180px] items-center gap-1 rounded px-1.5 py-1 text-[14px] font-semibold text-ink hover:bg-terminal-hover focus-ring",
+            "-ml-1.5 flex max-w-[180px] items-center gap-1 rounded-sm px-1.5 py-1 text-[14px] font-semibold text-ink hover:bg-terminal-hover focus-ring",
             open && "bg-terminal-hover",
           )}
         >
@@ -1132,7 +1132,7 @@ function WatchlistListMenuRow({
             onRemove();
           }}
           className={cn(
-            "mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-ink-muted opacity-0 transition-colors hover:bg-terminal-panel hover:text-bear group-hover:opacity-100",
+            "mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-ink-muted opacity-0 transition-colors hover:bg-terminal-panel hover:text-bear group-hover:opacity-100",
             active && "opacity-60",
           )}
           aria-label={`Remove ${list.name}`}
@@ -1269,8 +1269,8 @@ function SectionRow({
           "pointer-events-none absolute left-3 right-3 z-20 h-[2px] rounded-full bg-brand shadow-accent transition-opacity duration-75",
           dropPlacement === "before" && "top-0 -translate-y-1/2 opacity-100",
           (dropPlacement === "after" || dropPlacement === "inside") &&
-            "bottom-[-1px] opacity-100",
-          !dropPlacement && "bottom-[-1px] opacity-0",
+            "-bottom-px opacity-100",
+          !dropPlacement && "-bottom-px opacity-0",
         )}
       />
       <button
@@ -1305,7 +1305,7 @@ function SectionRow({
             if (e.key === "Enter") onCommitRename();
             if (e.key === "Escape") onCancelRename();
           }}
-          className="h-6 min-w-0 flex-1 rounded-md border border-brand bg-terminal-panel px-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink outline-none selection:bg-brand"
+          className="h-6 min-w-0 flex-1 rounded-md border border-brand bg-terminal-panel px-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink outline-hidden selection:bg-brand"
           aria-label={`Rename ${section.title}`}
         />
       ) : (
@@ -1421,7 +1421,7 @@ const WatchRow = memo(function WatchRow({
         </span>
       </div>
 
-      <div className="-mr-[3px] text-right">
+      <div className="mr-[-3px] text-right">
         <span
           key={flash?.seq ?? 0}
           className={cn(
@@ -1558,7 +1558,7 @@ function AddSymbol({
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search symbol"
-              className="w-full bg-transparent text-xs text-ink outline-none placeholder:text-ink-faint"
+              className="w-full bg-transparent text-xs text-ink outline-hidden placeholder:text-ink-faint"
             />
           </div>
           <div className="max-h-64 overflow-auto py-1">
@@ -1576,7 +1576,7 @@ function AddSymbol({
                 <span className="min-w-0 flex-1 truncate text-2xs text-ink-muted">
                   {s.name}
                 </span>
-                <span className="rounded bg-terminal-hover px-1.5 py-0.5 text-[9px] uppercase text-ink-faint">
+                <span className="rounded-sm bg-terminal-hover px-1.5 py-0.5 text-[9px] uppercase text-ink-faint">
                   {s.exchange}
                 </span>
               </button>

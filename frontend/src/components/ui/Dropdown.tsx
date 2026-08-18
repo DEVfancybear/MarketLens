@@ -147,7 +147,7 @@ export function Dropdown({
       data-chart-ui
       data-dropdown-portal={portal || undefined}
       className={cn(
-        portal ? "fixed z-[80]" : "absolute top-full z-50 mt-2",
+        portal ? "fixed z-80" : "absolute top-full z-50 mt-2",
         "overflow-x-hidden overflow-y-auto rounded-xl border border-terminal-border-strong bg-terminal-raised py-1.5 shadow-terminal backdrop-blur-xl",
         !portal && (align === "right" ? "right-0" : "left-0"),
       )}

@@ -1906,7 +1906,7 @@ function IndicatorOverlay({
       {dashboards.map((dashboard, index) => (
         <div
           key={dashboard.key}
-          className="pointer-events-none absolute z-20 w-[150px] overflow-hidden rounded-lg border border-terminal-border-strong bg-terminal-raised/85 font-mono leading-[15px] text-ink shadow-floating backdrop-blur"
+          className="pointer-events-none absolute z-20 w-[150px] overflow-hidden rounded-lg border border-terminal-border-strong bg-terminal-raised/85 font-mono leading-[15px] text-ink shadow-floating backdrop-blur-sm"
           style={{
             ...(dashboard.position === "Bottom Left"
               ? { bottom: 12 + index * 136, left: 12 }
@@ -1981,7 +1981,7 @@ function CurrentPriceMarker({
       >
         {symbol}
         <span
-          className="absolute -left-[5px] top-1/2 h-0 w-0 -translate-y-1/2 border-y-[5px] border-r-[5px] border-y-transparent"
+          className="absolute left-[-5px] top-1/2 h-0 w-0 -translate-y-1/2 border-y-[5px] border-r-[5px] border-y-transparent"
           style={{ borderRightColor: "var(--current-price-marker-color)" }}
         />
       </div>

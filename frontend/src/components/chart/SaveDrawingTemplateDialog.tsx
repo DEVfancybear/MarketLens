@@ -70,7 +70,7 @@ export function SaveDrawingTemplateDialog({
   return createPortal(
     <div
       data-chart-ui
-      className="platform-dialog-overlay fixed inset-0 z-[1300] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center"
+      className="platform-dialog-overlay fixed inset-0 z-1300 flex items-end justify-center bg-(--scrim) p-3 backdrop-blur-xs sm:items-center"
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) onCloseAction();
       }}
@@ -118,7 +118,7 @@ export function SaveDrawingTemplateDialog({
             ref={inputRef}
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className="h-11 w-full rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 pr-11 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-brand focus:ring-2 focus:ring-brand/15"
+            className="h-11 w-full rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 pr-11 text-sm text-ink outline-hidden placeholder:text-ink-faint focus:border-brand focus:ring-2 focus:ring-brand/15"
             spellCheck={false}
           />
           <button
@@ -183,7 +183,7 @@ export function SaveDrawingTemplateDialog({
             className={cn(
               "min-h-11 rounded-xl px-4 text-sm font-semibold",
               trimmed
-                ? "bg-brand text-[var(--accent-contrast)] hover:bg-brand-hover"
+                ? "bg-brand text-(--accent-contrast) hover:bg-brand-hover"
                 : "cursor-default bg-terminal-hover text-ink-faint",
             )}
           >

@@ -111,7 +111,7 @@ render state.
 
 ## Theme contract
 
-Dark and light modes use semantic CSS variables in `app/globals.css`. Tailwind maps RGB channel variables through `<alpha-value>`, so token opacity modifiers work consistently. Chart colors mirror the same palette in `chartTheme.ts`.
+Dark and light modes use semantic CSS variables in `app/globals.css`. Tailwind v4 declares the palette as `@theme` tokens built from those RGB channel variables, and opacity modifiers such as `bg-terminal-panel-2/70` compile to `color-mix(in oklab, …)`. The v3 `<alpha-value>` placeholder no longer exists and must not be reintroduced. Chart colors mirror the same palette in `chartTheme.ts`.
 
 The root theme helper toggles only `theme-dark`/`theme-light` and preserves unrelated document classes. Controls use `--text`, `--text-muted`, `--border`, `--border-strong`, `--accent`, `--bull` and `--bear`; raw chrome colors are not permitted in new platform UI.
 

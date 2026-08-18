@@ -37,7 +37,7 @@ type PromptRequest = {
 };
 
 const inputClass =
-  "h-11 w-full rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 pr-11 text-sm font-medium text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/15";
+  "h-11 w-full rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 pr-11 text-sm font-medium text-ink outline-hidden focus:border-brand focus:ring-2 focus:ring-brand/15";
 
 function validTradePasswordLength(password: string): boolean {
   const characters = Array.from(password).length;
@@ -549,7 +549,7 @@ export function TradeSecurityDialog() {
                 >
                   <span
                     className={cn(
-                      "absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform motion-reduce:transition-none",
+                      "absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform motion-reduce:transition-none",
                       status?.enabled ? "translate-x-5" : "translate-x-0",
                     )}
                   />
@@ -587,7 +587,7 @@ export function TradeSecurityDialog() {
                     type="button"
                     disabled={saving}
                     onClick={() => void sendRecoveryCode()}
-                    className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover disabled:opacity-50 focus-ring"
+                    className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-(--accent-contrast) hover:bg-brand-hover disabled:opacity-50 focus-ring"
                   >
                     {saving ? (
                       <LoaderCircle size={15} className="animate-spin" />
@@ -703,7 +703,7 @@ export function TradeSecurityDialog() {
                           recoveryPassword.length === 0 ||
                           recoveryConfirmPassword.length === 0
                         }
-                        className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover disabled:opacity-50 focus-ring"
+                        className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-(--accent-contrast) hover:bg-brand-hover disabled:opacity-50 focus-ring"
                       >
                         {saving ? (
                           <LoaderCircle size={15} className="animate-spin" />
@@ -941,7 +941,7 @@ export function TradeSecurityDialog() {
                         status.enabled &&
                         currentPassword.length === 0)
                     }
-                    className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover disabled:opacity-50 focus-ring"
+                    className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-(--accent-contrast) hover:bg-brand-hover disabled:opacity-50 focus-ring"
                   >
                     {saving ? (
                       <LoaderCircle size={15} className="animate-spin" />
@@ -997,7 +997,7 @@ export function TradeSecurityDialog() {
               type="submit"
               form="trade-password-approval-form"
               disabled={promptPassword.length === 0}
-              className="min-h-10 rounded-xl bg-brand px-4 text-sm font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover disabled:opacity-50 focus-ring"
+              className="min-h-10 rounded-xl bg-brand px-4 text-sm font-semibold text-(--accent-contrast) hover:bg-brand-hover disabled:opacity-50 focus-ring"
             >
               Approve
             </button>

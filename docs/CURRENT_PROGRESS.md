@@ -1,5 +1,22 @@
 # Current Progress
 
+- Frontend framework toolchain upgrade complete (2026-08-18). Next.js and
+  `eslint-config-next` are on `16.3.1`, Tailwind CSS on `4.3.3` with
+  `@tailwindcss/postcss` and a CSS-first `@theme` (no `tailwind.config.ts`), and
+  the TypeScript CLI on `7.0.2` via the `@typescript/native` alias while
+  `typescript` resolves to `@typescript/typescript6@6.0.2` for the compiler API
+  that typescript-eslint needs. `autoprefixer` is removed. Typecheck, all eleven
+  focused test suites, lint, and the production build pass; the two Playwright
+  responsive specs match the pre-upgrade baseline exactly (12 pass, 2
+  pre-existing failures). One genuine migration regression was found and fixed:
+  Tailwind v4 emits utilities inside real CSS cascade layers, so the unlayered
+  `button, input, select, textarea { font: inherit }` reset in `globals.css`
+  silently outranked every typography utility on buttons and inputs; element-level
+  resets now live in `@layer base`. Rerun with
+  `tools/verify-frontend-framework-upgrade.ps1`. Full report:
+  `docs/agent-evidence/frontend-framework-upgrade/EVIDENCE.md`.
+  Not committed or pushed.
+
 - Universal MT5 Windows VM connector Phases 0-3 (2026-08-13): replaced and deleted
   the TickerAll/MetaApi plan. The authoritative broker-neutral path now uses a
   private Windows VM pool where one Rust `mt5-vm-agent` owns multiple isolated

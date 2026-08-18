@@ -15,7 +15,7 @@ phase notes as the current source of truth.
 | Backend HTTP | `ky` shared API client |
 | Auth | Firebase Google Auth plus Go Fiber session exchange |
 | Charts | TradingView Lightweight Charts 4.2.3 |
-| Styling | TailwindCSS and CSS variables |
+| Styling | Tailwind CSS v4 (CSS-first `@theme` in `src/app/globals.css`; no `tailwind.config.ts`) and CSS variables |
 | Workers | Native Web Worker for SMC compute |
 | Persistence | localStorage for anonymous/lightweight state, IndexedDB for journal/screenshots |
 

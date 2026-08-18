@@ -233,7 +233,7 @@ export function TopToolbar() {
       className="flex h-full min-w-0 items-center gap-1 overflow-x-clip whitespace-nowrap px-2 xl:gap-2 xl:px-3"
     >
       <div className="mr-1 flex h-10 shrink-0 items-center gap-2.5 pr-1 min-[1720px]:min-w-[154px] min-[1720px]:pr-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand text-[var(--accent-contrast)] shadow-accent">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand text-(--accent-contrast) shadow-accent">
           <ChartCandlestick size={19} strokeWidth={2.2} />
         </div>
         <div className="hidden min-w-0 min-[1720px]:block">
@@ -252,9 +252,9 @@ export function TopToolbar() {
           aria-current={desktopWorkspace === "chart" ? "page" : undefined}
           onClick={() => setDesktopWorkspace("chart")}
           className={cn(
-            "flex h-8 items-center gap-1.5 rounded-lg px-2 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 xl:px-2.5",
+            "flex h-8 items-center gap-1.5 rounded-lg px-2 text-[11px] font-semibold transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand/60 xl:px-2.5",
             desktopWorkspace === "chart"
-              ? "bg-terminal-raised text-ink shadow-sm"
+              ? "bg-terminal-raised text-ink shadow-xs"
               : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
           )}
         >
@@ -267,7 +267,7 @@ export function TopToolbar() {
           aria-current={desktopWorkspace === "trade" ? "page" : undefined}
           onClick={() => setDesktopWorkspace("trade")}
           className={cn(
-            "flex h-8 items-center gap-1.5 rounded-lg px-2 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 xl:px-2.5",
+            "flex h-8 items-center gap-1.5 rounded-lg px-2 text-[11px] font-semibold transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand/60 xl:px-2.5",
             desktopWorkspace === "trade"
               ? "bg-brand/15 text-brand"
               : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
@@ -328,7 +328,7 @@ export function TopToolbar() {
             aria-haspopup="menu"
             aria-expanded={open}
             aria-label={activeLayout?.name ? `${t("toolbar.layout")}: ${activeLayout.name}` : t("toolbar.layout")}
-            className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/70"
+            className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-ink-muted transition-colors hover:bg-terminal-hover hover:text-ink focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand/70"
           >
             <LayoutIcon size={14} />
             <span className="hidden max-w-24 truncate xl:inline 2xl:max-w-36">

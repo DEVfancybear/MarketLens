@@ -33,7 +33,7 @@ export function ChartPerformanceOverlay() {
   const indicatorMs = snapshot.metrics["indicator.compute"]?.totalMs ?? 0;
 
   return (
-    <div className="pointer-events-none absolute right-2 top-2 z-[80] rounded border border-white/20 bg-black/80 px-2 py-1 font-mono text-[10px] leading-4 text-white">
+    <div className="pointer-events-none absolute right-2 top-2 z-80 rounded-sm border border-white/20 bg-black/80 px-2 py-1 font-mono text-[10px] leading-4 text-white">
       <div>chart perf · {Math.round(snapshot.elapsedMs / 1000)}s</div>
       <div>frame last/max {frames?.lastMs.toFixed(1) ?? "-"}/{frames?.maxMs.toFixed(1) ?? "-"}ms</div>
       <div>candle set/update {setData}/{updates}</div>

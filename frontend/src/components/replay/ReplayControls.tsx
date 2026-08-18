@@ -58,12 +58,12 @@ export function ReplayControls() {
   if (selection !== "idle") {
     return (
       <div className="flex items-center gap-3">
-        <span className="flex items-center gap-2 rounded bg-brand/15 px-3 py-1.5 text-xs font-semibold text-brand">
+        <span className="flex items-center gap-2 rounded-sm bg-brand/15 px-3 py-1.5 text-xs font-semibold text-brand">
           <BarChart3 size={13} /> Click a bar on the chart to choose the Replay time
         </span>
         <button
           onClick={cancelSelection}
-          className="flex items-center gap-1 rounded border border-terminal-border px-2.5 py-1.5 text-2xs text-ink-muted hover:bg-terminal-hover hover:text-ink"
+          className="flex items-center gap-1 rounded-sm border border-terminal-border px-2.5 py-1.5 text-2xs text-ink-muted hover:bg-terminal-hover hover:text-ink"
         >
           <X size={12} /> Cancel (Esc)
         </button>
@@ -87,7 +87,7 @@ export function ReplayControls() {
         <button
           disabled={!enabled || !backendSession || projection.connection === "connecting"}
           onClick={beginSelect}
-          className="flex items-center gap-2 rounded bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex items-center gap-2 rounded-sm bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Play size={13} /> Start Replay
         </button>
@@ -143,7 +143,7 @@ export function ReplayControls() {
             const speed = REPLAY_SPEEDS[Number(event.target.value)] ?? 1;
             fire(setActiveReplaySpeed(speed));
           }}
-          className="h-1 w-28 cursor-pointer appearance-none rounded bg-terminal-border accent-brand"
+          className="h-1 w-28 cursor-pointer appearance-none rounded-sm bg-terminal-border accent-brand"
           title={replaySpeedDescription(snapshot?.speed ?? 1)}
         />
         <span className="w-8 text-right text-2xs font-semibold text-ink">
@@ -157,7 +157,7 @@ export function ReplayControls() {
           if (playing) fire(setActiveReplayPlaying(false));
           beginReselect();
         }}
-        className="flex items-center gap-1.5 rounded px-2 py-1 text-2xs text-ink-muted transition-colors hover:bg-terminal-hover hover:text-choch"
+        className="flex items-center gap-1.5 rounded-sm px-2 py-1 text-2xs text-ink-muted transition-colors hover:bg-terminal-hover hover:text-choch"
         title="Choose another backend Replay time"
       >
         <BarChart3 size={13} /> Select Bar
@@ -168,7 +168,7 @@ export function ReplayControls() {
           cancelSelection();
           fire(exitReplaySession());
         }}
-        className="flex items-center gap-1.5 rounded px-2 py-1 text-2xs text-ink-muted hover:bg-terminal-hover hover:text-bear"
+        className="flex items-center gap-1.5 rounded-sm px-2 py-1 text-2xs text-ink-muted hover:bg-terminal-hover hover:text-bear"
       >
         <Power size={13} /> Exit Replay
       </button>
@@ -177,7 +177,7 @@ export function ReplayControls() {
           data-testid="replay-live-track-warning"
           role="status"
           aria-live="polite"
-          className="ml-2 inline-flex items-center gap-1 rounded border border-choch/35 bg-choch/10 px-2 py-1 text-2xs text-choch"
+          className="ml-2 inline-flex items-center gap-1 rounded-sm border border-choch/35 bg-choch/10 px-2 py-1 text-2xs text-choch"
           title={projection.unavailableTracks
             .map((track) => `Chart ${track.slot + 1}: ${track.symbol} ${track.chartTimeframe}`)
             .join("\n")}

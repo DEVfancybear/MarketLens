@@ -66,14 +66,14 @@ export function BottomPanel() {
             className={cn(
               "relative flex h-8 items-center gap-2 rounded-lg px-3 text-[11px] font-semibold transition-colors",
               effectiveTab === t.key
-                ? "bg-terminal-raised text-ink shadow-sm"
+                ? "bg-terminal-raised text-ink shadow-xs"
                 : "text-ink-muted hover:bg-terminal-hover hover:text-ink",
             )}
           >
             <Icon size={14} />
             {t.label}
             {effectiveTab === t.key && (
-              <span className="absolute -bottom-[9px] left-3 right-3 h-0.5 rounded-t bg-brand" />
+              <span className="absolute bottom-[-9px] left-3 right-3 h-0.5 rounded-t bg-brand" />
             )}
           </button>
         )})}

@@ -502,7 +502,7 @@ function ExecutionAccountRail() {
         <button
           type="button"
           onClick={() => setShowSetup((current) => !current)}
-          className="flex h-8 items-center gap-1.5 rounded-lg border border-terminal-border-strong px-2 text-[10px] font-semibold text-ink-muted transition-colors hover:border-brand/45 hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
+          className="flex h-8 items-center gap-1.5 rounded-lg border border-terminal-border-strong px-2 text-[10px] font-semibold text-ink-muted transition-colors hover:border-brand/45 hover:text-brand focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand/60"
         >
           <Plus size={12} aria-hidden="true" />
           {t("execution.add.button")}
@@ -567,7 +567,7 @@ function ExecutionAccountRail() {
             <a
               href={eaDistribution.downloadUrl}
               download="MarketLensExecutionEA.ex5"
-              className="mx-2 mb-2 flex h-8 items-center justify-center gap-1.5 rounded-lg bg-brand px-2.5 text-[10px] font-semibold text-white transition-colors hover:bg-brand/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 focus-visible:ring-offset-1 focus-visible:ring-offset-terminal-bg"
+              className="mx-2 mb-2 flex h-8 items-center justify-center gap-1.5 rounded-lg bg-brand px-2.5 text-[10px] font-semibold text-white transition-colors hover:bg-brand/90 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand/60 focus-visible:ring-offset-1 focus-visible:ring-offset-terminal-bg"
             >
               <Download size={12} aria-hidden="true" />
               {t("execution.add.downloadEa")}
@@ -577,7 +577,7 @@ function ExecutionAccountRail() {
               <a
                 href={eaDistribution.checksumUrl}
                 download="MarketLensExecutionEA.sha256.txt"
-                className="inline-flex items-center gap-1 font-semibold text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
+                className="inline-flex items-center gap-1 font-semibold text-brand hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand/60"
               >
                 <FileCheck2 size={10} aria-hidden="true" />
                 SHA-256
@@ -587,7 +587,7 @@ function ExecutionAccountRail() {
           <button
             type="button"
             onClick={() => setShowGuide(true)}
-            className="mt-2 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-brand/30 bg-brand/5 px-2.5 text-[10px] font-semibold text-brand transition-colors hover:border-brand/50 hover:bg-brand/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
+            className="mt-2 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-brand/30 bg-brand/5 px-2.5 text-[10px] font-semibold text-brand transition-colors hover:border-brand/50 hover:bg-brand/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand/60"
           >
             <BookOpen size={12} aria-hidden="true" />
             {t("execution.add.installGuide")}
@@ -599,7 +599,7 @@ function ExecutionAccountRail() {
               </span>
               <button
                 type="button"
-                className="rounded p-1 text-brand hover:bg-brand/10"
+                className="rounded-sm p-1 text-brand hover:bg-brand/10"
                 aria-label={t("execution.add.copyGatewayUrl")}
                 onClick={() =>
                   void navigator.clipboard.writeText(eaDistribution.gatewayUrl)
@@ -624,7 +624,7 @@ function ExecutionAccountRail() {
                 </span>
                 <button
                   type="button"
-                  className="rounded p-1 text-bull hover:bg-bull/10"
+                  className="rounded-sm p-1 text-bull hover:bg-bull/10"
                   aria-label={t("execution.manage.pairing.copy")}
                   onClick={() => void navigator.clipboard.writeText(pairing.token)}
                 >
@@ -724,7 +724,7 @@ function ExecutionAccountRail() {
                 }}
                 aria-pressed={active}
                 className={cn(
-                  "w-full py-3 pl-8 pr-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/60",
+                  "w-full py-3 pl-8 pr-3 text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/60",
                   account.venueKind !== "simulator" && "pr-10",
                 )}
               >
@@ -892,7 +892,7 @@ export function CopyRoutingPanel() {
         role="tabpanel"
         aria-labelledby={`copier-tab-${mode}`}
         tabIndex={0}
-        className="min-h-0 flex-1 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/35"
+        className="min-h-0 flex-1 outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/35"
       >
         {mode === "continuous" ? (
           <ContinuousCopierPanel />
@@ -925,7 +925,13 @@ function OneShotCopyRoutingPanel() {
   );
   const [loadAttempt, setLoadAttempt] = useState(0);
   const source = accounts.find((account) => account.id === selectedId);
-  const available = accounts.filter((account) => account.id !== selectedId);
+  // Memoized so the routePreviews useMemo below keeps a stable dependency;
+  // a fresh array each render both defeated that memo and tripped the
+  // React Compiler manual-memoization check.
+  const available = useMemo(
+    () => accounts.filter((account) => account.id !== selectedId),
+    [accounts, selectedId],
+  );
   const eligibleTargetCount = available.filter(
     (account) => copyTargetAvailability(account).eligible,
   ).length;
@@ -1185,7 +1191,7 @@ function OneShotCopyRoutingPanel() {
                           enabled: event.target.checked,
                         })
                       }
-                      className="h-4 w-4 accent-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50 focus-ring"
+                      className="h-4 w-4 accent-(--accent) disabled:cursor-not-allowed disabled:opacity-50 focus-ring"
                     />
                     <span className="min-w-0">
                       <span className="flex min-w-0 items-center gap-2">
@@ -1228,7 +1234,7 @@ function OneShotCopyRoutingPanel() {
                           : {}),
                       });
                     }}
-                    className="h-11 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-[11px] text-ink outline-none focus:border-brand"
+                    className="h-11 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-[11px] text-ink outline-hidden focus:border-brand"
                   >
                     <option value="sameQuantity">{t("copier.allocation.same")}</option>
                     <option value="fixedQuantity">{t("copier.allocation.fixed")}</option>
@@ -1287,7 +1293,7 @@ function OneShotCopyRoutingPanel() {
                             });
                           }
                         }}
-                        className="h-11 min-w-0 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-base text-ink outline-none focus:border-brand lg:text-[11px]"
+                        className="h-11 min-w-0 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-base text-ink outline-hidden focus:border-brand lg:text-[11px]"
                       />
                     </label>
                   )}
@@ -1310,7 +1316,7 @@ function OneShotCopyRoutingPanel() {
                             : undefined,
                         })
                       }
-                      className="h-11 min-w-0 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-base text-ink outline-none placeholder:text-ink-faint focus:border-brand lg:text-[11px]"
+                      className="h-11 min-w-0 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-base text-ink outline-hidden placeholder:text-ink-faint focus:border-brand lg:text-[11px]"
                     />
                   </label>
                   <p
@@ -1600,7 +1606,7 @@ function SymbolMappingSelector({
         value={value}
         disabled={status === "loading" || status === "saving"}
         onChange={(event) => void save(event.target.value)}
-        className="h-11 min-w-0 flex-1 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-base text-ink outline-none focus:border-brand disabled:opacity-60 lg:h-8 lg:text-[10px]"
+        className="h-11 min-w-0 flex-1 rounded-lg border border-terminal-border-strong bg-terminal-bg px-2 text-base text-ink outline-hidden focus:border-brand disabled:opacity-60 lg:h-8 lg:text-[10px]"
       >
         <option value="">
           {status === "loading"
@@ -1683,7 +1689,7 @@ function WorkspaceTabButton({
       aria-selected={active}
       onClick={onClick}
       className={cn(
-        "relative flex h-9 items-center gap-1.5 px-3 text-[10px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60",
+        "relative flex h-9 items-center gap-1.5 px-3 text-[10px] font-semibold transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand/60",
         active ? "text-ink" : "text-ink-muted hover:text-ink",
       )}
     >

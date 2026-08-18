@@ -30,5 +30,5 @@ export function RightSidebar() {
 }
 
 function Tab({ active, label, children, onClick }: { active: boolean; label: string; children: React.ReactNode; onClick: () => void }) {
-  return <button type="button" aria-label={label} title={label} aria-pressed={active} onClick={onClick} className={cn("flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md text-[11px] font-semibold text-ink-muted transition-colors", active ? "bg-terminal-raised text-ink shadow-sm" : "hover:bg-terminal-hover hover:text-ink")}>{children}<span>{label.replace(/ \(\d+\)$/, "")}</span></button>;
+  return <button type="button" aria-label={label} title={label} aria-pressed={active} onClick={onClick} className={cn("flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md text-[11px] font-semibold text-ink-muted transition-colors", active ? "bg-terminal-raised text-ink shadow-xs" : "hover:bg-terminal-hover hover:text-ink")}>{children}<span>{label.replace(/ \(\d+\)$/, "")}</span></button>;
 }

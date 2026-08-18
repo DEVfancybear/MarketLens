@@ -110,7 +110,7 @@ export function Mt5OrderEditorDialog({
 
   return (
     <div
-      className="platform-dialog-overlay fixed inset-0 z-[1200] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center"
+      className="platform-dialog-overlay fixed inset-0 z-1200 flex items-end justify-center bg-(--scrim) p-3 backdrop-blur-xs sm:items-center"
       data-chart-ui
     >
       <div
@@ -252,7 +252,7 @@ function PriceField({
         onChange={(event) => onChange(event.target.value)}
         disabled={disabled}
         placeholder={placeholder}
-        className="min-h-11 w-full rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 text-sm tabular-nums text-ink outline-none focus:border-brand disabled:cursor-not-allowed disabled:opacity-55"
+        className="min-h-11 w-full rounded-xl border border-terminal-border-strong bg-terminal-panel px-3 text-sm tabular-nums text-ink outline-hidden focus:border-brand disabled:cursor-not-allowed disabled:opacity-55"
       />
       {hint && <span className="mt-1 block text-[11px] leading-4 text-ink-faint">{hint}</span>}
     </label>

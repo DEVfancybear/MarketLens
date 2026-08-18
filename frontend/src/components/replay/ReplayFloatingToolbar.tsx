@@ -88,7 +88,7 @@ export function ReplayFloatingToolbar({ mobileHosted = false }: { mobileHosted?:
             <button
               type="button"
               onClick={cancelSelection}
-              className="ml-1 flex h-7 w-7 items-center justify-center rounded text-ink-muted hover:bg-terminal-hover hover:text-bear"
+              className="ml-1 flex h-7 w-7 items-center justify-center rounded-sm text-ink-muted hover:bg-terminal-hover hover:text-bear"
               title="Cancel"
             >
               <X size={15} />
@@ -123,7 +123,7 @@ export function ReplayFloatingToolbar({ mobileHosted = false }: { mobileHosted?:
                   const speed = REPLAY_SPEEDS[Number(event.target.value)] ?? 1;
                   fire(setActiveReplaySpeed(speed));
                 }}
-                className="h-1 w-28 cursor-pointer appearance-none rounded bg-terminal-border accent-brand"
+                className="h-1 w-28 cursor-pointer appearance-none rounded-sm bg-terminal-border accent-brand"
                 title={replaySpeedDescription(snapshot.speed)}
               />
               <span className="w-8 text-right text-[11px] font-semibold text-ink">
@@ -263,7 +263,7 @@ function MobileDockButton({
       className={cn(
         "flex h-12 min-w-11 items-center justify-center rounded-xl transition-colors disabled:opacity-45",
         primary
-          ? "bg-brand text-[var(--accent-contrast)] shadow-accent active:bg-brand-hover"
+          ? "bg-brand text-(--accent-contrast) shadow-accent active:bg-brand-hover"
           : "text-ink-muted active:bg-terminal-pressed active:text-ink",
       )}
     >

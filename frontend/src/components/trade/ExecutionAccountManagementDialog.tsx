@@ -378,7 +378,7 @@ function PairingSection({
             setCopied(false);
             void onGeneratePairingToken();
           }}
-          className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg bg-brand px-3 text-[10px] font-semibold text-[var(--accent-contrast)] hover:bg-brand-hover disabled:opacity-60 focus-ring"
+          className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg bg-brand px-3 text-[10px] font-semibold text-(--accent-contrast) hover:bg-brand-hover disabled:opacity-60 focus-ring"
         >
           {pairingLoading ? (
             <LoaderCircle size={12} className="animate-spin" />

@@ -28,7 +28,7 @@ export function LiveOrderConfirmDialog({
   const title = isOrder ? "Confirm MT5 order" : "Confirm MT5 close all";
 
   return (
-    <div className="platform-dialog-overlay fixed inset-0 z-[1200] flex items-end justify-center bg-[var(--scrim)] p-3 backdrop-blur-sm sm:items-center" data-chart-ui>
+    <div className="platform-dialog-overlay fixed inset-0 z-1200 flex items-end justify-center bg-(--scrim) p-3 backdrop-blur-xs sm:items-center" data-chart-ui>
       <div
         ref={dialogRef}
         style={dialogStyle}
