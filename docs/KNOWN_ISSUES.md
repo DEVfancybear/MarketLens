@@ -4,6 +4,18 @@ _Post-monorepo update 2026-07-07._
 
 The historical issue log below is preserved. Current monorepo-specific issues:
 
+- `cargo fmt` cannot run on the Windows development host: `cargo-fmt` is blocked by Application
+  Control (`os error 4551`). CI still enforces `cargo fmt --all -- --check`, so a change that skips
+  formatting will fail there. The `rustfmt` binary itself is **not** blocked - format and verify
+  with it directly before pushing:
+
+  ```bash
+  rustfmt --edition 2024 path/to/file.rs
+  rustfmt --edition 2024 --check path/to/file.rs
+  ```
+
+  Do not hand-match formatting; it failed CI once already on 2026-08-19.
+
 - `backend/.env.example` cannot be copied verbatim: it ships
   `TRADE_RECOVERY_EMAIL_FROM="MarketLens Security <security@example.com>"` while leaving the SMTP
   host and credentials empty, and the config validator requires the whole SMTP group together, so a

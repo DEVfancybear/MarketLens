@@ -370,7 +370,11 @@ mod tests {
     #[test]
     fn partial_snapshot_still_upserts_what_it_did_observe() {
         // A partial observation is not worthless: it may refresh the rows it saw.
-        let plan = reconcile_plan(&keys(&["100", "200"]), &keys(&["200"]), SnapshotResult::Partial);
+        let plan = reconcile_plan(
+            &keys(&["100", "200"]),
+            &keys(&["200"]),
+            SnapshotResult::Partial,
+        );
         assert_eq!(plan.upserts, keys(&["200"]));
         assert!(plan.deletes.is_empty());
     }
@@ -480,12 +484,22 @@ mod tests {
     #[test]
     fn a_missing_observed_login_suffix_cannot_satisfy_a_registered_one() {
         // Absence must never be read as agreement.
-        assert!(!identity_matches("FTMO-Demo", Some("4321"), "FTMO-Demo", None));
+        assert!(!identity_matches(
+            "FTMO-Demo",
+            Some("4321"),
+            "FTMO-Demo",
+            None
+        ));
     }
 
     #[test]
     fn an_unregistered_login_suffix_matches_on_server_alone() {
-        assert!(identity_matches("FTMO-Demo", None, "ftmo-demo", Some("4321")));
+        assert!(identity_matches(
+            "FTMO-Demo",
+            None,
+            "ftmo-demo",
+            Some("4321")
+        ));
     }
 
     // --- Freshness ---------------------------------------------------------
@@ -494,21 +508,39 @@ mod tests {
     fn freshness_requires_a_recent_authoritative_observation() {
         let now = 1_760_000_000_000;
         assert_eq!(
-            freshness_verdict(Some(now - 5_000), Some(SnapshotResult::Complete), now, 30_000),
+            freshness_verdict(
+                Some(now - 5_000),
+                Some(SnapshotResult::Complete),
+                now,
+                30_000
+            ),
             Freshness::Fresh
         );
         assert_eq!(
-            freshness_verdict(Some(now - 60_000), Some(SnapshotResult::Complete), now, 30_000),
+            freshness_verdict(
+                Some(now - 60_000),
+                Some(SnapshotResult::Complete),
+                now,
+                30_000
+            ),
             Freshness::Stale
         );
-        assert_eq!(freshness_verdict(None, None, now, 30_000), Freshness::Unknown);
+        assert_eq!(
+            freshness_verdict(None, None, now, 30_000),
+            Freshness::Unknown
+        );
     }
 
     #[test]
     fn a_recent_but_non_authoritative_observation_is_not_fresh() {
         let now = 1_760_000_000_000;
         assert_eq!(
-            freshness_verdict(Some(now - 1_000), Some(SnapshotResult::Partial), now, 30_000),
+            freshness_verdict(
+                Some(now - 1_000),
+                Some(SnapshotResult::Partial),
+                now,
+                30_000
+            ),
             Freshness::Unknown
         );
         assert_eq!(

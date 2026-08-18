@@ -81,5 +81,11 @@ cd backend && go vet ./... && go test ./...
 Migration verified up → down → up against a real PostgreSQL 17.6, ending at
 `version=40 dirty=false`.
 
-`cargo fmt --all -- --check` could not run: `cargo-fmt` is blocked by this host's
-Application Control policy (`os error 4551`).
+`cargo fmt --all -- --check` cannot run on the Windows host: `cargo-fmt` is
+blocked by Application Control (`os error 4551`). The `rustfmt` binary is not
+blocked, so verify formatting with it directly before pushing, or CI will reject
+the change:
+
+```bash
+rustfmt --edition 2024 --check backend/execution/crates/execution-gateway/src/mt5_vm_sync.rs
+```

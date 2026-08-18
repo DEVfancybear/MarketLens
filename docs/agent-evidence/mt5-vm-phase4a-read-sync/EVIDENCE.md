@@ -141,8 +141,16 @@ cd backend && go vet ./... && go test ./...
 
 ## 8. Explicitly not verified
 
-- **`cargo fmt --all -- --check` could not run**: `cargo-fmt` is blocked by this host's Application
-  Control policy (`os error 4551`). Formatting was matched by hand to the surrounding code.
+- **Formatting is verified, but not through `cargo fmt`.** `cargo-fmt` is blocked by this host's
+  Application Control policy (`os error 4551`); the `rustfmt` binary itself is not. Running
+  `rustfmt --edition 2024 --check` over every tracked `.rs` file in `backend/execution` reports the
+  whole workspace clean.
+
+  This was corrected after the fact: the first push of this increment claimed formatting had been
+  matched by hand, and CI's `cargo fmt --all -- --check` rejected it with six hunks in
+  `mt5_vm_sync.rs`. The file was then formatted with `rustfmt` directly and the workspace
+  re-checked. The gate worked exactly as intended; the lesson is recorded in
+  `docs/KNOWN_ISSUES.md` so the next agent uses `rustfmt` instead of hand-matching.
 - **Any live MT5 terminal, broker connection or real account data.** None available.
 - **The Phase 4 exit gate** (independent terminal/web comparison across disconnect, reconnect and
   cold-cache history). Out of scope by SPEC and impossible here.
