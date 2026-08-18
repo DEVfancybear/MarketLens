@@ -1,5 +1,13 @@
 # Current Progress
 
+- CI artifact packaging fixed (2026-08-19). The `backend-artifact` job ran for the first time and
+  failed in `Package artifact`: two `-replace` patterns in the `SHA256SUMS` loop ended in a dangling
+  backslash escape and PowerShell rejected them outright. The step now derives stage-relative paths
+  with `Substring`/`TrimStart`/`.Replace`, identical to `tools/verify-backend-deploy.ps1`. Verified
+  locally against a five-file stage tree: the emitted `SHA256SUMS` carries forward-slash paths,
+  omits itself, and `Test-ArtifactChecksums` from `tools/lib/MarketLensBackend.psm1` verifies 5/5.
+  The GitHub Actions re-run is still unconfirmed.
+
 - One-command backend deploy complete (2026-08-19). `tools/deploy-backend.ps1` deploys a CI-built
   artifact on the Windows host with no Go or Rust toolchain present: it verifies `SHA256SUMS`,
   matches the artifact commit against `HEAD`, migrates forward with the packaged `migrate.exe`, and

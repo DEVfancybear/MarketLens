@@ -110,14 +110,16 @@ jobs:
             binaries      = @('api.exe', 'migrate.exe', 'mt5-stream.exe', 'execution-gateway.exe')
           }
           $manifest | ConvertTo-Json -Depth 4 | Set-Content stage/MANIFEST.json -Encoding utf8
-          # sha256sum-compatible lines with repo-relative, forward-slash paths.
+          # sha256sum-compatible lines with stage-relative, forward-slash paths.
+          # Same derivation as tools/verify-backend-deploy.ps1 so local packaging
+          # and CI produce byte-identical SHA256SUMS.
           Push-Location stage
-          $lines = Get-ChildItem -Recurse -File | ForEach-Object {
-            $rel = (Resolve-Path -Relative $_.FullName) -replace '^\.\', '' -replace '\', '/'
-            if ($rel -eq 'SHA256SUMS') { return }
+          $stageRoot = (Get-Location).Path
+          $lines = Get-ChildItem -Recurse -File | Where-Object { $_.Name -ne 'SHA256SUMS' } | ForEach-Object {
+            $rel = $_.FullName.Substring($stageRoot.Length).TrimStart('\').Replace('\', '/')
             "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $rel"
           }
-          $lines | Where-Object { $_ } | Set-Content SHA256SUMS -Encoding ascii
+          $lines | Set-Content SHA256SUMS -Encoding ascii
           Pop-Location
           Get-Content stage/SHA256SUMS
 

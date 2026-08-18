@@ -4,6 +4,19 @@ All notable changes to the MarketLens. Dates are UTC.
 
 ## [Unreleased]
 
+### Fixed - `backend-artifact` packaging crashed on its first CI run (2026-08-19)
+
+- The `Package artifact` step in `.github/workflows/ci.yml` derived the `SHA256SUMS` paths with
+  `-replace '^\.\', '' -replace '\', '/'`. Both patterns end in a dangling backslash escape,
+  so PowerShell rejected them before a single file was hashed:
+  `The regular expression pattern ^\.\ is not valid.` The job failed with exit code 1 right
+  after the `Copy-Item` of `execution-gateway.exe`, so no artifact was ever published.
+- The relative path is now derived the same way `tools/verify-backend-deploy.ps1` derives it -
+  `Substring` against the pushed stage directory, `TrimStart('\')`, and a literal
+  `.Replace('\', '/')` - so no regex is involved and the two packagers cannot drift. `SHA256SUMS`
+  is excluded by name before hashing rather than by comparing the computed relative path.
+- Files modified: `.github/workflows/ci.yml`.
+
 ### Added - One-command backend deploy from CI artifacts (2026-08-19)
 
 - Added the `backend-artifact` job to `.github/workflows/ci.yml`. On every push, after the existing

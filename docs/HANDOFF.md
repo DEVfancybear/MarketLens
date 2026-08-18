@@ -17,9 +17,16 @@
 > Rerun everything with:
 > `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\verify-backend-deploy.ps1`
 >
-> Two things remain unproven and must be checked by whoever has access: the `backend-artifact`
-> GitHub Actions job has never run, and no real deploy has happened on the production host. Read
+> Status of the two unproven items (updated 2026-08-19): the `backend-artifact` job has now run
+> once and failed in `Package artifact` - the `SHA256SUMS` loop used `-replace` patterns ending in a
+> dangling backslash escape. That is fixed in `.github/workflows/ci.yml` and verified locally, but
+> the re-run has not been observed, so the job is still not proven green. No real deploy has
+> happened on the production host either. Read
 > `docs/agent-evidence/backend-oneshot-deploy/EVIDENCE.md` section 8 before claiming otherwise.
+>
+> When touching that packaging step, keep it byte-identical in behaviour to the `Push-Location
+> $stage` block in `tools/verify-backend-deploy.ps1`. `Resolve-Path -Relative` plus regex is what
+> broke it; string `Substring`/`.Replace` is deliberate.
 
 
 > Frontend framework toolchain upgrade (2026-08-18): **complete and committed to `master`.**
