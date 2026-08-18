@@ -573,6 +573,15 @@ abuse limits pass.
 Synchronize account, symbols/specifications, positions, pending orders, orders,
 deals and history with freshness/cursor semantics. Do not expose execution yet.
 
+Current state (2026-08-19): Phase 4a increment 1 is implemented and inert. Migration
+`0040` adds the read-sync tables and per-family sync state; the gateway holds the
+tested decision core for invariant 8 plus lease/session/replay fencing, identity
+matching and freshness; the Python adapter normalizes MT5 read-only into string
+decimals and opaque tickets. Nothing writes to the tables yet: the SQL ingestion
+transaction, the owner-scoped Go read API and the agent message kind are increment 2,
+and orders/deals/history remain Phase 4b. See
+`MT5_WINDOWS_VM_CONNECTOR_PHASE4A.md`.
+
 Exit: FTMO and one retail demo match independent terminal/web views through
 disconnect, reconnect and cold-cache history cases.
 

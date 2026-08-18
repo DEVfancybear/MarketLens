@@ -1,5 +1,17 @@
 # Current Progress
 
+- MT5 VM connector Phase 4a increment 1 (2026-08-19): the read-synchronization foundation is
+  implemented and tested, and is inert. Migration `0040` adds five additive tables plus per-family
+  sync state; `mt5_vm_sync.rs` holds the tested decision core for invariant 8 ("empty is not
+  unknown"), lease/session/replay fencing, identity matching and freshness; and
+  `bridge/mt5_vm/phase4_snapshots.py` normalizes MT5 read-only into string decimals and opaque
+  tickets. Gateway 90/90, adapter 17/17, Phase 1 adapter still green, Go vet/test green, migration
+  verified up/down/up on PostgreSQL 17.6. **Nothing writes to the new tables yet**: the SQL
+  ingestion transaction and the owner-scoped Go read API are increment 2, so SPEC scenarios 8 and 9
+  are unverified. Phase 1 remains BLOCKED at the real-terminal gate and the Phase 4 exit gate is
+  not approachable without a licensed MT5 terminal. See
+  `docs/MT5_WINDOWS_VM_CONNECTOR_PHASE4A.md`.
+
 - CI artifact packaging fixed (2026-08-19). The `backend-artifact` job ran for the first time and
   failed in `Package artifact`: two `-replace` patterns in the `SHA256SUMS` loop ended in a dangling
   backslash escape and PowerShell rejected them outright. The step now derives stage-relative paths

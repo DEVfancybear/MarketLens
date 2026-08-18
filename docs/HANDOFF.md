@@ -1,5 +1,28 @@
 # HANDOFF
 
+> MT5 VM Phase 4a handoff (2026-08-19): **increment 1 of 2 is done and is inert.** Read
+> `docs/MT5_WINDOWS_VM_CONNECTOR_PHASE4A.md` and
+> `docs/agent-evidence/mt5-vm-phase4a-read-sync/EVIDENCE.md` before continuing.
+>
+> Delivered: migration `0040` (five additive tables + per-family sync state, verified up/down/up on
+> a real PostgreSQL), the tested decision core in
+> `execution-gateway/src/mt5_vm_sync.rs`, and the read-only normalizer
+> `bridge/mt5_vm/phase4_snapshots.py`.
+>
+> Not delivered, and the next thing to do: the SQL ingestion transaction, the owner-scoped Go read
+> API, the `InstrumentSnapshot` agent message, `tools/verify-mt5-phase4a.ps1`, and the mutation
+> controls. SPEC scenarios 8 and 9 are unverified. The gateway module carries an explicit
+> `#![allow(dead_code)]` because nothing calls it yet - remove that when increment 2 wires it up.
+>
+> The rule increment 2 must not break: only a `complete` snapshot may delete rows or advance a
+> freshness anchor, and a `complete` snapshot with zero rows must still clear the portfolio. Both
+> halves are already pinned by tests in `mt5_vm_sync.rs`.
+>
+> Phase 1 is still BLOCKED at the real-terminal gate (`MT5_IPC_TIMEOUT`), Phase 2/3 operational
+> gates are still open, and the Phase 4 exit gate needs a licensed MT5 terminal. Nothing in this
+> increment changes any of that.
+
+
 > Backend deploy handoff (2026-08-19): the Windows production host now has two one-command
 > entrypoints, documented in `docs/OPERATIONS.md` and `AGENTS.md`.
 >

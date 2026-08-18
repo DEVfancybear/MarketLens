@@ -48,6 +48,7 @@ mod sqlx {
 mod copier;
 mod mt5_vm_connections;
 mod mt5_vm_control;
+mod mt5_vm_sync;
 
 use copier::{PortfolioChange, diff_portfolio};
 

@@ -4,6 +4,41 @@ All notable changes to the MarketLens. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - MT5 VM connector Phase 4a increment 1: read-sync foundation (2026-08-19)
+
+- Added migration `0040_mt5_vm_read_sync`: five additive tables holding normalized, non-secret
+  observations for account state, positions, pending orders and symbol specifications, plus
+  `execution_mt5_vm_sync_state` recording the per-family high-water mark, last result and last
+  error code. Every row carries a sync envelope (worker, lease generation, worker session
+  generation, sync sequence, observed_at) so a write can be fenced before it lands. Verified
+  up -> down -> up against a real PostgreSQL 17.6. No column was added to an existing table; the
+  freshness anchors from `0038` are reused.
+- Added `execution-gateway/src/mt5_vm_sync.rs`: the decision core for plan invariant 8, "empty is
+  not unknown". Only a `complete` snapshot may delete rows it does not mention or advance a
+  freshness anchor; `partial` and `failed` still upsert what they observed but may never remove
+  anything. A `complete` snapshot with zero rows does clear the portfolio, so the rule cannot decay
+  into "never delete". Also fences stale/ahead lease generations, replaced worker sessions and
+  replayed sequences, matches broker identity, classifies freshness (a future timestamp is stale,
+  a non-authoritative observation is never fresh), and refuses any decimal that is not a plain
+  decimal string. Written RED first: 19 of 21 tests observed failing before implementation.
+  23 new tests; the gateway suite is 90/90.
+- Added `bridge/mt5_vm/phase4_snapshots.py`: read-only normalization of MT5 into stable lowercase
+  names, string decimals and opaque string tickets. An unknown MT5 enum raises rather than being
+  guessed; NaN and infinity are refused; only a masked four-digit login suffix travels. The
+  collector distinguishes an empty tuple (`complete`, empty) from `None` (`failed`) from one
+  unusable row (`partial`). 17 new tests; the Phase 1 adapter tests still pass.
+- **Not complete.** The SQL ingestion transaction, the owner-scoped Go read API, the
+  `InstrumentSnapshot` agent message kind, the gauntlet script and the mutation controls are
+  increment 2. SPEC scenarios 8 and 9 are unverified. See
+  `docs/agent-evidence/mt5-vm-phase4a-read-sync/EVIDENCE.md` section 6.
+- Files added: `backend/migrations/0040_mt5_vm_read_sync.{up,down}.sql`,
+  `backend/execution/crates/execution-gateway/src/mt5_vm_sync.rs`,
+  `backend/bridge/mt5_vm/phase4_snapshots.py`,
+  `backend/bridge/mt5_vm/test_phase4_snapshots.py`,
+  `docs/MT5_WINDOWS_VM_CONNECTOR_PHASE4A.md`,
+  `docs/agent-evidence/mt5-vm-phase4a-read-sync/{SPEC,EVIDENCE}.md`. One line added to
+  `execution-gateway/src/main.rs`.
+
 ### Fixed - `backend-artifact` packaging crashed on its first CI run (2026-08-19)
 
 - The `Package artifact` step in `.github/workflows/ci.yml` derived the `SHA256SUMS` paths with
