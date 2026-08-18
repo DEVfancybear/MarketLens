@@ -4,6 +4,23 @@ _Post-monorepo update 2026-07-07._
 
 The historical issue log below is preserved. Current monorepo-specific issues:
 
+- `backend/.env.example` cannot be copied verbatim: it ships
+  `TRADE_RECOVERY_EMAIL_FROM="MarketLens Security <security@example.com>"` while leaving the SMTP
+  host and credentials empty, and the config validator requires the whole SMTP group together, so a
+  fresh copy fails to start with `config error: TRADE_RECOVERY_SMTP_HOST, TRADE_RECOVERY_EMAIL_FROM
+  and both SMTP credentials must be configured together`. Clear that value or fill the group.
+- Hardening candidate: `internal/config/config.go` calls `_ = godotenv.Load()`. If any line of
+  `backend/.env` fails to parse, godotenv returns an error **and zero keys**, the error is
+  discarded, and every setting silently falls back to its default - including `APP_ENV`, which then
+  reads as `development` and skips the production required-secret validation. Consider failing fast
+  when a `.env` exists but cannot be parsed. (Observed during the 2026-08-19 deploy work with a
+  locally mis-written multi-line PEM; a correctly quoted single-line value parses fine.)
+- `go test ./...` in `backend/` intermittently fails
+  `TestPublicEARoutesRequireBearerAndNeverExposeAdmin` and
+  `TestTradingMutationRateLimitIsScopedAfterAuthentication` with `i/o timeout` when packages run in
+  parallel on a busy Windows host. Both pass in isolation and on re-run. Loopback port contention,
+  not a product defect.
+
 - `npm audit --omit=dev --audit-level=low` in `frontend/` no longer passes with zero
   findings: `nanoid@3.3.16` (GHSA-2v37-7h3g-55p8) is pulled into the production tree
   by the repository's own `postcss@8.5.23` override. Verified identical at commit

@@ -84,7 +84,12 @@ Before committing or pushing a code change:
 4. Commit only files intended for the requested change, then push only after the selected
    verification passes or the user explicitly accepts a clearly reported blocker.
 
-## Production backend command
+## Production backend commands
+
+Two commands are production entrypoints. Neither replaces the other; pick by whether the host should
+build from source.
+
+### Build from source (unchanged meaning)
 
 When the user says **build backend production** or **run backend**, execute this command from the
 repository root on the Windows production host:
@@ -99,5 +104,24 @@ The canonical runner owns pull, MT5 runtime provisioning, staged API build, forw
 safe restart, and local/public health gates. Port `8787` is browser/account-local and is not part of
 the multi-user backend runner.
 
-Use `-SkipPull`, `-SkipBuild`, `-SkipMigrations`, or `-SkipPublicHealthCheck` only when the user
-explicitly requests recovery behavior or the production runbook documents the reason.
+### Deploy a CI-built artifact
+
+When the user says **deploy backend**, or asks to ship a build without compiling on the host, run:
+
+```powershell
+.\tools\deploy-backend.ps1
+```
+
+It downloads the artifact GitHub Actions already built, verifies it against `SHA256SUMS`, refuses a
+commit that does not match the checked-out `HEAD` unless `-AllowCommitMismatch` is given, migrates
+forward with the packaged `migrate.exe`, and then delegates the restart to the canonical runner with
+`-SkipPull -SkipBuild -SkipMigrations`. This is the documented reason those three switches exist, so
+using them through this script is not recovery behaviour. The deploy script rolls binaries back on a
+failed restart; it never rolls migrations back.
+
+Do not modify `run-backend-production.ps1` to accommodate the deploy path: keeping the runner as the
+single implementation of restart, MT5 startup and health gating is the point of the delegation.
+
+Outside that delegation, use `-SkipPull`, `-SkipBuild`, `-SkipMigrations`, or
+`-SkipPublicHealthCheck` only when the user explicitly requests recovery behavior or the production
+runbook documents the reason.

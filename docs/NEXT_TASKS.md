@@ -2,6 +2,12 @@
 
 ## Immediate
 
+0. **Confirm the first `backend-artifact` CI run** (2026-08-19, complexity: trivial). The job has
+   never executed; no `gh` CLI or repository token was available during implementation. After the
+   push, check that it produces `marketlens-backend-windows-amd64` and that `SHA256SUMS` covers all
+   five files. Then run `.\tools\deploy-backend.ps1` on the Windows host for the first real deploy,
+   ideally with `-SkipPublicHealthCheck` on a rehearsal.
+
 1. **Review and commit the frontend framework upgrade** (2026-08-18, complexity:
    low). Next 16.3.1 / Tailwind 4.3.3 / TypeScript 7.0.2 are in the working tree,
    verified but deliberately uncommitted. Read

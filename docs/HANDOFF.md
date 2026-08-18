@@ -1,5 +1,27 @@
 # HANDOFF
 
+> Backend deploy handoff (2026-08-19): the Windows production host now has two one-command
+> entrypoints, documented in `docs/OPERATIONS.md` and `AGENTS.md`.
+>
+> - `.\tools\deploy-backend.ps1` is the normal path. It downloads the artifact CI already built,
+>   verifies `SHA256SUMS`, refuses a commit that differs from the checked-out `HEAD`, migrates
+>   forward with the packaged `migrate.exe`, then calls
+>   `run-backend-production.ps1 -SkipPull -SkipBuild -SkipMigrations`. No Go or Rust on the host.
+> - `.\run-backend-production.ps1` still means **build backend production** / **run backend** and is
+>   unchanged. Use it for recovery, hotfixes, or to provision the MT5 Python environment.
+>
+> Do not reimplement restart/MT5/health logic inside the deploy script: delegating to the runner is
+> deliberate, and `tools/verify-backend-deploy.ps1` fails if `run-backend-production.ps1` is
+> modified. Migrations are forward-only; a failed restart rolls binaries back but never the schema.
+>
+> Rerun everything with:
+> `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\verify-backend-deploy.ps1`
+>
+> Two things remain unproven and must be checked by whoever has access: the `backend-artifact`
+> GitHub Actions job has never run, and no real deploy has happened on the production host. Read
+> `docs/agent-evidence/backend-oneshot-deploy/EVIDENCE.md` section 8 before claiming otherwise.
+
+
 > Frontend framework toolchain upgrade (2026-08-18): **complete and committed to `master`.**
 > The frontend runs Next.js + `eslint-config-next` `16.3.1`, Tailwind CSS `4.3.3`
 > (CSS-first `@theme`; `tailwind.config.ts` deleted), and the TypeScript 7.0.2

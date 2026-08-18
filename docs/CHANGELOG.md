@@ -4,6 +4,33 @@ All notable changes to the MarketLens. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - One-command backend deploy from CI artifacts (2026-08-19)
+
+- Added the `backend-artifact` job to `.github/workflows/ci.yml`. On every push, after the existing
+  `backend` and `execution-rust` test jobs pass, it builds `api.exe`, `migrate.exe`,
+  `mt5-stream.exe` (`CGO_ENABLED=0`, `-trimpath`) and the release `execution-gateway.exe` on
+  `windows-latest`, then publishes them with a `MANIFEST.json` and `SHA256SUMS`. A `v*` tag also
+  attaches the zip to a GitHub Release. The job never deploys.
+- Added `tools/deploy-backend.ps1`, the one command for the production host. It resolves the
+  artifact (local `-ArtifactPath`, `gh run download`, or `gh release download -Tag`), verifies every
+  file against `SHA256SUMS`, refuses an artifact whose commit does not match the checked-out `HEAD`
+  unless `-AllowCommitMismatch` is given, refuses to proceed when a foreign process holds a target
+  port, applies forward-only migrations with the packaged `migrate.exe`, and then delegates the
+  restart to `run-backend-production.ps1 -SkipPull -SkipBuild -SkipMigrations`. Binaries roll back
+  automatically on a failed restart; migrations never do.
+- The production host no longer needs Go or Rust. It needs PowerShell, the managed MT5 Python
+  environment, and either `gh` or a downloaded artifact.
+- Added `tools/lib/MarketLensBackend.psm1` (env, bind-port, listener-ownership and checksum
+  helpers) and `tools/verify-backend-local.ps1`, which starts the compiled API and Rust gateway and
+  probes twelve endpoints, asserting 401 when the protected surface is mounted and 404 when it is
+  not, and failing on any 5xx.
+- Added `tools/verify-backend-deploy.ps1`, a seven-layer fail-closed gauntlet.
+- `run-backend-production.ps1` is unchanged; the deploy path delegates to it rather than
+  reimplementing restart, MT5 startup or health gating.
+- Files modified: `.github/workflows/ci.yml`, `AGENTS.md`, `docs/OPERATIONS.md`,
+  `docs/{CURRENT_PROGRESS,NEXT_TASKS,HANDOFF,KNOWN_ISSUES}.md`,
+  `docs/agent-evidence/backend-oneshot-deploy/{SPEC,EVIDENCE}.md`, and new files under `tools/`.
+
 ### Changed - Frontend framework toolchain upgrade: Next 16.3.1, Tailwind 4.3.3, TypeScript 7.0.2 (2026-08-18)
 
 - Upgraded Next.js and `eslint-config-next` to `16.3.1`, Tailwind CSS to `4.3.3`

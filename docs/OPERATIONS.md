@@ -48,15 +48,50 @@ npm run test:ui
 
 ## Backend
 
+There are two production entrypoints on the Windows host. Both are one command and both end in the
+same safe restart plus health gates.
+
+### Deploy a CI-built artifact (normal path, no Go/Rust needed)
+
+```powershell
+.\tools\deploy-backend.ps1
+```
+
+Downloads the backend artifact GitHub Actions already built, verifies every file against
+`SHA256SUMS`, refuses an artifact whose `MANIFEST.json` commit does not match the checked-out
+`HEAD`, applies forward-only migrations with the packaged `migrate.exe`, and then delegates the
+restart to `run-backend-production.ps1 -SkipPull -SkipBuild -SkipMigrations`. The host needs
+**no Go and no Rust toolchain** - only PowerShell, the managed MT5 Python environment, and either
+the `gh` CLI or `-ArtifactPath` pointing at a downloaded zip.
+
+If the restart fails it restores the previous binaries automatically. Migrations are forward-only
+and are never rolled back; fix forward.
+
+Useful switches: `-ArtifactPath <zip>` (offline), `-Tag v1.2.3` (deploy a release),
+`-Commit <sha>`, `-AllowCommitMismatch`, `-SkipPublicHealthCheck`.
+
+### Build from source (recovery path)
+
 On the Windows production host, **build backend production** and **run backend** both mean:
 
 ```powershell
 .\run-backend-production.ps1
 ```
 
-This is the only normal production entrypoint. It pulls, provisions the MT5 runtime, builds a
-staged backend binary, migrates, safely restarts ports `8765`/`8080`, and requires local plus public
-health checks. Commands below are development or manual-recovery commands.
+It pulls, provisions the MT5 runtime, builds a staged backend binary, migrates, safely restarts
+ports `8765`/`8080`, and requires local plus public health checks. Use it when CI is unavailable,
+for a local hotfix, or to provision the MT5 Python environment the artifact cannot ship. It needs
+Go and Rust on the host. Commands below are development or manual-recovery commands.
+
+### Verify a running backend locally
+
+```powershell
+.\tools\verify-backend-local.ps1
+```
+
+Starts the compiled API and Rust execution gateway against `backend\.env`, probes health,
+readiness, the execution relay and the protected surface, then stops what it started. It reports
+whether the protected routes are mounted, which depends on Firebase being configured.
 
 ```bash
 cd backend

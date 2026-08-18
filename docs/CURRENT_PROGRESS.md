@@ -1,5 +1,15 @@
 # Current Progress
 
+- One-command backend deploy complete (2026-08-19). `tools/deploy-backend.ps1` deploys a CI-built
+  artifact on the Windows host with no Go or Rust toolchain present: it verifies `SHA256SUMS`,
+  matches the artifact commit against `HEAD`, migrates forward with the packaged `migrate.exe`, and
+  delegates the restart to the unchanged `run-backend-production.ps1`. CI publishes the artifact via
+  the new `backend-artifact` job. Verified locally end to end: PostgreSQL 17.6 on port 55432,
+  `migrate up` reaching `version=39 dirty=false`, and the compiled API plus Rust execution gateway
+  answering 12/12 endpoint probes in both the Firebase-configured (401) and unconfigured (404)
+  modes. The GitHub Actions run and a real production deploy are NOT yet verified - see
+  `docs/agent-evidence/backend-oneshot-deploy/EVIDENCE.md` section 8.
+
 - Frontend framework toolchain upgrade complete (2026-08-18). Next.js and
   `eslint-config-next` are on `16.3.1`, Tailwind CSS on `4.3.3` with
   `@tailwindcss/postcss` and a CSS-first `@theme` (no `tailwind.config.ts`), and
