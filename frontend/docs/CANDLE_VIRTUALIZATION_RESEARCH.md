@@ -61,10 +61,10 @@ Primary sources used for this proposal:
 - [React Native `computeWindowedRenderLimits` source](https://github.com/react/react-native/blob/main/packages/virtualized-lists/Lists/VirtualizeUtils.js)
   starts with the visible interval, expands to a capped overscan interval,
   records scroll direction, and limits how many new cells enter each batch.
-- [Lightweight Charts 4.2 `ISeriesApi` documentation](https://tradingview.github.io/lightweight-charts/docs/4.2/api/interfaces/ISeriesApi)
+- [Lightweight Charts 5.2 `ISeriesApi` documentation](https://tradingview.github.io/lightweight-charts/docs/api/interfaces/ISeriesApi)
   defines full replacement through `setData`, latest-bar append/update through
   `update`, `barsInLogicalRange`, and the higher cost of historical updates.
-- [Lightweight Charts realtime update guidance](https://tradingview.github.io/lightweight-charts/docs/4.0/)
+- [Lightweight Charts realtime update guidance](https://tradingview.github.io/lightweight-charts/docs/api/interfaces/ISeriesApi)
   warns against frequent `setData` calls and recommends `update` for the latest
   point.
 - [Lightweight Charts infinite-history demo](https://tradingview.github.io/lightweight-charts/tutorials/demos/infinite-history)
@@ -73,9 +73,10 @@ Primary sources used for this proposal:
   notes that viewport callbacks run frequently and should remain simple or use
   caching and stable references.
 
-The project currently depends on `lightweight-charts@4.2.3`; recommendations
-must be verified against that API before using functionality from newer major
-versions.
+The project currently depends on the latest stable `lightweight-charts@5.2.0`.
+Recommendations must follow the v5 API: create series with `chart.addSeries`
+and use `series.update` for latest-bar changes instead of repeatedly replacing
+the full dataset with `setData`.
 
 ## 3. What VirtualizedList actually optimizes
 

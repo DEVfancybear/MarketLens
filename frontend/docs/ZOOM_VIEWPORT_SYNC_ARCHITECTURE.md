@@ -521,7 +521,7 @@ calendars. Index `100` is only meaningful inside the timeline that created it.
 ## 18. External References
 
 - Lightweight Charts 5 time scale:
-  <https://tradingview.github.io/lightweight-charts/docs/5.1/time-scale>
+  <https://tradingview.github.io/lightweight-charts/docs/api/interfaces/ITimeScaleApi>
 - Lightweight Charts scale options:
   <https://tradingview.github.io/lightweight-charts/docs/api/interfaces/HandleScaleOptions>
 - Lightweight Charts 5.2 price-scale lifecycle source:
@@ -530,6 +530,9 @@ calendars. Index `100` is only meaningful inside the timeline that created it.
   <https://tradingview.github.io/lightweight-charts/tutorials/how_to/panes>
 - Lightweight Charts v4 to v5 migration:
   <https://tradingview.github.io/lightweight-charts/docs/migrations/from-v4-to-v5>
+- Lightweight Charts v5 integration skill (time, range, panes, markers, and
+  public coordinate-conversion APIs):
+  <https://github.com/tradingview/lightweight-charts/blob/master/.github/skills/lightweight-charts/SKILL.md>
 - TradingView multi-chart synchronization:
   <https://www.tradingview.com/support/solutions/43000629992-how-to-sync-the-charts-of-my-layout/>
 - TradingView date-range synchronization:

@@ -124,6 +124,7 @@ import {
 } from "@/services/chartPerformanceProbe";
 import { installChartBenchmarkHarness } from "@/services/chartBenchmarkHarness";
 import { installChartInteractionTestHarness } from "./chartInteractionTestHarness";
+import { createResizeScheduler } from "./chartResizeScheduler";
 import { measureChartPaneMetrics } from "./chartPaneMetrics";
 import {
   paneLegendTopsEqual,
@@ -580,6 +581,14 @@ export function PriceChart({
     onReady?.(chart);
 
     let disposed = false;
+    const resizeScheduler = createResizeScheduler((width, height) => {
+      if (disposed || chartRef.current !== chart) return;
+      // Coalesce ResizeObserver bursts so Lightweight Charts performs one
+      // layout/canvas transaction per frame using the latest settled size.
+      chart.resize(width, height, true);
+      applyResponsiveMaxBarSpacing(chart);
+      scheduleVersionBump();
+    });
     const unsubscribeViewportEvents = subscribeChartViewportEvents(chart, (source) => {
       if (disposed) return;
       if (source === "input") viewportController.beginUserInteraction();
@@ -672,19 +681,10 @@ export function PriceChart({
       if (disposed || chartRef.current !== chart) return;
       const bounds = entries[0]?.contentRect;
       if (!bounds || bounds.width <= 0 || bounds.height <= 0) return;
-      // Lightweight Charts may resize its DPR-scaled backing canvases after
-      // the pane's CSS size has settled. A deferred resize can therefore clear
-      // the bitmap without producing another frame (most visible on inactive,
-      // non-interactive multi-chart previews). Force the resize transaction to
-      // repaint the chart atomically so a valid candle series never becomes a
-      // blank canvas after pane activation.
-      chart.resize(
+      resizeScheduler.schedule(
         Math.floor(bounds.width),
         Math.floor(bounds.height),
-        true,
       );
-      applyResponsiveMaxBarSpacing(chart);
-      scheduleVersionBump();
     });
     if (interactive) chart.subscribeCrosshairMove(handleCrosshairMove);
     ro.observe(chartContainer);
@@ -697,6 +697,7 @@ export function PriceChart({
     return () => {
       disposed = true;
       ro.disconnect();
+      resizeScheduler.cancel();
       uninstallInteractionHarness();
       uninstallBenchmarkHarness();
       unsubscribeViewportEvents();
@@ -1247,6 +1248,7 @@ export function PriceChart({
     replaySessionId,
     replaySpeed,
     scheduleVersionBump,
+    marketSeriesKey,
     symbol,
     theme,
     timeframe,
