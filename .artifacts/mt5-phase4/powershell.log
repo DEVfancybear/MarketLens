@@ -1,0 +1,6 @@
+KILLED partial-delete
+KILLED dropped-lease-fence
+KILLED dropped-identity-check
+KILLED one-sided-portfolio-freshness
+KILLED partial-history-coverage
+All five Phase 4 manual mutants were killed.

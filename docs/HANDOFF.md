@@ -1,26 +1,24 @@
-# HANDOFF
+﻿# HANDOFF
 
-> MT5 VM Phase 4a handoff (2026-08-19): **increment 1 of 2 is done and is inert.** Read
-> `docs/MT5_WINDOWS_VM_CONNECTOR_PHASE4A.md` and
-> `docs/agent-evidence/mt5-vm-phase4a-read-sync/EVIDENCE.md` before continuing.
+> MT5 VM Phase 4 handoff (2026-08-20): **repository 4a/4b implementation is wired and inert by
+> prerequisite.** Read `docs/MT5_WINDOWS_VM_CONNECTOR_PHASE4A.md`,
+> `docs/MT5_WINDOWS_VM_CONNECTOR_PHASE4B.md`, and
+> `docs/MT5_WINDOWS_VM_CONNECTOR_PHASE0_4_OPERATOR_CHECKLIST.md` before continuing.
 >
-> Delivered: migration `0040` (five additive tables + per-family sync state, verified up/down/up on
-> a real PostgreSQL), the tested decision core in
-> `execution-gateway/src/mt5_vm_sync.rs`, and the read-only normalizer
-> `bridge/mt5_vm/phase4_snapshots.py`.
+> Delivered: migration `0040` plus additive `0041`, authenticated Rust ingestion/read routes,
+> owner-scoped Go snapshot/history APIs, Python history normalization, stable agent wire kinds, and
+> `tools/verify-mt5-phase4.ps1`. Fresh code-native results are Rust gateway 93/93, agent 22/22,
+> Python 37/37, Go `./...`, and Go vet. The migration round-trip remains BLOCKED until an operator
+> supplies a disposable PostgreSQL URL; no production database was touched.
 >
-> Not delivered, and the next thing to do: the SQL ingestion transaction, the owner-scoped Go read
-> API, the `InstrumentSnapshot` agent message, `tools/verify-mt5-phase4a.ps1`, and the mutation
-> controls. SPEC scenarios 8 and 9 are unverified. The gateway module carries an explicit
-> `#![allow(dead_code)]` because nothing calls it yet - remove that when increment 2 wires it up.
+> The invariant remains non-negotiable: only a `complete` snapshot/page may delete rows or advance
+> authoritative freshness/coverage, and a complete empty snapshot/page is meaningful. Partial or
+> failed observations never erase unknown state.
 >
-> The rule increment 2 must not break: only a `complete` snapshot may delete rows or advance a
-> freshness anchor, and a `complete` snapshot with zero rows must still clear the portfolio. Both
-> halves are already pinned by tests in `mt5_vm_sync.rs`.
->
-> Phase 1 is still BLOCKED at the real-terminal gate (`MT5_IPC_TIMEOUT`), Phase 2/3 operational
-> gates are still open, and the Phase 4 exit gate needs a licensed MT5 terminal. Nothing in this
-> increment changes any of that.
+> Phase 1 is still conditional (normal signed-agent path, independent web match, and two-account
+> isolation remain); Phase 2/3 operational gates are open; and the Phase 4 exit gate needs licensed
+> FTMO/retail terminals plus independent terminal/web snapshots. Nothing in this repository slice
+> authorizes Phase 5 execution.
 
 
 > Backend deploy handoff (2026-08-19): the Windows production host now has two one-command

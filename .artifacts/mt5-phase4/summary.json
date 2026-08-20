@@ -1,0 +1,35 @@
+﻿[
+    {
+        "Name":  "rust-check",
+        "Status":  "PASS"
+    },
+    {
+        "Name":  "rust-clippy",
+        "Status":  "PASS"
+    },
+    {
+        "Name":  "rust-tests",
+        "Status":  "PASS"
+    },
+    {
+        "Name":  "python-phase0-1-4",
+        "Status":  "PASS"
+    },
+    {
+        "Name":  "go-execution",
+        "Status":  "PASS"
+    },
+    {
+        "Name":  "migration-0041-static",
+        "Status":  "PASS"
+    },
+    {
+        "Name":  "manual-mutation-controls",
+        "Status":  "PASS"
+    },
+    {
+        "Name":  "postgres-0040-0041-roundtrip",
+        "Status":  "BLOCKED",
+        "Detail":  "-SkipDatabase supplied"
+    }
+]

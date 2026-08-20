@@ -267,13 +267,13 @@ async fn worker_hello(
 }
 
 #[derive(Clone, Copy)]
-struct WorkerAuth {
-    protocol_version: u16,
-    session_generation: u64,
-    capacity: u16,
+pub(super) struct WorkerAuth {
+    pub(super) protocol_version: u16,
+    pub(super) session_generation: u64,
+    pub(super) capacity: u16,
 }
 
-async fn authenticate_worker(
+pub(super) async fn authenticate_worker(
     transaction: &mut sqlx_core::transaction::Transaction<'_, Postgres>,
     headers: &HeaderMap,
     worker_id: &str,
@@ -341,7 +341,7 @@ async fn authenticate_worker(
     })
 }
 
-fn validate_session_envelope(
+pub(super) fn validate_session_envelope(
     worker_id: &str,
     session_generation: u64,
     protocol_version: u16,
@@ -737,6 +737,7 @@ fn ack_target_status(current: &str, ack: WorkerCommandAckKind) -> Result<&'stati
     }
 }
 
+#[cfg(test)]
 fn reconciliation_complete(result: Option<&Value>) -> bool {
     result.is_some_and(|result| {
         result.get("ready").and_then(Value::as_bool) == Some(true)
@@ -965,7 +966,7 @@ async fn apply_terminal_ack(
     request: &WorkerCommandAckRequest,
     command_kind: &str,
     target_status: &str,
-    result: Option<&Value>,
+    _result: Option<&Value>,
 ) -> Result<(), ApiError> {
     if target_status == "failed" {
         sqlx_core::query::query(
@@ -1035,16 +1036,16 @@ async fn apply_terminal_ack(
             .map_err(|error| ApiError::database("queue initial reconciliation", error))?;
         }
         "reconcile_account" => {
-            let complete = reconciliation_complete(result);
+            // Phase 4 owns readiness. A lifecycle acknowledgement may prove
+            // that the adapter ran, but it cannot claim synchronized account,
+            // portfolio, and instrument evidence without the fenced snapshot
+            // transactions in mt5_vm_sync.
             sqlx_core::query::query(
                 r#"
                 UPDATE execution_mt5_vm_accounts
-                SET connection_status = CASE WHEN $5 THEN 'ready' ELSE 'degraded' END,
+                SET connection_status = 'synchronizing',
                     connection_revision = connection_revision + 1,
-                    last_account_sync_at = CASE WHEN $5 THEN now() ELSE last_account_sync_at END,
-                    last_portfolio_sync_at = CASE WHEN $5 THEN now() ELSE last_portfolio_sync_at END,
-                    last_instrument_sync_at = CASE WHEN $5 THEN now() ELSE last_instrument_sync_at END,
-                    last_error_code = CASE WHEN $5 THEN NULL ELSE 'RECONCILIATION_INCOMPLETE' END
+                    last_error_code = NULL
                 WHERE user_id = $1 AND account_id = $2
                   AND worker_id = $3 AND lease_generation = $4
                 "#,
@@ -1053,7 +1054,6 @@ async fn apply_terminal_ack(
             .bind(&request.account_id)
             .bind(&request.worker_id)
             .bind(request.lease_generation as i64)
-            .bind(complete)
             .execute(&mut **transaction)
             .await
             .map_err(|error| ApiError::database("apply account reconciliation", error))?;

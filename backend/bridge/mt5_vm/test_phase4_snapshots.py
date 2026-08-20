@@ -84,14 +84,67 @@ def instrument(**overrides):
     return SimpleNamespace(**base)
 
 
+def history_order(**overrides):
+    base = dict(
+        ticket=13579,
+        position_id=24680,
+        symbol="EURUSD",
+        type=0,
+        state=4,
+        volume_initial=0.10,
+        volume_current=0.0,
+        price_open=1.08512,
+        price_current=1.08600,
+        sl=1.08000,
+        tp=1.09000,
+        time_setup=1760000000,
+        time_done=1760000060,
+        magic=7,
+    )
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+def deal(**overrides):
+    base = dict(
+        ticket=97531,
+        order=13579,
+        position_id=24680,
+        symbol="EURUSD",
+        type=0,
+        entry=0,
+        volume=0.10,
+        price=1.08600,
+        commission=-0.25,
+        swap=0.0,
+        profit=8.80,
+        fee=0.0,
+        time=1760000060,
+        magic=7,
+    )
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
 _UNSET = object()
 
 
 class MT5Stub:
-    def __init__(self, *, positions=(), orders=(), symbols=(), info=_UNSET):
+    def __init__(
+        self,
+        *,
+        positions=(),
+        orders=(),
+        symbols=(),
+        history_orders=(),
+        deals=(),
+        info=_UNSET,
+    ):
         self._positions = positions
         self._orders = orders
         self._symbols = symbols
+        self._history_orders = history_orders
+        self._deals = deals
         # A sentinel, so a test can pass info=None to mean "account_info failed".
         self._info = account() if info is _UNSET else info
 
@@ -106,6 +159,12 @@ class MT5Stub:
 
     def symbols_get(self):
         return self._symbols
+
+    def history_orders_get(self, _from, _to):
+        return self._history_orders
+
+    def history_deals_get(self, _from, _to):
+        return self._deals
 
 
 class NormalizationTests(unittest.TestCase):
@@ -184,6 +243,18 @@ class NormalizationTests(unittest.TestCase):
         with self.assertRaises(snapshots.SnapshotError):
             snapshots.normalize_position(position(ticket=None))
 
+    def test_history_orders_and_deals_normalize_to_stable_string_contracts(self):
+        self.assertTrue(callable(getattr(snapshots, "normalize_history_order", None)))
+        self.assertTrue(callable(getattr(snapshots, "normalize_deal", None)))
+        order = snapshots.normalize_history_order(history_order())
+        normalized_deal = snapshots.normalize_deal(deal())
+        self.assertEqual(order["broker_ticket"], "13579")
+        self.assertEqual(order["state"], "filled")
+        self.assertIsInstance(order["volume_initial"], str)
+        self.assertEqual(normalized_deal["broker_ticket"], "97531")
+        self.assertEqual(normalized_deal["entry"], "in")
+        self.assertIsInstance(normalized_deal["profit"], str)
+
 
 class CollectorTests(unittest.TestCase):
     def test_empty_tuple_is_a_complete_empty_family(self):
@@ -241,6 +312,23 @@ class CollectorTests(unittest.TestCase):
         )
         for forbidden in ("password", "12344321", "secret", "token"):
             self.assertNotIn(forbidden, rendered.lower())
+
+    def test_history_empty_is_complete_but_failure_is_not_authoritative(self):
+        self.assertTrue(callable(getattr(snapshots, "collect_history_page", None)))
+        complete = snapshots.collect_history_page(
+            MT5Stub(history_orders=(), deals=()), from_ms=1760000000000, to_ms=1760003600000
+        )
+        self.assertEqual(complete["orders_history"]["result"], snapshots.COMPLETE)
+        self.assertEqual(complete["deals"]["result"], snapshots.COMPLETE)
+        self.assertEqual(complete["orders_history"]["orders"], [])
+
+        failed_stub = MT5Stub()
+        failed_stub.history_deals_get = lambda _from, _to: None
+        failed = snapshots.collect_history_page(
+            failed_stub, from_ms=1760000000000, to_ms=1760003600000
+        )
+        self.assertEqual(failed["deals"]["result"], snapshots.FAILED)
+        self.assertEqual(failed["deals"]["covered_through_ms"], None)
 
 
 if __name__ == "__main__":

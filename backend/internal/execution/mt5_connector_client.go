@@ -2,7 +2,9 @@ package execution
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"strconv"
 )
 
 type MT5ConnectorAccount struct {
@@ -102,6 +104,34 @@ func (c *Client) MT5ConnectorAccount(ctx context.Context, ownerID, accountID str
 	query.Set("accountId", accountID)
 	endpoint.RawQuery = query.Encode()
 	var response MT5ConnectorAccount
+	err := c.doJSON(ctx, http.MethodGet, endpoint, nil, &response)
+	return response, err
+}
+
+func (c *Client) MT5ConnectorReadState(ctx context.Context, ownerID, accountID string) (json.RawMessage, error) {
+	endpoint := c.resolve("/v1/admin/mt5-vm/accounts/read-state")
+	query := endpoint.Query()
+	query.Set("ownerId", ownerID)
+	query.Set("accountId", accountID)
+	endpoint.RawQuery = query.Encode()
+	var response json.RawMessage
+	err := c.doJSON(ctx, http.MethodGet, endpoint, nil, &response)
+	return response, err
+}
+
+func (c *Client) MT5ConnectorHistory(ctx context.Context, ownerID, accountID string, fromMS, toMS int64, limit int, cursor string) (json.RawMessage, error) {
+	endpoint := c.resolve("/v1/admin/mt5-vm/accounts/history")
+	query := endpoint.Query()
+	query.Set("ownerId", ownerID)
+	query.Set("accountId", accountID)
+	query.Set("fromMs", strconv.FormatInt(fromMS, 10))
+	query.Set("toMs", strconv.FormatInt(toMS, 10))
+	query.Set("limit", strconv.Itoa(limit))
+	if cursor != "" {
+		query.Set("cursor", cursor)
+	}
+	endpoint.RawQuery = query.Encode()
+	var response json.RawMessage
 	err := c.doJSON(ctx, http.MethodGet, endpoint, nil, &response)
 	return response, err
 }

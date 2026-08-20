@@ -1,6 +1,6 @@
 # Universal MT5 Windows VM connector plan
 
-- Status: **approved architecture; Phase 0 complete; Phase 1 conditional; Phase 2 control plane implemented and activation-gated**
+- Status: **approved architecture; Phase 0 complete; Phase 1 conditional; Phase 2/3 implemented and activation-gated; Phase 4 repository slice implemented and operationally gated**
 - Decision date: 12 August 2026
 - Replaces the deleted TickerAll/MetaApi cloud-provider plan
 - Runtime model: MarketLens-managed Windows VM pool, multiple terminals per VM
@@ -573,14 +573,18 @@ abuse limits pass.
 Synchronize account, symbols/specifications, positions, pending orders, orders,
 deals and history with freshness/cursor semantics. Do not expose execution yet.
 
-Current state (2026-08-19): Phase 4a increment 1 is implemented and inert. Migration
-`0040` adds the read-sync tables and per-family sync state; the gateway holds the
-tested decision core for invariant 8 plus lease/session/replay fencing, identity
-matching and freshness; the Python adapter normalizes MT5 read-only into string
-decimals and opaque tickets. Nothing writes to the tables yet: the SQL ingestion
-transaction, the owner-scoped Go read API and the agent message kind are increment 2,
-and orders/deals/history remain Phase 4b. See
-`MT5_WINDOWS_VM_CONNECTOR_PHASE4A.md`.
+Current state (2026-08-20): the Phase 4 repository slice for 4a and 4b is
+implemented and inert-by-prerequisite. Migration `0040` stores account/portfolio/
+instrument observations and `0041` adds normalized order history, deals and
+coverage state. Rust owns authenticated worker ingestion, atomic stale-session /
+lease / sequence fencing, complete-vs-partial reconciliation, paired portfolio
+freshness, owner-scoped bounded reads and tamper-evident cursors. Go injects the
+owner for public snapshot/history routes; Python stops MT5 enums and decimal
+conversion at the adapter; the agent protocol pins instrument/history wire names.
+The repository gauntlet passes all code-native layers, but the migration round-trip
+still requires a disposable PostgreSQL URL on the operator host. See
+`MT5_WINDOWS_VM_CONNECTOR_PHASE4A.md`, `MT5_WINDOWS_VM_CONNECTOR_PHASE4B.md` and
+`MT5_WINDOWS_VM_CONNECTOR_PHASE0_4_OPERATOR_CHECKLIST.md`.
 
 Exit: FTMO and one retail demo match independent terminal/web views through
 disconnect, reconnect and cold-cache history cases.

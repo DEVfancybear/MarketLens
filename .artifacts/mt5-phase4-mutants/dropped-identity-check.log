@@ -1,0 +1,45 @@
+﻿   Compiling execution-gateway v0.1.0 (C:\Users\duong\Downloads\tradingview\.artifacts\mt5-phase4-mutants\execution\crates\execution-gateway)
+warning: unused variable: `registered_server`
+   --> crates\execution-gateway\src\mt5_vm_sync.rs:475:5
+    |
+475 |     registered_server: &str,
+    |     ^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_registered_server`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+System.Management.Automation.RemoteException
+warning: unused variable: `observed_server`
+   --> crates\execution-gateway\src\mt5_vm_sync.rs:477:5
+    |
+477 |     observed_server: &str,
+    |     ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_observed_server`
+System.Management.Automation.RemoteException
+warning: function `normalized_server_eq` is never used
+   --> crates\execution-gateway\src\mt5_vm_sync.rs:491:4
+    |
+491 | fn normalized_server_eq(left: &str, right: &str) -> bool {
+    |    ^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+System.Management.Automation.RemoteException
+warning: `execution-gateway` (bin "execution-gateway" test) generated 3 warnings (run `cargo fix --bin "execution-gateway" -p execution-gateway --tests` to apply 2 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.70s
+     Running unittests src\main.rs (backend\execution\target\debug\deps\execution_gateway-a7f74c8eaba72c31.exe)
+
+running 1 test
+test mt5_vm_sync::tests::different_server_or_login_suffix_is_rejected ... FAILED
+
+failures:
+
+---- mt5_vm_sync::tests::different_server_or_login_suffix_is_rejected stdout ----
+
+thread 'mt5_vm_sync::tests::different_server_or_login_suffix_is_rejected' (25836) panicked at crates\execution-gateway\src\mt5_vm_sync.rs:2114:9:
+assertion failed: !identity_matches("FTMO-Demo", Some("4321"), "FTMO-Live", Some("4321"))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    mt5_vm_sync::tests::different_server_or_login_suffix_is_rejected
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 92 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p execution-gateway --bin execution-gateway`

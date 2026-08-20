@@ -29,6 +29,9 @@ pub enum MessageKind {
     ForceTerminalCrash,
     AccountRuntimeStatus,
     AccountSnapshot,
+    InstrumentSnapshot,
+    OrdersHistorySnapshot,
+    DealsSnapshot,
     ValidationReport,
 }
 
@@ -43,6 +46,9 @@ impl MessageKind {
             Self::ForceTerminalCrash => "force_terminal_crash",
             Self::AccountRuntimeStatus => "account_runtime_status",
             Self::AccountSnapshot => "account_snapshot",
+            Self::InstrumentSnapshot => "instrument_snapshot",
+            Self::OrdersHistorySnapshot => "orders_history_snapshot",
+            Self::DealsSnapshot => "deals_snapshot",
             Self::ValidationReport => "validation_report",
         }
     }
@@ -395,6 +401,18 @@ mod tests {
                 .verify::<Value>(&frame, "account-a", 7, 1_500)
                 .unwrap_err()
         );
+    }
+
+    #[test]
+    fn phase_four_snapshot_message_kinds_have_stable_wire_names() {
+        for (wire, expected) in [
+            ("\"instrument_snapshot\"", "instrument_snapshot"),
+            ("\"orders_history_snapshot\"", "orders_history_snapshot"),
+            ("\"deals_snapshot\"", "deals_snapshot"),
+        ] {
+            let kind: MessageKind = serde_json::from_str(wire).expect("Phase 4 message kind");
+            assert_eq!(kind.as_str(), expected);
+        }
     }
 
     #[test]

@@ -1,16 +1,19 @@
-# Current Progress
+﻿# Current Progress
 
-- MT5 VM connector Phase 4a increment 1 (2026-08-19): the read-synchronization foundation is
-  implemented and tested, and is inert. Migration `0040` adds five additive tables plus per-family
-  sync state; `mt5_vm_sync.rs` holds the tested decision core for invariant 8 ("empty is not
-  unknown"), lease/session/replay fencing, identity matching and freshness; and
-  `bridge/mt5_vm/phase4_snapshots.py` normalizes MT5 read-only into string decimals and opaque
-  tickets. Gateway 90/90, adapter 17/17, Phase 1 adapter still green, Go vet/test green, migration
-  verified up/down/up on PostgreSQL 17.6. **Nothing writes to the new tables yet**: the SQL
-  ingestion transaction and the owner-scoped Go read API are increment 2, so SPEC scenarios 8 and 9
-  are unverified. Phase 1 remains BLOCKED at the real-terminal gate and the Phase 4 exit gate is
-  not approachable without a licensed MT5 terminal. See
-  `docs/MT5_WINDOWS_VM_CONNECTOR_PHASE4A.md`.
+- MT5 VM connector Phase 4 repository slice (2026-08-20): 4a increment 2 and the 4b
+  history/read path are implemented and inert-by-prerequisite. Migration `0040` holds
+  normalized account/portfolio/instrument rows; additive `0041` holds order history,
+  deals and explicit coverage. Rust ingestion fences worker/session/lease/sequence in
+  one transaction, deletes only authoritative complete sets, pairs portfolio freshness,
+  and exposes bounded owner-scoped reads with tamper-evident cursors. Go owner injection,
+  Python history normalization and agent wire names are covered. Fresh results: Rust
+  gateway 93/93, agent 22/22 (one credentialed live test ignored), Python Phase 0/1/4
+  37/37, Go `./...`, and `go vet ./internal/execution` pass. The verifier's PostgreSQL
+  round-trip is **BLOCKED** on a disposable URL (configured 55432 is unavailable and
+  local 5432 rejects the stored password); no migration PASS is claimed. Phase 1 remains
+  conditional and Phase 4's live exit still needs licensed terminals and independent
+  broker/web snapshots. See `docs/MT5_WINDOWS_VM_CONNECTOR_PHASE4A.md`,
+  `docs/MT5_WINDOWS_VM_CONNECTOR_PHASE4B.md`, and the operator checklist.
 
 - CI artifact packaging fixed (2026-08-19). The `backend-artifact` job ran for the first time and
   failed in `Package artifact`: two `-replace` patterns in the `SHA256SUMS` loop ended in a dangling

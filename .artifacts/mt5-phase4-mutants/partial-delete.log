@@ -1,0 +1,22 @@
+﻿   Compiling execution-gateway v0.1.0 (C:\Users\duong\Downloads\tradingview\.artifacts\mt5-phase4-mutants\execution\crates\execution-gateway)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 37s
+     Running unittests src\main.rs (backend\execution\target\debug\deps\execution_gateway-a7f74c8eaba72c31.exe)
+
+running 1 test
+test mt5_vm_sync::tests::partial_snapshot_never_deletes_and_never_advances_freshness ... FAILED
+
+failures:
+
+---- mt5_vm_sync::tests::partial_snapshot_never_deletes_and_never_advances_freshness stdout ----
+
+thread 'mt5_vm_sync::tests::partial_snapshot_never_deletes_and_never_advances_freshness' (7592) panicked at crates\execution-gateway\src\mt5_vm_sync.rs:2000:9:
+invariant 8: a partial snapshot must not erase a portfolio
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    mt5_vm_sync::tests::partial_snapshot_never_deletes_and_never_advances_freshness
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 92 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `-p execution-gateway --bin execution-gateway`

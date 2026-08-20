@@ -2,13 +2,13 @@
 
 ## Immediate
 
-0a. **Finish MT5 VM Phase 4a increment 2** (2026-08-19, complexity: medium-high). Write the SQL
-    ingestion transaction that calls `mt5_vm_sync.rs` (fence, upsert, delete only when
-    `complete`, advance the matching `last_*_sync_at` anchor), the owner-scoped Go read API, and
-    the `InstrumentSnapshot` agent message kind. Then `tools/verify-mt5-phase4a.ps1` and the three
-    mutation controls the SPEC requires. SPEC scenarios 8 (cross-user isolation) and 9 (no secret
-    in a response) are still unverified. Start from
-    `docs/agent-evidence/mt5-vm-phase4a-read-sync/EVIDENCE.md` section 6.
+0a. **Run the remaining MT5 Phase 4 operator gates** (2026-08-20, blocked externally). The
+    repository 4a/4b slice and code-native gauntlet are complete. Set a disposable
+    `MT5_PHASE4_DATABASE_URL` and rerun `tools/verify-mt5-phase4.ps1` for migration 0040/0041
+    round-trip; then execute the signed Phase 1, Phase 2 rotation/reassignment, Phase 3 Vault,
+    and Phase 4 independent terminal/web checklist in
+    `MT5_WINDOWS_VM_CONNECTOR_PHASE0_4_OPERATOR_CHECKLIST.md`. Do not start Phase 5 until every
+    stop condition is cleared.
 
 0. **Confirm the `backend-artifact` CI re-run** (2026-08-19, complexity: trivial). The first run
    failed in `Package artifact` on an invalid regex; the fix is pushed but the re-run has not been

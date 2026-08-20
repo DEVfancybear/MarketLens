@@ -1,0 +1,134 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.52s
+     Running unittests src\main.rs (target\debug\deps\execution_gateway-0ba5cf369886e9cc.exe)
+
+running 93 tests
+test mt5_vm_connections::tests::phase_three_migration_keeps_only_opaque_hashes_and_references ... ok
+test mt5_vm_control::tests::migration_is_durable_fenced_and_contains_no_plaintext_credential_columns ... ok
+test mt5_vm_connections::tests::connector_validation_rejects_secret_and_identity_confusion ... ok
+test mt5_vm_control::tests::acknowledgement_state_machine_is_idempotent_and_fail_closed ... ok
+test mt5_vm_control::tests::protocol_negotiation_requires_an_explicit_overlap ... ok
+test mt5_vm_control::tests::ready_requires_all_reconciliation_domains ... ok
+test mt5_vm_control::tests::durable_payload_guard_rejects_nested_secret_material ... ok
+test mt5_vm_connections::tests::grant_token_is_redacted_on_drop_contract ... ok
+test mt5_vm_control::tests::durable_command_wire_shape_keeps_payload_as_bounded_json_text ... ok
+test mt5_vm_control::tests::hello_validation_keeps_the_phase_two_capacity_ceiling ... ok
+test mt5_vm_sync::tests::a_missing_observed_login_suffix_cannot_satisfy_a_registered_one ... ok
+test mt5_vm_sync::tests::a_recent_but_non_authoritative_observation_is_not_fresh ... ok
+test mt5_vm_sync::tests::an_observation_from_the_future_is_not_treated_as_fresh ... ok
+test mt5_vm_sync::tests::an_unregistered_login_suffix_matches_on_server_alone ... ok
+test mt5_vm_sync::tests::complete_empty_snapshot_clears_the_portfolio ... ok
+test mt5_vm_sync::tests::current_generation_and_new_sequence_are_accepted ... ok
+test mt5_vm_sync::tests::different_server_or_login_suffix_is_rejected ... ok
+test mt5_vm_sync::tests::duplicate_keys_in_one_snapshot_are_collapsed ... ok
+test mt5_vm_sync::tests::decimal_strings_parse_without_binary_floating_point ... ok
+test mt5_vm_sync::tests::each_family_advances_its_documented_freshness_anchor ... ok
+test mt5_vm_sync::tests::failed_snapshot_never_deletes_and_never_advances_freshness ... ok
+test mt5_vm_sync::tests::freshness_requires_a_recent_authoritative_observation ... ok
+test mt5_vm_sync::tests::future_lease_generation_is_refused_as_stale_too ... ok
+test mt5_vm_sync::tests::identity_matches_ignoring_case_and_padding ... ok
+test mt5_vm_sync::tests::non_decimal_transport_values_are_refused ... ok
+test mt5_vm_sync::tests::non_positive_identifiers_are_malformed ... ok
+test mt5_vm_sync::tests::partial_snapshot_never_deletes_and_never_advances_freshness ... ok
+test mt5_vm_sync::tests::partial_snapshot_still_upserts_what_it_did_observe ... ok
+test mt5_vm_sync::tests::portfolio_requires_both_families_and_uses_the_older_anchor ... ok
+test mt5_vm_sync::tests::replaced_worker_session_is_refused ... ok
+test mt5_vm_sync::tests::replayed_or_equal_sequence_is_refused ... ok
+test mt5_vm_sync::tests::stale_lease_generation_is_refused ... ok
+test mt5_vm_sync::tests::complete_snapshot_deletes_rows_it_does_not_mention ... ok
+test mt5_vm_sync::tests::history_empty_complete_is_authoritative_but_partial_cannot_claim_coverage ... ok
+test copier::tests::quantity_change_replaces_pending_order ... ok
+test copier::tests::detects_partial_close_and_independent_protection_change ... ok
+test tests::account_liveness_uses_the_freshest_authenticated_ea_activity ... ok
+test copier::tests::cancellation_and_same_symbol_increase_remain_independent_without_fill_evidence ... ok
+test copier::tests::correlates_pending_fill_into_existing_netting_position ... ok
+test copier::tests::correlates_pending_fill_without_duplicate_position_open ... ok
+test mt5_vm_sync::tests::a_decimal_field_rejects_a_json_number ... ok
+test tests::authorization_payload_serialization_omits_optional_nulls ... ok
+test mt5_vm_control::tests::worker_bootstrap_is_separate_from_admin_auth_and_fails_closed ... ok
+test tests::admin_secret_comparison_rejects_missing_and_wrong_tokens ... ok
+test mt5_vm_sync::tests::history_cursor_is_account_bound_and_tamper_evident ... ok
+test tests::copier_drawdown_and_target_protection_are_directional_and_independent ... ok
+test tests::copier_partial_close_scales_to_the_durable_target_leg ... ok
+test tests::copier_pending_entry_uses_the_final_order_kind_price_field ... ok
+test tests::copier_staleness_only_supersedes_expired_risk_increases ... ok
+test tests::daily_baseline_uses_first_observed_balance_and_remains_stable ... ok
+test tests::deferred_submission_uses_camel_case_fields_and_an_absolute_deadline ... ok
+test tests::delivery_outcome_migration_reopens_late_ack_reconciliation ... ok
+test tests::deployment_fails_closed_for_unwired_native_venue_transports ... ok
+test tests::ea_poll_wire_flattens_routed_commands_for_mql_consumers ... ok
+test tests::ea_version_gate_accepts_current_and_future_releases_only ... ok
+test tests::durable_place_payload_decodes_before_ea_poll_delivery ... ok
+test tests::generated_pairing_tokens_have_256_bits_of_random_material ... ok
+test tests::heartbeat_envelope_allows_money_state_to_commit_before_auxiliary_validation ... ok
+test tests::heartbeat_normalizes_legacy_broker_clock_skew_but_rejects_extreme_future_time ... ok
+test tests::heartbeat_rejects_a_clock_more_than_one_minute_in_the_future ... ok
+test tests::identical_broker_login_isolated_between_owners ... ok
+test tests::instrument_snapshot_rejects_invalid_quote_and_future_timestamp ... ok
+test tests::legacy_daily_floor_match_requires_the_buggy_persisted_metrics ... ok
+test tests::legacy_lock_audit_match_uses_exact_reason_boundaries ... ok
+test tests::live_mt5_account_is_valid_for_execution ... ok
+test tests::malformed_session_identity_is_rejected_before_pairing_lookup ... ok
+test tests::account_layout_validation_rejects_duplicates_and_multiple_simulators ... ok
+test tests::ea_event_batch_rejects_invalid_tickets_and_deduplicates_exact_outcomes ... ok
+test tests::admin_order_accepts_fixed_quantity_target_wire_shape ... ok
+test tests::active_copier_links_block_destructive_group_transitions ... ok
+test tests::expired_pairing_token_is_rejected ... ok
+test tests::account_layout_is_owner_scoped_and_revision_checked_in_memory ... ok
+test tests::admin_order_rejects_duplicate_targets_and_oversized_command_ids ... ok
+test tests::owner_cannot_queue_to_another_owners_account ... ok
+test tests::account_remove_hides_runtime_state_and_pairing_restores_it ... ok
+test tests::changed_mt5_identity_cannot_reuse_session ... ok
+test tests::account_disconnect_is_owner_scoped_and_revokes_session_and_queue ... ok
+test tests::pending_fill_reconciliation_prefers_the_linked_target_side ... ok
+test tests::pending_order_modification_validates_entry_protection_and_clear_values ... ok
+test tests::pairing_token_is_one_time_and_bound_to_owner ... ok
+test tests::pairing_rotation_revokes_the_previous_account_session ... ok
+test tests::position_protection_is_validated_against_side_and_broker_distance ... ok
+test tests::pairing_token_limit_is_enforced_per_owner ... ok
+test tests::prop_risk_lifecycle_edits_may_only_keep_or_reduce_committed_risk ... ok
+test tests::poll_drops_unacknowledged_commands_after_delivery_deadline ... ok
+test tests::reference_balance_resolution_is_profile_driven_and_fail_safe ... ok
+test tests::reverse_copier_swaps_source_protection_but_not_target_local_protection ... ok
+test tests::command_queue_enforces_backpressure ... ok
+test tests::route_rejection_audit_has_a_safe_in_memory_test_path ... ok
+test tests::source_filters_never_suppress_terminal_lifecycle_for_existing_links ... ok
+test tests::poll_leases_until_ack_and_redelivers_after_expiry ... ok
+test tests::session_response_exposes_gateway_utc_clock ... ok
+test tests::trade_authorization_migration_enforces_exact_one_time_payloads ... ok
+
+test result: ok. 93 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running unittests src\lib.rs (target\debug\deps\mt5_vm_agent-276606bc59218d1c.exe)
+
+running 23 tests
+test process::tests::live_installed_slot_lifecycle_from_stdin ... ignored, credentialed Windows validation; request is read only from redirected stdin
+test process::tests::process_config_rejects_unpinned_and_relative_artifacts ... ok
+test process::tests::terminal_instance_id_matches_metatrader_path_hash ... ok
+test protocol::tests::oversized_frames_and_invalid_keys_are_rejected ... ok
+test protocol::tests::phase_four_snapshot_message_kinds_have_stable_wire_names ... ok
+test protocol::tests::debug_output_redacts_payload_mac_and_key ... ok
+test queue::tests::lane_is_fifo_and_fails_closed_at_capacity ... ok
+test protocol::tests::signed_frame_round_trip_rejects_replay ... ok
+test protocol::tests::tampered_expired_and_cross_account_frames_fail_closed ... ok
+test tests::config_defaults_to_multi_terminal_capacity ... ok
+test tests::config_rejects_parent_directory_components ... ok
+test tests::registry_runs_multiple_isolated_slots_and_enforces_capacity ... ok
+test tests::runtime_state_machine_rejects_skipped_transitions ... ok
+test worker::tests::full_lifecycle_survives_two_restarts_and_forced_crash ... ok
+test tests::zero_lease_generation_fails_closed ... ok
+test throttle::tests::throttle_enforces_spacing_window_and_bounded_jitter ... ok
+test tests::stale_lease_cannot_transition_or_remove_runtime ... ok
+test tests::unsafe_account_identifiers_are_rejected ... ok
+test worker::tests::credential_debug_and_errors_never_expose_secrets ... ok
+test worker::tests::one_account_failure_does_not_change_another_runtime ... ok
+test worker::tests::stale_expired_and_overflowed_commands_fail_closed ... ok
+test worker::tests::idle_worker_does_not_poll_driver ... ok
+test process::tests::initialize_failure_cleanup_leaves_no_child_process_alive ... ok
+
+test result: ok. 22 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.38s
+
+     Running unittests src\main.rs (target\debug\deps\mt5_vm_agent-a13d854b36bdca1d.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

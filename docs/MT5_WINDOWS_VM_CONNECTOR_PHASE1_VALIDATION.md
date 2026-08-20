@@ -1,14 +1,20 @@
 # MT5 Windows VM connector Phase 1 validation
 
-- Status: **credentialed lifecycle PASS; Phase 1 exit conditional**
+- Status: **conditional; installed-slot test-host lifecycle PASS, normal signed-agent exit pending**
 - Review date: 12 August 2026
 - Scope: local secure multi-runtime worker prototype and read-only lifecycle validation
 - Execution: account reads only; no order mutation surface
 
 This document separates the passing repository and FTMO lifecycle evidence from
-the full Phase 1 exit gate. The signed installed-slot lifecycle now passes, but
-Phase 1 remains conditional until the normal signed-agent path, independent
-FTMO web comparison, and live two-account isolation gate also pass.
+the full Phase 1 exit gate. The installed-slot lifecycle passes through the
+explicit Application Control test-host path. The normal signed-agent path is
+still pending, so Phase 1 remains conditional until that path, the independent
+FTMO web comparison, and live two-account isolation also pass.
+
+Historical note: the earlier credentialed run returned `MT5_IPC_TIMEOUT`; the
+later installed-slot test-host run is the newest local result, but it does not
+erase that blocked normal-path evidence or substitute for a signed production
+artifact.
 
 ## 1. Implemented prototype
 

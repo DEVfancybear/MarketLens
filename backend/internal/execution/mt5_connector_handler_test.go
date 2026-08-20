@@ -2,6 +2,7 @@ package execution
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -23,6 +24,8 @@ type connectorGatewayFake struct {
 	aborted        MT5ConnectorAbortRequest
 	current        MT5ConnectorAccount
 	getOwner       string
+	readOwner      string
+	historyOwner   string
 	prepared       MT5ConnectorAccount
 	finalized      struct {
 		ownerID, accountID, secretRef, pendingSecretRef string
@@ -30,6 +33,16 @@ type connectorGatewayFake struct {
 	}
 	grant MT5CredentialGrantConsumeRequest
 	err   error
+}
+
+func (f *connectorGatewayFake) MT5ConnectorReadState(_ context.Context, ownerID, _ string) (json.RawMessage, error) {
+	f.readOwner = ownerID
+	return json.RawMessage(`{"account":{"currency":"USD","balance":"100.00"},"positions":[],"pendingOrders":[],"instruments":[],"freshness":{"account":"fresh","positions":"fresh","pendingOrders":"fresh","instruments":"fresh"}}`), f.err
+}
+
+func (f *connectorGatewayFake) MT5ConnectorHistory(_ context.Context, ownerID, _ string, _, _ int64, _ int, _ string) (json.RawMessage, error) {
+	f.historyOwner = ownerID
+	return json.RawMessage(`{"orders":[],"deals":[],"coverage":"complete","nextCursor":""}`), f.err
 }
 
 func (f *connectorGatewayFake) ReserveMT5ConnectorAccount(_ context.Context, request MT5ConnectorReserveRequest) (MT5ConnectorAccount, error) {
@@ -200,6 +213,50 @@ func TestManagedMT5StatusIsOwnerScopedAndRedactsSecretReferences(t *testing.T) {
 	}
 	if strings.Contains(string(responseBody), "secretRef") || strings.Contains(string(responseBody), "1111111111111111") {
 		t.Fatalf("public status leaked an opaque secret reference: %s", responseBody)
+	}
+}
+
+func TestManagedMT5ReadStateIsOwnerScopedAndContainsNoInternalIdentifiers(t *testing.T) {
+	gateway := &connectorGatewayFake{}
+	app := connectorTestApp(gateway, &connectorVaultFake{})
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/execution/connectors/accounts/mt5vm-account/snapshot", nil)
+	response, err := app.Test(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, _ := io.ReadAll(response.Body)
+	if response.StatusCode != http.StatusOK || gateway.readOwner != "11111111-1111-4111-8111-111111111111" {
+		t.Fatalf("status=%d owner=%q body=%s", response.StatusCode, gateway.readOwner, body)
+	}
+	for _, forbidden := range []string{"password", "secretRef", "workerId", "terminalPath", "rawLogin"} {
+		if strings.Contains(string(body), forbidden) {
+			t.Fatalf("snapshot leaked %s: %s", forbidden, body)
+		}
+	}
+}
+
+func TestManagedMT5HistoryIsOwnerScopedAndRejectsUnboundedQueries(t *testing.T) {
+	gateway := &connectorGatewayFake{}
+	app := connectorTestApp(gateway, &connectorVaultFake{})
+	valid := httptest.NewRequest(http.MethodGet, "/api/v1/execution/connectors/accounts/mt5vm-account/history?fromMs=1760000000000&toMs=1760003600000&limit=100", nil)
+	response, err := app.Test(valid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || gateway.historyOwner != "11111111-1111-4111-8111-111111111111" {
+		t.Fatalf("status=%d owner=%q", response.StatusCode, gateway.historyOwner)
+	}
+
+	unbounded := httptest.NewRequest(http.MethodGet, "/api/v1/execution/connectors/accounts/mt5vm-account/history?fromMs=1&toMs=1760003600000&limit=100000", nil)
+	response, err = app.Test(unbounded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("unbounded history status=%d", response.StatusCode)
 	}
 }
 

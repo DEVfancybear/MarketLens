@@ -1,8 +1,27 @@
-# CHANGELOG
+﻿# CHANGELOG
 
 All notable changes to the MarketLens. Dates are UTC.
 
 ## [Unreleased]
+
+### Added - MT5 VM connector Phase 4a/4b read synchronization (2026-08-20)
+
+- Wired authenticated Rust worker ingestion for account, positions, pending orders and
+  instruments with atomic worker/session/lease/sequence fencing, identity mismatch rejection,
+  complete-vs-partial reconciliation and paired portfolio freshness.
+- Added owner-scoped Go snapshot/history routes and Rust admin reads. Public responses contain
+  normalized values only; history windows, rows, limits and tamper-evident cursors are bounded.
+- Added Python normalization for `history_orders_get`/`history_deals_get`, stable agent wire names
+  (`instrument_snapshot`, `orders_history_snapshot`, `deals_snapshot`), and migration `0041` for
+  normalized order history, deals and explicit coverage state.
+- Added `tools/verify-mt5-phase4.ps1` as the single fail-closed gauntlet. Rust gateway 93/93,
+  agent 22/22 (one credentialed live test ignored), Python 37/37, Go `./...`, and Go vet pass.
+  The persisted manual runner kills 5/5 safety mutants.
+  PostgreSQL 0040/0041 round-trip is intentionally BLOCKED until a disposable database URL is
+  supplied; no production migration or live broker operation was performed.
+- Files added/updated: `backend/migrations/0041_mt5_vm_history_sync.{up,down}.sql`, Rust gateway
+  sync/control/main, MT5 agent protocol, Python adapter/tests, Go connector client/handler/tests,
+  `tools/verify-mt5-phase4.ps1`, and the Phase 0-4 evidence/operator docs.
 
 ### Added - MT5 VM connector Phase 4a increment 1: read-sync foundation (2026-08-19)
 

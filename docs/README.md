@@ -21,6 +21,9 @@ owning package docs.
 | `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md` | Implemented worker prototype, passing unit gates, blocked real-terminal lifecycle, and explicit follow-up checklist |
 | `MT5_WINDOWS_VM_CONNECTOR_PHASE2.md` | Durable control-plane repository implementation and remaining operational activation gates |
 | `MT5_WINDOWS_VM_CONNECTOR_PHASE3.md` | Vault/authenticated connection API implementation, security boundaries, verification record, and activation runbook |
+| `MT5_WINDOWS_VM_CONNECTOR_PHASE4A.md` | Phase 4a normalized account/portfolio/instrument synchronization and readiness boundary |
+| `MT5_WINDOWS_VM_CONNECTOR_PHASE4B.md` | Phase 4b historical orders/deals, coverage and cursor contract |
+| `MT5_WINDOWS_VM_CONNECTOR_PHASE0_4_OPERATOR_CHECKLIST.md` | Secret-safe external gates required before Phase 5 |
 | `PROP_RISK_GUARD.md` | Automated, versioned prop-firm drawdown protection on the web execution path |
 
 ## Package Docs
@@ -44,6 +47,8 @@ owning package docs.
 | `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md` | Phase 1 execution record; prototype tests pass while the credentialed lifecycle remains blocked at MT5 initialization |
 | `MT5_WINDOWS_VM_CONNECTOR_PHASE2.md` | Phase 2 durable worker-control implementation and restart/reassignment gates |
 | `MT5_WINDOWS_VM_CONNECTOR_PHASE3.md` | Phase 3 vault, account lifecycle, one-time grant, UI, and deployment record |
+| `MT5_WINDOWS_VM_CONNECTOR_PHASE4A.md` | Phase 4a normalized read synchronization |
+| `MT5_WINDOWS_VM_CONNECTOR_PHASE4B.md` | Phase 4b history and cursor semantics |
 
 ## Documentation Rules
 

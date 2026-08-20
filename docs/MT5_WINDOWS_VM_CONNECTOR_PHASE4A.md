@@ -1,16 +1,19 @@
-# MT5 Windows VM Connector Phase 4a
+﻿# MT5 Windows VM Connector Phase 4a
 
-- Date: 2026-08-19
-- Repository status: **INCREMENT 1 OF 2 IMPLEMENTED AND TESTED**
-- Production status: **INERT; NOTHING WRITES TO THE NEW TABLES YET**
+- Date: 2026-08-20
+- Repository status: **4a increment 2 implemented and regression-tested**
+- Production status: **INERT; activation remains gated by Phase 1–3 and live demo evidence**
 - Scope: normalized read synchronization for the four families `ready` depends on —
   account, positions, pending orders, symbols/specifications
 
 Phase 4a covers exactly what plan §5.1 requires before an account may report
 `ready`: fresh account, portfolio, pending-order and instrument evidence.
-Orders history, deals and cold-cache cursor pagination are Phase 4b.
+Orders history, deals and cold-cache cursor pagination are documented in
+`MT5_WINDOWS_VM_CONNECTOR_PHASE4B.md`.
 
-Full detail: `docs/agent-evidence/mt5-vm-phase4a-read-sync/{SPEC,EVIDENCE}.md`.
+Foundation evidence: `docs/agent-evidence/mt5-vm-phase4a-read-sync/{SPEC,EVIDENCE}.md`.
+Increment 2/4b evidence:
+`docs/agent-evidence/mt5-vm-phase0-4-completion/{SPEC,EVIDENCE}.md`.
 
 ## The rule this phase exists to protect
 
@@ -28,13 +31,16 @@ clear the portfolio. Without that, "never delete on empty" would decay into
 "never delete", and a closed position would linger forever. Both halves are
 pinned by tests.
 
-## Delivered in increment 1
+## Delivered
 
 | Boundary | Behaviour |
 | --- | --- |
 | PostgreSQL | Migration `0040` adds five tables holding only normalized, non-secret observations. Every row carries a sync envelope so a write can be fenced before it lands. |
-| Rust gateway | `mt5_vm_sync.rs` owns fencing, reconciliation, identity matching, freshness classification and decimal transport validation. Pure functions, 23 tests. |
-| Python adapter | `bridge/mt5_vm/phase4_snapshots.py` normalizes MT5 into stable names, string decimals and opaque string tickets. Read-only. 17 tests. |
+| Rust gateway | `mt5_vm_sync.rs` owns authenticated ingestion, atomic fencing, reconciliation, identity matching, freshness classification, bounded owner-scoped reads, history cursors and decimal validation. |
+| Go BFF | Owner-injected `/api/v1/execution/connectors/accounts/:accountId/snapshot` and `/history` routes with bounds and `no-store`. |
+| Agent protocol | Stable `instrument_snapshot`, `orders_history_snapshot` and `deals_snapshot` names with HMAC/replay tests. |
+| Python adapter | `phase4_snapshots.py` normalizes account/portfolio/instruments and bounded history pages into stable names, string decimals and opaque tickets. |
+| PostgreSQL | `0040` read-sync tables plus additive `0041` history/deals/coverage tables. Partial/failed pages cannot advance authoritative coverage. |
 
 `execution_mt5_vm_sync_state` is what makes an empty portfolio distinguishable
 from a broken one: it records the per-family high-water mark, the last result and
@@ -44,24 +50,23 @@ The freshness anchors are the `last_account_sync_at` / `last_portfolio_sync_at` 
 `last_instrument_sync_at` columns Phase 2 already added in `0038`. No column was
 added to an existing table.
 
-## Not delivered — increment 2
+## Verification boundary
 
-- the SQL ingestion transaction that calls the decision core;
-- the owner-scoped Go read API, and with it SPEC scenarios 8 (cross-user
-  isolation) and 9 (no secret or internal identifier in a response), which are
-  therefore **unverified**;
-- the `InstrumentSnapshot` agent message kind;
-- `tools/verify-mt5-phase4a.ps1` and the required mutation controls.
-
-The gateway module carries an explicit `#![allow(dead_code)]` with a comment
-saying why, rather than hiding the gap.
+Rust gateway 93/93 and agent 22/22 (one credentialed live test ignored), Python
+Phase 0/1/4 37/37, Go `./...` and `go vet ./internal/execution` pass on the
+current source. The rerunnable entry point is
+`tools/verify-mt5-phase4.ps1`; it fails closed if no disposable database URL is
+provided. The local migration layer is **BLOCKED**, because the configured URL
+points to unavailable port 55432 and the active 5432 service rejects the stored
+password. No migration PASS is claimed from that environment.
 
 ## Gates that remain open
 
 Phase 4a changes nothing about the earlier gates and must not be read as progress
 toward them:
 
-- **Phase 1 is still BLOCKED** at the real-terminal gate (`MT5_IPC_TIMEOUT`).
+- **Phase 1 remains conditional**: the later installed-slot test-host lifecycle passes, but the
+  normal signed-agent path, independent web match and live two-account isolation remain open.
 - Phase 2 still needs the disposable-PostgreSQL restart and signed-worker
   rotation/reassignment evidence.
 - Phase 3 still needs its deployment exercise.
@@ -72,20 +77,9 @@ toward them:
 
 ## Verification
 
-```bash
-cd backend/execution && cargo test --locked -p execution-gateway
-cd backend && python -m unittest bridge.mt5_vm.test_phase4_snapshots
-cd backend && go vet ./... && go test ./...
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\verify-mt5-phase4.ps1
 ```
 
-Migration verified up → down → up against a real PostgreSQL 17.6, ending at
-`version=40 dirty=false`.
-
-`cargo fmt --all -- --check` cannot run on the Windows host: `cargo-fmt` is
-blocked by Application Control (`os error 4551`). The `rustfmt` binary is not
-blocked, so verify formatting with it directly before pushing, or CI will reject
-the change:
-
-```bash
-rustfmt --edition 2024 --check backend/execution/crates/execution-gateway/src/mt5_vm_sync.rs
-```
+Set `MT5_PHASE4_DATABASE_URL` only to a disposable PostgreSQL database for the
+round-trip layer; the verifier never prints the URL. Never point it at production.

@@ -22,6 +22,7 @@ what it already had instead of erasing a portfolio.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Iterable
 
@@ -32,8 +33,11 @@ __all__ = [
     "collect_snapshots",
     "normalize_account",
     "normalize_instrument",
+    "normalize_history_order",
+    "normalize_deal",
     "normalize_pending_order",
     "normalize_position",
+    "collect_history_page",
 ]
 
 COMPLETE = "complete"
@@ -52,6 +56,49 @@ _PENDING_ORDER_TYPES = {
     6: "buy_stop_limit",
     7: "sell_stop_limit",
 }
+_HISTORY_ORDER_TYPES = {
+    0: "buy",
+    1: "sell",
+    2: "buy_limit",
+    3: "sell_limit",
+    4: "buy_stop",
+    5: "sell_stop",
+    6: "buy_stop_limit",
+    7: "sell_stop_limit",
+}
+_HISTORY_ORDER_STATES = {
+    0: "started",
+    1: "placed",
+    2: "canceled",
+    3: "partial",
+    4: "filled",
+    5: "rejected",
+    6: "expired",
+    7: "request_added",
+    8: "request_modified",
+    9: "request_canceled",
+}
+_DEAL_TYPES = {
+    0: "buy",
+    1: "sell",
+    2: "balance",
+    3: "credit",
+    4: "charge",
+    5: "correction",
+    6: "bonus",
+    7: "commission",
+    8: "commission_daily",
+    9: "commission_monthly",
+    10: "commission_agent_daily",
+    11: "commission_agent_monthly",
+    12: "interest",
+    13: "buy_canceled",
+    14: "sell_canceled",
+    15: "dividend",
+    16: "dividend_franked",
+    17: "tax",
+}
+_DEAL_ENTRIES = {0: "in", 1: "out", 2: "inout", 3: "out_by"}
 _SYMBOL_TRADE_MODES = {
     0: "disabled",
     1: "long_only",
@@ -224,6 +271,60 @@ def normalize_pending_order(order: Any) -> dict[str, Any]:
     }
 
 
+def normalize_history_order(order: Any) -> dict[str, Any]:
+    """Normalize one historical order without exposing MT5 enums."""
+    return {
+        "broker_ticket": _ticket(getattr(order, "ticket", None)),
+        "position_ticket": _ticket(getattr(order, "position_id", None))
+        if getattr(order, "position_id", None)
+        else None,
+        "symbol": str(getattr(order, "symbol", "") or "").strip(),
+        "order_type": _name(
+            _HISTORY_ORDER_TYPES, getattr(order, "type", None), "MT5_HISTORY_ORDER_TYPE_UNKNOWN"
+        ),
+        "state": _name(
+            _HISTORY_ORDER_STATES, getattr(order, "state", None), "MT5_HISTORY_ORDER_STATE_UNKNOWN"
+        ),
+        "volume_initial": _required_decimal(
+            getattr(order, "volume_initial", None), "MT5_HISTORY_ORDER_VOLUME_MISSING"
+        ),
+        "volume_current": _required_decimal(
+            getattr(order, "volume_current", None), "MT5_HISTORY_ORDER_VOLUME_MISSING"
+        ),
+        "price_open": _required_decimal(
+            getattr(order, "price_open", None), "MT5_HISTORY_ORDER_PRICE_MISSING"
+        ),
+        "price_current": _decimal(getattr(order, "price_current", None)),
+        "stop_loss": _decimal(getattr(order, "sl", None)),
+        "take_profit": _decimal(getattr(order, "tp", None)),
+        "placed_at_ms": _epoch_ms(getattr(order, "time_setup", None)),
+        "done_at_ms": _epoch_ms(getattr(order, "time_done", None)),
+        "magic": int(getattr(order, "magic", 0) or 0),
+    }
+
+
+def normalize_deal(deal: Any) -> dict[str, Any]:
+    """Normalize one historical deal."""
+    return {
+        "broker_ticket": _ticket(getattr(deal, "ticket", None)),
+        "order_ticket": _ticket(getattr(deal, "order", None)) if getattr(deal, "order", None) else None,
+        "position_ticket": _ticket(getattr(deal, "position_id", None))
+        if getattr(deal, "position_id", None)
+        else None,
+        "symbol": str(getattr(deal, "symbol", "") or "").strip() or None,
+        "deal_type": _name(_DEAL_TYPES, getattr(deal, "type", None), "MT5_DEAL_TYPE_UNKNOWN"),
+        "entry": _name(_DEAL_ENTRIES, getattr(deal, "entry", None), "MT5_DEAL_ENTRY_UNKNOWN"),
+        "volume": _required_decimal(getattr(deal, "volume", None), "MT5_DEAL_VOLUME_MISSING"),
+        "price": _required_decimal(getattr(deal, "price", None), "MT5_DEAL_PRICE_MISSING"),
+        "commission": _decimal(getattr(deal, "commission", None)),
+        "swap": _decimal(getattr(deal, "swap", None)),
+        "profit": _decimal(getattr(deal, "profit", None)),
+        "fee": _decimal(getattr(deal, "fee", None)),
+        "occurred_at_ms": _epoch_ms(getattr(deal, "time", None)),
+        "magic": int(getattr(deal, "magic", 0) or 0),
+    }
+
+
 def _as_int(value: Any) -> int:
     try:
         return int(value)
@@ -336,3 +437,35 @@ def _safe_call(callable_obj) -> Any:
         return callable_obj()
     except Exception:
         return None
+
+
+def collect_history_page(mt5: Any, *, from_ms: int, to_ms: int) -> dict[str, Any]:
+    """Collect one bounded historical window; never call a failed page empty."""
+    if from_ms <= 0 or to_ms <= from_ms or to_ms - from_ms > 31 * 24 * 60 * 60 * 1000:
+        raise SnapshotError("MT5_HISTORY_WINDOW_INVALID")
+    start = datetime.fromtimestamp(from_ms / 1000, tz=timezone.utc)
+    end = datetime.fromtimestamp(to_ms / 1000, tz=timezone.utc)
+    orders, order_result, order_code = _collect_family(
+        _safe_call(lambda: mt5.history_orders_get(start, end)),
+        normalize_history_order,
+        "MT5_HISTORY_ORDERS_UNAVAILABLE",
+    )
+    deals, deal_result, deal_code = _collect_family(
+        _safe_call(lambda: mt5.history_deals_get(start, end)),
+        normalize_deal,
+        "MT5_HISTORY_DEALS_UNAVAILABLE",
+    )
+    return {
+        "orders_history": {
+            "result": order_result,
+            "error_code": order_code,
+            "orders": orders,
+            "covered_through_ms": to_ms if order_result == COMPLETE else None,
+        },
+        "deals": {
+            "result": deal_result,
+            "error_code": deal_code,
+            "deals": deals,
+            "covered_through_ms": to_ms if deal_result == COMPLETE else None,
+        },
+    }

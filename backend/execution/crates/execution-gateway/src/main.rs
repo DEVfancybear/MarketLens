@@ -831,6 +831,7 @@ async fn main() {
         .route("/v1/admin/commands", post(queue_command))
         .merge(mt5_vm_control::routes())
         .merge(mt5_vm_connections::routes())
+        .merge(mt5_vm_sync::routes())
         .layer(DefaultBodyLimit::max(256 * 1024))
         .with_state(state);
     let ea_listener = tokio::net::TcpListener::bind(config.bind)
@@ -11703,7 +11704,7 @@ fn adapter_submission_error(error: AdapterError) -> (&'static str, String) {
     }
 }
 
-fn require_admin(state: &GatewayState, headers: &HeaderMap) -> Result<(), ApiError> {
+pub(crate) fn require_admin(state: &GatewayState, headers: &HeaderMap) -> Result<(), ApiError> {
     if state.admin_token_matches(headers) {
         Ok(())
     } else {
@@ -12052,7 +12053,7 @@ fn validate_pending_order_snapshot(order: &EaPendingOrderSnapshot) -> Result<(),
     validate_snapshot_time(order.observed_at_ms)
 }
 
-fn parse_owner_id(owner_id: &str) -> Result<Uuid, ApiError> {
+pub(crate) fn parse_owner_id(owner_id: &str) -> Result<Uuid, ApiError> {
     Uuid::parse_str(owner_id.trim()).map_err(|_| {
         ApiError::new(
             StatusCode::BAD_REQUEST,
@@ -12801,7 +12802,7 @@ fn bearer_token(headers: &HeaderMap) -> Option<&str> {
         .filter(|value| !value.is_empty())
 }
 
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()

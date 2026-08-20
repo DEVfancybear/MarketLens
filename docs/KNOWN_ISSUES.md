@@ -65,14 +65,18 @@ The historical issue log below is preserved. Current monorepo-specific issues:
   so typescript-eslint keeps a compiler API. Build-time type checking runs through
   that API instead; TypeScript 7 checks the same project via `npm run typecheck`.
 
-- MT5 Windows VM connector Phase 1 is blocked at the real-terminal gate.
-  Effective per-instance MCP disable and strict no-orphan failed-start cleanup
-  are implemented and covered. Credentialed reruns now return
-  `MT5_IPC_TIMEOUT`: the installed-terminal control probe passes, while the
-  isolated terminal times out even outside Rust's Job Object. Resolve the
-  supported multi-terminal MetaTrader/Python IPC boundary, then rerun the full
-  lifecycle, independent FTMO web comparison, and two-account isolation. See
-  `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md`.
+- MT5 Windows VM connector Phase 1 remains conditional at the real-terminal
+  release gate. The newest installed-slot test-host lifecycle passes, while the
+  normal signed-agent path still needs an Application-Control-accepted artifact;
+  the earlier isolated-terminal run recorded `MT5_IPC_TIMEOUT`. Resolve the
+  supported multi-terminal MetaTrader/Python IPC boundary on the signed host,
+  then rerun the full lifecycle, independent FTMO web comparison, and two-account
+  isolation. See `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md`.
+- MT5 Phase 4 migration verification is blocked on the current local database configuration:
+  `backend/.env` points to port 55432, where no PostgreSQL listener is available, while the active
+  local PostgreSQL 17 listener on 5432 rejects that stored credential. Supply a separate disposable
+  URL through `MT5_PHASE4_DATABASE_URL` and run `tools/verify-mt5-phase4.ps1`; never reuse a
+  production URL or paste the credential into docs/chat.
 - Backend Phases 0-6 are complete: auth, settings/bootstrap, and watchlist persistence are live.
   Next backend persistence work starts at Phase 7 drawings/templates.
 - Frontend authenticated bootstrap now reads server UI settings, SMC settings, notification

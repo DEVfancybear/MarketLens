@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -24,6 +26,8 @@ type MT5ConnectorGateway interface {
 	ActivateMT5ConnectorAccount(context.Context, MT5ConnectorActivateRequest) (MT5ConnectorAccount, error)
 	AbortMT5ConnectorAccount(context.Context, MT5ConnectorAbortRequest) error
 	MT5ConnectorAccount(context.Context, string, string) (MT5ConnectorAccount, error)
+	MT5ConnectorReadState(context.Context, string, string) (json.RawMessage, error)
+	MT5ConnectorHistory(context.Context, string, string, int64, int64, int, string) (json.RawMessage, error)
 	ReconnectMT5ConnectorAccount(context.Context, string, string, uint64) (MT5ConnectorAccount, error)
 	DisconnectMT5ConnectorAccount(context.Context, string, string, uint64) (MT5ConnectorAccount, error)
 	PrepareDeleteMT5ConnectorAccount(context.Context, string, string, uint64) (MT5ConnectorAccount, error)
@@ -60,6 +64,8 @@ type mt5MutationResponse struct {
 func (h *Handler) registerMT5ConnectorRoutes(router fiber.Router) {
 	router.Post("/execution/connectors/mt5/accounts", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.connectorRateLimit, h.connectMT5Account)
 	router.Get("/execution/connectors/accounts/:accountId", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.getMT5ConnectorAccount)
+	router.Get("/execution/connectors/accounts/:accountId/snapshot", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.getMT5ConnectorReadState)
+	router.Get("/execution/connectors/accounts/:accountId/history", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.getMT5ConnectorHistory)
 	router.Post("/execution/connectors/accounts/:accountId/reconnect", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.connectorRateLimit, h.reconnectMT5Account)
 	router.Post("/execution/connectors/accounts/:accountId/disconnect", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.connectorRateLimit, h.disconnectMT5Account)
 	router.Delete("/execution/connectors/accounts/:accountId", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.connectorRateLimit, h.deleteMT5Account)
@@ -132,6 +138,45 @@ func (h *Handler) getMT5ConnectorAccount(c fiber.Ctx) error {
 	account.SecretRef, account.PreviousSecretRef = "", ""
 	c.Set(fiber.HeaderCacheControl, "no-store")
 	return c.JSON(account)
+}
+
+func (h *Handler) getMT5ConnectorReadState(c fiber.Ctx) error {
+	accountID := c.Params("accountId")
+	if !validExecutionIdentifier(accountID, 96) {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid accountId")
+	}
+	state, err := h.mt5ConnectorGateway.MT5ConnectorReadState(c.Context(), authenticatedUserID(c), accountID)
+	if err != nil {
+		return mt5ConnectorHTTPError(err)
+	}
+	if !json.Valid(state) {
+		return fiber.NewError(fiber.StatusServiceUnavailable, "MT5 read state unavailable")
+	}
+	c.Set(fiber.HeaderCacheControl, "no-store")
+	c.Type(fiber.MIMEApplicationJSON)
+	return c.Send(state)
+}
+
+func (h *Handler) getMT5ConnectorHistory(c fiber.Ctx) error {
+	accountID := c.Params("accountId")
+	fromMS, fromErr := strconv.ParseInt(c.Query("fromMs"), 10, 64)
+	toMS, toErr := strconv.ParseInt(c.Query("toMs"), 10, 64)
+	limit, limitErr := strconv.Atoi(c.Query("limit", "100"))
+	cursor := c.Query("cursor")
+	if !validExecutionIdentifier(accountID, 96) || fromErr != nil || toErr != nil || limitErr != nil ||
+		fromMS <= 0 || toMS <= fromMS || toMS-fromMS > 31*24*60*60*1000 || limit < 1 || limit > 500 || len(cursor) > 256 {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid MT5 history window")
+	}
+	history, err := h.mt5ConnectorGateway.MT5ConnectorHistory(c.Context(), authenticatedUserID(c), accountID, fromMS, toMS, limit, cursor)
+	if err != nil {
+		return mt5ConnectorHTTPError(err)
+	}
+	if !json.Valid(history) {
+		return fiber.NewError(fiber.StatusServiceUnavailable, "MT5 history unavailable")
+	}
+	c.Set(fiber.HeaderCacheControl, "no-store")
+	c.Type(fiber.MIMEApplicationJSON)
+	return c.Send(history)
 }
 
 func (h *Handler) reconnectMT5Account(c fiber.Ctx) error {
