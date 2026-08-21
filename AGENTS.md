@@ -48,41 +48,18 @@ After completing the codebase-memory startup gate above, follow the skill's evid
 3. Use RED -> GREEN -> REFACTOR for behavioral changes. Bug fixes require a reproducing test that
    is observed failing before the fix. Do not edit assertions and implementation in the same step,
    weaken tests, invent results, or skip an applicable layer without recording the reason.
-4. Run the complete risk-calibrated gauntlet, including the repository's mandatory Playwright route
-   below whenever applicable. Persist a single rerunnable entry-point command and retain relevant
-   traces, screenshots, reports, and failure output.
+4. Run the complete risk-calibrated gauntlet. Persist a single rerunnable entry-point command and
+   retain relevant reports and failure output.
 5. Write EVIDENCE to a file at the end. Map every SPEC behavior and invariant to a test or an
    explicitly unverified/skipped layer, report exact results from one fresh final run, identify the
    source state and toolchain, and list every limitation honestly.
 
 A failing gauntlet blocks completion, commit, and push unless the user explicitly accepts the
-reported blocker. The codebase-memory, old-coder, and Playwright requirements are cumulative:
-codebase-memory governs discovery, old-coder governs specification/TDD/evidence, and Playwright
-governs executable UI/API/debugging verification. Before delegating code work, the parent agent
+reported blocker. The codebase-memory and old-coder requirements are cumulative.
+codebase-memory governs discovery, old-coder governs specification/TDD/evidence. Before delegating
+code work, the parent agent
 must pass the approved SPEC path, selected old-coder tier, required gauntlet layers, graph project
 and relevant symbols/paths, and instruct the subagent to read and apply `old-coder` itself.
-
-## Mandatory Playwright automation for debugging and delivery
-
-Use the globally installed `playwright-automation` skill by default for every debugging, bug-fix,
-reproduction, retest, and fix-verification task in this repository. Read the skill's `SKILL.md`
-before acting and follow the relevant route/reference for the task. Do not guess selectors or
-declare a fix from code inspection alone when the behavior can be exercised through UI, API, or
-CI automation.
-
-Before committing or pushing a code change:
-
-1. Invoke `playwright-automation` and select the verification route that matches the change
-   (UI E2E, API, visual/responsive, accessibility, network mocking, flaky/CI diagnosis, or another
-   route defined by the skill).
-2. Run the smallest meaningful regression that proves the changed behavior, preserving traces,
-   screenshots, reports, or command output for failures. Deterministic Playwright regression tests
-   must pass twice consecutively when the skill requires it.
-3. If Playwright is not applicable (for example, a compile-only or platform-native backend change),
-   run the closest code-native tests and state explicitly why browser/API automation does not cover
-   the change. Do not skip verification silently.
-4. Commit only files intended for the requested change, then push only after the selected
-   verification passes or the user explicitly accepts a clearly reported blocker.
 
 ## Production backend commands
 

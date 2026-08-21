@@ -13,8 +13,15 @@ $requiredMarkers = @(
     'Obtain explicit approval of that exact SPEC before implementation.',
     'Use RED -> GREEN -> REFACTOR for behavioral changes.',
     'A failing gauntlet blocks completion, commit, and push',
-    'The codebase-memory, old-coder, and Playwright requirements are cumulative:',
+    'codebase-memory governs discovery, old-coder governs specification/TDD/evidence',
     'must pass the approved SPEC path, selected old-coder tier, required gauntlet layers'
+)
+
+$forbiddenMarkers = @(
+    'playwright-automation',
+    '## Mandatory Playwright automation',
+    'mandatory Playwright route',
+    'Playwright requirements are cumulative'
 )
 
 function Get-MissingPolicyMarkers {
@@ -24,6 +31,40 @@ function Get-MissingPolicyMarkers {
     )
 
     return @($requiredMarkers | Where-Object { -not $Content.Contains($_) })
+}
+
+function Get-ForbiddenPolicyMarkers {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Content
+    )
+
+    return @($forbiddenMarkers | Where-Object { $Content.Contains($_) })
+}
+
+function Invoke-PolicyCheckerSelfTest {
+    $knownGood = $requiredMarkers -join [Environment]::NewLine
+    $goodMissing = @(Get-MissingPolicyMarkers -Content $knownGood)
+    $goodForbidden = @(Get-ForbiddenPolicyMarkers -Content $knownGood)
+    if ($goodMissing.Count -ne 0 -or $goodForbidden.Count -ne 0) {
+        throw "Self-test failed: known-good policy was rejected. Missing: $($goodMissing -join ', '); forbidden: $($goodForbidden -join ', ')"
+    }
+
+    $knownBadMissing = $requiredMarkers[1..($requiredMarkers.Count - 1)] -join [Environment]::NewLine
+    $badMissing = @(Get-MissingPolicyMarkers -Content $knownBadMissing)
+    if ($badMissing.Count -ne 1 -or $badMissing[0] -ne $requiredMarkers[0]) {
+        throw 'Self-test failed: known-bad missing-marker policy did not reach the expected failure path.'
+    }
+
+    $knownBadForbidden = $knownGood + [Environment]::NewLine + $forbiddenMarkers[0]
+    $badForbidden = @(Get-ForbiddenPolicyMarkers -Content $knownBadForbidden)
+    if ($badForbidden.Count -ne 1 -or $badForbidden[0] -ne $forbiddenMarkers[0]) {
+        throw 'Self-test failed: known-bad forbidden-marker policy did not reach the expected failure path.'
+    }
+
+    Write-Output 'PASS: known-good policy accepted.'
+    Write-Output 'PASS: missing required marker rejected through the expected failure path.'
+    Write-Output 'PASS: forbidden Playwright policy marker rejected through the expected failure path.'
 }
 
 function Get-PolicySourceState {
@@ -57,21 +98,8 @@ function Get-PolicySourceState {
     }
 }
 
+Invoke-PolicyCheckerSelfTest
 if ($SelfTest) {
-    $knownGood = $requiredMarkers -join [Environment]::NewLine
-    $goodMissing = @(Get-MissingPolicyMarkers -Content $knownGood)
-    if ($goodMissing.Count -ne 0) {
-        throw "Self-test failed: known-good policy was rejected: $($goodMissing -join ', ')"
-    }
-
-    $knownBad = $requiredMarkers[1..($requiredMarkers.Count - 1)] -join [Environment]::NewLine
-    $badMissing = @(Get-MissingPolicyMarkers -Content $knownBad)
-    if ($badMissing.Count -ne 1 -or $badMissing[0] -ne $requiredMarkers[0]) {
-        throw 'Self-test failed: known-bad policy did not reach the expected failure path.'
-    }
-
-    Write-Output 'PASS: known-good policy accepted.'
-    Write-Output 'PASS: known-bad policy rejected for the expected missing marker.'
     exit 0
 }
 
@@ -89,6 +117,10 @@ $missingMarkers = @(Get-MissingPolicyMarkers -Content $agentsContent)
 if ($missingMarkers.Count -gt 0) {
     throw "AGENTS policy is missing required markers: $($missingMarkers -join '; ')"
 }
+$presentForbiddenMarkers = @(Get-ForbiddenPolicyMarkers -Content $agentsContent)
+if ($presentForbiddenMarkers.Count -gt 0) {
+    throw "AGENTS policy contains forbidden Playwright markers: $($presentForbiddenMarkers -join '; ')"
+}
 
 $userProfilePath = $env:USERPROFILE
 if ([string]::IsNullOrWhiteSpace($userProfilePath)) {
@@ -105,5 +137,6 @@ if ($missingSkillFiles.Count -gt 0) {
 }
 
 Write-Output "PASS: all $($requiredMarkers.Count) mandatory AGENTS policy markers are present."
+Write-Output "PASS: all $($forbiddenMarkers.Count) forbidden Playwright policy markers are absent."
 Write-Output "PASS: old-coder SKILL.md and references/gauntlet.md are installed under $skillRoot."
 Write-Output "SOURCE_STATE_SHA256: $(Get-PolicySourceState -RepositoryRoot $repositoryRoot)"
