@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import ntpath
 import platform
 import re
 import struct
@@ -71,8 +72,8 @@ def _validate_request(raw: Any) -> dict[str, Any]:
     if len(symbol) > 64:
         raise ProbeInputError("symbol is too long")
 
-    timeout_ms = int(raw.get("timeout_ms", 12000))
-    if timeout_ms < 1000 or timeout_ms > 12000:
+    timeout_ms = int(raw.get("timeout_ms", 60_000))
+    if timeout_ms < 1000 or timeout_ms > 60_000:
         raise ProbeInputError("timeout is outside the Phase 0 bounds")
 
     return {
@@ -105,6 +106,19 @@ def _last_error_code(mt5: Any) -> int | None:
         return int(error[0]) if error else None
     except Exception:
         return None
+
+
+def _terminal_path_matches(requested_executable: str, observed_path: Any) -> bool:
+    if not isinstance(observed_path, str) or not observed_path.strip():
+        return False
+    candidate = ntpath.normpath(observed_path.strip())
+    if ntpath.basename(candidate).casefold() != "terminal64.exe":
+        candidate = ntpath.join(candidate, "terminal64.exe")
+    if not ntpath.isabs(candidate):
+        return False
+    return ntpath.normcase(candidate) == ntpath.normcase(
+        ntpath.normpath(requested_executable)
+    )
 
 
 def _symbol_snapshot(mt5: Any, requested_symbol: str) -> dict[str, Any] | None:
@@ -161,11 +175,24 @@ def _run_validated_probe(mt5: Any, cfg: dict[str, Any]) -> dict[str, Any]:
 
     try:
         initialized = bool(
-            mt5.initialize(cfg["terminal_path"], timeout=cfg["timeout_ms"])
+            mt5.initialize(
+                cfg["terminal_path"],
+                login=cfg["login"],
+                password=cfg["password"],
+                server=cfg["server"],
+                timeout=cfg["timeout_ms"],
+                portable=False,
+            )
         )
         tests.append(_test("ACC-01", initialized))
         if not initialized:
             raise RuntimeError("MT5_INITIALIZE_FAILED")
+
+        initialized_terminal = mt5.terminal_info()
+        if initialized_terminal is None or not _terminal_path_matches(
+            cfg["terminal_path"], getattr(initialized_terminal, "path", None)
+        ):
+            raise RuntimeError("MT5_TERMINAL_PATH_MISMATCH")
 
         authenticated = bool(
             mt5.login(
@@ -182,6 +209,11 @@ def _run_validated_probe(mt5: Any, cfg: dict[str, Any]) -> dict[str, Any]:
         terminal = mt5.terminal_info()
         if account is None or terminal is None:
             raise RuntimeError("MT5_ACCOUNT_STATE_UNAVAILABLE")
+        terminal_path_matches = _terminal_path_matches(
+            cfg["terminal_path"], getattr(terminal, "path", None)
+        )
+        if not terminal_path_matches:
+            raise RuntimeError("MT5_TERMINAL_PATH_MISMATCH")
 
         observed_login = int(getattr(account, "login", 0))
         observed_server = str(getattr(account, "server", "")).strip()
@@ -241,6 +273,7 @@ def _run_validated_probe(mt5: Any, cfg: dict[str, Any]) -> dict[str, Any]:
                 "mode": mode,
                 "login_matches": login_matches,
                 "server_matches": server_matches,
+                "terminal_path_matches": terminal_path_matches,
                 "connected": connected,
                 "trade_allowed": bool(getattr(account, "trade_allowed", False)),
                 "trade_expert": bool(getattr(account, "trade_expert", False)),

@@ -19,8 +19,9 @@ class MT5Stub:
     ACCOUNT_TRADE_MODE_CONTEST = 1
     ACCOUNT_TRADE_MODE_REAL = 2
 
-    def __init__(self) -> None:
+    def __init__(self, *, observed_terminal_path: str | None = None) -> None:
         self.shutdown_calls = 0
+        self.observed_terminal_path = observed_terminal_path
 
     def initialize(
         self,
@@ -57,7 +58,10 @@ class MT5Stub:
         )
 
     def terminal_info(self):
-        return SimpleNamespace(connected=True)
+        return SimpleNamespace(
+            connected=True,
+            path=self.observed_terminal_path or self.initialize_args[0],
+        )
 
     def positions_get(self):
         return ()
@@ -118,7 +122,7 @@ class Phase1AdapterTests(unittest.TestCase):
             "password": "sensitive-test-password",
             "server": "FTMO-Demo",
             "symbol": "EURUSD",
-            "timeout_ms": 12_000,
+            "timeout_ms": 60_000,
         }
 
     def tearDown(self) -> None:
@@ -132,6 +136,7 @@ class Phase1AdapterTests(unittest.TestCase):
         self.assertEqual("demo", result["mode"])
         self.assertTrue(result["login_matches"])
         self.assertTrue(result["server_matches"])
+        self.assertTrue(result["terminal_path_matches"])
         self.assertIn("symbol_specification", result)
         self.assertNotIn(self.bootstrap["login"], serialized)
         self.assertNotIn(self.bootstrap["password"], serialized)
@@ -142,11 +147,36 @@ class Phase1AdapterTests(unittest.TestCase):
                 int(self.bootstrap["login"]),
                 self.bootstrap["password"],
                 self.bootstrap["server"],
-                12_000,
+                60_000,
                 False,
             ),
             stub.initialize_args,
         )
+
+    def test_wrong_observed_terminal_path_fails_closed_without_leaking_it(self) -> None:
+        cfg = phase1_adapter.validate_bootstrap(dict(self.bootstrap))
+        wrong_path = str(Path(self.temp_dir.name) / "other" / "terminal64.exe")
+        stub = MT5Stub(observed_terminal_path=wrong_path)
+
+        with self.assertRaisesRegex(RuntimeError, "^MT5_TERMINAL_PATH_MISMATCH$") as caught:
+            phase1_adapter.initialize_and_snapshot(stub, cfg)
+
+        self.assertNotIn(wrong_path, str(caught.exception))
+        self.assertNotIn(self.bootstrap["password"], str(caught.exception))
+
+    def test_timeout_defaults_to_sixty_seconds_and_is_strictly_bounded(self) -> None:
+        defaulted = dict(self.bootstrap)
+        defaulted.pop("timeout_ms")
+        self.assertEqual(60_000, phase1_adapter.validate_bootstrap(defaulted)["timeout_ms"])
+
+        self.assertEqual(
+            60_000,
+            phase1_adapter.validate_bootstrap(dict(self.bootstrap))["timeout_ms"],
+        )
+        invalid = dict(self.bootstrap)
+        invalid["timeout_ms"] = 60_001
+        with self.assertRaises(phase1_adapter.AdapterInputError):
+            phase1_adapter.validate_bootstrap(invalid)
 
     def test_initialize_failure_is_bounded_to_safe_error_classes(self) -> None:
         cfg = phase1_adapter.validate_bootstrap(dict(self.bootstrap))

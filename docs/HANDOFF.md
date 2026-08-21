@@ -1,5 +1,23 @@
 ﻿# HANDOFF
 
+> MT5 local image automation handoff (2026-08-21): **the FTMO refresh, clean Exness IPC
+> discriminator, broker-neutral official catalog enrollment, and final read-only coexistence matrix
+> pass.** The earlier `-10005` result is retained only as RED chronology.
+>
+> The image-builder boundary now has pinned unattended terminal-slot installation, exact catalog
+> enrollment, terminal/profile/catalog/license attestation, manifest checks, transactional image
+> policy, and bounded/coalesced clone policy. The web account-connect/runtime path never installs
+> MT5 or controls Hyper-V. Fresh verification: 96/96 Python, 14/14 PowerShell parse, 26/26 mutation,
+> secret/process-argument gates, clean bootstrap, and two single plus two coexisting read-only rows.
+>
+> This is not yet a published production VM pool. Hyper-V management, a generalized base VHDX,
+> virtual switch, guest provision/image self-test, worker health, and private registration remain
+> prerequisites and fail closed. The signed-agent, independent broker/web comparison, Phase 1
+> cross-fault/load, Phase 3 Vault lifecycle, and Phase 4 operator gates remain open; Phase 5 is not
+> authorized. Continue from `docs/MT5_VM_LOCAL_IMAGE_AUTOMATION.md` and
+> `docs/agent-evidence/mt5-vm-local-image-automation/EVIDENCE.md`.
+
+
 > MT5 VM Phase 4 handoff (2026-08-20): **repository 4a/4b implementation is wired and inert by
 > prerequisite.** Read `docs/MT5_WINDOWS_VM_CONNECTOR_PHASE4A.md`,
 > `docs/MT5_WINDOWS_VM_CONNECTOR_PHASE4B.md`, and
@@ -98,9 +116,9 @@
 > heartbeat, graceful stop, and settled one-pair resource sample pass through the
 > explicit Application Control test host. Phase 1 is `CONDITIONAL_PASS`, not
 > complete: produce a signed/reputable agent and rerun the normal authenticated
-> stdio path, independently match FTMO web, then use a second disposable demo
-> credential and second installed slot to prove live cross-account isolation and
-> aggregate idle load. Continue from
+> stdio path, independently match FTMO web, then use the existing second disposable demo
+> credential and clean signed slot to prove crash/recover cross-account isolation and aggregate
+> idle load. Continue from
 > `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md`. Phase 2's isolated server-side
 > control plane does not close those security gates. Do not raise terminal density,
 > use production credentials, or add order execution before the required evidence

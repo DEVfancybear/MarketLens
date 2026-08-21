@@ -2,6 +2,15 @@
 
 ## Immediate
 
+0b. **Connect and publish the local Hyper-V MT5 worker image** (2026-08-21, blocked on host and
+    operator inputs). The clean signed slot, official broker-neutral catalog enrollment, bootstrap,
+    and FTMO/Exness read-only coexistence are proven. Enable the Hyper-V management plane in an
+    approved reboot window, supply a generalized base VHDX, virtual switch and resource policy,
+    then implement the currently fail-closed guest provision/image self-test and worker
+    health/private-registration boundaries. Publish only after attestation and rerun
+    `tools/run-mt5-vm-powershell-regression-gauntlet.ps1` with both real switches. Follow
+    `MT5_VM_LOCAL_IMAGE_AUTOMATION.md`; never install MT5 in the user account-connect path.
+
 0a. **Run the remaining MT5 Phase 4 operator gates** (2026-08-20, blocked externally). The
     repository 4a/4b slice and code-native gauntlet are complete. Set a disposable
     `MT5_PHASE4_DATABASE_URL` and rerun `tools/verify-mt5-phase4.ps1` for migration 0040/0041

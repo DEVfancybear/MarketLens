@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from pathlib import Path
 BRIDGE = Path(__file__).resolve().parent
 UI_HELPER = BRIDGE / "Mt5VmTerminalUi.ps1"
 BOOTSTRAP = BRIDGE / "Invoke-MT5VmTerminalPythonApiBootstrap.ps1"
+ENROLL = BRIDGE.parents[2] / "tools" / "mt5-vm-image" / "Enroll-MT5VmServerCatalog.ps1"
 
 
 @unittest.skipUnless(sys.platform == "win32", "MT5 terminal UI contracts are Windows-only")
@@ -258,6 +260,176 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
         self.assertEqual(desired, observed["persisted"])
         self.assertEqual(1, observed["confirms"])
         self.assertGreaterEqual(observed["cancels"], 1)
+
+    def test_server_enrollment_uses_in_memory_credential_and_closes_only_owned_process(self) -> None:
+        body = (
+            self._process_boundaries(started=True)
+            + "$script:uiCalls=@();$script:catalogCalls=0;"
+            "function Open-MT5VmServerEnrollmentDialogBoundary {param([int]$ProcessId);"
+            "$script:dialogPid=$ProcessId;[IntPtr]77};"
+            "function Invoke-MT5VmServerEnrollmentUiBoundary {"
+            "param([IntPtr]$DialogHandle,[string]$CompanySearchLabel,[string]$Login,"
+            "[string]$Server,[string]$Password,[int]$TimeoutMs);"
+            "$script:uiCalls+=,[pscustomobject]@{dialog=$DialogHandle;company=$CompanySearchLabel;"
+            "login=$Login;server=$Server;password=$Password;timeout=$TimeoutMs};"
+            "[pscustomobject]@{server_exact=$true;submitted=$true}};"
+            "function Test-MT5VmServerCatalogRefreshBoundary {"
+            "param([string]$TerminalPath,[string]$Server,[datetime]$NotBeforeUtc);"
+            "$script:catalogCalls+=1;$true};"
+            "$loader={[pscustomobject]@{login='900000000000000001';server='Broker-Demo';"
+            "password='synthetic-only'}};"
+            "$result=Invoke-MT5VmServerCatalogEnrollmentCore "
+            "-TerminalPath $env:MT5_TEST_TERMINAL -AccountAlias 'synthetic-demo' "
+            "-CompanySearchLabel 'Broker Public Company' -CredentialLoader $loader "
+            "-TimeoutMs 60000;"
+            "[pscustomobject]@{result=$result;ui_calls=$script:uiCalls.Count;"
+            "catalog_calls=$script:catalogCalls;close_calls=$script:closeCalls}|"
+            "ConvertTo-Json -Compress -Depth 6"
+        )
+        completed = self._run_module(body, extra_env=self._terminal_env())
+
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertEqual("PASS", observed["result"]["status"])
+        self.assertTrue(observed["result"]["server_exact"])
+        self.assertTrue(observed["result"]["catalog_refreshed"])
+        self.assertEqual(1, observed["ui_calls"])
+        self.assertEqual(1, observed["catalog_calls"])
+        self.assertEqual([702], observed["close_calls"])
+        serialized = json.dumps(observed)
+        for secret in ("900000000000000001", "Broker-Demo", "synthetic-only"):
+            self.assertNotIn(secret, serialized)
+
+    def test_server_enrollment_never_closes_preexisting_terminal(self) -> None:
+        body = (
+            self._process_boundaries(started=False)
+            + "function Open-MT5VmServerEnrollmentDialogBoundary {[IntPtr]77};"
+            "function Invoke-MT5VmServerEnrollmentUiBoundary {"
+            "[pscustomobject]@{server_exact=$true;submitted=$true}};"
+            "function Test-MT5VmServerCatalogRefreshBoundary {$true};"
+            "$loader={[pscustomobject]@{login='1';server='Broker-Demo';password='x'}};"
+            "$null=Invoke-MT5VmServerCatalogEnrollmentCore "
+            "-TerminalPath $env:MT5_TEST_TERMINAL -AccountAlias 'synthetic-demo' "
+            "-CompanySearchLabel 'Broker Public Company' -CredentialLoader $loader;"
+            "[pscustomobject]@{close_calls=$script:closeCalls}|ConvertTo-Json -Compress"
+        )
+        completed = self._run_module(body, extra_env=self._terminal_env())
+
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        self.assertEqual([], json.loads(completed.stdout)["close_calls"])
+
+    def test_server_enrollment_dialog_and_postconditions_fail_closed(self) -> None:
+        body = (
+            self._process_boundaries(started=True)
+            + "$script:mode='dialog';$script:catalogCalls=0;"
+            "function Open-MT5VmServerEnrollmentDialogBoundary {"
+            "if($script:mode -eq 'dialog'){throw 'SERVER_ENROLLMENT_DIALOG_AMBIGUOUS'};"
+            "[IntPtr]77};"
+            "function Invoke-MT5VmServerEnrollmentUiBoundary {"
+            "if($script:mode -eq 'server'){return [pscustomobject]@{"
+            "server_exact=$false;submitted=$false}};"
+            "[pscustomobject]@{server_exact=$true;submitted=$true}};"
+            "function Test-MT5VmServerCatalogRefreshBoundary {"
+            "$script:catalogCalls+=1;$false};"
+            "$loader={[pscustomobject]@{login='1';server='Broker-Demo';password='x'}};"
+            "$caught=@();foreach($mode in @('dialog','server','catalog')){"
+            "$script:mode=$mode;try{Invoke-MT5VmServerCatalogEnrollmentCore "
+            "-TerminalPath $env:MT5_TEST_TERMINAL -AccountAlias 'synthetic-demo' "
+            "-CompanySearchLabel 'Broker Public Company' -CredentialLoader $loader|Out-Null}"
+            "catch{$caught+=,$_.Exception.Message}};"
+            "[pscustomobject]@{caught=$caught;catalog_calls=$script:catalogCalls;"
+            "close_calls=$script:closeCalls}|ConvertTo-Json -Compress"
+        )
+        completed = self._run_module(body, extra_env=self._terminal_env())
+
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertEqual(
+            [
+                "SERVER_ENROLLMENT_DIALOG_AMBIGUOUS",
+                "SERVER_SELECTION_MISMATCH",
+                "SERVER_CATALOG_NOT_REFRESHED",
+            ],
+            observed["caught"],
+        )
+        self.assertEqual(1, observed["catalog_calls"])
+        self.assertEqual([702, 702, 702], observed["close_calls"])
+
+    def test_enrollment_sources_forbid_clipboard_sendkeys_and_secret_arguments(self) -> None:
+        self.assertTrue(ENROLL.exists(), "server catalog enrollment entrypoint is missing")
+        source = UI_HELPER.read_text(encoding="utf-8") + ENROLL.read_text(encoding="utf-8")
+        for forbidden in (
+            "SendKeys",
+            "Clipboard",
+            "Set-Clipboard",
+            "startup.ini",
+            "-Login",
+            "-Server",
+            "-Password",
+        ):
+            self.assertNotIn(forbidden.casefold(), source.casefold(), forbidden)
+
+    def test_server_enrollment_declares_exact_next_and_finish_control_variants(self) -> None:
+        completed = self._run_module(
+            "$c=Get-MT5VmTerminalUiConstants;"
+            "[pscustomobject]@{next=$c.EnrollmentNext;finish=$c.EnrollmentFinish}|"
+            "ConvertTo-Json -Compress"
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        self.assertEqual({"next": 12324, "finish": 12325}, json.loads(completed.stdout))
+
+    def test_server_enrollment_rejects_partial_and_duplicate_server_matches(self) -> None:
+        body = (
+            "$exact=Get-MT5VmExactServerIndex "
+            "-Candidates @('Prefix-Broker-Demo-Suffix','Broker-Demo') "
+            "-Expected 'Broker-Demo';"
+            "$partial=$null;try{Get-MT5VmExactServerIndex "
+            "-Candidates @('Prefix-Broker-Demo-Suffix') -Expected 'Broker-Demo'|Out-Null}"
+            "catch{$partial=$_.Exception.Message};"
+            "$duplicate=$null;try{Get-MT5VmExactServerIndex "
+            "-Candidates @('Broker-Demo','Broker-Demo') -Expected 'Broker-Demo'|Out-Null}"
+            "catch{$duplicate=$_.Exception.Message};"
+            "[pscustomobject]@{exact=$exact;partial=$partial;duplicate=$duplicate}|"
+            "ConvertTo-Json -Compress"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        self.assertEqual(
+            {
+                "exact": 1,
+                "partial": "SERVER_SELECTION_MISMATCH",
+                "duplicate": "SERVER_SELECTION_MISMATCH",
+            },
+            json.loads(completed.stdout),
+        )
+
+    def test_server_catalog_refresh_rejects_stale_file_and_accepts_new_write(self) -> None:
+        with tempfile.TemporaryDirectory() as appdata:
+            body = (
+                "$profile=Join-Path $env:APPDATA 'MetaQuotes\\Terminal\\profile-a';"
+                "$config=Join-Path $profile 'config';New-Item -ItemType Directory $config -Force|Out-Null;"
+                "$installation=Split-Path -Parent $env:MT5_TEST_TERMINAL;"
+                "$utf8=New-Object Text.UTF8Encoding($false);"
+                "[IO.File]::WriteAllText((Join-Path $profile 'origin.txt'),$installation,$utf8);"
+                "$catalog=Join-Path $config 'servers.dat';Set-Content -LiteralPath $catalog -Value 'fixture';"
+                "$notBefore=(Get-Date).ToUniversalTime();"
+                "(Get-Item $catalog).LastWriteTimeUtc=$notBefore.AddMinutes(-5);"
+                "$stale=Test-MT5VmServerCatalogRefreshBoundary "
+                "$env:MT5_TEST_TERMINAL 'Broker-Demo' $notBefore;"
+                "(Get-Item $catalog).LastWriteTimeUtc=$notBefore.AddSeconds(1);"
+                "$fresh=Test-MT5VmServerCatalogRefreshBoundary "
+                "$env:MT5_TEST_TERMINAL 'Broker-Demo' $notBefore;"
+                "[pscustomobject]@{stale=$stale;fresh=$fresh}|ConvertTo-Json -Compress"
+            )
+            completed = self._run_module(
+                body,
+                extra_env={
+                    "MT5_TEST_TERMINAL": r"C:\Program Files\Broker Fixture\terminal64.exe",
+                    "APPDATA": appdata,
+                },
+            )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        self.assertEqual({"stale": False, "fresh": True}, json.loads(completed.stdout))
 
     def test_missing_post_ok_persistence_fails_and_restores_prior_state(self) -> None:
         body = (

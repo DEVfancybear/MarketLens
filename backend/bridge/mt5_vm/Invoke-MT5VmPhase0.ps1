@@ -14,6 +14,9 @@ param(
   [ValidateLength(0, 64)]
   [string]$Symbol = '',
 
+  [ValidateRange(1000, 60000)]
+  [int]$TimeoutMs = 60000,
+
   [string]$OutputPath
 )
 
@@ -244,7 +247,7 @@ try {
     password = [string]$secret.password
     server = [string]$secret.server
     symbol = $Symbol
-    timeout_ms = 12000
+    timeout_ms = $TimeoutMs
   }
   $requestJson = $request | ConvertTo-Json -Compress
 

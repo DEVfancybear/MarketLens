@@ -254,6 +254,79 @@ class CredentialAclContractTests(unittest.TestCase):
             },
         )
 
+    def _run_prompt_save(
+        self,
+        *,
+        login: str = "12345678",
+        server: str = "Fixture-Demo",
+        demo_confirmation: str = "DEMO",
+    ) -> subprocess.CompletedProcess[str]:
+        command = (
+            "$global:fixtureLogin=" + json.dumps(login) + ";"
+            "$global:fixtureServer=" + json.dumps(server) + ";"
+            "$global:fixtureDemo=" + json.dumps(demo_confirmation) + ";"
+            "function global:Read-Host {"
+            "param([Parameter(Position=0)][string]$Prompt,[switch]$AsSecureString);"
+            "if($AsSecureString){"
+            "return ConvertTo-SecureString 'fixture-only-password' -AsPlainText -Force};"
+            "switch -Exact ($Prompt){"
+            "'Enter the disposable MT5 demo login' {return $global:fixtureLogin};"
+            "'Enter the exact MT5 server' {return $global:fixtureServer};"
+            "'Type DEMO to confirm this is a disposable demo account' {"
+            "return $global:fixtureDemo};"
+            "default {throw ('unexpected prompt: '+$Prompt)}}};"
+            "& $env:MT5_SAVE_CREDENTIAL -AccountAlias $env:MT5_TEST_ALIAS "
+            "-PromptForIdentity -CredentialPath $env:MT5_TEST_CREDENTIAL_PATH"
+        )
+        return subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                command,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+            env={
+                **os.environ,
+                "MT5_SAVE_CREDENTIAL": str(SAVE_CREDENTIAL),
+                "MT5_TEST_ALIAS": self.alias,
+                "MT5_TEST_CREDENTIAL_PATH": str(self.credential_path),
+            },
+        )
+
+    def _read_decrypted_payload(self) -> dict[str, object]:
+        command = (
+            "$outer=Get-Content -LiteralPath $env:MT5_TEST_CREDENTIAL_PATH -Raw|"
+            "ConvertFrom-Json;"
+            "$secure=ConvertTo-SecureString -String $outer.encrypted_payload;"
+            "$pointer=[IntPtr]::Zero;try{"
+            "$pointer=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure);"
+            "$plain=[Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer);"
+            "$plain}finally{if($pointer -ne [IntPtr]::Zero){"
+            "[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)}}"
+        )
+        completed = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                command,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+            env={**os.environ, "MT5_TEST_CREDENTIAL_PATH": str(self.credential_path)},
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        return json.loads(completed.stdout)
+
     def _read_acl(self) -> dict[str, object]:
         command = (
             "$acl=Get-Acl -LiteralPath $env:MT5_TEST_CREDENTIAL_PATH;"
@@ -315,6 +388,40 @@ class CredentialAclContractTests(unittest.TestCase):
             ],
             sorted(acl["rules"], key=lambda rule: str(rule["sid"])),
         )
+
+    def test_prompt_identity_mode_keeps_identity_out_of_invocation_and_output(self) -> None:
+        completed = self._run_prompt_save()
+
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        invocation = str(completed.args[-1])
+        self.assertNotIn("-Login ", invocation)
+        self.assertNotIn("-Server ", invocation)
+        output = completed.stdout + completed.stderr
+        for secret in ("12345678", "Fixture-Demo", "fixture-only-password"):
+            self.assertNotIn(secret, output)
+        self.assertEqual(
+            {
+                "schema_version": 1,
+                "login": "12345678",
+                "server": "Fixture-Demo",
+                "password": "fixture-only-password",
+            },
+            self._read_decrypted_payload(),
+        )
+
+    def test_prompt_identity_mode_rejects_non_demo_confirmation_before_write(self) -> None:
+        completed = self._run_prompt_save(demo_confirmation="LIVE")
+
+        self.assertNotEqual(0, completed.returncode)
+        self.assertFalse(self.credential_path.exists())
+        self.assertNotIn("Saved DPAPI-protected", completed.stdout)
+
+    def test_prompt_identity_mode_rejects_invalid_login_before_write(self) -> None:
+        completed = self._run_prompt_save(login="not-a-login")
+
+        self.assertNotEqual(0, completed.returncode)
+        self.assertFalse(self.credential_path.exists())
+        self.assertNotIn("Saved DPAPI-protected", completed.stdout)
 
     def test_non_privilege_acl_error_fails_closed(self) -> None:
         completed = self._run_save(

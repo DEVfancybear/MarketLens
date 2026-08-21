@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import ntpath
 import math
 import re
 import struct
@@ -74,7 +75,12 @@ def _validate_identifier(value: Any, field: str) -> str:
 
 
 def validate_bootstrap(raw: Any) -> dict[str, Any]:
-    if not isinstance(raw, dict) or set(raw) != BOOTSTRAP_KEYS:
+    required_keys = BOOTSTRAP_KEYS - {"timeout_ms"}
+    if (
+        not isinstance(raw, dict)
+        or set(raw) - BOOTSTRAP_KEYS
+        or required_keys - set(raw)
+    ):
         raise AdapterInputError("invalid bootstrap shape")
     if raw.get("protocol_version") != PROTOCOL_VERSION:
         raise AdapterInputError("unsupported protocol")
@@ -114,8 +120,8 @@ def validate_bootstrap(raw: Any) -> dict[str, Any]:
     symbol = str(raw.get("symbol", "")).strip()
     if len(symbol) > 64:
         raise AdapterInputError("invalid symbol")
-    timeout_ms = int(raw.get("timeout_ms", 12_000))
-    if timeout_ms < 1_000 or timeout_ms > 30_000:
+    timeout_ms = int(raw.get("timeout_ms", 60_000))
+    if timeout_ms < 1_000 or timeout_ms > 60_000:
         raise AdapterInputError("invalid timeout")
 
     return {
@@ -258,6 +264,19 @@ def _last_error_code(mt5: Any) -> int | None:
         return None
 
 
+def _terminal_path_matches(requested_executable: str, observed_path: Any) -> bool:
+    if not isinstance(observed_path, str) or not observed_path.strip():
+        return False
+    candidate = ntpath.normpath(observed_path.strip())
+    if ntpath.basename(candidate).casefold() != "terminal64.exe":
+        candidate = ntpath.join(candidate, "terminal64.exe")
+    if not ntpath.isabs(candidate):
+        return False
+    return ntpath.normcase(candidate) == ntpath.normcase(
+        ntpath.normpath(requested_executable)
+    )
+
+
 def _count(value: Any) -> int | None:
     return None if value is None else len(value)
 
@@ -301,61 +320,80 @@ def _symbol_snapshot(mt5: Any, symbol: str) -> dict[str, Any]:
 
 
 def initialize_and_snapshot(mt5: Any, cfg: dict[str, Any]) -> dict[str, Any]:
-    initialized = bool(
-        mt5.initialize(
-            cfg["terminal_path"],
-            login=cfg["login"],
-            password=cfg["password"],
-            server=cfg["server"],
-            timeout=cfg["timeout_ms"],
-            portable=False,
+    initialized = False
+    try:
+        initialized = bool(
+            mt5.initialize(
+                cfg["terminal_path"],
+                login=cfg["login"],
+                password=cfg["password"],
+                server=cfg["server"],
+                timeout=cfg["timeout_ms"],
+                portable=False,
+            )
         )
-    )
-    if not initialized:
-        raise RuntimeError(mt5_initialize_error_class(mt5))
-    authenticated = bool(
-        mt5.login(
-            cfg["login"],
-            password=cfg["password"],
-            server=cfg["server"],
-            timeout=cfg["timeout_ms"],
+        if not initialized:
+            raise RuntimeError(mt5_initialize_error_class(mt5))
+
+        initialized_terminal = mt5.terminal_info()
+        if initialized_terminal is None or not _terminal_path_matches(
+            cfg["terminal_path"], getattr(initialized_terminal, "path", None)
+        ):
+            raise RuntimeError("MT5_TERMINAL_PATH_MISMATCH")
+
+        authenticated = bool(
+            mt5.login(
+                cfg["login"],
+                password=cfg["password"],
+                server=cfg["server"],
+                timeout=cfg["timeout_ms"],
+            )
         )
-    )
-    if not authenticated:
-        raise RuntimeError("MT5_LOGIN_FAILED")
-    account = mt5.account_info()
-    terminal = mt5.terminal_info()
-    if account is None or terminal is None:
-        raise RuntimeError("MT5_ACCOUNT_STATE_UNAVAILABLE")
+        if not authenticated:
+            raise RuntimeError("MT5_LOGIN_FAILED")
+        account = mt5.account_info()
+        terminal = mt5.terminal_info()
+        if account is None or terminal is None:
+            raise RuntimeError("MT5_ACCOUNT_STATE_UNAVAILABLE")
+        terminal_path_matches = _terminal_path_matches(
+            cfg["terminal_path"], getattr(terminal, "path", None)
+        )
+        if not terminal_path_matches:
+            raise RuntimeError("MT5_TERMINAL_PATH_MISMATCH")
 
-    positions = mt5.positions_get()
-    orders = mt5.orders_get()
-    history_from = datetime.now(timezone.utc) - timedelta(days=7)
-    history_to = datetime.now(timezone.utc)
-    history_orders = mt5.history_orders_get(history_from, history_to)
-    history_deals = mt5.history_deals_get(history_from, history_to)
-    selected_symbol = _select_symbol(mt5, cfg["symbol"])
+        positions = mt5.positions_get()
+        orders = mt5.orders_get()
+        history_from = datetime.now(timezone.utc) - timedelta(days=7)
+        history_to = datetime.now(timezone.utc)
+        history_orders = mt5.history_orders_get(history_from, history_to)
+        history_deals = mt5.history_deals_get(history_from, history_to)
+        selected_symbol = _select_symbol(mt5, cfg["symbol"])
 
-    return _json_safe(
-        {
-            "mode": _mode_name(mt5, getattr(account, "trade_mode", None)),
-            "login_matches": int(getattr(account, "login", 0)) == cfg["login"],
-            "server_matches": str(getattr(account, "server", "")).strip().casefold()
-            == cfg["server"].casefold(),
-            "connected": bool(getattr(terminal, "connected", False)),
-            "trade_allowed": bool(getattr(account, "trade_allowed", False)),
-            "trade_expert": bool(getattr(account, "trade_expert", False)),
-            "margin_mode": getattr(account, "margin_mode", None),
-            "currency": getattr(account, "currency", None),
-            "leverage": getattr(account, "leverage", None),
-            "positions_count": _count(positions),
-            "pending_orders_count": _count(orders),
-            "history_orders_count_7d": _count(history_orders),
-            "history_deals_count_7d": _count(history_deals),
-            "symbol_specification": _symbol_snapshot(mt5, selected_symbol),
-            "last_error_code": _last_error_code(mt5),
-        }
-    )
+        return _json_safe(
+            {
+                "mode": _mode_name(mt5, getattr(account, "trade_mode", None)),
+                "login_matches": int(getattr(account, "login", 0)) == cfg["login"],
+                "server_matches": str(getattr(account, "server", "")).strip().casefold()
+                == cfg["server"].casefold(),
+                "terminal_path_matches": terminal_path_matches,
+                "connected": bool(getattr(terminal, "connected", False)),
+                "trade_allowed": bool(getattr(account, "trade_allowed", False)),
+                "trade_expert": bool(getattr(account, "trade_expert", False)),
+                "margin_mode": getattr(account, "margin_mode", None),
+                "currency": getattr(account, "currency", None),
+                "leverage": getattr(account, "leverage", None),
+                "positions_count": _count(positions),
+                "pending_orders_count": _count(orders),
+                "history_orders_count_7d": _count(history_orders),
+                "history_deals_count_7d": _count(history_deals),
+                "symbol_specification": _symbol_snapshot(mt5, selected_symbol),
+                "last_error_code": _last_error_code(mt5),
+            }
+        )
+    except Exception:
+        if initialized:
+            mt5.shutdown()
+        raise
 
 
 def mt5_initialize_error_class(mt5: Any) -> str:

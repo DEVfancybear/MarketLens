@@ -1,16 +1,19 @@
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'ExplicitIdentity')]
 param(
   [Parameter(Mandatory = $true)]
   [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')]
   [string]$AccountAlias,
 
-  [Parameter(Mandatory = $true)]
+  [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitIdentity')]
   [ValidateRange(1, 9223372036854775807)]
   [long]$Login,
 
-  [Parameter(Mandatory = $true)]
+  [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitIdentity')]
   [ValidateLength(1, 128)]
   [string]$Server,
+
+  [Parameter(Mandatory = $true, ParameterSetName = 'PromptIdentity')]
+  [switch]$PromptForIdentity,
 
   [string]$CredentialPath
 )
@@ -54,6 +57,27 @@ while ($null -ne $directoryInfo -and
     break
   }
   $directoryInfo = $directoryInfo.Parent
+}
+
+if ($PromptForIdentity) {
+  $loginValue = Read-Host 'Enter the disposable MT5 demo login'
+  $parsedLogin = 0L
+  if (-not [long]::TryParse(
+      $loginValue,
+      [Globalization.NumberStyles]::None,
+      [Globalization.CultureInfo]::InvariantCulture,
+      [ref]$parsedLogin
+    ) -or $parsedLogin -lt 1) {
+    throw 'The MT5 login must be a positive integer.'
+  }
+  $Login = $parsedLogin
+  $Server = Read-Host 'Enter the exact MT5 server'
+  $demoConfirmation = Read-Host 'Type DEMO to confirm this is a disposable demo account'
+  if ($demoConfirmation -cne 'DEMO') {
+    throw 'Disposable demo confirmation was not provided.'
+  }
+  $loginValue = $null
+  $demoConfirmation = $null
 }
 
 $serverValue = $Server.Trim()

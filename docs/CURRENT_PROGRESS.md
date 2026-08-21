@@ -1,5 +1,16 @@
 ﻿# Current Progress
 
+- MT5 local image automation and broker-neutral enrollment (2026-08-21): the clean signed retail
+  slot now has an officially enrolled exact server catalog and passes full terminal/profile/catalog/
+  license attestation. Its safe Python/API bootstrap passes, and FTMO plus Exness pass both
+  single-account and coexisting read-only probes. The fresh gauntlet passes 96 Python tests, 14
+  PowerShell parses, 26/26 mutation controls, and the secret/process-argument gates. User account
+  enrollment never installs MT5; image tooling provides hash/signer-pinned unattended slots,
+  manifest verification, and transactional/bounded Hyper-V policy. Real VHDX publication and
+  worker registration remain fail-closed until Hyper-V management, a generalized base VHDX,
+  virtual switch, guest provision/self-test, worker health, and private registration are supplied.
+  See `MT5_VM_LOCAL_IMAGE_AUTOMATION.md` and the Revision 12–14 evidence.
+
 - MT5 VM connector Phase 4 repository slice (2026-08-20): 4a increment 2 and the 4b
   history/read path are implemented and inert-by-prerequisite. Migration `0040` holds
   normalized account/portfolio/instrument rows; additive `0041` holds order history,
@@ -70,9 +81,9 @@
   the FTMO provision, two clean restarts, forced-crash recovery, heartbeat,
   graceful stop, and settled one-pair CPU/RSS observation pass. Phase 1 is
   `CONDITIONAL_PASS`: Smart App Control requires a signed/reputable agent for the
-  normal control-path live rerun; independent FTMO web comparison and live
-  two-account isolation still require a second demo credential and installed
-  slot. Security is the first
+  normal control-path live rerun; independent FTMO web comparison and the live
+  two-account crash/recover plus aggregate-load proof remain. Two disposable credentials and
+  installed slots now pass the single/coexisting read-only matrix. Security is the first
   release gate; performance/density is measured only after isolation, fencing,
   redaction, bounded queues, and fault tests pass. See
   `UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md` and

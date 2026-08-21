@@ -24,24 +24,29 @@ accounts share code, but live activation remains a separate production gate.
 
 ### Local exit-gate refresh — 21 August 2026
 
-- Phase 0's feasibility/read-only harness remains complete. The current retail `-10005` and stale
-  FTMO login `-6` results are live prerequisite blockers for later gates, not evidence that the
-  harness itself regressed.
-- Two distinct MetaQuotes-signed MT5 installations and two DPAPI demo aliases now exist locally;
-  credential files have current-user ownership, protected inheritance, and only current-user plus
-  SYSTEM access.
-- The reusable PowerShell terminal bootstrap is broker-neutral and verified by `69` tests,
-  PowerShell parse checks, `13/13` killed mutants, a secret/capability gate, and real official-UI
-  execution. It accepts terminal path/account alias only as runtime inputs and has no broker branch,
-  profile hash, observed PID, direct configuration-file edit, or force-close capability.
-- The retail demo remains blocked before login: official UI enablement plus one controlled graceful
-  restart still returns Python IPC timeout `-10005`; exact settings rollback and one-process settle
-  pass. A same-runtime default-terminal control initializes IPC and then fails only at stale FTMO
-  login (`-6`), isolating the blocker to the secondary instance/profile boundary.
+- Phase 0's feasibility/read-only harness remains complete. The stale FTMO credential was refreshed
+  locally, and a clean MetaQuotes-signed retail slot was enrolled through the official
+  broker-neutral account UI. Its exact server catalog, terminal license, and data-profile mapping
+  pass attestation.
+- The clean retail slot's safe Python/API bootstrap passes, and the final FTMO/Exness matrix passes
+  both single-account rows and both coexisting rows. The earlier `-10005` and `-6` results are
+  retained as RED chronology, not current blockers for these two read-only probes.
+- The reusable automation is verified by `96` Python tests, `14` PowerShell parse checks, `26/26`
+  killed mutants, secret/process-argument gates, real clean-terminal bootstrap, and the real
+  read-only matrix. It accepts terminal path, account alias, and public company label as data and
+  has no broker-name branch or trade mutation capability.
+- Image-build tools verify installer hash/signature, perform bounded unattended slot installation,
+  enroll exact catalogs, attest manifests, and enforce transactional image plus bounded clone
+  policy. Account-connect/runtime paths contain no installer, Hyper-V, or clone capability.
+- A real generalized VHDX and worker clone are not yet published: this host lacks the Hyper-V
+  management service/module, no base VHDX or virtual switch was supplied, and guest provision,
+  image self-test, worker health, and private registration boundaries intentionally fail closed.
 - The release `mt5-vm-agent.exe` remains unsigned, independent FTMO/retail observations are not
   complete, and the full authenticated API/browser plus disposable Vault lifecycle remains open.
-- Therefore V3, V4, V6, and V7 remain **BLOCKED** and Phase 5 is **not authorized**. Detailed
-  sanitized evidence is in `agent-evidence/mt5-vm-local-prerequisites/EVIDENCE.md`.
+- Therefore the local credential/IPC discriminator is closed, but the signed-agent, independent
+  comparison, cross-fault/resource, VM publication, V6, and V7 gates remain open; Phase 5 is **not
+  authorized**. See `MT5_VM_LOCAL_IMAGE_AUTOMATION.md` and
+  `agent-evidence/mt5-vm-local-image-automation/EVIDENCE.md`.
 
 ## 1. Product contract
 

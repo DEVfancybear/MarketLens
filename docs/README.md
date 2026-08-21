@@ -18,7 +18,8 @@ owning package docs.
 | `TRADE_EXECUTION_ARCHITECTURE.md` | Durable multi-account web execution architecture and safety boundaries |
 | `UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md` | Authoritative Plans 0-9 for a secure broker-neutral Windows VM connector with multiple isolated MT5 terminals per Rust-managed worker |
 | `MT5_WINDOWS_VM_CONNECTOR_PHASE0_VALIDATION.md` | Completed host/runtime and credential-safe FTMO Free Trial read-only evidence for Phase 0 |
-| `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md` | Implemented worker prototype, passing unit gates, blocked real-terminal lifecycle, and explicit follow-up checklist |
+| `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md` | Implemented worker prototype, passing clean two-account read-only coexistence, and remaining signed/cross-fault gates |
+| `MT5_VM_LOCAL_IMAGE_AUTOMATION.md` | Zero-touch local image/slot workflow, broker-neutral catalog enrollment, and remaining Hyper-V publication prerequisites |
 | `MT5_WINDOWS_VM_CONNECTOR_PHASE2.md` | Durable control-plane repository implementation and remaining operational activation gates |
 | `MT5_WINDOWS_VM_CONNECTOR_PHASE3.md` | Vault/authenticated connection API implementation, security boundaries, verification record, and activation runbook |
 | `MT5_WINDOWS_VM_CONNECTOR_PHASE4A.md` | Phase 4a normalized account/portfolio/instrument synchronization and readiness boundary |
@@ -44,7 +45,8 @@ owning package docs.
 | `PIVOT_FORMATION_ALERT_PLAN.md` | Deferred cross-stack plan for backend-owned, durable Swing pivot-formation alerts |
 | `UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md` | Plans 0-9 for Rust worker control, credential security, multi-terminal isolation, durable execution, measured VM density, multi-broker certification, and rollout |
 | `MT5_WINDOWS_VM_CONNECTOR_PHASE0_VALIDATION.md` | Phase 0 execution record; host/runtime/tests and credentialed FTMO Free Trial read-only gate pass |
-| `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md` | Phase 1 execution record; prototype tests pass while the credentialed lifecycle remains blocked at MT5 initialization |
+| `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md` | Phase 1 execution record; clean FTMO/Exness read-only coexistence passes while signed-agent, independent-view, and cross-fault gates remain |
+| `MT5_VM_LOCAL_IMAGE_AUTOMATION.md` | Operator runbook for attested terminal slots, server enrollment, golden images, and bounded worker cloning |
 | `MT5_WINDOWS_VM_CONNECTOR_PHASE2.md` | Phase 2 durable worker-control implementation and restart/reassignment gates |
 | `MT5_WINDOWS_VM_CONNECTOR_PHASE3.md` | Phase 3 vault, account lifecycle, one-time grant, UI, and deployment record |
 | `MT5_WINDOWS_VM_CONNECTOR_PHASE4A.md` | Phase 4a normalized read synchronization |

@@ -777,3 +777,234 @@ Approve this exact controlled restart with:
   production migration, Phase 5 work, or committing credentials, tokens, account identifiers, raw
   broker logs, or unrelated worktree changes. A rejected non-fast-forward push must remain rejected
   unless the user separately authorizes the required reconciliation.
+
+## Revision 10 proposal — FTMO credential refresh and exact Exness IPC isolation
+
+- Status: **proposed; no implementation or live credential/process mutation is authorized until the
+  exact approval phrase below is received**.
+- Tier remains **Tier 3** because the work handles broker authentication material and validates the
+  isolation boundary for multiple trading terminals.
+- Source state at proposal: clean `master` worktree at
+  `1ba811a7d4e31c04d20278659b52222fed734a3c`.
+- Goal: close the current stale FTMO login `-6` and Exness Python IPC `-10005` blockers at the
+  demo/read-only Phase 0 boundary. This revision does not authorize Phase 5, order mutation, or a
+  claim that the separate signed-agent and independent-view gates have passed.
+
+### Sanitized discovery evidence
+
+1. Both approved terminal executables exist, have valid MetaQuotes Authenticode signatures, are
+   byte-identical build `5.0.0.6122`, and currently run in Windows session 1 from distinct canonical
+   installation paths.
+2. The installations map to distinct MetaQuotes data profiles and both have account databases.
+   Neither executable has an AppCompat `RUNASADMIN` or compatibility layer entry.
+3. The same Python `3.14.6` / MetaTrader5 `5.0.6090` runtime reaches the default terminal and then
+   fails only at stale FTMO login `-6`, while the secondary terminal times out during IPC before
+   login.
+4. Phase 0 currently hard-codes a 12-second timeout and initializes by path before a separate login.
+   MetaQuotes documents a credential-bearing `initialize(path, login, password, server, timeout,
+   portable=False)` form and a 60-second default timeout.
+5. Phase 0 does not currently fail closed if a successful Python connection resolves to a terminal
+   path different from the requested canonical executable.
+
+### Revision 10 failure model
+
+1. The refreshed FTMO login, exact server, or password leaks through chat, process arguments, shell
+   history, environment variables, logs, fixtures, Git, screenshots, or evidence.
+2. A funded/live or non-MT5 account is entered, or an invalid/stale credential is mistaken for an
+   IPC defect.
+3. Increasing the timeout hides a hung process or creates an unbounded startup/retry loop.
+4. Python reports success after attaching to the default/other terminal rather than the requested
+   exact Exness installation.
+5. The simultaneous FTMO process is the interference source, but a single-instance result is
+   incorrectly generalized to multi-terminal readiness.
+6. A diagnostic closes or restarts the wrong terminal, uses force termination, changes a terminal
+   setting without rollback, or leaves a different process topology than it found.
+7. A clean-slot experiment overwrites or deletes either existing installation/profile, copies a
+   terminal executable, enables portable mode, weakens ACL/signature checks, or requires elevated
+   terminal execution.
+8. A test uses real broker material, prints a raw terminal/account response, or reports a Phase 0
+   PASS without exact identity/server/demo/path attestation.
+9. The work is reported complete while either broker still has a stable blocker, the final gauntlet
+   fails, or concurrent multi-terminal behavior remains unverified.
+
+### Executable acceptance scenarios
+
+#### R10-1 — FTMO identity is refreshed without command-line identity material
+
+Given alias `ftmo-free-trial`, when the operator runs the credential saver in a new explicit
+interactive-identity mode, then login, exact server, and master password are collected only by local
+prompts; login/server/password are absent from the PowerShell process command line, ordinary output,
+environment, repository, and evidence. The resulting schema-2 file remains current-user DPAPI
+protected, current-user owned, inheritance-protected, and grants exactly current user plus SYSTEM
+full control.
+
+Given invalid login/server input, an empty password, a non-demo operator choice, an ACL mismatch, or
+an interrupted save, then the command fails closed and does not print its success message. Automated
+tests use only disposable synthetic values under the existing test credential root.
+
+#### R10-2 — MT5 initialization is bounded, credential-bearing, and exact-path attested
+
+Given a valid Phase 0 request, when Python initializes MT5, then it calls the documented explicit
+form with canonical terminal path, login, password, exact server, `portable=False`, and a bounded
+timeout configurable from 1,000 through 60,000 ms. The operator default is 60,000 ms; there is no
+automatic retry loop.
+
+After initialization, the probe reads terminal metadata and requires the observed terminal path to
+equal the requested canonical executable using Windows case-insensitive path semantics. A wrong,
+missing, relative, or malformed observed path produces a bounded sanitized blocker before the
+result can be PASS. Login, server, demo mode, and read-only snapshot checks remain mandatory.
+
+The Phase 1 adapter uses the same 60,000 ms upper bound and exact-path postcondition so Phase 0
+cannot pass a terminal identity that the long-lived worker would later accept differently.
+
+#### R10-3 — Single-terminal and coexisting-terminal causes are distinguished
+
+Given the two trusted canonical demo terminal paths, the broker-neutral live matrix first records
+only sanitized path hashes and exact process counts. With an explicit live-matrix switch it may
+gracefully close only one verified exact-path PID per supplied path, never force-close, and must
+restore the initial presence/absence topology with the same signed executables.
+
+The matrix runs, in order: Exness with no other `terminal64.exe` in the same Windows session; FTMO
+with its refreshed credential and no other terminal in that session; then both exact installations
+coexisting while each account is probed by a distinct Python process. Every probe uses 60,000 ms,
+read-only calls, sanitized result files outside Git, and exact path/identity/server/demo attestation.
+
+If Exness passes alone but fails while FTMO coexists, the Exness credential blocker is closed but
+multi-terminal readiness remains **BLOCKED**. Stop and append a new SPEC for OS-logon/session
+isolation; do not silently serialize production accounts or claim the current one-session worker
+architecture is complete. If Exness fails alone, continue only to R10-4.
+
+#### R10-4 — A clean official Exness slot is a bounded last local discriminator
+
+Given Exness still returns `-10005` when it is the only terminal in the session after R10-2, the
+operator may install the current official Exness MT5 Windows package into the new exact directory
+`C:\Program Files\MetaTrader 5 Exness Clean`. The installer must be downloaded from the official
+Exness flow, have a valid MetaQuotes signature, and may require a separately approved elevated
+execution prompt. The user alone accepts any EULA/account/MFA step.
+
+The experiment must not overwrite, update, copy from, delete, or reconfigure either existing
+terminal installation/profile. It enrolls the Exness server through official terminal UI, applies
+the already-approved `1/0/0/0` Python settings transaction, and runs the same read-only exact-path
+probe. Success requires a distinct data profile plus all R10-2 checks. Failure remains an honest
+broker/MetaQuotes support blocker; no registry rewrite, profile transplant, terminal downgrade,
+portable mode, administrator-run workaround, or unsupported IPC shim is authorized.
+
+#### R10-5 — Completion is evidence-based and narrowly stated
+
+This revision is complete only if a final fresh gauntlet passes and both refreshed FTMO and Exness
+return Phase 0 PASS with exact terminal path, requested identity/server, demo mode, and read-only
+snapshot checks. The evidence separately reports the coexisting-terminal result; a failure there
+keeps the multi-account gate blocked even if both single-account probes pass.
+
+No independent broker-web comparison is inferred. The user must separately confirm the FTMO and
+Exness official views before `-IndependentWebMatchConfirmed` may ever be used. The unsigned-agent,
+Vault/API lifecycle, and Phase 5 gates remain separate.
+
+### Negative constraints
+
+- No live/funded account and no `order_check`, `order_send`, modify, cancel, close, or Phase 5 call.
+- No broker secret or raw login/server/account/ticket in chat, command arguments, environment,
+  source, tests, Git, ordinary output, screenshots, or evidence.
+- No force termination, process-name-only selection, broad process cleanup, elevated terminal,
+  portable/copy-based slot, raw config/registry edit, profile copy, ACL weakening, or signature
+  bypass.
+- No broker-name branch in reusable Python, PowerShell, Rust, or Go runtime code. Broker aliases and
+  paths are allowed only as operator-supplied live-matrix inputs or sanitized evidence labels.
+- No assertion and implementation edit in the same RED/GREEN step. No weakened test, skipped
+  mutation, invented result, commit, push, pull, reset, checkout, deploy, production migration, or
+  production service change.
+
+### Planned files, operations, and dependencies
+
+- **RED/assertions first:** update only tests in
+  `backend/bridge/mt5_vm/test_phase0_probe.py`,
+  `backend/bridge/mt5_vm/test_phase1_adapter.py`,
+  `backend/bridge/mt5_vm/test_powershell_process_contracts.py`, and, if the matrix needs separated
+  boundary coverage, add `backend/bridge/mt5_vm/test_live_readonly_matrix.py`. Observe every new
+  behavioral assertion fail before implementation.
+- **GREEN implementation:** only as required by the frozen tests, update
+  `backend/bridge/mt5_vm/Save-MT5VmPhase0Credential.ps1`,
+  `backend/bridge/mt5_vm/Invoke-MT5VmPhase0.ps1`,
+  `backend/bridge/mt5_vm/phase0_probe.py`,
+  `backend/bridge/mt5_vm/phase1_adapter.py`,
+  `backend/bridge/mt5_vm/Invoke-MT5VmTerminalPythonApiBootstrap.ps1`, and add one broker-neutral
+  `backend/bridge/mt5_vm/Invoke-MT5VmLiveReadonlyMatrix.ps1` only if needed for R10-3.
+- **REFACTOR:** assertions remain frozen; centralize path comparison, bounded timeout, and exact
+  process restoration without introducing a broker branch.
+- Extend `tools/run-mt5-vm-powershell-regression-gauntlet.ps1` and
+  `tools/Test-MT5VmPowerShellMutations.ps1`; append actual final results to this task's
+  `EVIDENCE.md` and update authoritative status docs only if a blocker verdict changes.
+- External generated state: refreshed FTMO DPAPI payload and sanitized Phase 0/matrix results under
+  `%LOCALAPPDATA%\MarketLens`; optional third signed terminal installation/profile only under R10-4.
+  No generated secret or raw result enters the repository.
+- Existing tools only: Windows PowerShell 5.1, Python/unittest, MetaTrader5 package, Cargo/Rust tests
+  where the Phase 1 adapter contract is affected, Git diff checks, and existing mutation scripts.
+  New repository dependency: **none**. Optional official Exness installer is operator software, not
+  an application dependency.
+- Git operations: read-only status/diff checks only. No commit or push is authorized by this
+  revision.
+
+### RED → GREEN → REFACTOR and final gauntlet
+
+1. Add and run focused tests for prompt-only identity input, timeout bounds/default, credential-
+   bearing initialize, `portable=False`, wrong-terminal rejection, and process-topology restoration;
+   retain the observed RED output.
+2. Implement the minimum behavior with assertions frozen; run focused and full bridge suites GREEN.
+3. Refactor with no assertion changes and rerun GREEN.
+4. Run Python compilation, PowerShell 5.1 parse, applicable Rust tests, diff hygiene, and the existing
+   secret/capability gate.
+5. Persist and kill at least five plausible mutants: remove credential-bearing initialize, reduce
+   the 60-second upper/default bound, accept a wrong observed terminal path, leak identity into a
+   child argument, and skip exact process-topology restoration. Prove the mutation runner executes
+   each mutant and restores source byte-for-byte.
+6. Run the live single/coexisting matrix only after the user refreshes FTMO locally. Restore the
+   initial process topology and verify no owned orphan remains even on failure.
+7. Run one final fresh rerunnable gauntlet and write EVIDENCE mapping R10-1 through R10-5 and every
+   negative constraint to actual tests/results. Record skipped layers and limitations honestly.
+
+Changed-line coverage may be mapped to branch-specific tests plus mutation because no installed
+coverage tool spans Windows PowerShell subprocesses and the MetaTrader5 native boundary. Property
+coverage uses deterministic generated Windows path casing, Unicode server values, timeout boundary
+values, and process topologies; no new property-testing dependency is planned. Independent
+verification is not performed unless separately authorized under the old-coder verifier protocol.
+
+### Revision 10 approval phrase
+
+Approve this exact revision with:
+
+`Duyệt SPEC Revision 10 FTMO refresh and Exness IPC isolation`
+
+### Revision 10 approval
+
+- Proposed on 2026-08-21.
+- **Obtained.** The user explicitly approved this exact revision with
+  `Duyệt SPEC Revision 10 FTMO refresh and Exness IPC isolation` on 2026-08-21.
+
+## Revision 11 proposal — PowerShell prompt-fixture scope correction
+
+- Status: **proposed; the test helper correction below is not authorized until the exact approval
+  phrase is received**.
+- The Revision 10 RED run failed as intended. After GREEN implementation, `32/33` focused tests pass.
+  The remaining test reaches the new `-PromptForIdentity` parameter set but its synthetic
+  `Read-Host` replacement reads `$script:fixtureLogin`, `$script:fixtureServer`, and
+  `$script:fixtureDemo`. Because the replacement is a global function invoked from the credential
+  script, PowerShell resolves `$script:` against the invoked script scope rather than the test
+  command scope and raises `VariableIsUndefined` before exercising credential behavior.
+- Correct only the fixture variable scope in
+  `backend/bridge/mt5_vm/test_powershell_process_contracts.py` from `$script:` to `$global:` for
+  those three synthetic values. Keep the behavioral assertions, fixture values, prompts,
+  production implementation, DPAPI checks, and negative constraints unchanged.
+- Run the single corrected test first, then the complete frozen `33`-test focused suite. This is a
+  test-harness wiring correction, not a relaxation of the prompt-only identity contract.
+
+### Revision 11 approval phrase
+
+Approve this exact fixture-only correction with:
+
+`Duyệt SPEC Revision 11 prompt fixture scope`
+
+### Revision 11 approval
+
+- Proposed on 2026-08-21.
+- **Obtained.** The user explicitly approved this exact fixture-only correction with
+  `Duyệt SPEC Revision 11 prompt fixture scope` on 2026-08-21.

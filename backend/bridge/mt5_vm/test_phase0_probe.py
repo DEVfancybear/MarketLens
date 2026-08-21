@@ -22,16 +22,31 @@ class MT5Stub:
     ACCOUNT_TRADE_MODE_REAL = 2
 
     def __init__(
-        self, *, mode: int = 0, initialize_ok: bool = True, login_ok: bool = True
+        self,
+        *,
+        mode: int = 0,
+        initialize_ok: bool = True,
+        login_ok: bool = True,
+        observed_terminal_path: str | None = None,
     ) -> None:
         self.mode = mode
         self.initialize_ok = initialize_ok
         self.login_ok = login_ok
+        self.observed_terminal_path = observed_terminal_path
         self.shutdown_calls = 0
         self.login_args = None
 
-    def initialize(self, path: str, timeout: int) -> bool:
-        self.initialize_args = (path, timeout)
+    def initialize(
+        self,
+        path: str,
+        *,
+        login: int,
+        password: str,
+        server: str,
+        timeout: int,
+        portable: bool,
+    ) -> bool:
+        self.initialize_args = (path, login, password, server, timeout, portable)
         return self.initialize_ok
 
     def login(self, login: int, *, password: str, server: str, timeout: int) -> bool:
@@ -51,7 +66,10 @@ class MT5Stub:
         )
 
     def terminal_info(self):
-        return SimpleNamespace(connected=True)
+        return SimpleNamespace(
+            connected=True,
+            path=self.observed_terminal_path or self.initialize_args[0],
+        )
 
     def positions_get(self):
         return ()
@@ -113,7 +131,7 @@ class Phase0ProbeTests(unittest.TestCase):
             "password": "sensitive-test-value",
             "server": "FTMO-Demo",
             "symbol": "EURUSD",
-            "timeout_ms": 12000,
+            "timeout_ms": 60_000,
         }
 
     def tearDown(self) -> None:
@@ -127,6 +145,18 @@ class Phase0ProbeTests(unittest.TestCase):
         self.assertEqual("demo", result["account"]["mode"])
         self.assertTrue(result["account"]["login_matches"])
         self.assertTrue(result["account"]["server_matches"])
+        self.assertTrue(result["account"]["terminal_path_matches"])
+        self.assertEqual(
+            (
+                self.request["terminal_path"],
+                int(self.request["login"]),
+                self.request["password"],
+                self.request["server"],
+                60_000,
+                False,
+            ),
+            stub.initialize_args,
+        )
         self.assertEqual(1, stub.shutdown_calls)
         serialized = json.dumps(result)
         self.assertNotIn(self.request["password"], serialized)
@@ -160,6 +190,32 @@ class Phase0ProbeTests(unittest.TestCase):
         serialized = json.dumps(result)
         self.assertNotIn(self.request["password"], serialized)
         self.assertNotIn(self.request["login"], serialized)
+
+    def test_wrong_observed_terminal_path_fails_closed_and_shuts_down(self) -> None:
+        wrong_path = str(Path(self.temp_dir.name) / "other" / "terminal64.exe")
+        stub = MT5Stub(observed_terminal_path=wrong_path)
+
+        result = run_probe(stub, dict(self.request))
+
+        self.assertEqual("BLOCKED", result["status"])
+        self.assertEqual("MT5_TERMINAL_PATH_MISMATCH", result["error_class"])
+        self.assertEqual(1, stub.shutdown_calls)
+        serialized = json.dumps(result)
+        self.assertNotIn(wrong_path, serialized)
+        self.assertNotIn(self.request["password"], serialized)
+
+    def test_timeout_defaults_to_sixty_seconds_and_is_strictly_bounded(self) -> None:
+        defaulted = dict(self.request)
+        defaulted.pop("timeout_ms")
+        self.assertEqual(60_000, _validate_request(defaulted)["timeout_ms"])
+
+        self.assertEqual(60_000, _validate_request(dict(self.request))["timeout_ms"])
+        for invalid_timeout in (999, 60_001):
+            with self.subTest(timeout_ms=invalid_timeout):
+                invalid = dict(self.request)
+                invalid["timeout_ms"] = invalid_timeout
+                with self.assertRaises(ProbeInputError):
+                    _validate_request(invalid)
 
     def test_partial_or_extra_credentials_fail_closed(self) -> None:
         missing_password = dict(self.request)

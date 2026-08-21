@@ -13,6 +13,9 @@ param(
   [ValidateLength(0, 64)]
   [string]$Symbol = '',
 
+  [ValidateRange(1000, 60000)]
+  [int]$TimeoutMs = 60000,
+
   [string]$OutputPath,
 
   [switch]$RestartTerminalAfterSettings
@@ -49,7 +52,9 @@ $probeRunner = {
     '-AccountAlias',
     $AccountAlias,
     '-OutputPath',
-    $fullOutputPath
+    $fullOutputPath,
+    '-TimeoutMs',
+    [string]$TimeoutMs
   )
   if (-not [string]::IsNullOrWhiteSpace($CredentialPath)) {
     $arguments += @('-CredentialPath', [System.IO.Path]::GetFullPath($CredentialPath))

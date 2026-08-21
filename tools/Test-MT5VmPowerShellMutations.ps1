@@ -9,8 +9,16 @@ $repoPrefix = $repoRoot + [System.IO.Path]::DirectorySeparatorChar
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false, $true)
 
 $focusedTests = @(
+  'backend.bridge.mt5_vm.test_phase0_probe',
+  'backend.bridge.mt5_vm.test_phase1_adapter',
   'backend.bridge.mt5_vm.test_powershell_process_contracts',
-  'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap'
+  'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap',
+  'backend.bridge.mt5_vm.test_live_readonly_matrix',
+  'backend.bridge.mt5_vm.test_local_image_automation'
+)
+
+$credentialProcessArgumentPattern = (
+  '(?m)\$startInfo\.Arguments\s*=.*\$(?:secret|plainPayload|plainPassword|credential)'
 )
 
 $mutants = @(
@@ -85,8 +93,14 @@ $effectiveAcl = Get-Acl -LiteralPath $fullCredentialPath
   [ordered]@{
     id = 'M8_CLOSE_PREEXISTING_TERMINAL'
     path = 'backend\bridge\mt5_vm\Mt5VmTerminalUi.ps1'
-    before = 'if ($null -ne $target -and [bool]$target.WasStarted) {'
-    after = 'if ($null -ne $target) {'
+    before = @'
+    if ($null -ne $target -and [bool]$target.WasStarted) {
+      $ownedProcessId = if ($null -ne $activeTarget) {
+'@
+    after = @'
+    if ($null -ne $target) {
+      $ownedProcessId = if ($null -ne $activeTarget) {
+'@
   },
   [ordered]@{
     id = 'M9_BLOCK_ON_MODAL_OPTIONS_COMMAND'
@@ -167,6 +181,141 @@ $effectiveAcl = Get-Acl -LiteralPath $fullCredentialPath
     path = 'backend\bridge\mt5_vm\Mt5VmTerminalUi.ps1'
     before = 'Close-MT5VmOwnedTerminalBoundary -ProcessId $ProcessId'
     after = 'Stop-Process -Id $ProcessId -Force'
+  },
+  [ordered]@{
+    id = 'M14_REMOVE_PHASE0_INITIALIZE_CREDENTIALS'
+    path = 'backend\bridge\mt5_vm\phase0_probe.py'
+    before = @'
+            mt5.initialize(
+                cfg["terminal_path"],
+                login=cfg["login"],
+                password=cfg["password"],
+                server=cfg["server"],
+'@
+    after = @'
+            mt5.initialize(
+                cfg["terminal_path"],
+'@
+  },
+  [ordered]@{
+    id = 'M15_REDUCE_PHASE0_TIMEOUT_BOUND'
+    path = 'backend\bridge\mt5_vm\phase0_probe.py'
+    before = 'if timeout_ms < 1000 or timeout_ms > 60_000:'
+    after = 'if timeout_ms < 1000 or timeout_ms > 12_000:'
+  },
+  [ordered]@{
+    id = 'M16_ACCEPT_WRONG_PHASE0_TERMINAL_PATH'
+    path = 'backend\bridge\mt5_vm\phase0_probe.py'
+    before = @'
+    return ntpath.normcase(candidate) == ntpath.normcase(
+        ntpath.normpath(requested_executable)
+    )
+'@
+    after = '    return True'
+  },
+  [ordered]@{
+    id = 'M17_LEAK_IDENTITY_TO_CHILD_ARGUMENT'
+    path = 'backend\bridge\mt5_vm\Invoke-MT5VmPhase0.ps1'
+    before = '$startInfo.Arguments = ''"'' + $probePath + ''"'''
+    after = '$startInfo.Arguments = ''"'' + $probePath + ''" '' + [string]$secret.login'
+  },
+  [ordered]@{
+    id = 'M18_SKIP_LIVE_MATRIX_TOPOLOGY_RESTORE'
+    path = 'backend\bridge\mt5_vm\Invoke-MT5VmLiveReadonlyMatrix.ps1'
+    before = @'
+    for ($index = 0; $index -lt 2; $index++) {
+      Set-MT5VmLiveReadonlyMatrixPresenceBoundary `
+        -TerminalPath $canonicalPaths[$index] `
+        -Present ([bool]$initial[$index].Present)
+    }
+'@
+    after = '    # Mutant skips restoration of the initial process topology.'
+  },
+  [ordered]@{
+    id = 'M19_SKIP_INSTALLER_HASH_VERIFICATION'
+    path = 'tools\mt5-vm-image\Install-MT5VmTerminalSlots.ps1'
+    before = @'
+  if (-not [string]::Equals(
+      [string]$attestation.sha256,
+      $ExpectedInstallerSha256,
+      [StringComparison]::OrdinalIgnoreCase
+    )) {
+    throw 'INSTALLER_HASH_MISMATCH'
+  }
+'@
+    after = @'
+  if ($false) {
+    throw 'INSTALLER_HASH_MISMATCH'
+  }
+'@
+  },
+  [ordered]@{
+    id = 'M20_ACCEPT_INVALID_INSTALLER_SIGNER'
+    path = 'tools\mt5-vm-image\Install-MT5VmTerminalSlots.ps1'
+    before = @'
+  if ($attestation.signature_status -ne 'Valid' -or
+      [string]$attestation.signer_subject -notmatch $ExpectedSignerPattern) {
+    throw 'INSTALLER_SIGNER_MISMATCH'
+  }
+'@
+    after = @'
+  if ($false) {
+    throw 'INSTALLER_SIGNER_MISMATCH'
+  }
+'@
+  },
+  [ordered]@{
+    id = 'M21_PUBLISH_IMAGE_BEFORE_ATTESTATION'
+    path = 'tools\mt5-vm-image\New-MT5VmGoldenImage.ps1'
+    before = @'
+    Invoke-MT5VmImageProvisionBoundary -Stage $stage -ImageVersion $ImageVersion
+    if (-not (Test-MT5VmImageAttestationBoundary -Stage $stage)) {
+'@
+    after = @'
+    Invoke-MT5VmImageProvisionBoundary -Stage $stage -ImageVersion $ImageVersion
+    Publish-MT5VmImageBoundary `
+      -Stage $stage -PublishedRoot $published -ImageVersion $ImageVersion
+    if (-not (Test-MT5VmImageAttestationBoundary -Stage $stage)) {
+'@
+  },
+  [ordered]@{
+    id = 'M22_ADD_INSTALLER_CAPABILITY_TO_ACCOUNT_RUNTIME'
+    path = 'backend\bridge\mt5_vm\phase1_adapter.py'
+    before = 'from __future__ import annotations'
+    after = @'
+from __future__ import annotations
+# mt5setup /auto is a forbidden account-runtime capability mutant.
+'@
+  },
+  [ordered]@{
+    id = 'M23_DUPLICATE_CONCURRENT_CLONE'
+    path = 'tools\mt5-vm-image\New-MT5VmHyperVWorker.ps1'
+    before = '    if ($state.generation_exists) {'
+    after = '    if ($false) {'
+  },
+  [ordered]@{
+    id = 'M24_PARTIAL_SERVER_MATCH'
+    path = 'backend\bridge\mt5_vm\Mt5VmTerminalUi.ps1'
+    before = @'
+    if ([string]::Equals(
+        [string]$Candidates[$index], $Expected, [StringComparison]::Ordinal
+      )) {
+'@
+    after = @'
+    if ([string]$Candidates[$index] -like ('*' + $Expected + '*')) {
+'@
+  },
+  [ordered]@{
+    id = 'M25_ACCEPT_STALE_SERVER_CATALOG'
+    path = 'backend\bridge\mt5_vm\Mt5VmTerminalUi.ps1'
+    before = '$catalog.LastWriteTimeUtc -lt $NotBeforeUtc'
+    after = '$false'
+  },
+  [ordered]@{
+    id = 'M26_LEAK_SERVER_TO_CHILD_ARGUMENT'
+    path = 'backend\bridge\mt5_vm\Invoke-MT5VmPhase0.ps1'
+    before = '$startInfo.Arguments = ''"'' + $probePath + ''"'''
+    after = '$startInfo.Arguments = ''"'' + $probePath + ''" '' + [string]$secret.server'
   }
 )
 
@@ -207,13 +356,18 @@ foreach ($mutant in $mutants) {
       throw "Mutation did not change source bytes: $($mutant.id)"
     }
 
-    $previousErrorPreference = $ErrorActionPreference
-    try {
-      $ErrorActionPreference = 'Continue'
-      $testOutput = & python -m unittest @focusedTests -v 2>&1
-      $testExit = $LASTEXITCODE
-    } finally {
-      $ErrorActionPreference = $previousErrorPreference
+    if ($mutatedText -match $credentialProcessArgumentPattern) {
+      $testOutput = 'credential process-argument gate rejected the mutant'
+      $testExit = 1
+    } else {
+      $previousErrorPreference = $ErrorActionPreference
+      try {
+        $ErrorActionPreference = 'Continue'
+        $testOutput = & python -m unittest @focusedTests -v 2>&1
+        $testExit = $LASTEXITCODE
+      } finally {
+        $ErrorActionPreference = $previousErrorPreference
+      }
     }
     if ($testExit -eq 0) {
       throw "SURVIVED: $($mutant.id)"

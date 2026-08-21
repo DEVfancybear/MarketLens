@@ -66,6 +66,21 @@ harness refuses to write an account result inside the repository.
 Phase 0 is incapable of trading: `phase0_probe.py` contains no order mutation
 operation.
 
+## Local image and terminal-slot automation
+
+User account enrollment does not install MT5. Image builders prepare a bounded pool of one to four
+separately installed, signed, and attested terminal slots ahead of time. The operator tooling is in
+`../../../tools/mt5-vm-image/` and defaults to dry-run where it can change host state.
+
+The clean local FTMO/Exness proof now passes official broker-neutral server-catalog enrollment,
+the safe Python/API bootstrap, and both single/coexisting read-only probes. The earlier Exness
+`-10005` result is historical evidence from the pre-enrollment profile, not the current clean-slot
+verdict. Real golden-VHDX publication and worker registration remain fail-closed until Hyper-V,
+guest provisioning, health, and private registration prerequisites are connected.
+
+See `../../../docs/MT5_VM_LOCAL_IMAGE_AUTOMATION.md` for the image-build workflow and
+`../../../docs/agent-evidence/mt5-vm-local-image-automation/EVIDENCE.md` for sanitized results.
+
 ## Tests
 
 The tests use a stub and do not require MT5:

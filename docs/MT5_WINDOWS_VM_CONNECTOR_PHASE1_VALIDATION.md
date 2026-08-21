@@ -1,7 +1,7 @@
 # MT5 Windows VM connector Phase 1 validation
 
 - Status: **conditional; installed-slot test-host lifecycle PASS, normal signed-agent exit pending**
-- Review date: 12 August 2026
+- Review date: 21 August 2026
 - Scope: local secure multi-runtime worker prototype and read-only lifecycle validation
 - Execution: account reads only; no order mutation surface
 
@@ -15,6 +15,12 @@ Historical note: the earlier credentialed run returned `MT5_IPC_TIMEOUT`; the
 later installed-slot test-host run is the newest local result, but it does not
 erase that blocked normal-path evidence or substitute for a signed production
 artifact.
+
+The 21 August local refresh adds a second clean signed terminal and disposable demo alias. Official
+broker-neutral catalog enrollment, safe Python/API bootstrap, and FTMO/Exness single plus
+coexisting read-only probes pass. This closes the clean-slot credential/IPC discriminator; it does
+not substitute for the signed-agent path, an independent broker/web comparison, or the required
+crash/recover cross-fault and aggregate-load proof.
 
 ## 1. Implemented prototype
 
@@ -63,7 +69,8 @@ or order-execution path.
 | One-pair settled idle observation | `PASS` — 15 s settle, 10 s sample, about 149 MB working set and 5.94% of one CPU core |
 | Normal signed-agent control-path live run | `PENDING` — Smart App Control blocks the unsigned debug executable |
 | Independent FTMO web snapshot comparison | `PENDING` |
-| Live two-account cross-fault isolation | `PENDING` — this host currently has one demo credential and one installed slot |
+| Two-account single/coexisting read-only matrix | `PASS` — FTMO and clean Exness pass alone and concurrently |
+| Live two-account crash/recover isolation and aggregate load | `PENDING` — coexistence is proven, cross-fault lifecycle is not |
 
 Repository checks:
 
@@ -122,13 +129,12 @@ Do not mark Phase 1 complete or start Phase 2 until all items below are closed:
    seven-day history counts, and the selected symbol specification with an
    independent FTMO web view; only then rerun with
    `-IndependentWebMatchConfirmed`.
-3. Provision a second disposable demo credential and a second separately
-   installed signed terminal slot with its enrolled server catalog. Run both
-   accounts concurrently, crash/recover one, prove the other heartbeat and
+3. Use the two existing disposable demo credentials and separately installed signed terminal
+   slots to run the Phase 1 crash/recover lifecycle: prove the unaffected account heartbeat and
    snapshot remain healthy, and record aggregate settled CPU/memory.
 
-The installed-slot pool and fake-driver cross-account regression are ready for
-item 3, but one account or one slot cannot constitute live cross-account proof.
+The installed-slot pool, live read-only coexistence result, and fake-driver cross-account
+regression are ready for item 3, but coexistence alone cannot constitute cross-fault proof.
 Only after all three gates pass may this document and the authoritative plan
 change Phase 1 from `CONDITIONAL_PASS` to `PASS`.
 

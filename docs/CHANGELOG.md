@@ -4,6 +4,23 @@ All notable changes to the MarketLens. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - MT5 local image automation and broker-neutral enrollment (2026-08-21)
+
+- Added hash/signer-pinned unattended installation for one to four distinct MT5 terminal slots,
+  exact terminal/profile/catalog/license attestation, manifest validation, transactional golden
+  image policy, bounded/coalesced Hyper-V worker policy, and explicit host bootstrap opt-in.
+- Added exact-PID official MT5 server-catalog enrollment using current-user DPAPI credentials only
+  in memory. Reusable automation remains broker-neutral and emits no login, password, or server.
+- Refreshed the disposable FTMO credential and enrolled a clean signed Exness slot. The safe
+  Python/API bootstrap and final FTMO/Exness single/coexisting read-only matrix pass; the older
+  `-10005` result is historical RED evidence.
+- Added the single PowerShell gauntlet for the new scope: 96 Python tests, 14 parser checks, 26/26
+  mutation controls, secret/process-argument gates, clean bootstrap, and the real read-only matrix
+  pass. No order mutation was invoked.
+- Real golden-VHDX publication and worker registration remain fail-closed until the local host has
+  Hyper-V management plus an operator-supplied base VHDX, virtual switch, guest provision/self-test,
+  worker health, and private registration integration.
+
 ### Added - MT5 VM connector Phase 4a/4b read synchronization (2026-08-20)
 
 - Wired authenticated Rust worker ingestion for account, positions, pending orders and

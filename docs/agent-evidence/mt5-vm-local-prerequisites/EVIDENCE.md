@@ -1,5 +1,14 @@
 # Evidence Report — Local MT5 prerequisites and generic Python/API bootstrap (Tier 3)
 
+## 2026-08-21 superseding Revision 14 addendum
+
+The historical Exness `-10005` blocker recorded below applies to the earlier isolated terminal
+path before official catalog enrollment. Revision 14 enrolled the clean signed terminal through
+the official broker-neutral UI flow, refreshed its exact data profile/catalog, and passed the safe
+bootstrap plus the final FTMO/Exness single/coexisting read-only matrix. Current evidence is in
+`docs/agent-evidence/mt5-vm-local-image-automation/EVIDENCE.md`; the older failure chronology below
+is retained as RED evidence and must not be read as current status.
+
 - SPEC: `SPEC.md`, initial approval plus Revisions 1–9 explicitly approved by the user.
 - Final approved revision: `Duyệt SPEC Revision 9 controlled generic MT5 restart` on 2026-08-21.
 - Repository state at evidence capture: Git commit
