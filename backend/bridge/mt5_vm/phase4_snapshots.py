@@ -43,6 +43,7 @@ __all__ = [
 COMPLETE = "complete"
 PARTIAL = "partial"
 FAILED = "failed"
+MAX_FAMILY_ROWS = 4_096
 
 # MT5 exposes these as integer enums; the backend only ever sees these names.
 _ACCOUNT_MODES = {0: "demo", 1: "contest", 2: "real"}
@@ -373,7 +374,9 @@ def _collect_family(rows: Iterable[Any] | None, normalizer, missing_code: str) -
     if rows is None:
         return [], FAILED, missing_code
     normalized = []
-    for row in rows:
+    for index, row in enumerate(rows):
+        if index >= MAX_FAMILY_ROWS:
+            return normalized, PARTIAL, "MT5_SNAPSHOT_ROW_LIMIT_EXCEEDED"
         try:
             normalized.append(normalizer(row))
         except SnapshotError as error:

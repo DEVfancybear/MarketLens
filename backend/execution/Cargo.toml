@@ -23,6 +23,7 @@ execution-domain = { path = "crates/execution-domain" }
 execution-engine = { path = "crates/execution-engine" }
 hmac = "0.12"
 md5 = { package = "md-5", version = "0.10" }
+reqwest = { version = "=0.13.4", default-features = false, features = ["blocking", "json", "rustls"] }
 rust_decimal = { version = "1", features = ["serde-with-str"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

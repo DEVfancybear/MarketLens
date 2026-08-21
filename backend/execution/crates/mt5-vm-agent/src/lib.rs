@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub mod job;
+pub mod managed;
 pub mod process;
 pub mod protocol;
 pub mod queue;

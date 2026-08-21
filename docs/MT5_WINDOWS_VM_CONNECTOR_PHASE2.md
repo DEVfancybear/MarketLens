@@ -113,6 +113,15 @@ PowerShell parsing validates the production runner change.
 
 ## 5. Operational activation gate
 
+Fresh disposable evidence (2026-08-21) from
+`tools/run-mt5-phase2-operational.ps1` passed two deterministic attempts. Each
+attempt started two gateway processes against loopback PostgreSQL 17.11,
+survived sequential restart, rotated the worker session, fenced five stale HTTP
+surfaces, increased the lease generation, and asserted exactly one current
+`provision_account` command. Tokens and the disposable runtime were removed.
+This closes the repository/disposable Phase 2 gate; it does not create a signed
+production worker artifact or close the separate Phase 1 broker gates.
+
 Repository implementation is complete, but do not call Phase 2 operationally
 active until all of the following are recorded:
 

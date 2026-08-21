@@ -16,6 +16,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+try:
+    from . import phase4_snapshots
+except ImportError:  # Direct script execution on the managed Windows host.
+    import phase4_snapshots  # type: ignore[no-redef]
+
 
 PROTOCOL_VERSION = 1
 KEY_BYTES = 32
@@ -49,7 +54,8 @@ FRAME_KEYS = {
     "payload_json",
     "mac_hex",
 }
-ALLOWED_COMMANDS = {"agent_heartbeat", "stop_account"}
+ALLOWED_COMMANDS = {"agent_heartbeat", "stop_account", "snapshot_sync", "history_sync"}
+MAX_SYNC_SYMBOLS = 256
 
 
 class AdapterInputError(ValueError):
@@ -398,6 +404,43 @@ def heartbeat_snapshot(mt5: Any, cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _collect_snapshot_sync(mt5: Any, payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict) or set(payload) != {"symbols"}:
+        raise AdapterInputError("invalid snapshot sync payload")
+    raw_symbols = payload["symbols"]
+    if not isinstance(raw_symbols, list) or len(raw_symbols) > MAX_SYNC_SYMBOLS:
+        raise AdapterInputError("invalid snapshot sync symbols")
+    symbols: list[str] = []
+    seen: set[str] = set()
+    for value in raw_symbols:
+        if not isinstance(value, str):
+            raise AdapterInputError("invalid snapshot sync symbol")
+        symbol = value.strip()
+        if not symbol or len(symbol) > 64 or any(ord(char) < 32 or ord(char) == 127 for char in symbol):
+            raise AdapterInputError("invalid snapshot sync symbol")
+        key = symbol.casefold()
+        if key in seen:
+            raise AdapterInputError("duplicate snapshot sync symbol")
+        seen.add(key)
+        symbols.append(symbol)
+    return phase4_snapshots.collect_snapshots(mt5, symbols=symbols)
+
+
+def _collect_history_sync(mt5: Any, payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict) or set(payload) != {"from_ms", "to_ms"}:
+        raise AdapterInputError("invalid history sync payload")
+    from_ms = payload["from_ms"]
+    to_ms = payload["to_ms"]
+    if (
+        isinstance(from_ms, bool)
+        or isinstance(to_ms, bool)
+        or not isinstance(from_ms, int)
+        or not isinstance(to_ms, int)
+    ):
+        raise AdapterInputError("invalid history sync window")
+    return phase4_snapshots.collect_history_page(mt5, from_ms=from_ms, to_ms=to_ms)
+
+
 def _json_safe(value: Any) -> Any:
     if isinstance(value, float) and not math.isfinite(value):
         return None
@@ -445,6 +488,28 @@ def run(mt5: Any, cfg: dict[str, Any]) -> int:
                         sequence=output_sequence,
                         kind="agent_heartbeat",
                         payload=heartbeat_snapshot(mt5, cfg),
+                    )
+                )
+                output_sequence += 1
+                continue
+            if command["kind"] == "snapshot_sync":
+                _write_frame(
+                    sign_frame(
+                        cfg,
+                        sequence=output_sequence,
+                        kind="snapshot_sync",
+                        payload=_collect_snapshot_sync(mt5, command["payload"]),
+                    )
+                )
+                output_sequence += 1
+                continue
+            if command["kind"] == "history_sync":
+                _write_frame(
+                    sign_frame(
+                        cfg,
+                        sequence=output_sequence,
+                        kind="history_sync",
+                        payload=_collect_history_sync(mt5, command["payload"]),
                     )
                 )
                 output_sequence += 1

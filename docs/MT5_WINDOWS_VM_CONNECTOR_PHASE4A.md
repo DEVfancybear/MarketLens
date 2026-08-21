@@ -52,13 +52,13 @@ added to an existing table.
 
 ## Verification boundary
 
-Rust gateway 93/93 and agent 22/22 (one credentialed live test ignored), Python
-Phase 0/1/4 37/37, Go `./...` and `go vet ./internal/execution` pass on the
-current source. The rerunnable entry point is
-`tools/verify-mt5-phase4.ps1`; it fails closed if no disposable database URL is
-provided. The local migration layer is **BLOCKED**, because the configured URL
-points to unavailable port 55432 and the active 5432 service rejects the stored
-password. No migration PASS is claimed from that environment.
+Rust gateway 93/93 and agent managed-worker tests pass (one credentialed live
+test remains ignored), along with Python Phase 0/1/4, Go execution, and mutation
+controls. The rerunnable entry point is `tools/verify-mt5-phase4.ps1`; it fails
+closed if no disposable database URL is provided. A fresh run through
+`tools/run-mt5-phase4-disposable.ps1` passed the `0040/0041` up → down one step →
+up round-trip on loopback-only EDB PostgreSQL 17.11. The live FTMO/retail exit
+gate remains open.
 
 ## Gates that remain open
 
@@ -67,8 +67,8 @@ toward them:
 
 - **Phase 1 remains conditional**: the later installed-slot test-host lifecycle passes, but the
   normal signed-agent path, independent web match and live two-account isolation remain open.
-- Phase 2 still needs the disposable-PostgreSQL restart and signed-worker
-  rotation/reassignment evidence.
+- Phase 2 disposable restart, session rotation and reassignment evidence now
+  passes; signed-agent and broker gates remain separate prerequisites.
 - Phase 3 still needs its deployment exercise.
 - **The Phase 4 exit gate is not approachable here.** It requires FTMO and one
   retail demo to match independent terminal/web views across disconnect,

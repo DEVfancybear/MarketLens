@@ -290,6 +290,16 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(len(result["positions"]["positions"]), 1)
         self.assertEqual(result["positions"]["error_code"], "MT5_TICKET_MISSING")
 
+    def test_oversized_family_is_bounded_and_never_claims_complete(self):
+        rows = tuple(position(ticket=index + 1) for index in range(4_097))
+        result = snapshots.collect_snapshots(MT5Stub(positions=rows))
+        self.assertEqual(snapshots.PARTIAL, result["positions"]["result"])
+        self.assertEqual(4_096, len(result["positions"]["positions"]))
+        self.assertEqual(
+            "MT5_SNAPSHOT_ROW_LIMIT_EXCEEDED",
+            result["positions"]["error_code"],
+        )
+
     def test_a_failed_account_does_not_fail_the_other_families(self):
         stub = MT5Stub(positions=(position(),), info=None)
         result = snapshots.collect_snapshots(stub)

@@ -1,6 +1,6 @@
 # Universal MT5 Windows VM connector plan
 
-- Status: **approved architecture; Phase 0 complete; Phase 1 conditional; Phase 2/3 implemented and activation-gated; Phase 4 repository slice implemented and operationally gated**
+- Status: **approved architecture; Phase 0 complete; Phase 1 conditional; Phase 2 disposable operational gate PASS; Phase 3 Vault client PASS but API lifecycle gate open; Phase 4 repository gauntlet PASS but live broker gate open**
 - Decision date: 12 August 2026
 - Replaces the deleted TickerAll/MetaApi cloud-provider plan
 - Runtime model: MarketLens-managed Windows VM pool, multiple terminals per VM
@@ -542,9 +542,11 @@ durable lifecycle commands. `execution-gateway` now owns protocol negotiation,
 hashed generation-fenced worker sessions, heartbeat/lease expiry, compatible
 `SKIP LOCKED` placement, bounded poll redelivery, and idempotent acknowledgements.
 The existing EA path is unchanged; no public credential or order route was
-added. Operational activation still requires disposable-PostgreSQL restart
-evidence and a signed worker session-rotation/reassignment exercise. See
-`MT5_WINDOWS_VM_CONNECTOR_PHASE2.md`.
+added. The fresh disposable operational exercise now passes restart persistence,
+session rotation, stale-surface fencing, and reassignment on two deterministic
+attempts. Signed-agent and live broker gates remain open. See
+`MT5_WINDOWS_VM_CONNECTOR_PHASE2.md` and
+`docs/agent-evidence/mt5-vm-phase1-4-exit-verification/EVIDENCE.md`.
 
 Exit: stale agents cannot act after reassignment and all control-plane state
 survives backend restart.
@@ -561,9 +563,10 @@ references and one-time grant hashes. Go owns Vault I/O and authenticated public
 routes; Rust owns revisions, lifecycle state, owner-scoped persistence, audit and
 worker/session/lease/command-bound grant consumption. The browser has no managed
 connector feature env and includes bilingual connect/reconnect/rotate/disconnect/
-remove UI. Production activation remains blocked on the Phase 1/2 operational
-gates and the Phase 3 deployment exercise documented in
-`MT5_WINDOWS_VM_CONNECTOR_PHASE3.md`.
+remove UI. The disposable Vault KV lifecycle passes; the authenticated public
+API/browser lifecycle exercise remains open, as do the Phase 1 signed-agent and
+live broker gates. See `MT5_WINDOWS_VM_CONNECTOR_PHASE3.md` and the sanitized
+evidence record.
 
 Exit: cross-user tests, credential redaction tests, rotation/deletion tests and
 abuse limits pass.
@@ -581,8 +584,9 @@ lease / sequence fencing, complete-vs-partial reconciliation, paired portfolio
 freshness, owner-scoped bounded reads and tamper-evident cursors. Go injects the
 owner for public snapshot/history routes; Python stops MT5 enums and decimal
 conversion at the adapter; the agent protocol pins instrument/history wire names.
-The repository gauntlet passes all code-native layers, but the migration round-trip
-still requires a disposable PostgreSQL URL on the operator host. See
+The repository gauntlet and `0040/0041` migration round-trip pass on a disposable
+loopback PostgreSQL instance. The live FTMO/retail comparison gate remains open.
+See
 `MT5_WINDOWS_VM_CONNECTOR_PHASE4A.md`, `MT5_WINDOWS_VM_CONNECTOR_PHASE4B.md` and
 `MT5_WINDOWS_VM_CONNECTOR_PHASE0_4_OPERATOR_CHECKLIST.md`.
 

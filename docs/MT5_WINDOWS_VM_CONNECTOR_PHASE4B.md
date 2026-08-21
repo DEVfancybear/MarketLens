@@ -41,10 +41,10 @@ closed. The response includes both row families and explicit coverage/result/err
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\verify-mt5-phase4.ps1
 ```
 
-The current host passes Rust gateway 93/93, agent 22/22 (one credentialed live test ignored),
-Python Phase 0/1/4 37/37, Go `./...`, and `go vet ./internal/execution`. The migration round-trip
-layer is BLOCKED until `MT5_PHASE4_DATABASE_URL` points at a disposable PostgreSQL database; the
-configured local URL was unavailable/unauthenticated. Do not substitute a production URL.
+The current host passes Rust gateway 93/93 and managed-agent tests (one credentialed live test
+ignored), Python Phase 0/1/4, Go execution, and mutation controls. A fresh
+`tools/run-mt5-phase4-disposable.ps1` run passes the `0040/0041` migration round-trip on
+loopback-only EDB PostgreSQL 17.11. Do not substitute a production URL.
 
 ## Exit boundary
 

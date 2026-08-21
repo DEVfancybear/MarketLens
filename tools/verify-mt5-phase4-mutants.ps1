@@ -51,6 +51,24 @@ $mutants = @(
   }
 )
 
+function Remove-ArtifactTree([string]$path) {
+  $resolved = (Resolve-Path -LiteralPath $path).Path
+  if (-not $resolved.StartsWith($ArtifactRoot, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "refusing to remove mutation artifacts outside .artifacts: $resolved"
+  }
+  $lastError = $null
+  for ($attempt = 0; $attempt -lt 30; $attempt++) {
+    try {
+      Remove-Item -LiteralPath $resolved -Recurse -Force -ErrorAction Stop
+      if (-not (Test-Path -LiteralPath $resolved)) { return }
+    } catch {
+      $lastError = $_
+      Start-Sleep -Seconds 1
+    }
+  }
+  throw "could not remove mutation artifact tree after 30 attempts: $resolved; last error: $lastError"
+}
+
 try {
   foreach ($mutant in $mutants) {
     $old = $mutant.Old
@@ -75,18 +93,10 @@ try {
   }
 } finally {
   if (Test-Path -LiteralPath $TempRoot) {
-    $resolvedTemp = (Resolve-Path -LiteralPath $TempRoot).Path
-    if (-not $resolvedTemp.StartsWith($ArtifactRoot, [StringComparison]::OrdinalIgnoreCase)) {
-      throw 'refusing to remove mutation workspace outside the artifact root'
-    }
-    $removed = $false
-    for ($attempt = 0; $attempt -lt 3 -and -not $removed; $attempt++) {
-      try { Remove-Item -LiteralPath $resolvedTemp -Recurse -Force; $removed = $true }
-      catch { if ($attempt -eq 2) { throw }; Start-Sleep -Milliseconds 250 }
-    }
+    Remove-ArtifactTree $TempRoot
   }
   if (Test-Path -LiteralPath $MigrationRoot) {
-    Remove-Item -LiteralPath $MigrationRoot -Recurse -Force
+    Remove-ArtifactTree $MigrationRoot
   }
 }
 

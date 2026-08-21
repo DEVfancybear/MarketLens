@@ -49,6 +49,11 @@ class MT5Stub:
             margin_mode=2,
             currency="USD",
             leverage=100,
+            balance=10_000.0,
+            equity=10_010.0,
+            margin=100.0,
+            margin_free=9_910.0,
+            margin_level=10_010.0,
         )
 
     def terminal_info(self):
@@ -244,6 +249,71 @@ class Phase1AdapterTests(unittest.TestCase):
         ):
             self.assertNotIn(secret, output)
         self.assertEqual(1, stub.shutdown_calls)
+
+    def test_authenticated_phase4_snapshot_and_history_commands_run_on_owner_thread(self) -> None:
+        signing_cfg = phase1_adapter.validate_bootstrap(dict(self.bootstrap))
+        snapshot = phase1_adapter.sign_frame(
+            signing_cfg,
+            sequence=1,
+            kind="snapshot_sync",
+            payload={"symbols": []},
+        )
+        history = phase1_adapter.sign_frame(
+            signing_cfg,
+            sequence=2,
+            kind="history_sync",
+            payload={"from_ms": 1_700_000_000_000, "to_ms": 1_700_086_400_000},
+        )
+        stop = phase1_adapter.sign_frame(
+            signing_cfg,
+            sequence=3,
+            kind="stop_account",
+            payload={},
+        )
+        stdin = io.StringIO(
+            "\n".join(
+                [
+                    json.dumps(self.bootstrap),
+                    json.dumps(snapshot),
+                    json.dumps(history),
+                    json.dumps(stop),
+                    "",
+                ]
+            )
+        )
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        stub = MT5Stub()
+        with (
+            mock.patch.object(sys, "stdin", stdin),
+            mock.patch.object(sys, "stdout", stdout),
+            mock.patch.object(sys, "stderr", stderr),
+            mock.patch.dict(sys.modules, {"MetaTrader5": stub}),
+        ):
+            exit_code = phase1_adapter.main()
+
+        self.assertEqual(0, exit_code)
+        frames = [json.loads(line) for line in stdout.getvalue().splitlines()]
+        self.assertEqual(
+            ["account_snapshot", "snapshot_sync", "history_sync", "account_runtime_status"],
+            [frame["kind"] for frame in frames],
+        )
+        snapshot_payload = json.loads(frames[1]["payload_json"])
+        history_payload = json.loads(frames[2]["payload_json"])
+        self.assertEqual(
+            {"account", "positions", "pending_orders", "instruments"},
+            set(snapshot_payload),
+        )
+        self.assertTrue(all(value["result"] == "complete" for value in snapshot_payload.values()))
+        self.assertEqual("complete", history_payload["orders_history"]["result"])
+        self.assertEqual("complete", history_payload["deals"]["result"])
+        output = stdout.getvalue() + stderr.getvalue()
+        for secret in (
+            self.bootstrap["login"],
+            self.bootstrap["password"],
+            self.bootstrap["ipc_key_hex"],
+        ):
+            self.assertNotIn(secret, output)
 
     def test_bootstrap_fails_closed_for_partial_extra_and_control_characters(self) -> None:
         for mutate in ("missing", "extra", "control"):

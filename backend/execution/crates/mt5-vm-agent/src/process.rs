@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader, BufWriter, Write};
@@ -552,6 +552,85 @@ impl ProcessRuntimeDriver {
                 Err(error)
             }
         }
+    }
+
+    pub fn snapshot_sync(
+        &mut self,
+        account_id: &str,
+        lease_generation: u64,
+        symbols: &[String],
+    ) -> Result<Value, DriverError> {
+        let mut unique = HashSet::with_capacity(symbols.len());
+        if symbols.len() > 256
+            || symbols.iter().any(|symbol| {
+                symbol.is_empty()
+                    || symbol.len() > 64
+                    || symbol.chars().any(char::is_control)
+                    || !unique.insert(symbol.as_str())
+            })
+        {
+            return Err(DriverError::new("SNAPSHOT_SYNC_REQUEST_INVALID"));
+        }
+        self.exchange(
+            account_id,
+            lease_generation,
+            MessageKind::SnapshotSync,
+            &json!({"symbols": symbols}),
+        )
+    }
+
+    pub fn history_sync(
+        &mut self,
+        account_id: &str,
+        lease_generation: u64,
+        from_ms: i64,
+        to_ms: i64,
+    ) -> Result<Value, DriverError> {
+        const MAX_HISTORY_WINDOW_MS: i64 = 31 * 24 * 60 * 60 * 1_000;
+        if from_ms <= 0 || to_ms <= from_ms || to_ms - from_ms > MAX_HISTORY_WINDOW_MS {
+            return Err(DriverError::new("HISTORY_SYNC_REQUEST_INVALID"));
+        }
+        self.exchange(
+            account_id,
+            lease_generation,
+            MessageKind::HistorySync,
+            &json!({"from_ms": from_ms, "to_ms": to_ms}),
+        )
+    }
+
+    fn exchange<T: Serialize>(
+        &mut self,
+        account_id: &str,
+        lease_generation: u64,
+        kind: MessageKind,
+        payload: &T,
+    ) -> Result<Value, DriverError> {
+        let runtime = self
+            .runtimes
+            .get_mut(account_id)
+            .ok_or_else(|| DriverError::new("RUNTIME_NOT_FOUND"))?;
+        let pair = runtime
+            .pair
+            .as_mut()
+            .ok_or_else(|| DriverError::new("RUNTIME_NOT_RUNNING"))?;
+        let frame = pair
+            .signer
+            .sign(
+                account_id,
+                lease_generation,
+                kind,
+                payload,
+                unix_time_ms(),
+                self.config.io_timeout.as_millis().min(60_000) as u64,
+            )
+            .map_err(|_| DriverError::new("IPC_SIGN_FAILED"))?;
+        let line = frame_to_line(&frame).map_err(|_| DriverError::new("IPC_FRAME_FAILED"))?;
+        pair.adapter_stdin
+            .write_all(line.as_bytes())
+            .and_then(|_| pair.adapter_stdin.write_all(b"\n"))
+            .and_then(|_| pair.adapter_stdin.flush())
+            .map_err(|_| DriverError::new("ADAPTER_SYNC_WRITE_FAILED"))?;
+        pair.receive(&self.config, account_id, lease_generation, kind)
     }
 }
 
@@ -1286,6 +1365,23 @@ mod tests {
             DriverError::new("INVALID_PROCESS_CONFIG"),
             config.validate().unwrap_err()
         );
+    }
+
+    #[test]
+    fn process_driver_exposes_authenticated_phase4_sync_commands() {
+        let _snapshot: fn(
+            &mut ProcessRuntimeDriver,
+            &str,
+            u64,
+            &[String],
+        ) -> Result<Value, DriverError> = ProcessRuntimeDriver::snapshot_sync;
+        let _history: fn(
+            &mut ProcessRuntimeDriver,
+            &str,
+            u64,
+            i64,
+            i64,
+        ) -> Result<Value, DriverError> = ProcessRuntimeDriver::history_sync;
     }
 
     #[cfg(windows)]

@@ -43,6 +43,27 @@ INPUT_KEYS = {
     "symbol",
     "independent_web_match_confirmed",
 }
+TWO_ACCOUNT_KEYS = (
+    INPUT_KEYS
+    - {
+        "account_id",
+        "lease_generation",
+        "login",
+        "password",
+        "server",
+        "symbol",
+        "independent_web_match_confirmed",
+    }
+) | {"accounts"}
+TWO_ACCOUNT_ITEM_KEYS = {
+    "account_id",
+    "lease_generation",
+    "login",
+    "password",
+    "server",
+    "symbol",
+    "independent_web_match_confirmed",
+}
 
 
 class HarnessError(RuntimeError):
@@ -149,6 +170,40 @@ def validate_request(raw: Any) -> dict[str, Any]:
         "symbol": symbol,
         "independent_web_match_confirmed": bool(raw["independent_web_match_confirmed"]),
     }
+
+
+def validate_two_account_request(raw: Any) -> dict[str, Any]:
+    if (
+        not isinstance(raw, dict)
+        or set(raw) != TWO_ACCOUNT_KEYS
+        or raw.get("schema_version") != 1
+        or not isinstance(raw.get("accounts"), list)
+        or len(raw["accounts"]) != 2
+        or not isinstance(raw.get("terminal_slots"), list)
+        or len(raw["terminal_slots"]) != 2
+    ):
+        raise HarnessError("TWO_ACCOUNT_VALIDATION_REQUEST_INVALID")
+    common = {key: value for key, value in raw.items() if key != "accounts"}
+    validated_accounts: list[dict[str, Any]] = []
+    validated_common: dict[str, Any] | None = None
+    for account in raw["accounts"]:
+        if not isinstance(account, dict) or set(account) != TWO_ACCOUNT_ITEM_KEYS:
+            raise HarnessError("TWO_ACCOUNT_VALIDATION_REQUEST_INVALID")
+        validated = validate_request({**common, **account})
+        if validated_common is None:
+            validated_common = {
+                key: value
+                for key, value in validated.items()
+                if key not in TWO_ACCOUNT_ITEM_KEYS
+            }
+        validated_accounts.append(
+            {key: validated[key] for key in TWO_ACCOUNT_ITEM_KEYS}
+        )
+    account_ids = [account["account_id"] for account in validated_accounts]
+    if len(set(account_ids)) != 2:
+        raise HarnessError("TWO_ACCOUNT_IDENTITY_INVALID")
+    assert validated_common is not None
+    return {**validated_common, "accounts": validated_accounts}
 
 
 def _signing_bytes(frame: dict[str, Any]) -> bytes:
@@ -334,6 +389,10 @@ class AgentProcess:
     def receive(self, timeout_seconds: float = 45.0) -> str:
         return self._read(timeout_seconds)
 
+    @property
+    def pid(self) -> int:
+        return int(self._process.pid)
+
     def close(self) -> None:
         if self._process.stdin is not None and not self._process.stdin.closed:
             try:
@@ -345,6 +404,248 @@ class AgentProcess:
         except subprocess.TimeoutExpired:
             self._process.kill()
             self._process.wait(timeout=5)
+
+
+def _powershell_tree_sample(root_pid: int) -> dict[str, Any]:
+    if os.name != "nt" or root_pid < 1:
+        raise HarnessError("TWO_ACCOUNT_RESOURCE_SAMPLE_UNAVAILABLE")
+    script = r"""
+$rootPid = [int]$env:MT5_VM_SAMPLE_PID
+$all = @(Get-CimInstance Win32_Process)
+$ids = [Collections.Generic.HashSet[int]]::new()
+$queue = [Collections.Generic.Queue[int]]::new()
+$null = $ids.Add($rootPid)
+$queue.Enqueue($rootPid)
+while ($queue.Count -gt 0) {
+  $parent = $queue.Dequeue()
+  foreach ($candidate in $all) {
+    $candidatePid = [int]$candidate.ProcessId
+    if ([int]$candidate.ParentProcessId -eq $parent -and $ids.Add($candidatePid)) {
+      $queue.Enqueue($candidatePid)
+    }
+  }
+}
+$processes = @($ids | ForEach-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
+if ($processes.Count -eq 0) { exit 3 }
+$workingSet = [long](($processes | Measure-Object -Property WorkingSet64 -Sum).Sum)
+$cpuSeconds = [double](($processes | Measure-Object -Property CPU -Sum).Sum)
+[pscustomobject]@{
+  working_set_bytes = $workingSet
+  cpu_seconds = $cpuSeconds
+  process_count = $processes.Count
+} | ConvertTo-Json -Compress
+"""
+    completed = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+        env={**os.environ, "MT5_VM_SAMPLE_PID": str(root_pid)},
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    if completed.returncode != 0 or len(completed.stdout) > 16 * 1024:
+        raise HarnessError("TWO_ACCOUNT_RESOURCE_SAMPLE_UNAVAILABLE")
+    try:
+        sample = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise HarnessError("TWO_ACCOUNT_RESOURCE_SAMPLE_UNAVAILABLE") from exc
+    if (
+        not isinstance(sample, dict)
+        or set(sample) != {"working_set_bytes", "cpu_seconds", "process_count"}
+        or int(sample["working_set_bytes"]) <= 0
+        or float(sample["cpu_seconds"]) < 0
+        or int(sample["process_count"]) < 1
+    ):
+        raise HarnessError("TWO_ACCOUNT_RESOURCE_SAMPLE_UNAVAILABLE")
+    return sample
+
+
+def sample_two_account_resources(
+    agent: Any,
+    *,
+    settlement_seconds: int = 15,
+    observation_seconds: int = 10,
+    sample_fn: Any = _powershell_tree_sample,
+) -> dict[str, Any]:
+    if (
+        not isinstance(settlement_seconds, int)
+        or settlement_seconds < 0
+        or settlement_seconds > 60
+        or not isinstance(observation_seconds, int)
+        or observation_seconds < 1
+        or observation_seconds > 60
+        or int(getattr(agent, "pid", 0)) < 1
+    ):
+        raise HarnessError("TWO_ACCOUNT_RESOURCE_SAMPLE_INVALID")
+    time.sleep(settlement_seconds)
+    before = sample_fn(int(agent.pid))
+    time.sleep(observation_seconds)
+    after = sample_fn(int(agent.pid))
+    try:
+        cpu_delta = max(float(after["cpu_seconds"]) - float(before["cpu_seconds"]), 0.0)
+        working_set = int(after["working_set_bytes"])
+        process_count = int(after["process_count"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HarnessError("TWO_ACCOUNT_RESOURCE_SAMPLE_INVALID") from exc
+    if working_set <= 0 or process_count < 5:
+        raise HarnessError("TWO_ACCOUNT_RESOURCE_SAMPLE_INVALID")
+    return {
+        "settlement_ms": settlement_seconds * 1_000,
+        "observation_ms": observation_seconds * 1_000,
+        "aggregate_working_set_bytes": working_set,
+        "aggregate_cpu_core_percent": cpu_delta / observation_seconds * 100.0,
+        "process_count": process_count,
+    }
+
+
+def run_two_account_validation(
+    cfg: dict[str, Any],
+    *,
+    agent_factory: Any = AgentProcess,
+    resource_sampler: Any = None,
+) -> dict[str, Any]:
+    accounts = cfg.get("accounts")
+    terminal_slots = cfg.get("terminal_slots")
+    if (
+        not isinstance(accounts, list)
+        or len(accounts) != 2
+        or not isinstance(terminal_slots, list)
+        or len(terminal_slots) != 2
+        or not IDENTIFIER_RE.fullmatch(str(cfg.get("worker_id", "")))
+    ):
+        raise HarnessError("TWO_ACCOUNT_VALIDATION_REQUEST_INVALID")
+    account_ids = [str(account.get("account_id", "")) for account in accounts]
+    if len(set(account_ids)) != 2 or any(not IDENTIFIER_RE.fullmatch(value) for value in account_ids):
+        raise HarnessError("TWO_ACCOUNT_IDENTITY_INVALID")
+    for account in accounts:
+        if (
+            int(account.get("lease_generation", 0)) < 1
+            or not str(account.get("login", "")).isdigit()
+            or not isinstance(account.get("password"), str)
+            or not account["password"]
+            or not str(account.get("server", "")).strip()
+        ):
+            raise HarnessError("TWO_ACCOUNT_CREDENTIAL_INVALID")
+    if resource_sampler is None:
+        raise HarnessError("TWO_ACCOUNT_RESOURCE_SAMPLER_REQUIRED")
+
+    key = bytearray(os.urandom(32))
+    key_hex = key.hex()
+    channel = ControlChannel(key, cfg["worker_id"])
+    agent: Any = None
+    provisioned: list[dict[str, Any]] = []
+    stopped: set[str] = set()
+    cleanup_failed = False
+
+    def exchange(account: dict[str, Any], kind: str, payload: dict[str, Any], timeout: float = 100.0):
+        account_id = str(account["account_id"])
+        lease_generation = int(account["lease_generation"])
+        agent.send(channel.sign(account_id, lease_generation, kind, payload))
+        return channel.verify(agent.receive(timeout), account_id, lease_generation)
+
+    try:
+        agent = agent_factory(cfg, channel, key_hex)
+        key_hex = ""
+        snapshots: list[dict[str, Any]] = []
+        for account in accounts:
+            credential_payload = {
+                "login": str(account["login"]),
+                "password": str(account["password"]),
+                "server": str(account["server"]),
+                "symbol": str(account.get("symbol", "")),
+            }
+            try:
+                response_kind, response = exchange(account, "provision_account", credential_payload)
+            finally:
+                credential_payload["login"] = ""
+                credential_payload["password"] = ""
+                credential_payload["server"] = ""
+                account["login"] = None
+                account["password"] = None
+                account["server"] = None
+            if response_kind != "account_snapshot" or not _snapshot_gate(response):
+                raise HarnessError("TWO_ACCOUNT_PROVISION_FAILED")
+            provisioned.append(account)
+            snapshots.append(response)
+
+        unaffected = accounts[1]
+        before_kind, before = exchange(unaffected, "agent_heartbeat", {}, 45.0)
+        unaffected_ready_before = before_kind == "agent_heartbeat" and before.get("state") == "ready"
+        if not unaffected_ready_before:
+            raise HarnessError("TWO_ACCOUNT_UNAFFECTED_HEARTBEAT_FAILED")
+
+        faulted = accounts[0]
+        fault_kind, fault_snapshot = exchange(faulted, "force_terminal_crash", {})
+        fault_recovered = fault_kind == "account_snapshot" and _snapshot_gate(fault_snapshot)
+        if not fault_recovered:
+            raise HarnessError("TWO_ACCOUNT_FAULT_RECOVERY_FAILED")
+
+        after_kind, after = exchange(unaffected, "agent_heartbeat", {}, 45.0)
+        unaffected_ready_after = after_kind == "agent_heartbeat" and after.get("state") == "ready"
+        if not unaffected_ready_after:
+            raise HarnessError("TWO_ACCOUNT_CROSS_FAULT_DETECTED")
+
+        idle_resources = resource_sampler(agent)
+        if not isinstance(idle_resources, dict):
+            raise HarnessError("TWO_ACCOUNT_RESOURCE_SAMPLE_INVALID")
+
+        for account in accounts:
+            stop_kind, stop = exchange(account, "stop_account", {}, 45.0)
+            if stop_kind != "account_runtime_status":
+                raise HarnessError("TWO_ACCOUNT_STOP_FAILED")
+            stopped.add(str(account["account_id"]))
+        if stop.get("active_runtime_count") != 0:
+            raise HarnessError("TWO_ACCOUNT_STOP_FAILED")
+
+        independent_matches = all(
+            bool(account.get("independent_web_match_confirmed")) for account in accounts
+        )
+        return {
+            "schema_version": 1,
+            "phase": "mt5_windows_vm_phase1_two_account",
+            "status": "PASS" if independent_matches else "CONDITIONAL_PASS",
+            "isolation": {
+                "initial_snapshots_passed": len(snapshots),
+                "faulted_runtime_recovered": fault_recovered,
+                "unaffected_ready_before_fault": unaffected_ready_before,
+                "unaffected_ready_after_fault": unaffected_ready_after,
+                "graceful_stop": True,
+                "independent_web_matches_confirmed": independent_matches,
+            },
+            "idle_resources": idle_resources,
+            "error_class": None,
+        }
+    finally:
+        if agent is not None:
+            for account in provisioned:
+                account_id = str(account["account_id"])
+                if account_id in stopped:
+                    continue
+                try:
+                    exchange(account, "stop_account", {}, 15.0)
+                except Exception:
+                    cleanup_failed = True
+            try:
+                agent.close()
+            except Exception:
+                cleanup_failed = True
+        for account in accounts:
+            account["login"] = None
+            account["password"] = None
+            account["server"] = None
+        key_hex = ""
+        channel.zeroize()
+        if cleanup_failed:
+            raise HarnessError("TWO_ACCOUNT_CLEANUP_FAILED")
 
 
 def _snapshot_gate(snapshot: dict[str, Any]) -> bool:
@@ -473,27 +774,47 @@ def run_validation(cfg: dict[str, Any]) -> dict[str, Any]:
 def main() -> int:
     raw: dict[str, Any] | None = None
     cfg: dict[str, Any] | None = None
+    two_account_mode = sys.argv[1:] == ["--two-account-stdio"]
     try:
+        if sys.argv[1:] not in ([], ["--two-account-stdio"]):
+            raise HarnessError("VALIDATION_MODE_INVALID")
         raw_text = sys.stdin.read(MAX_FRAME_BYTES + 1)
         if not raw_text or len(raw_text.encode("utf-8")) > MAX_FRAME_BYTES:
             raise HarnessError("VALIDATION_REQUEST_INVALID")
         raw = json.loads(raw_text)
-        cfg = validate_request(raw)
-        result = run_validation(cfg)
+        if two_account_mode:
+            cfg = validate_two_account_request(raw)
+            result = run_two_account_validation(
+                cfg, resource_sampler=sample_two_account_resources
+            )
+        else:
+            cfg = validate_request(raw)
+            result = run_validation(cfg)
     except Exception as exc:
         error_class = str(exc) if str(exc).isupper() else type(exc).__name__
         result = {
             "schema_version": 1,
-            "phase": "mt5_windows_vm_phase1",
+            "phase": (
+                "mt5_windows_vm_phase1_two_account"
+                if two_account_mode
+                else "mt5_windows_vm_phase1"
+            ),
             "status": "BLOCKED",
             "error_class": error_class,
         }
     finally:
         for container in (raw, cfg):
             if container is not None:
-                container["login"] = None
-                container["password"] = None
-                container["server"] = None
+                if isinstance(container.get("accounts"), list):
+                    for account in container["accounts"]:
+                        if isinstance(account, dict):
+                            account["login"] = None
+                            account["password"] = None
+                            account["server"] = None
+                else:
+                    container["login"] = None
+                    container["password"] = None
+                    container["server"] = None
     print(json.dumps(result, separators=(",", ":"), allow_nan=False))
     return 0 if result["status"] in {"PASS", "CONDITIONAL_PASS"} else 2
 

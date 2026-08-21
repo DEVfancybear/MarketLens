@@ -369,8 +369,14 @@ fn main() {
                 std::process::exit(2);
             }
         }
+        [flag] if flag == "--managed-worker" => {
+            if let Err(error_class) = mt5_vm_agent::managed::run_from_reader(&mut io::stdin()) {
+                eprintln!("mt5-vm-agent blocked: {error_class}");
+                std::process::exit(2);
+            }
+        }
         _ => {
-            eprintln!("mt5-vm-agent supports --preflight or --phase1-stdio");
+            eprintln!("mt5-vm-agent supports --preflight, --phase1-stdio, or --managed-worker");
             std::process::exit(2);
         }
     }

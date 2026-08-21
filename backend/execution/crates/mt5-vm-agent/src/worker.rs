@@ -21,6 +21,9 @@ pub struct CredentialMaterial {
 
 impl CredentialMaterial {
     pub fn new(login: String, password: String, server: String) -> Result<Self, WorkerError> {
+        let login = Zeroizing::new(login);
+        let password = Zeroizing::new(password);
+        let server = Zeroizing::new(server);
         if !login.bytes().all(|byte| byte.is_ascii_digit())
             || login
                 .parse::<u64>()
@@ -35,9 +38,9 @@ impl CredentialMaterial {
             return Err(WorkerError::InvalidCredential);
         }
         Ok(Self {
-            login: Zeroizing::new(login),
-            password: Zeroizing::new(password),
-            server: Zeroizing::new(server),
+            login,
+            password,
+            server,
         })
     }
 

@@ -29,6 +29,8 @@ pub enum MessageKind {
     ForceTerminalCrash,
     AccountRuntimeStatus,
     AccountSnapshot,
+    SnapshotSync,
+    HistorySync,
     InstrumentSnapshot,
     OrdersHistorySnapshot,
     DealsSnapshot,
@@ -46,6 +48,8 @@ impl MessageKind {
             Self::ForceTerminalCrash => "force_terminal_crash",
             Self::AccountRuntimeStatus => "account_runtime_status",
             Self::AccountSnapshot => "account_snapshot",
+            Self::SnapshotSync => "snapshot_sync",
+            Self::HistorySync => "history_sync",
             Self::InstrumentSnapshot => "instrument_snapshot",
             Self::OrdersHistorySnapshot => "orders_history_snapshot",
             Self::DealsSnapshot => "deals_snapshot",
@@ -406,6 +410,8 @@ mod tests {
     #[test]
     fn phase_four_snapshot_message_kinds_have_stable_wire_names() {
         for (wire, expected) in [
+            ("\"snapshot_sync\"", "snapshot_sync"),
+            ("\"history_sync\"", "history_sync"),
             ("\"instrument_snapshot\"", "instrument_snapshot"),
             ("\"orders_history_snapshot\"", "orders_history_snapshot"),
             ("\"deals_snapshot\"", "deals_snapshot"),

@@ -45,6 +45,9 @@ Run-Layer 'python-phase0-1-4' {
   if (-not (Test-Path -LiteralPath $python)) { throw 'backend/.venv-mt5 is missing' }
   Run-Native $python @('-m','unittest','backend.bridge.mt5_vm.test_phase0_probe','backend.bridge.mt5_vm.test_phase1_adapter','backend.bridge.mt5_vm.test_phase1_control_harness','backend.bridge.mt5_vm.test_phase4_snapshots','-v') $RepoRoot
 }
+$goCache = Join-Path $ReportDir 'go-build-cache'
+New-Item -ItemType Directory -Path $goCache -Force | Out-Null
+$env:GOCACHE = $goCache
 Run-Layer 'go-execution' { Run-Native 'go' @('test','./internal/execution','-count=1') (Join-Path $RepoRoot 'backend') }
 Run-Layer 'migration-0041-static' {
   $up = Get-Content (Join-Path $RepoRoot 'backend\migrations\0041_mt5_vm_history_sync.up.sql') -Raw

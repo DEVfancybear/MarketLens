@@ -7,8 +7,10 @@ license.workspace = true
 
 [dependencies]
 base64.workspace = true
+execution-domain.workspace = true
 hmac.workspace = true
 md5.workspace = true
+reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

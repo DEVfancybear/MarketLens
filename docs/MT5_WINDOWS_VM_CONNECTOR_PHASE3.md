@@ -118,6 +118,12 @@ active and pending credential versions, session deletion before worker response,
 grant hashing/redaction, request/Vault-payload memory clearing, migration
 plaintext guards, rate limits, and complete English/Vietnamese translation keys.
 
+The disposable Vault runner additionally passed a real loopback Vault 2.0.3 KV
+v2 put/get/rotate/permanent-delete cycle with an ACL-restricted token file and
+cleanup. The full authenticated public API/browser connect → ready → reconnect
+→ rotate → disconnect → remove exercise remains an activation gate; no
+production Vault or broker credential was used.
+
 ESLint could not load the repository configuration because the installed
 `eslint-config-next` package does not resolve the configured
 `eslint-config-next/core-web-vitals` ESM path. TypeScript and i18n checks pass;

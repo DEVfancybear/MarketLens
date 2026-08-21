@@ -87,7 +87,7 @@ impl WorkerCommandKind {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WorkerControlCommand {
     pub protocol_version: u16,
@@ -102,6 +102,28 @@ pub struct WorkerControlCommand {
     pub payload_json: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub credential_grant: Option<String>,
+}
+
+impl std::fmt::Debug for WorkerControlCommand {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("WorkerControlCommand")
+            .field("protocol_version", &self.protocol_version)
+            .field("worker_id", &self.worker_id)
+            .field("account_id", &self.account_id)
+            .field("lease_generation", &self.lease_generation)
+            .field("command_id", &self.command_id)
+            .field("message_id", &self.message_id)
+            .field("sent_at_ms", &self.sent_at_ms)
+            .field("expires_at_ms", &self.expires_at_ms)
+            .field("kind", &self.kind)
+            .field("payload_json", &"[REDACTED]")
+            .field(
+                "credential_grant",
+                &self.credential_grant.as_ref().map(|_| "[REDACTED]"),
+            )
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -190,5 +212,27 @@ mod tests {
             "unexpected": true
         }));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn command_debug_redacts_payload_and_one_time_grant() {
+        let secret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let command = WorkerControlCommand {
+            protocol_version: MT5_VM_CONTROL_PROTOCOL_VERSION,
+            worker_id: "worker-01".into(),
+            account_id: "account-01".into(),
+            lease_generation: 7,
+            command_id: "11111111-1111-4111-8111-111111111111".into(),
+            message_id: "22222222-2222-4222-8222-222222222222".into(),
+            sent_at_ms: 10,
+            expires_at_ms: 20,
+            kind: WorkerCommandKind::ProvisionAccount,
+            payload_json: r#"{"observedServer":"private"}"#.into(),
+            credential_grant: Some(secret.into()),
+        };
+        let debug = format!("{command:?}");
+        assert!(debug.contains("[REDACTED]"));
+        assert!(!debug.contains(secret));
+        assert!(!debug.contains("private"));
     }
 }
