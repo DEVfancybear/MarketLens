@@ -22,6 +22,27 @@ broker-name branches in order or risk logic.
 Do not start a later phase until the preceding exit gate passes. Demo and live
 accounts share code, but live activation remains a separate production gate.
 
+### Local exit-gate refresh — 21 August 2026
+
+- Phase 0's feasibility/read-only harness remains complete. The current retail `-10005` and stale
+  FTMO login `-6` results are live prerequisite blockers for later gates, not evidence that the
+  harness itself regressed.
+- Two distinct MetaQuotes-signed MT5 installations and two DPAPI demo aliases now exist locally;
+  credential files have current-user ownership, protected inheritance, and only current-user plus
+  SYSTEM access.
+- The reusable PowerShell terminal bootstrap is broker-neutral and verified by `69` tests,
+  PowerShell parse checks, `13/13` killed mutants, a secret/capability gate, and real official-UI
+  execution. It accepts terminal path/account alias only as runtime inputs and has no broker branch,
+  profile hash, observed PID, direct configuration-file edit, or force-close capability.
+- The retail demo remains blocked before login: official UI enablement plus one controlled graceful
+  restart still returns Python IPC timeout `-10005`; exact settings rollback and one-process settle
+  pass. A same-runtime default-terminal control initializes IPC and then fails only at stale FTMO
+  login (`-6`), isolating the blocker to the secondary instance/profile boundary.
+- The release `mt5-vm-agent.exe` remains unsigned, independent FTMO/retail observations are not
+  complete, and the full authenticated API/browser plus disposable Vault lifecycle remains open.
+- Therefore V3, V4, V6, and V7 remain **BLOCKED** and Phase 5 is **not authorized**. Detailed
+  sanitized evidence is in `agent-evidence/mt5-vm-local-prerequisites/EVIDENCE.md`.
+
 ## 1. Product contract
 
 ### 1.1 User flow
@@ -594,6 +615,10 @@ Exit: FTMO and one retail demo match independent terminal/web views through
 disconnect, reconnect and cold-cache history cases.
 
 ### Phase 5 — durable demo execution
+
+Current authorization (2026-08-21): **BLOCKED — do not implement or run this phase.** V3 lacks a
+legitimately signed normal-path agent; V4/V7 lack usable two-account broker synchronization and
+independent views; V6 lacks the full authenticated API/browser Vault lifecycle.
 
 Map existing durable commands to `order_check`/`order_send`; implement market,
 pending, modify, cancel, SL/TP, partial close and full close. Preserve current

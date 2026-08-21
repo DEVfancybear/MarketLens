@@ -28,7 +28,9 @@ $defaultPython = Join-Path $repoRoot 'backend\.venv-mt5\Scripts\python.exe'
 $adapterPath = Join-Path $PSScriptRoot 'phase1_adapter.py'
 $harnessPath = Join-Path $PSScriptRoot 'phase1_control_harness.py'
 $aclHelperPath = Join-Path $PSScriptRoot 'Set-MT5VmPhase1RuntimeAcl.ps1'
+$processHelperPath = Join-Path $PSScriptRoot 'Mt5VmProcess.ps1'
 $powershellPath = Join-Path $PSHOME 'powershell.exe'
+. $processHelperPath
 
 if ($AccountAlias[0] -eq $AccountAlias[1] -or
     $AccountAlias.Where({ $_ -notmatch '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$' }).Count -gt 0) {
@@ -220,7 +222,7 @@ try {
   $startInfo.RedirectStandardError = $true
   $process = New-Object System.Diagnostics.Process
   $process.StartInfo = $startInfo
-  if (-not $process.Start()) {
+  if (-not (Start-MT5VmProcessWithUtf8NoBomStandardInput -Process $process)) {
     throw 'Failed to start the two-account Phase 1 harness.'
   }
   $process.StandardInput.Write($requestJson)

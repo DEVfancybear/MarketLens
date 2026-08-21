@@ -16,11 +16,11 @@
 | --- | --- | --- |
 | V1 repository gauntlet | **PASS** | `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\run-mt5-phase4-disposable.ps1`; final `.artifacts/mt5-phase4/summary.json` reports Rust check/clippy/tests, Python Phase 0/1/4, Go execution, static migration, mutation controls, and PostgreSQL `0040/0041` round-trip all PASS. Disposable EDB PostgreSQL 17.11 was loopback-only and removed. |
 | V2 durable restart and migration boundary | **PASS** | `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\run-mt5-phase2-operational.ps1`; two deterministic attempts passed. Each recorded schema 41, two gateway processes, worker session generation 2, lease generation 2, one active lease, one fenced old command, one current provision command, and five stale HTTP surfaces rejected. Runtime/token files were removed. |
-| V3 Phase 1 normal signed-agent lifecycle | **BLOCKED** | Repository/fake-driver and installed-slot test-host lifecycle pass, but the normal authenticated stdio path still needs an Authenticode-valid/reputable `mt5-vm-agent.exe` accepted by Smart App Control/Application Control, a local DPAPI demo credential, and an installed signed terminal slot. Test-host evidence is not promoted. |
-| V4 independent match and two-account isolation | **BLOCKED** | Requires two distinct disposable MT5 demo accounts, two separately installed signed terminal slots, and independent FTMO/retail terminal or web observations. The current operator host does not expose those prerequisites. |
+| V3 Phase 1 normal signed-agent lifecycle | **BLOCKED** | Repository/fake-driver and installed-slot test-host lifecycle pass. Two signed terminal installs and two DPAPI aliases now exist locally, but the release `mt5-vm-agent.exe` remains `NotSigned`, so the normal authenticated stdio path cannot be promoted. |
+| V4 independent match and two-account isolation | **BLOCKED** | Two distinct signed installs and two protected aliases are now present. The retail terminal still returns Python IPC timeout `-10005` after official UI enablement plus one controlled restart; the FTMO control initializes IPC but has stale login code `-6`; independent FTMO/retail observations are also outstanding. |
 | V5 worker session rotation and reassignment | **PASS** | Covered by the fresh V2 operational run: old session/lease fencing and exactly-one current provision command were asserted on two attempts. |
 | V6 Vault/API/browser lifecycle | **BLOCKED** | Disposable Vault KV v2 client lifecycle (`put/get/rotate/delete`) passed in `.artifacts/mt5-vault-disposable/summary.json`; `go test ./cmd/mt5-phase3-harness ./internal/mt5vault -count=1` also passes. The full authenticated public API connect → ready → reconnect → rotate → disconnect → remove exercise, cross-owner checks, and browser password-clear regression still need a disposable Go/API+Vault deployment run. No production Vault was used. |
-| V7 Phase 4 FTMO and retail-demo read synchronization | **BLOCKED** | Code-native and migration layers pass, including partial/failed/empty/cursor mutation controls. Exit evidence still requires independent FTMO and one retail demo observations across disconnect, reconnect, and cold-cache history. No broker account was read in this run. |
+| V7 Phase 4 FTMO and retail-demo read synchronization | **BLOCKED** | Code-native and migration layers pass, including partial/failed/empty/cursor mutation controls. Local broker-neutral bootstrap/rollback evidence now exists, but retail initialization remains `-10005`, FTMO credentials must be refreshed, and independent FTMO plus retail observations across disconnect, reconnect, and cold-cache history remain outstanding. |
 | V8 Phase 5 remains disabled | **PASS** | `manual-mutation-controls` passed; the worker/adapter boundary exposes only provision/reconcile/stop and read synchronization. No `order_check`, `order_send`, modify, cancel, partial-close, full-close, or live activation was called. |
 
 ## Final gauntlet layers
@@ -70,10 +70,11 @@ it cannot be promoted without the operator's signed agent and demo credentials.
 
 Provide these locally, without pasting secret values into chat or Git:
 
-1. A signed/reputable `mt5-vm-agent.exe` path accepted by Application Control.
-2. Two disposable MT5 demo accounts (FTMO plus one independent retail demo),
-   stored through the existing DPAPI credential flow, with two installed signed
-   terminal slots and their broker server catalogs.
+1. A legitimately CA-signed/reputable `mt5-vm-agent.exe` path accepted by Application Control; the
+   current release artifact is unsigned.
+2. Refresh the disposable FTMO credential through a local secure prompt and resolve the secondary
+   retail terminal's `-10005` Python IPC blocker. The two DPAPI aliases and two signed installation
+   paths already exist; do not paste credential values into chat or Git.
 3. Independent terminal or broker-web views for the identity, demo mode,
    positions, pending orders, seven-day history counts, instruments, orders and
    deals used for comparison.
@@ -82,3 +83,12 @@ Provide these locally, without pasting secret values into chat or Git:
 
 Until V3, V4, V6, and V7 are PASS, the Phase 1–4 exit gate is not closed and
 Phase 5 order execution must not start.
+
+## Local prerequisite addendum — 21 August 2026
+
+The follow-up Tier 3 evidence at
+`../mt5-vm-local-prerequisites/EVIDENCE.md` records the broker-neutral terminal UI/bootstrap code,
+PowerShell 5.1 no-BOM and ACL fixes, `69/69` final tests, `13/13` killed mutants, real controlled
+restart, exact rollback, and final process settle. Its gauntlet passes the fail-closed contract but
+does **not** promote the retail broker gate: the sanitized Phase 0 result remains
+`MT5_INITIALIZE_FAILED` / `-10005`. V3, V4, V6, and V7 therefore remain blocked.

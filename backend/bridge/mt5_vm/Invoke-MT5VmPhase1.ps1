@@ -30,8 +30,10 @@ $defaultPython = Join-Path $repoRoot 'backend\.venv-mt5\Scripts\python.exe'
 $adapterPath = Join-Path $PSScriptRoot 'phase1_adapter.py'
 $harnessPath = Join-Path $PSScriptRoot 'phase1_control_harness.py'
 $aclHelperPath = Join-Path $PSScriptRoot 'Set-MT5VmPhase1RuntimeAcl.ps1'
+$processHelperPath = Join-Path $PSScriptRoot 'Mt5VmProcess.ps1'
 $powershellPath = Join-Path $PSHOME 'powershell.exe'
 $cargoPath = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe'
+. $processHelperPath
 
 if ([string]::IsNullOrWhiteSpace($CredentialPath)) {
   $CredentialPath = Join-Path $credentialRoot "mt5-vm-phase0-$AccountAlias.dpapi.json"
@@ -226,7 +228,7 @@ try {
 
     $process = New-Object System.Diagnostics.Process
     $process.StartInfo = $startInfo
-    if (-not $process.Start()) {
+    if (-not (Start-MT5VmProcessWithUtf8NoBomStandardInput -Process $process)) {
       throw 'Failed to start the Application Control live-test host.'
     }
     $process.StandardInput.Write($requestJson)
@@ -288,7 +290,7 @@ try {
 
   $process = New-Object System.Diagnostics.Process
   $process.StartInfo = $startInfo
-  if (-not $process.Start()) {
+  if (-not (Start-MT5VmProcessWithUtf8NoBomStandardInput -Process $process)) {
     throw 'Failed to start the Phase 1 control harness.'
   }
   $process.StandardInput.Write($requestJson)

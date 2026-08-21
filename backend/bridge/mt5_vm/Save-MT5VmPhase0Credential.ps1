@@ -122,7 +122,75 @@ $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule(
   [Security.AccessControl.FileSystemRights]::FullControl,
   [Security.AccessControl.AccessControlType]::Allow
 )))
-Set-Acl -LiteralPath $fullCredentialPath -AclObject $acl
+$setAclError = $null
+try {
+  Set-Acl -LiteralPath $fullCredentialPath -AclObject $acl
+} catch {
+  $setAclError = $_.Exception
+}
+
+if ($null -ne $setAclError) {
+  $isPrivilegeNotHeld = $false
+  $candidate = $setAclError
+  while ($null -ne $candidate) {
+    if ($candidate -is [Security.AccessControl.PrivilegeNotHeldException]) {
+      $isPrivilegeNotHeld = $true
+      break
+    }
+    $candidate = $candidate.InnerException
+  }
+  if (-not $isPrivilegeNotHeld) {
+    throw $setAclError
+  }
+}
+
+$effectiveAcl = Get-Acl -LiteralPath $fullCredentialPath
+$currentSid = $currentIdentity.User.Value
+$ownerSid = $effectiveAcl.Owner
+try {
+  $ownerSid = ([Security.Principal.NTAccount]$effectiveAcl.Owner).Translate(
+    [Security.Principal.SecurityIdentifier]
+  ).Value
+} catch {
+  $ownerSid = [string]$effectiveAcl.Owner
+}
+if ($ownerSid -ne $currentSid -or -not $effectiveAcl.AreAccessRulesProtected) {
+  throw 'Credential ACL owner or inheritance postcondition failed.'
+}
+
+$effectiveRules = @($effectiveAcl.Access)
+if ($effectiveRules.Count -ne 2) {
+  throw 'Credential ACL must contain exactly two explicit access rules.'
+}
+$requiredSids = @($currentSid, $systemSid.Value)
+foreach ($rule in $effectiveRules) {
+  try {
+    $ruleSid = $rule.IdentityReference.Translate(
+      [Security.Principal.SecurityIdentifier]
+    ).Value
+  } catch {
+    throw 'Credential ACL contains an unresolvable identity.'
+  }
+  if ($requiredSids -notcontains $ruleSid -or
+      $rule.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow -or
+      $rule.FileSystemRights -ne [Security.AccessControl.FileSystemRights]::FullControl -or
+      $rule.IsInherited) {
+    throw 'Credential ACL access-rule postcondition failed.'
+  }
+}
+foreach ($requiredSid in $requiredSids) {
+  if (@($effectiveRules | Where-Object {
+        try {
+          $_.IdentityReference.Translate(
+            [Security.Principal.SecurityIdentifier]
+          ).Value -eq $requiredSid
+        } catch {
+          $false
+        }
+      }).Count -ne 1) {
+    throw 'Credential ACL is missing a required identity.'
+  }
+}
 
 Write-Host 'Saved DPAPI-protected disposable demo credential.' -ForegroundColor Green
 Write-Host "Path: $fullCredentialPath"

@@ -29,6 +29,8 @@ $credentialRoot = [System.IO.Path]::GetFullPath(
 $defaultPython = Join-Path $repoRoot 'backend\.venv-mt5\Scripts\python.exe'
 $probePath = Join-Path $PSScriptRoot 'phase0_probe.py'
 $runtimeProbePath = Join-Path $PSScriptRoot 'runtime_probe.py'
+$processHelperPath = Join-Path $PSScriptRoot 'Mt5VmProcess.ps1'
+. $processHelperPath
 
 if ([string]::IsNullOrWhiteSpace($PythonPath)) {
   $PythonPath = $defaultPython
@@ -258,7 +260,7 @@ try {
 
   $process = New-Object System.Diagnostics.Process
   $process.StartInfo = $startInfo
-  if (-not $process.Start()) {
+  if (-not (Start-MT5VmProcessWithUtf8NoBomStandardInput -Process $process)) {
     throw 'Failed to start the Phase 0 Python probe.'
   }
   $process.StandardInput.Write($requestJson)
