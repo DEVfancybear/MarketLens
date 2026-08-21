@@ -20,8 +20,30 @@ type PrimeState = {
   workerId: string;
 };
 
+type ProvisionCommand = Record<string, unknown> & {
+  accountId: string;
+  commandId: string;
+  credentialGrant?: string;
+  kind: "provision_account";
+  leaseGeneration: number;
+};
+
 const exactKeys = (value: object, expected: string[]) => {
   expect(Object.keys(value).sort()).toEqual([...expected].sort());
+};
+
+const expectProvisionCommand: (
+  value: Record<string, unknown>,
+) => asserts value is ProvisionCommand = (value) => {
+  expect(value.kind).toBe("provision_account");
+  expect(typeof value.accountId).toBe("string");
+  expect(typeof value.commandId).toBe("string");
+  expect(typeof value.leaseGeneration).toBe("number");
+  expect(typeof value.credentialGrant).toBe("string");
+  expect(value.commandId).toMatch(/^[0-9a-f-]{36}$/);
+  expect(Number.isSafeInteger(value.leaseGeneration)).toBe(true);
+  expect(value.leaseGeneration).toBeGreaterThan(0);
+  expect(value.credentialGrant).toMatch(/^[0-9a-f]{64}$/);
 };
 
 const readOperationalConfig = (): OperationalConfig => {
@@ -117,9 +139,9 @@ const pollForSingleProvision = async (
     )
     .toBe(1);
   expect(captured).toBeDefined();
-  expect(captured!.kind).toBe("provision_account");
-  expect(captured!.credentialGrant).toMatch(/^[0-9a-f]{64}$/);
-  return captured!;
+  const command = captured!;
+  expectProvisionCommand(command);
+  return command;
 };
 
 const runPrime = async (api: APIRequestContext, config: OperationalConfig) => {

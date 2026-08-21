@@ -100,9 +100,16 @@ fn managed_worker_requires_an_absolute_token_file() {
 
 #[test]
 fn managed_worker_loopback_test_mode_still_requires_a_real_token_file() {
+    let missing_token_path = std::env::temp_dir().join(format!(
+        "marketlens-managed-worker-missing-bootstrap-{}.token",
+        std::process::id()
+    ));
+    assert!(missing_token_path.is_absolute());
+    assert!(!missing_token_path.exists());
+    let missing_token_path = missing_token_path.to_string_lossy().into_owned();
     let (status, _stdout, stderr) = run_managed_worker(&bootstrap(
         "http://127.0.0.1:18788",
-        r"C:\MarketLens\missing-bootstrap.token",
+        &missing_token_path,
         true,
     ));
     assert_eq!(2, status);
