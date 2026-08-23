@@ -1,16 +1,19 @@
 # Trade execution architecture
 
-Status: production MT5 path implemented; native exchange transports remain
-fail-closed until their credential, signing, rate-limit, and reconciliation
-implementations are complete.
+Status: the common-EA execution path and the one-host bare-metal managed MT5
+implementation are code-complete and locally gated. Production activation is
+still fail-closed until the explicit worker install/restart and the R15-9
+three-demo-account gate are authorized and pass. Native exchange transports
+remain fail-closed.
 
 The approved web-only MT5 transport is specified in
 [`UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md`](UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md).
-It is additive to the current EA path and uses private Windows VMs with a Rust
-multi-terminal supervisor. Phase 3 credential routes and capability-driven UI
-are implemented but remain disabled by default; do not treat the no-install flow
-as production-active until the Phase 1-3 operational gates pass. Order execution
-remains outside this phase.
+The selected production topology is one operator-controlled Windows host with
+one bounded Rust worker and one preinstalled terminal slot per active account.
+The older Hyper-V pool remains optional future infrastructure, not a readiness
+dependency for this deployment. Managed connect, Vault grants, automatic MT5
+login, in-memory EA bootstrap, restart fencing, and the existing EA order path
+are implemented; the production-like broker gate remains separate.
 
 ## Goals
 
@@ -111,9 +114,9 @@ Consequently, event heartbeats or portfolio snapshots cannot hide a broken
 command channel.
 
 Each account snapshot also includes the common EA release version. The current
-minimum is `1.25`; a missing, malformed, or older version is blocked before
+minimum is `1.26`; a missing, malformed, or older version is blocked before
 command creation. The gateway publishes this minimum to the Go BFF so the
-account registry and order router cannot disagree about readiness. EA 1.25
+account registry and order router cannot disagree about readiness. EA 1.26
 retains in-place pending-order entry/SL/TP modification and adds the current
 copier telemetry and broker-margin safety contract. The additive version field
 prevents a gateway from delivering a command that an older terminal would
@@ -122,7 +125,7 @@ silently ignore.
 Portfolio synchronization is isolated from auxiliary telemetry. Rust commits
 validated open positions and pending orders before it validates/persists
 instrument discovery and command events, so an unrelated metadata failure
-cannot roll back user-visible money state. EA 1.25 retains the independent
+cannot roll back user-visible money state. EA 1.26 retains the independent
 portfolio, command-outcome, and instrument lanes introduced in 1.23, each with
 bounded backoff and lane-specific diagnostics.
 
@@ -313,7 +316,8 @@ An enum or trait stub is not considered production Binance support.
 | Demo and Live | implemented | identical path; no mode block |
 | Multi-target order copy | implemented | independent Rust risk and outcome per target |
 | Persistent commands/events/audit | implemented | PostgreSQL required; no in-memory production |
-| EA poll liveness/version gate | implemented | successful poll within 15 seconds; EA 1.25+ |
+| EA poll liveness/version gate | implemented | successful poll within 15 seconds; EA 1.26+ |
+| Bare-metal managed connect | locally gated | production activation waits for explicit worker install and R15-9 demo evidence |
 | Modify/close/cancel | implemented | open SL/TP and pending entry/SL/TP; owner/resource validation before queue |
 | Native Binance | disabled | signing, secure secret storage, clock sync, filters, rate limits, portfolio sync, reconciliation, and sandbox/live certification required |
 

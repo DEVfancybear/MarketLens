@@ -102,6 +102,8 @@ pub struct WorkerControlCommand {
     pub payload_json: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub credential_grant: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ea_bootstrap_token: Option<String>,
 }
 
 impl std::fmt::Debug for WorkerControlCommand {
@@ -122,6 +124,10 @@ impl std::fmt::Debug for WorkerControlCommand {
                 "credential_grant",
                 &self.credential_grant.as_ref().map(|_| "[REDACTED]"),
             )
+            .field(
+                "ea_bootstrap_token",
+                &self.ea_bootstrap_token.as_ref().map(|_| "[REDACTED]"),
+            )
             .finish()
     }
 }
@@ -132,6 +138,29 @@ pub struct WorkerPollResponse {
     pub protocol_version: u16,
     pub server_time_ms: u64,
     pub commands: Vec<WorkerControlCommand>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkerEaBootstrapBindRequest {
+    pub protocol_version: u16,
+    pub worker_id: String,
+    pub session_generation: u64,
+    pub account_id: String,
+    pub lease_generation: u64,
+    pub connection_revision: u64,
+    pub pairing_token_sha256: String,
+    pub slot_id: String,
+    pub terminal_pid: u32,
+    pub gateway_origin: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkerEaBootstrapBindResponse {
+    pub bound: bool,
+    pub idempotent: bool,
+    pub server_time_ms: u64,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -194,6 +223,7 @@ mod tests {
             kind: WorkerCommandKind::ProvisionAccount,
             payload_json: "{}".into(),
             credential_grant: None,
+            ea_bootstrap_token: None,
         })
         .expect("control command serializes");
 
@@ -229,6 +259,7 @@ mod tests {
             kind: WorkerCommandKind::ProvisionAccount,
             payload_json: r#"{"observedServer":"private"}"#.into(),
             credential_grant: Some(secret.into()),
+            ea_bootstrap_token: Some(secret.into()),
         };
         let debug = format!("{command:?}");
         assert!(debug.contains("[REDACTED]"));

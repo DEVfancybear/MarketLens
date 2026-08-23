@@ -556,6 +556,17 @@ func (c *Client) doJSON(
 	body any,
 	output any,
 ) error {
+	return c.doJSONWithHeaders(ctx, method, endpoint, body, output, nil)
+}
+
+func (c *Client) doJSONWithHeaders(
+	ctx context.Context,
+	method string,
+	endpoint *url.URL,
+	body any,
+	output any,
+	headers map[string]string,
+) error {
 	var reader io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)
@@ -570,6 +581,9 @@ func (c *Client) doJSON(
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("X-Execution-Admin-Token", c.adminToken)
+	for name, value := range headers {
+		request.Header.Set(name, value)
+	}
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}

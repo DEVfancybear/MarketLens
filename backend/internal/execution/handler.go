@@ -3,9 +3,12 @@ package execution
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
@@ -47,6 +50,7 @@ type Handler struct {
 	eaProxy                  *EAProxy
 	mt5ConnectorGateway      MT5ConnectorGateway
 	mt5Vault                 MT5CredentialStore
+	mt5IdentityKey           []byte
 }
 
 func NewHandler(
@@ -90,11 +94,28 @@ func (h *Handler) WithEAProxy(proxy *EAProxy) *Handler {
 	return h
 }
 
-func (h *Handler) WithMT5ConnectorVault(vault MT5CredentialStore) *Handler {
+func (h *Handler) WithMT5ConnectorVault(vault MT5CredentialStore, identitySecrets ...[]byte) *Handler {
+	if len(identitySecrets) > 1 {
+		panic("MT5 identity HMAC key source is ambiguous")
+	}
+	var identitySecret []byte
+	if len(identitySecrets) == 1 {
+		identitySecret = identitySecrets[0]
+	} else {
+		loaded, err := ReadMT5IdentityHMACKey(os.Getenv("EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE"))
+		if err != nil {
+			panic("MT5 identity HMAC key file is unavailable")
+		}
+		defer clear(loaded)
+		identitySecret = loaded
+	}
 	connector, ok := h.gateway.(MT5ConnectorGateway)
-	if ok && vault != nil {
+	if ok && vault != nil && len(identitySecret) >= 32 {
+		deriver := hmac.New(sha256.New, identitySecret)
+		_, _ = deriver.Write([]byte("marketlens/mt5-managed-identity/v1"))
 		h.mt5ConnectorGateway = connector
 		h.mt5Vault = vault
+		h.mt5IdentityKey = deriver.Sum(nil)
 	}
 	return h
 }

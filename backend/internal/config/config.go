@@ -29,14 +29,15 @@ type Config struct {
 
 	DatabaseURL string
 
-	ExecutionEAURL       string
-	ExecutionAdminURL    string
-	ExecutionAdminToken  string
-	MT5VaultAddress      string
-	MT5VaultAPITokenFile string
-	MT5VaultNamespace    string
-	MT5VaultMount        string
-	MT5VaultPrefix       string
+	ExecutionEAURL                  string
+	ExecutionAdminURL               string
+	ExecutionAdminToken             string
+	ExecutionMT5IdentityHMACKeyFile string
+	MT5VaultAddress                 string
+	MT5VaultAPITokenFile            string
+	MT5VaultNamespace               string
+	MT5VaultMount                   string
+	MT5VaultPrefix                  string
 
 	AuthJWTSecret          string
 	PushWorkerSecret       string
@@ -108,6 +109,7 @@ func (c Config) ObjectStorageConfigured() bool {
 func (c Config) MT5VaultConfigured() bool {
 	return strings.TrimSpace(c.MT5VaultAddress) != "" &&
 		strings.TrimSpace(c.MT5VaultAPITokenFile) != "" &&
+		strings.TrimSpace(c.ExecutionMT5IdentityHMACKeyFile) != "" &&
 		strings.TrimSpace(c.MT5VaultMount) != "" &&
 		strings.TrimSpace(c.MT5VaultPrefix) != ""
 }
@@ -140,16 +142,17 @@ func Load() (Config, error) {
 	corsAllowedOrigins := splitAndTrim(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000"))
 	alertEvaluatorEnabled := getEnvBool("ALERT_EVALUATOR_ENABLED", true)
 	cfg := Config{
-		Port:                 getEnvInt("PORT", 8080),
-		Env:                  env,
-		AuthCookieSecure:     &authCookieSecure,
-		DatabaseURL:          os.Getenv("DATABASE_URL"),
-		ExecutionEAURL:       getEnv("EXECUTION_EA_URL", "http://127.0.0.1:8790"),
-		ExecutionAdminURL:    getEnv("EXECUTION_ADMIN_URL", "http://127.0.0.1:8791"),
-		ExecutionAdminToken:  os.Getenv("EXECUTION_ADMIN_TOKEN"),
-		MT5VaultAddress:      strings.TrimSpace(os.Getenv("MT5_VAULT_ADDR")),
-		MT5VaultAPITokenFile: strings.TrimSpace(os.Getenv("MT5_VAULT_API_TOKEN_FILE")),
-		MT5VaultNamespace:    strings.TrimSpace(os.Getenv("MT5_VAULT_NAMESPACE")),
+		Port:                            getEnvInt("PORT", 8080),
+		Env:                             env,
+		AuthCookieSecure:                &authCookieSecure,
+		DatabaseURL:                     os.Getenv("DATABASE_URL"),
+		ExecutionEAURL:                  getEnv("EXECUTION_EA_URL", "http://127.0.0.1:8790"),
+		ExecutionAdminURL:               getEnv("EXECUTION_ADMIN_URL", "http://127.0.0.1:8791"),
+		ExecutionAdminToken:             os.Getenv("EXECUTION_ADMIN_TOKEN"),
+		ExecutionMT5IdentityHMACKeyFile: strings.TrimSpace(os.Getenv("EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE")),
+		MT5VaultAddress:                 strings.TrimSpace(os.Getenv("MT5_VAULT_ADDR")),
+		MT5VaultAPITokenFile:            strings.TrimSpace(os.Getenv("MT5_VAULT_API_TOKEN_FILE")),
+		MT5VaultNamespace:               strings.TrimSpace(os.Getenv("MT5_VAULT_NAMESPACE")),
 		// KV layout is a backend contract, not deployment/UI configuration.
 		MT5VaultMount:          "secret",
 		MT5VaultPrefix:         "marketlens/mt5",
@@ -326,14 +329,15 @@ func (c Config) validate() error {
 func validateMT5Vault(c Config) error {
 	addressSet := strings.TrimSpace(c.MT5VaultAddress) != ""
 	tokenFileSet := strings.TrimSpace(c.MT5VaultAPITokenFile) != ""
-	if !addressSet && !tokenFileSet {
+	identityKeyFileSet := strings.TrimSpace(c.ExecutionMT5IdentityHMACKeyFile) != ""
+	if !addressSet && !tokenFileSet && !identityKeyFileSet {
 		if strings.TrimSpace(c.MT5VaultNamespace) != "" {
 			return fmt.Errorf("MT5_VAULT_NAMESPACE requires the MT5 credential vault settings")
 		}
 		return nil
 	}
-	if !addressSet || !tokenFileSet {
-		return fmt.Errorf("MT5_VAULT_ADDR and MT5_VAULT_API_TOKEN_FILE must be configured together")
+	if !addressSet || !tokenFileSet || !identityKeyFileSet {
+		return fmt.Errorf("MT5_VAULT_ADDR, MT5_VAULT_API_TOKEN_FILE and EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE must be configured together")
 	}
 	u, err := url.Parse(strings.TrimRight(strings.TrimSpace(c.MT5VaultAddress), "/"))
 	if err != nil || u.Hostname() == "" || u.User != nil || u.Path != "" ||
@@ -347,6 +351,9 @@ func validateMT5Vault(c Config) error {
 	}
 	if !filepath.IsAbs(c.MT5VaultAPITokenFile) {
 		return fmt.Errorf("MT5_VAULT_API_TOKEN_FILE must be an absolute path")
+	}
+	if !filepath.IsAbs(c.ExecutionMT5IdentityHMACKeyFile) {
+		return fmt.Errorf("EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE must be an absolute path")
 	}
 	return nil
 }

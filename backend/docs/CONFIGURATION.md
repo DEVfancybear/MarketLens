@@ -1,197 +1,181 @@
-# Configuration
+# Backend configuration
 
-> Execution note (2026-07-26): all legacy `MT5_VERIFY_*`, Connector, and
-> per-user terminal-password settings below are obsolete and removed from the
-> runtime. Use `../.env.example` and
-> `../../docs/TRADE_PRODUCTION_SECURITY_RUNBOOK.md`.
+Copy `backend/.env.example` to the ignored `backend/.env` for local/host configuration. The Go
+loader reads process environment first, then local dotenv files without overwriting already-set
+values. Rust and Python processes inherit the runner's validated environment.
 
-The backend reads configuration from environment variables.
+Never commit real secrets. Production secret files must be absolute, non-link, ACL-restricted
+files. Public URLs and browser variables do not replace backend service authentication.
 
-## Go API
+## Core Go API
 
-Copy `backend/.env.example` to `backend/.env` for local development.
+| Variable | Default | Contract |
+| --- | --- | --- |
+| `PORT` | `8080` | Go API listen port |
+| `APP_ENV` | `development` | `production` activates required-secret and secure-cookie checks |
+| `AUTH_COOKIE_SECURE` | true outside development | Must be true in production |
+| `DATABASE_URL` | empty | PostgreSQL DSN; required in production and for protected persistent routes |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Comma-separated exact HTTP/HTTPS origins; no wildcard/path/query/credentials |
+| `CHART_TIME_ZONE` | `Asia/Ho_Chi_Minh` | Valid IANA timezone for exchange-mode chart navigation |
 
-| Variable | Type | Default | Description |
-| --- | --- | --- | --- |
-| `PORT` | integer | `8080` | TCP port the HTTP server listens on |
-| `APP_ENV` | string | `development` | Runtime environment; production enables required-secret checks and secure cookies |
-| `AUTH_COOKIE_SECURE` | boolean | `false` in development, `true` otherwise | Override the session-cookie `Secure` flag; production rejects `false`, so use local HTTP only with `APP_ENV=development` |
-| `DATABASE_URL` | string | empty | PostgreSQL used by migrations, workspace sync, alerts, history, and push-token ownership |
-| `AUTH_JWT_SECRET` | string | empty | Backend access/refresh token secret; use at least 32 random bytes in production |
-| `AUTH_ACCESS_TTL` | duration | `15m` | Access-token lifetime; must be `1m..1h` when auth is configured |
-| `AUTH_REFRESH_TTL` | duration | `720h` | Refresh-token lifetime; must exceed access TTL and be no more than `2160h` (90 days) |
-| `FIREBASE_PROJECT_ID` | string | empty | Firebase Admin project used to verify ID tokens |
-| `FIREBASE_CLIENT_EMAIL` | string | empty | Firebase Admin service-account email |
-| `FIREBASE_PRIVATE_KEY` | string | empty | Firebase Admin PEM; escaped `\n` newlines are supported |
-| `CORS_ALLOWED_ORIGINS` | CSV | `http://localhost:3000` | Credentialed browser origins; wildcard is unsupported |
-| `CHART_TIME_ZONE` | IANA timezone | `Asia/Ho_Chi_Minh` | Backend-owned display/input timezone for the chart's `Exchange` option; MT5 candle timestamps remain UTC |
-| `TRADE_RECOVERY_SMTP_HOST` | hostname | empty | SMTP server used only for trade-password recovery codes; required in production |
-| `TRADE_RECOVERY_SMTP_PORT` | integer | `587` | SMTP port (`587` for STARTTLS, commonly `465` for implicit TLS) |
-| `TRADE_RECOVERY_SMTP_USERNAME` | string | empty | SMTP login; required with the SMTP password in production |
-| `TRADE_RECOVERY_SMTP_PASSWORD` | secret | empty | SMTP password; server-only and never returned to the browser |
-| `TRADE_RECOVERY_SMTP_MODE` | enum | `starttls` | `starttls`, `tls`, or loopback-development-only `plain` |
-| `TRADE_RECOVERY_EMAIL_FROM` | mailbox | empty | Shared system sender for all users, for example `MarketLens Security <security@example.com>`; required in production |
-| `OBJECT_STORAGE_ENDPOINT` | URL | AWS regional S3 endpoint | Optional S3-compatible endpoint for R2/MinIO |
-| `OBJECT_STORAGE_BUCKET` | string | empty | Screenshot bucket; required with access/secret keys |
-| `OBJECT_STORAGE_REGION` | string | `us-east-1` | SigV4 signing region (`auto` for Cloudflare R2) |
-| `OBJECT_STORAGE_ACCESS_KEY` | string | empty | S3-compatible access key (server only) |
-| `OBJECT_STORAGE_SECRET_KEY` | string | empty | S3-compatible secret key (server only) |
-| `OBJECT_STORAGE_SESSION_TOKEN` | string | empty | Optional temporary credential session token |
-| `OBJECT_STORAGE_PATH_STYLE` | boolean | `false` | Use `/bucket/key` URLs; normally true for local MinIO |
+`GET /health` remains available without a database. `GET /health/ready` reports unconfigured or
+unreachable PostgreSQL and must pass before production traffic is considered ready.
 
-### Authentication boundary
+## Authentication and alert services
 
-Production must use an exact HTTPS frontend origin such as
-`CORS_ALLOWED_ORIGINS=https://tradingterminal.io.vn`; do not include paths and never use `*`.
-The API uses this list for both credentialed CORS and CSRF Origin enforcement. Unsafe requests with
-browser cookies and no `Origin` are rejected. Server-to-server requests without cookies may omit
-the header.
+| Variable | Default | Contract |
+| --- | --- | --- |
+| `AUTH_JWT_SECRET` | empty | Independent 32+ character HMAC secret whenever auth is configured |
+| `AUTH_ACCESS_TTL` | `15m` | Allowed 1 minute through 1 hour |
+| `AUTH_REFRESH_TTL` | `720h` | Longer than access TTL; at most 2160 hours |
+| `FIREBASE_PROJECT_ID` | empty | Firebase service-account project |
+| `FIREBASE_CLIENT_EMAIL` | empty | Firebase service-account email |
+| `FIREBASE_PRIVATE_KEY` | empty | PEM with newlines escaped as `\n` in dotenv |
+| `PUSH_WORKER_SECRET` | empty | Independent 32+ character worker secret; required in production |
+| `ALERT_EVALUATOR_ENABLED` | `true` | Starts backend scheduler calls to the evaluator URL |
+| `ALERT_EVALUATOR_URL` | environment-derived | Required when evaluator is enabled in production; HTTP(S), no userinfo/fragment |
+| `ALERT_EVALUATOR_INTERVAL` | `60s` | Must be positive |
+| `ALERT_EVALUATOR_TIMEOUT` | `30s` | Must be positive and shorter than interval |
 
-Access/refresh cookies are always `HttpOnly` and `SameSite=Strict`; production additionally requires
-`Secure`. `tradingterminal.io.vn` and `api.tradingterminal.io.vn` are separate origins but remain
-the same site, so Strict cookies work for the current topology.
+Firebase values are all-or-nothing. Authentication is assembled when PostgreSQL and all three
+Firebase values are present; `AUTH_JWT_SECRET` is then mandatory even in development.
 
-Trade-password recovery sends a six-digit, single-use code only to the verified email resolved from
-the user's fresh Firebase identity token. The API never accepts a destination email from the browser.
-The SMTP credentials and `TRADE_RECOVERY_EMAIL_FROM` identify one shared outbound system mailbox;
-they are not per-user settings. Each request uses the authenticated user's own verified email as `To`.
-Production startup requires the SMTP variables above so a configured trade password cannot become
-unrecoverable. SMTP uses TLS 1.2 or newer; plaintext SMTP is limited to a loopback development relay.
+## Execution gateway and trade security
 
-`POST /api/v1/auth/session`, `/auth/google`, and `/auth/refresh` are limited to 120 requests per
-five minutes per client IP in each API process. Keep an outer Cloudflare/WAF rule for distributed
-rate limiting. Google session establishment also performs a Firebase revocation/disabled-user RPC
-with an eight-second deadline; transient upstream failure returns retryable `503`.
+| Variable | Default | Contract |
+| --- | --- | --- |
+| `EXECUTION_GATEWAY_BIND` | `127.0.0.1:8790` | Rust common-EA listener; loopback only |
+| `EXECUTION_ADMIN_BIND` | `127.0.0.1:8791` | Rust admin/managed-worker listener; loopback only |
+| `EXECUTION_EA_URL` | `http://127.0.0.1:8790` | Go-to-Rust EA URL; validated loopback when execution is enabled |
+| `EXECUTION_ADMIN_URL` | `http://127.0.0.1:8791` | Go-to-Rust admin URL; validated loopback |
+| `EXECUTION_ADMIN_TOKEN` | empty | Independent unpredictable 32+ character admin secret; required in production |
+| `EXECUTION_MT5_VM_BOOTSTRAP_TOKEN` | empty | Independent private-worker enrollment secret; absence disables new enrollment |
+| `EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE` | empty | Absolute file containing tenant-bound MT5 identity key material |
+| `EXECUTION_DATABASE_MAX_CONNECTIONS` | `10` | Rust PostgreSQL pool bound |
+| `RUST_LOG` | `execution_gateway=info` | Rust tracing filter |
+| `TRADE_AUTHORIZATION_TTL` | `45s` | Operation-bound capability lifetime; allowed 10 seconds to 2 minutes |
 
-### Phase 11 screenshot storage
+Go sends `EXECUTION_ADMIN_TOKEN` only to the admin listener. The EA, browser, and managed worker
+must not receive it. Do not reuse it as the worker bootstrap token or identity HMAC key.
 
-Journal CRUD only needs the database and normal authenticated API configuration. Screenshot bytes
-use a two-step direct-browser upload and require all three of `OBJECT_STORAGE_BUCKET`,
-`OBJECT_STORAGE_ACCESS_KEY`, and `OBJECT_STORAGE_SECRET_KEY`; partial credential configuration is
-rejected at startup. With all three empty, journal CRUD remains available and screenshot upload
-returns HTTP 503 so the frontend can retain its IndexedDB fallback.
+## Managed MT5 Vault
 
-The bucket CORS policy must allow `PUT` and `GET` from the frontend origin and allow the
-`Content-Type` request header. Credentials never belong in frontend environment variables.
+| Variable | Default | Contract |
+| --- | --- | --- |
+| `MT5_VAULT_ADDR` | empty | Absolute Vault origin; HTTPS except loopback HTTP development |
+| `MT5_VAULT_API_TOKEN_FILE` | empty | Absolute ACL-protected file containing the narrow Vault token |
+| `MT5_VAULT_NAMESPACE` | empty | Optional Vault Enterprise namespace |
 
-### Phase 10 push responsibility
+`MT5_VAULT_ADDR`, `MT5_VAULT_API_TOKEN_FILE`, and
+`EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE` are configured together. The KV mount (`secret`) and prefix
+(`marketlens/mt5`) are backend contracts, not operator-selectable browser settings. Vault stores
+broker credentials; PostgreSQL stores only opaque secret references and grant hashes.
 
-The Go API does not send FCM notifications. It stores authenticated token
-ownership plus closed-browser device/evaluator state in PostgreSQL
-`push_tokens`. Browser ownership uses `/api/v1/push/tokens`; Next uses
-service-authenticated `/api/v1/push/worker-devices*` endpoints. The shared
-`PUSH_WORKER_SECRET` is therefore required for registration sync and evaluation.
+## Trade-password recovery email
 
-Next's `POST /api/push/alerts/sync` stops after eight seconds, aborts the underlying worker request,
-and returns retryable `503` for Go/PostgreSQL transport failures. A `409` means the device token is
-owned by another Firebase user and must not be retried. Both Go and Next must receive the exact
-same 32+ character `PUSH_WORKER_SECRET`.
+| Variable | Default | Contract |
+| --- | --- | --- |
+| `TRADE_RECOVERY_SMTP_HOST` | empty | SMTP host; required in production |
+| `TRADE_RECOVERY_SMTP_PORT` | `587` | 1-65535 |
+| `TRADE_RECOVERY_SMTP_USERNAME` | empty | Optional only as a pair with password; required in production |
+| `TRADE_RECOVERY_SMTP_PASSWORD` | empty | Optional only as a pair with username; required in production |
+| `TRADE_RECOVERY_SMTP_MODE` | `starttls` | `starttls`, `tls`, or `plain`; production rejects `plain` |
+| `TRADE_RECOVERY_EMAIL_FROM` | empty | Valid sender address; required when SMTP is configured and in production |
 
-The Next server evaluates closed-browser alerts and sends FCM. Firebase Admin
-is used only for ID-token verification and FCM delivery; Firestore is not
-required. Configure Next from `frontend/.env.example`. The same Firebase
-project/service account can be used in both env files, but server credentials
-must never use a `NEXT_PUBLIC_` prefix.
+The recovery service is unavailable when this group is absent. Do not substitute a broker password
+or Firebase credential for the trade password.
 
-## Closed-browser alert scheduler
+## Screenshot object storage
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `ALERT_EVALUATOR_ENABLED` | `true` | Run the scheduler inside the persistent Go API process |
-| `ALERT_EVALUATOR_URL` | Development: `http://localhost:3000/api/push/evaluate`; production: first non-local HTTPS CORS origin + `/api/push/evaluate` | Next evaluator endpoint; an explicit production URL remains recommended |
-| `ALERT_EVALUATOR_INTERVAL` | `60s` | Delay between sequential evaluation calls; keep this conservative because each evaluation reads durable PostgreSQL alert state |
-| `ALERT_EVALUATOR_TIMEOUT` | `30s` | HTTP timeout for one evaluation |
-| `PUSH_WORKER_SECRET` | empty in dev | Shared evaluator/service authentication; use 32+ random bytes whenever the evaluator is enabled; required in production |
+| Variable | Default | Contract |
+| --- | --- | --- |
+| `OBJECT_STORAGE_ENDPOINT` | empty | Optional S3-compatible endpoint; empty uses AWS-style endpoint construction |
+| `OBJECT_STORAGE_BUCKET` | empty | Required with access/secret keys |
+| `OBJECT_STORAGE_REGION` | `us-east-1` | Signing region |
+| `OBJECT_STORAGE_ACCESS_KEY` | empty | Required with bucket/secret key |
+| `OBJECT_STORAGE_SECRET_KEY` | empty | Required with bucket/access key |
+| `OBJECT_STORAGE_SESSION_TOKEN` | empty | Optional temporary-session token |
+| `OBJECT_STORAGE_PATH_STYLE` | `false` | Enable for providers requiring path-style URLs |
 
-The scheduler runs one immediate tick, never overlaps its own calls, and stops
-with the API context. A production process no longer silently calls localhost
-when the frontend is remote: if no explicit URL is set, it derives the endpoint
-from the first non-local HTTPS `CORS_ALLOWED_ORIGINS` entry and fails startup
-when neither source is usable. External cron providers are fallback-only.
+Bucket, access key, and secret key are all-or-nothing. When storage is absent, screenshot uploads
+remain unavailable/local-buffered while journal metadata APIs continue according to their source
+contract.
 
-## MT5 Tick Stream
+## Private MT5 market-data path
 
-These variables are used by `bridge/mt5_stream/mt5_server.py` and `cmd/mt5-stream`.
+### Go consumer
 
-| Variable | Type | Default | Description |
-| --- | --- | --- | --- |
-| `MT5_STREAM_API_ENABLED` | boolean | `true` | Start the Go API background client for `/api/v1/mt5/symbols`, `/api/v1/mt5/stream`, `/api/v1/mt5/ticks`, `/api/v1/mt5/market-status`, and `/api/v1/mt5/history` |
-| `MT5_SYMBOLS` | string | empty | Comma-separated extra symbols to stream, for example `EURUSD,GBPUSD,XAUUSD` |
-| `MT5_STREAM_ALL_VISIBLE` | boolean | `false` | Opt in to continuously polling every visible Market Watch symbol; leave false for Go-managed on-demand streaming |
-| `MT5_STREAM_HOST` | string | `localhost` | Python WebSocket listen host; must remain loopback because the stream protocol has no remote authentication |
-| `MT5_STREAM_PORT` | integer | `8765` | Python WebSocket listen port |
-| `MT5_POLL_INTERVAL_MS` | integer | `100` | Tick polling interval |
-| `MT5_HISTORY_BARS` | integer | `1500` | Default candle count for Python history responses |
-| `MT5_HISTORY_TIMEFRAMES` | string | `1m,3m,5m,15m,30m,1H,2H,4H,1D,1W,1M` | Supported preload timeframes when `MT5_PRELOAD_HISTORY=true` |
-| `MT5_PRELOAD_HISTORY` | boolean | `false` | Preload history messages on every bridge connection; normally leave false because the Go API requests history on demand |
-| `MT5_HISTORY_SYNC_RETRIES` | integer | `2` | Python bridge retry budget when MT5 initially returns empty history |
-| `MT5_HISTORY_SYNC_DELAY_MS` | integer | `300` | Non-blocking async delay between MT5 history refresh attempts |
-| `MT5_TERMINAL_PATH` | string | empty | Market-data MT5 terminal executable path; set explicitly in production when per-user verification is enabled |
-| `MT5_LOGIN` | integer | empty | Optional MT5 login; set with password/server |
-| `MT5_PASSWORD` | string | empty | Optional MT5 password; keep out of browser env |
-| `MT5_SERVER` | string | empty | Optional MT5 broker server name |
-| `MT5_MARKET_STATUS_FILE` | string | auto-discovered | Optional override for the MQL5 helper's `market_sessions.json` path |
-| `MT5_MARKET_STATUS_POLL_MS` | integer | `1000` | Local helper-file polling interval, clamped to at least `250`; no broker/network polling is performed |
-| `MT5_MARKET_STATUS_MAX_AGE_SECONDS` | integer | `20` | Maximum helper heartbeat age, clamped to at least `5`, before every cached session state becomes `unknown` |
-| `MT5_STREAM_LOG_LEVEL` | string | `INFO` | Python bridge log level |
-| `MT5_BRIDGE_WS_URL` | string | `ws://localhost:8765` | Go consumer bridge URL |
-| `MT5_BRIDGE_DIAL_TIMEOUT_SECONDS` | integer | `10` | Go consumer WebSocket dial timeout |
-| `MT5_BRIDGE_READ_LIMIT_BYTES` | integer | `8388608` | Go consumer max WebSocket message size; large enough for MT5 symbol catalogs |
-| `MT5_BRIDGE_RECONNECT_MIN` | duration | `1s` | Go API/client minimum reconnect backoff |
-| `MT5_BRIDGE_RECONNECT_MAX` | duration | `30s` | Go API/client maximum reconnect backoff |
-| `MT5_VERIFY_PYTHON` | string | auto | Preferred Python executable for the authenticated per-user verifier; the API probes candidates with `import MetaTrader5` and automatically falls back to the build-managed venv or a working PATH Python |
-| `MT5_VERIFY_SCRIPT` | string | auto | Credential verifier script; relative values are resolved from the backend directory, repository root, or built API location |
-| `MT5_VERIFY_TERMINAL_PATH` | string | auto | Optional operator override for the dedicated verifier terminal; the canonical runner otherwise discovers an FTMO terminal or installs FTMO's signed public runtime, clones it under `backend/.data`, and exports the isolated path only to its child processes |
-| `MT5_VERIFY_TIMEOUT` | duration | `30s` | Hard timeout for one per-user MT5 credential verification attempt |
-| `MT5_VERIFY_NATIVE_TIMEOUT_MS` | integer | `8000` | Timeout for the native MT5 initialize-and-login call, clamped to `1000..12000` inside the outer verifier budget |
+| Variable | Default | Contract |
+| --- | --- | --- |
+| `MT5_STREAM_API_ENABLED` | `true` | Mount/connect the browser-facing market-data API |
+| `MT5_BRIDGE_WS_URL` | `ws://localhost:8765` | Private Python sidecar URL |
+| `MT5_BRIDGE_DIAL_TIMEOUT_SECONDS` | `10` | Dial timeout; duration or legacy seconds value |
+| `MT5_BRIDGE_READ_LIMIT_BYTES` | `8388608` | Maximum inbound WebSocket message size |
+| `MT5_BRIDGE_RECONNECT_MIN` | `1s` | Minimum reconnect delay |
+| `MT5_BRIDGE_RECONNECT_MAX` | `30s` | Maximum reconnect delay; not below minimum |
+| `MT5_TERMINAL_PATH` | empty | Optional terminal path used by the runner/sidecar |
 
-With `MT5_STREAM_ALL_VISIBLE=false`, `MT5_SYMBOLS` is the fixed base set. Go sends the union of
-active browser subscriptions and backend tick consumers through `stream.set`; Python stops polling
-released dynamic symbols. Enable all-visible mode only when quotes for every Market Watch row are
-required without an active subscriber.
+### Python sidecar
 
-The root `build-production.ps1` provisions `backend/.venv-mt5` and validates its MT5 imports. Leave
-`MT5_VERIFY_PYTHON` empty unless intentionally overriding that runtime. Legacy bare values such as
-`python`, `python.exe`, and `py` are treated as automatic selection when the managed venv exists.
-Even an explicit preferred runtime is skipped when its `MetaTrader5` import probe fails. Restart the
-API after changing the environment or rebuilding the venv. When using the optional terminal-path
-override, never point it at the terminal used by the market-data sidecar: an account verification
-login switches that terminal session and disconnects live ticks. Normal production runs need no
-override because the canonical runner provisions the isolated portable clone automatically.
+| Variable | Default | Contract |
+| --- | --- | --- |
+| `MT5_STREAM_HOST` | `localhost` | Private listen host |
+| `MT5_STREAM_PORT` | `8765` | Private listen port |
+| `MT5_SYMBOLS` | empty | Comma-separated always-streamed base symbols |
+| `MT5_STREAM_ALL_VISIBLE` | `false` | Poll every visible Market Watch symbol; normally false |
+| `MT5_POLL_INTERVAL_MS` | `100` | Tick polling interval |
+| `MT5_HISTORY_BARS` | `1500` | Default history window |
+| `MT5_HISTORY_TIMEFRAMES` | configured list | Eligible preload timeframes |
+| `MT5_PRELOAD_HISTORY` | `false` | Prefer on-demand history in normal operation |
+| `MT5_HISTORY_SYNC_RETRIES` | `2` | Cold-history retry budget |
+| `MT5_HISTORY_SYNC_DELAY_MS` | `300` | Delay between history refresh attempts |
+| `MT5_LOGIN` | empty | Optional local sidecar login; all credential fields must be set together |
+| `MT5_PASSWORD` | empty | Optional local sidecar password; never log or commit |
+| `MT5_SERVER` | empty | Optional local sidecar broker server |
+| `MT5_MARKET_STATUS_FILE` | auto-discovered | Native session-helper JSON override |
+| `MT5_MARKET_STATUS_POLL_MS` | `1000` | Session-helper poll interval |
+| `MT5_MARKET_STATUS_MAX_AGE_SECONDS` | `20` | Stale helper observations become `unknown` |
+| `MT5_STREAM_LOG_LEVEL` | `INFO` | Python log level |
 
-Exact scheduled open/closed status requires the read-only native MQL5 helper in
-[`bridge/mt5_session`](../bridge/mt5_session/README.md). The Python package does
-not expose `SymbolInfoSessionTrade`; when the helper is missing or stale, the
-API deliberately returns `unknown` instead of inferring a session from tick age.
+The `MT5_LOGIN`/`MT5_PASSWORD`/`MT5_SERVER` group is only for the private read-only market-data
+terminal. Managed execution credentials use Vault and never these variables.
 
-Bridge regression tests can run without an installed MT5 terminal because they
-stub the `MetaTrader5` module:
+## Replay engine
+
+| Variable | Default | Contract |
+| --- | --- | --- |
+| `REPLAY_ENGINE_ENABLED` | `false` | Enables the backend actor; schema/routes can exist while disabled |
+| `REPLAY_MAX_BARS_PER_TRACK` | `5000` | Positive per-track cap |
+| `REPLAY_MAX_TRACKS_PER_SESSION` | `4` | Positive session track cap |
+| `REPLAY_CLEANUP_INTERVAL` | `1h` | Positive cleanup cadence |
+| `REPLAY_SESSION_RETENTION` | `720h` | Closed-session retention |
+| `REPLAY_DATASET_RETENTION` | `168h` | Unreferenced dataset retention |
+| `REPLAY_DISCONNECT_GRACE` | `5s` | Actor disconnect grace |
+| `REPLAY_ACTOR_LEASE_TTL` | `5s` | Actor lease duration; keep compatible with failover assumptions |
+
+## Production minimum
+
+For `APP_ENV=production`, Go fails fast unless the required base configuration is present:
+
+- `DATABASE_URL`, `AUTH_JWT_SECRET`, all Firebase values, and non-empty
+  `CORS_ALLOWED_ORIGINS`;
+- `PUSH_WORKER_SECRET`, `EXECUTION_ADMIN_TOKEN`, and secure cookies;
+- all trade-recovery SMTP values;
+- `ALERT_EVALUATOR_URL` when the evaluator is enabled.
+
+The canonical runner/deploy scripts add further host checks, including the identity-key file and
+managed Python environment. Use [PRODUCTION_BUILD.md](PRODUCTION_BUILD.md); do not infer production
+readiness from a process merely starting in development mode.
+
+## Local examples
+
+PowerShell process scope:
 
 ```powershell
-cd backend
-python -m unittest bridge.mt5_stream.test_mt5_server -v
-```
-
-## Setting variables
-
-### Linux / macOS
-
-```bash
-export PORT=3001
-export APP_ENV=production
+$env:DATABASE_URL = 'postgres://user:pass@localhost:5432/marketlens?sslmode=disable'
+$env:APP_ENV = 'development'
 go run ./cmd/api
 ```
 
-### Windows (PowerShell)
-
-```powershell
-$env:PORT = "3001"
-$env:APP_ENV = "production"
-go run ./cmd/api
-```
-
-### Docker
-
-```bash
-docker run -e PORT=3001 -e APP_ENV=production my-image
-```
+Do not paste production secret values into shell history. Prefer ignored dotenv files for local
+development and ACL-protected secret files/service configuration on the production host.

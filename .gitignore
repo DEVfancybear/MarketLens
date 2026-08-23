@@ -44,6 +44,7 @@ npm-debug.log*
 backend/vendor/
 backend/dist/
 target/
+*.profraw
 .gocache/
 .gotmp/
 .cache/

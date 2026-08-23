@@ -178,6 +178,23 @@ class Phase1AdapterTests(unittest.TestCase):
         with self.assertRaises(phase1_adapter.AdapterInputError):
             phase1_adapter.validate_bootstrap(invalid)
 
+    def test_managed_terminal_profile_launch_contains_no_broker_credentials(self) -> None:
+        managed = dict(self.bootstrap)
+        managed["terminal_profile"] = "MarketLens-slot-01"
+        cfg = phase1_adapter.validate_bootstrap(managed)
+        with mock.patch.object(phase1_adapter.subprocess, "Popen") as popen:
+            phase1_adapter.launch_terminal_profile(cfg)
+
+        arguments = popen.call_args.args[0]
+        self.assertEqual(
+            [self.bootstrap["terminal_path"], "/profile:MarketLens-slot-01"],
+            arguments,
+        )
+        serialized = json.dumps(popen.call_args.args)
+        self.assertNotIn(self.bootstrap["login"], serialized)
+        self.assertNotIn(self.bootstrap["password"], serialized)
+        self.assertNotIn(self.bootstrap["server"], serialized)
+
     def test_initialize_failure_is_bounded_to_safe_error_classes(self) -> None:
         cfg = phase1_adapter.validate_bootstrap(dict(self.bootstrap))
         cases = (

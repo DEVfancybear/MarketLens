@@ -23,25 +23,29 @@ type MT5ConnectorAccount struct {
 }
 
 type MT5ConnectorReserveRequest struct {
-	OwnerID           string `json:"ownerId"`
-	AccountID         string `json:"accountId"`
-	Label             string `json:"label"`
-	Server            string `json:"server"`
-	MaskedLoginSuffix string `json:"maskedLoginSuffix"`
-	Persistence       string `json:"persistence"`
-	SecretRef         string `json:"secretRef"`
-	ExpectedRevision  uint64 `json:"expectedRevision,omitempty"`
+	OwnerID             string `json:"ownerId"`
+	AccountID           string `json:"accountId"`
+	Label               string `json:"label"`
+	Server              string `json:"server"`
+	MaskedLoginSuffix   string `json:"maskedLoginSuffix"`
+	IdentityFingerprint string `json:"identityFingerprint"`
+	ServerFingerprint   string `json:"serverFingerprint"`
+	Persistence         string `json:"persistence"`
+	SecretRef           string `json:"secretRef"`
+	ExpectedRevision    uint64 `json:"expectedRevision,omitempty"`
 }
 
 type MT5ConnectorActivateRequest struct {
-	OwnerID           string `json:"ownerId"`
-	AccountID         string `json:"accountId"`
-	Label             string `json:"label"`
-	Server            string `json:"server"`
-	MaskedLoginSuffix string `json:"maskedLoginSuffix"`
-	Persistence       string `json:"persistence"`
-	SecretRef         string `json:"secretRef"`
-	ExpectedRevision  uint64 `json:"expectedRevision"`
+	OwnerID             string `json:"ownerId"`
+	AccountID           string `json:"accountId"`
+	Label               string `json:"label"`
+	Server              string `json:"server"`
+	MaskedLoginSuffix   string `json:"maskedLoginSuffix"`
+	IdentityFingerprint string `json:"identityFingerprint"`
+	ServerFingerprint   string `json:"serverFingerprint"`
+	Persistence         string `json:"persistence"`
+	SecretRef           string `json:"secretRef"`
+	ExpectedRevision    uint64 `json:"expectedRevision"`
 }
 
 type MT5ConnectorAbortRequest struct {
@@ -183,8 +187,15 @@ func (c *Client) FinalizeDeleteMT5ConnectorAccount(ctx context.Context, ownerID,
 	return c.doJSON(ctx, http.MethodPost, c.resolve("/v1/admin/mt5-vm/accounts/finalize-delete"), body, &response)
 }
 
-func (c *Client) ConsumeMT5CredentialGrant(ctx context.Context, request MT5CredentialGrantConsumeRequest) (MT5CredentialGrant, error) {
+func (c *Client) ConsumeMT5CredentialGrantAuthenticated(ctx context.Context, request MT5CredentialGrantConsumeRequest, workerBearer string) (MT5CredentialGrant, error) {
 	var response MT5CredentialGrant
-	err := c.doJSON(ctx, http.MethodPost, c.resolve("/v1/admin/mt5-vm/credential-grants/consume"), request, &response)
+	err := c.doJSONWithHeaders(
+		ctx,
+		http.MethodPost,
+		c.resolve("/v1/admin/mt5-vm/credential-grants/consume"),
+		request,
+		&response,
+		map[string]string{"X-MT5-Worker-Session-Token": workerBearer},
+	)
 	return response, err
 }

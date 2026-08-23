@@ -14,15 +14,18 @@ market data, Pine execution, or ordinary application CRUD.
 - `execution-adapters`: the shared venue contract, MT5 queue adapter, and native
   API adapter boundary.
 - `execution-gateway`: PostgreSQL-backed EA and loopback admin APIs.
-- `mt5-vm-agent`: the Windows VM supervisor prototype. It owns a bounded,
+- `mt5-vm-agent`: the Windows supervisor used by the Revision 15 bare-metal
+  managed path. It owns a bounded,
   preallocated O(1) runtime registry, authenticated/replay-protected stdio,
   bounded per-account queues, startup throttling, Windows Job Object limits,
   separately installed and artifact-pinned terminal slots, isolated adapters,
-  and lease/state fencing. It does not store broker credentials. Unit gates,
-  failed-start cleanup, and the credentialed FTMO lifecycle pass. Phase 1
-  remains conditional on a signed normal-agent rerun, independent FTMO web
-  comparison, and live two-account isolation; see
-  `../../docs/MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md`.
+  and lease/state fencing. It does not store broker credentials. Managed mode
+  adds durable private-worker polling, redirected-stdin login, exact-PID
+  named-pipe EA bootstrap, restart adoption/cleanup, and an explicit
+  `bare_metal` substrate. Worker install/start stays separate from the backend
+  runner. The older Phase 1 signed-agent validation remains historical evidence;
+  production activation follows `../../docs/MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md`
+  and still requires the R15-9 Demo gate.
 - The Phase 2 MT5 VM control plane is PostgreSQL-backed inside
   `execution-gateway`: private worker enrollment/version negotiation, hashed and
   generation-fenced sessions, heartbeat/lease renewal, compatible placement,

@@ -10,6 +10,7 @@ import ntpath
 import math
 import re
 import struct
+import subprocess
 import sys
 import time
 import uuid
@@ -41,6 +42,7 @@ BOOTSTRAP_KEYS = {
     "server",
     "symbol",
     "timeout_ms",
+    "terminal_profile",
 }
 FRAME_KEYS = {
     "protocol_version",
@@ -75,7 +77,7 @@ def _validate_identifier(value: Any, field: str) -> str:
 
 
 def validate_bootstrap(raw: Any) -> dict[str, Any]:
-    required_keys = BOOTSTRAP_KEYS - {"timeout_ms"}
+    required_keys = BOOTSTRAP_KEYS - {"timeout_ms", "terminal_profile"}
     if (
         not isinstance(raw, dict)
         or set(raw) - BOOTSTRAP_KEYS
@@ -123,6 +125,10 @@ def validate_bootstrap(raw: Any) -> dict[str, Any]:
     timeout_ms = int(raw.get("timeout_ms", 60_000))
     if timeout_ms < 1_000 or timeout_ms > 60_000:
         raise AdapterInputError("invalid timeout")
+    terminal_profile_raw = raw.get("terminal_profile")
+    terminal_profile = None
+    if terminal_profile_raw is not None:
+        terminal_profile = _validate_identifier(terminal_profile_raw, "terminal_profile")
 
     return {
         "worker_id": worker_id,
@@ -135,7 +141,26 @@ def validate_bootstrap(raw: Any) -> dict[str, Any]:
         "server": server,
         "symbol": symbol,
         "timeout_ms": timeout_ms,
+        "terminal_profile": terminal_profile,
     }
+
+
+def launch_terminal_profile(cfg: dict[str, Any]) -> subprocess.Popen[bytes] | None:
+    profile = cfg.get("terminal_profile")
+    if profile is None:
+        return None
+    creation_flags = int(getattr(subprocess, "CREATE_NO_WINDOW", 0)) | int(
+        getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    )
+    return subprocess.Popen(
+        [cfg["terminal_path"], f"/profile:{profile}"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        shell=False,
+        close_fds=True,
+        creationflags=creation_flags,
+    )
 
 
 def _length_prefixed(fields: list[str]) -> bytes:
@@ -322,6 +347,7 @@ def _symbol_snapshot(mt5: Any, symbol: str) -> dict[str, Any]:
 def initialize_and_snapshot(mt5: Any, cfg: dict[str, Any]) -> dict[str, Any]:
     initialized = False
     try:
+        launch_terminal_profile(cfg)
         initialized = bool(
             mt5.initialize(
                 cfg["terminal_path"],

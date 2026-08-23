@@ -197,9 +197,10 @@ func TestValidateTradeRecoveryEmailConfiguration(t *testing.T) {
 func TestValidateMT5VaultConfiguration(t *testing.T) {
 	base := Config{
 		Env: "development", ChartTimeZone: "UTC",
-		MT5VaultAddress:      "https://vault.example.com",
-		MT5VaultAPITokenFile: filepath.Join(t.TempDir(), "vault-api-token"),
-		MT5VaultMount:        "secret", MT5VaultPrefix: "marketlens/mt5",
+		MT5VaultAddress:                 "https://vault.example.com",
+		MT5VaultAPITokenFile:            filepath.Join(t.TempDir(), "vault-api-token"),
+		ExecutionMT5IdentityHMACKeyFile: filepath.Join(t.TempDir(), "mt5-identity-key"),
+		MT5VaultMount:                   "secret", MT5VaultPrefix: "marketlens/mt5",
 	}
 	if err := validateMT5Vault(base); err != nil {
 		t.Fatalf("valid vault config rejected: %v", err)
@@ -214,6 +215,12 @@ func TestValidateMT5VaultConfiguration(t *testing.T) {
 		t.Fatal("partial vault configuration was accepted")
 	}
 
+	missingIdentityKey := base
+	missingIdentityKey.ExecutionMT5IdentityHMACKeyFile = ""
+	if err := validateMT5Vault(missingIdentityKey); err == nil {
+		t.Fatal("vault configuration without a stable identity HMAC key was accepted")
+	}
+
 	remoteHTTP := base
 	remoteHTTP.MT5VaultAddress = "http://vault.example.com"
 	if err := validateMT5Vault(remoteHTTP); err == nil {
@@ -224,5 +231,11 @@ func TestValidateMT5VaultConfiguration(t *testing.T) {
 	loopbackHTTP.MT5VaultAddress = "http://127.0.0.1:8200"
 	if err := validateMT5Vault(loopbackHTTP); err != nil {
 		t.Fatalf("loopback development vault rejected: %v", err)
+	}
+
+	relativeIdentityKey := base
+	relativeIdentityKey.ExecutionMT5IdentityHMACKeyFile = "relative-identity-key"
+	if err := validateMT5Vault(relativeIdentityKey); err == nil {
+		t.Fatal("relative stable identity HMAC key path was accepted")
 	}
 }

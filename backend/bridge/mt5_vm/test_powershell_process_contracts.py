@@ -52,6 +52,7 @@ class PowerShellProcessContractTests(unittest.TestCase):
 
             command = (
                 "$ErrorActionPreference='Stop';"
+                "[Console]::OutputEncoding=New-Object Text.UTF8Encoding($false);"
                 ". $env:MT5_PROCESS_HELPER;"
                 "$payload=[IO.File]::ReadAllText($env:MT5_PAYLOAD_PATH,"
                 "(New-Object Text.UTF8Encoding($false)));"

@@ -1,16 +1,17 @@
 #property copyright "MarketLens"
-#property version   "1.25"
+#property version   "1.26"
 #property strict
 #property description "Broker-neutral MT5 execution agent for the Rust execution gateway."
 
 input string GatewayUrl       = "http://127.0.0.1:8790";
 input string PairingToken     = "";
+input string BootstrapPipe    = "";
 input int    PollIntervalMs   = 750;
 input int    HttpTimeoutMs    = 5000;
 input long   MagicNumber      = 26072026;
 
 const int PROTOCOL_VERSION = 1;
-const string EA_VERSION = "1.25";
+const string EA_VERSION = "1.26";
 const int MAX_BUFFERED_EVENTS = 128;
 const int MAX_JOURNAL_COMMANDS = 4096;
 const int MAX_INSTRUMENTS_PER_HEARTBEAT = 32;
@@ -18,6 +19,10 @@ const int MAX_INSTRUMENTS_PER_HEARTBEAT = 32;
 string g_session_token = "";
 string g_account_id = "";
 string g_agent_id = "";
+string g_pairing_token = "";
+string g_managed_slot_id = "";
+long g_managed_terminal_pid = 0;
+string g_managed_gateway_origin = "";
 string g_events[];
 string g_command_ids[];
 string g_command_states[];
@@ -61,9 +66,15 @@ int OnInit()
    ArrayResize(g_events, 0);
    LoadCommandJournal();
    LoadSessionCache();
-   if(g_session_token == "" && StringLen(PairingToken) == 0)
+   g_pairing_token = PairingToken;
+   if(!IsSafeBootstrapPipe(BootstrapPipe))
    {
-      Print("MarketLensExecutionEA: a one-time PairingToken is required for the first connection.");
+      Print("MarketLensExecutionEA: BootstrapPipe contains invalid characters.");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+   if(g_session_token == "" && g_pairing_token == "" && BootstrapPipe == "")
+   {
+      Print("MarketLensExecutionEA: PairingToken or BootstrapPipe is required for the first connection.");
       return INIT_PARAMETERS_INCORRECT;
    }
 
@@ -92,6 +103,15 @@ bool IsSecureGatewayUrl(const string url)
    return IsLoopbackHttpUrl(url, "127.0.0.1") ||
           IsLoopbackHttpUrl(url, "localhost") ||
           IsLoopbackHttpUrl(url, "[::1]");
+}
+
+string NormalizedGatewayOrigin()
+{
+   string origin = GatewayUrl;
+   while(StringLen(origin) > 0 &&
+         StringSubstr(origin, StringLen(origin) - 1, 1) == "/")
+      origin = StringSubstr(origin, 0, StringLen(origin) - 1);
+   return origin;
 }
 
 bool IsLoopbackHttpUrl(const string url, const string host)
@@ -130,7 +150,10 @@ void OnTimer()
    g_request_in_flight = true;
    if(g_session_token == "")
    {
-      RegisterSession();
+      if(g_pairing_token == "" && BootstrapPipe != "")
+         LoadManagedBootstrapToken();
+      if(g_pairing_token != "")
+         RegisterSession();
       g_request_in_flight = false;
       return;
    }
@@ -360,12 +383,30 @@ string ResolveOrderReason(const ulong order_id)
 
 bool RegisterSession()
 {
+   string runtime_binding = "";
+   if(g_managed_slot_id != "")
+   {
+      if(g_managed_terminal_pid <= 0 ||
+         g_managed_gateway_origin != NormalizedGatewayOrigin())
+      {
+         Print("MarketLensExecutionEA: managed runtime binding no longer matches GatewayUrl.");
+         return false;
+      }
+      runtime_binding = StringFormat(
+         ",\"runtimeBinding\":{"
+         "\"slotId\":\"%s\",\"terminalPid\":%I64d,\"gatewayOrigin\":\"%s\"}",
+         JsonEscape(g_managed_slot_id),
+         g_managed_terminal_pid,
+         JsonEscape(g_managed_gateway_origin)
+      );
+   }
    string body = StringFormat(
       "{\"protocolVersion\":%d,\"pairingToken\":\"%s\","
-      "\"agentId\":\"%s\",\"account\":%s}",
+      "\"agentId\":\"%s\"%s,\"account\":%s}",
       PROTOCOL_VERSION,
-      JsonEscape(PairingToken),
+      JsonEscape(g_pairing_token),
       JsonEscape(g_agent_id),
+      runtime_binding,
       AccountSnapshotJson()
    );
 
@@ -390,6 +431,10 @@ bool RegisterSession()
    }
 
    SyncGatewayClockFromJson(response);
+   g_pairing_token = "";
+   g_managed_slot_id = "";
+   g_managed_terminal_pid = 0;
+   g_managed_gateway_origin = "";
    g_session_token = session_token;
    g_account_id = account_id;
    if(!SaveSessionCache())
@@ -401,6 +446,96 @@ bool RegisterSession()
    }
    g_last_snapshot_at = 0;
    PrintFormat("MarketLensExecutionEA: paired account %s.", g_account_id);
+   return true;
+}
+
+bool IsSafeBootstrapPipe(const string pipe_name)
+{
+   int length = StringLen(pipe_name);
+   if(length == 0)
+      return true;
+   if(length > 80)
+      return false;
+   for(int index = 0; index < length; index++)
+   {
+      ushort character = StringGetCharacter(pipe_name, index);
+      bool alpha = (character >= 'a' && character <= 'z') ||
+                   (character >= 'A' && character <= 'Z');
+      bool digit = character >= '0' && character <= '9';
+      if(!alpha && !digit && character != '-' && character != '_')
+         return false;
+   }
+   return true;
+}
+
+bool IsManagedPairingToken(const string token)
+{
+   if(StringLen(token) != 64)
+      return false;
+   for(int index = 0; index < 64; index++)
+   {
+      ushort character = StringGetCharacter(token, index);
+      bool digit = character >= '0' && character <= '9';
+      bool lower_hex = character >= 'a' && character <= 'f';
+      bool upper_hex = character >= 'A' && character <= 'F';
+      if(!digit && !lower_hex && !upper_hex)
+         return false;
+   }
+   return true;
+}
+
+bool LoadManagedBootstrapToken()
+{
+   if(!IsSafeBootstrapPipe(BootstrapPipe) || BootstrapPipe == "")
+      return false;
+
+   string pipe_path = "\\\\.\\pipe\\" + BootstrapPipe;
+   ResetLastError();
+   int handle = FileOpen(pipe_path, FILE_READ|FILE_TXT|FILE_ANSI);
+   if(handle == INVALID_HANDLE)
+      return false;
+
+   string envelope = FileReadString(handle);
+   FileClose(handle);
+   string token;
+   string slot_id;
+   string terminal_pid_text;
+   string gateway_origin;
+   long terminal_pid = 0;
+   if(!JsonString(envelope, "pairingToken", token) ||
+      !JsonString(envelope, "slotId", slot_id) ||
+      !JsonNumber(envelope, "terminalPid", terminal_pid_text) ||
+      !JsonString(envelope, "gatewayOrigin", gateway_origin) ||
+      !IsManagedPairingToken(token) ||
+      slot_id == "" || !IsSafeBootstrapPipe(slot_id) ||
+      !IsUnsignedIntegerText(terminal_pid_text))
+   {
+      envelope = "";
+      token = "";
+      Print("MarketLensExecutionEA: managed bootstrap pipe returned an invalid envelope.");
+      return false;
+   }
+   terminal_pid = StringToInteger(terminal_pid_text);
+   if(terminal_pid <= 0 || terminal_pid > 4294967295 ||
+      !IsSecureGatewayUrl(gateway_origin) ||
+      gateway_origin != NormalizedGatewayOrigin())
+   {
+      envelope = "";
+      token = "";
+      slot_id = "";
+      gateway_origin = "";
+      Print("MarketLensExecutionEA: managed bootstrap runtime binding is invalid.");
+      return false;
+   }
+
+   g_pairing_token = token;
+   g_managed_slot_id = slot_id;
+   g_managed_terminal_pid = terminal_pid;
+   g_managed_gateway_origin = gateway_origin;
+   envelope = "";
+   token = "";
+   slot_id = "";
+   gateway_origin = "";
    return true;
 }
 

@@ -15,7 +15,8 @@ production-ready merely because it compiles or can place a test order.
 - Do not trust client-supplied forwarding headers unless the direct peer is the
   controlled reverse proxy.
 - Use independent 32-byte-or-longer random values for `AUTH_JWT_SECRET`,
-  `EXECUTION_ADMIN_TOKEN`, and push-worker secrets.
+  `EXECUTION_ADMIN_TOKEN`, `EXECUTION_MT5_VM_BOOTSTRAP_TOKEN`, the contents of
+  `EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE`, and push-worker secrets.
 - Never put `EXECUTION_ADMIN_TOKEN`, database credentials, or broker secrets in
   `NEXT_PUBLIC_*`, an EA input, a log line, or a support screenshot.
 
@@ -24,6 +25,31 @@ database statement timeout. Both Go-to-Rust clients reject redirects, accept
 only loopback HTTP, cap responses, and have bounded timeouts. The EA relay
 forwards only method, JSON body, and Authorization; it does not forward browser
 cookies or arbitrary headers.
+
+## Bare-metal managed MT5 boundary
+
+The selected managed deployment uses one bounded worker on the same
+operator-controlled Windows host. Follow
+[`MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md`](MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md).
+
+- Configure `MT5_VAULT_ADDR`, `MT5_VAULT_API_TOKEN_FILE`, and
+  `EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE` with protected absolute paths. Secret
+  file contents must be independent and must never enter Git, `.env`, command
+  arguments, logs, or evidence.
+- The canonical backend runner exports only the identity-key file path to Rust.
+  It validates that the file is absolute, present, non-linked, and bounded in
+  size before starting services.
+- CI and source builds produce `mt5-vm-agent.exe`; artifact deploy verifies it.
+  The explicit worker installer copies the hash-pinned binary into its protected
+  root. Backend deploy and `run-backend-production.ps1` do not start it.
+- Worker and credential service URLs may use HTTPS. Plain HTTP is accepted only
+  for exact loopback IP addresses; hostname aliases and remote plain HTTP fail
+  closed.
+- Managed readiness requires a current worker lease, exact terminal identity,
+  adapter synchronization, EA 1.26 session, and a successful EA poll. Partial
+  readiness cannot route an order.
+- Do not interpret a local synthetic gauntlet as broker readiness. Complete the
+  R15-9 two-owner/three-Demo-account gate before any Live/funded activation.
 
 ## Reverse-proxy contract
 
@@ -70,7 +96,7 @@ Before release, verify:
 - account readiness requires `last_poll_at` from a completely successful
   command poll within 15 seconds; generic session/event activity is
   insufficient;
-- the reported EA version is `1.24` or newer before any Place or lifecycle
+- the reported EA version is `1.26` or newer before any Place or lifecycle
   command can be created.
 - authenticated mutation throttles return `429` after their configured per-user ceilings, while a
   different user remains unaffected. Treat these in-process controls as defense in depth and keep
@@ -181,7 +207,7 @@ Do not use recovery switches during a normal release.
 
 Migration `0028_execution_ea_poll_liveness` intentionally leaves existing
 sessions with `last_poll_at=NULL`. After restart, each healthy EA establishes
-readiness on its first successful poll. Existing EA releases below 1.25 remain
+readiness on its first successful poll. Existing EA releases below 1.26 remain
 blocked until their `.ex5` is replaced; do not bypass this gate by editing
 account status in PostgreSQL.
 
@@ -192,7 +218,7 @@ Deploy portfolio synchronization changes in this order:
 1. Run the canonical backend deployment with
    `.\run-backend-production.ps1`.
 2. Deploy the frontend.
-3. Upgrade `MarketLensExecutionEA` one terminal at a time. EA 1.25 is required because
+3. Upgrade `MarketLensExecutionEA` one terminal at a time. EA 1.26 is required because
    it retains `modifyPendingOrder` and the independent portfolio, command-event,
    and instrument lanes while adding the current copier telemetry and broker
    margin-cap safety contract.
@@ -211,7 +237,7 @@ positions and pending orders to appear before treating the state as stale.
 | Experts log or observation | Meaning | Production action |
 | --- | --- | --- |
 | `portfolio sync failed, HTTP=...` | The positions/pending-orders lane was rejected or unavailable | Inspect the sanitized response code/message and gateway logs. The last committed portfolio remains authoritative until a complete valid snapshot succeeds |
-| `instrument sync failed, HTTP=...` | Symbol discovery or metadata was rejected | Fix symbol metadata/routing independently. On EA 1.25 this must not suppress portfolio synchronization |
+| `instrument sync failed, HTTP=...` | Symbol discovery or metadata was rejected | Fix symbol metadata/routing independently. On EA 1.26 this must not suppress portfolio synchronization |
 | `command event sync failed, HTTP=...` | Outcome telemetry is delayed | Do not resend an order. Reconcile the command ID against MT5 and the target-command row, then allow retry or late acknowledgement to finalize it |
 | No EA error, account `READY`, web portfolio empty | Transport is healthy but account selection, ownership, or persistence may be wrong | Confirm the selected execution account, inspect the authenticated account-state response, then compare its account ID with PostgreSQL portfolio rows |
 
@@ -272,7 +298,7 @@ EA rejection.
 
 1. Pair one dedicated Live account with minimum balance/exposure.
 2. Verify account identity, server, currency, mode, equity, trade permission,
-   EA version `1.24+`, and a fresh successful poll (`READY`) in the UI.
+   EA version `1.26+`, and a fresh successful poll (`READY`) in the UI.
 3. Map exactly one low-risk symbol.
 4. Place the broker-minimum order with a protective stop.
 5. Verify command IDs in browser activity, PostgreSQL, EA journal, MT5 order,

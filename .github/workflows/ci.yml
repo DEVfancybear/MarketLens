@@ -89,15 +89,16 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "go build ./cmd/$cmd failed" }
           }
 
-      - name: Build Rust execution gateway
+      - name: Build Rust production binaries
         working-directory: backend/execution
-        run: cargo build --release --locked -p execution-gateway
+        run: cargo build --release --locked -p execution-gateway -p mt5-vm-agent
 
       - name: Package artifact
         working-directory: backend
         shell: pwsh
         run: |
           Copy-Item execution/target/release/execution-gateway.exe stage/bin/ -Force
+          Copy-Item execution/target/release/mt5-vm-agent.exe stage/bin/ -Force
           $manifest = [ordered]@{
             commit        = $env:GITHUB_SHA
             ref           = $env:GITHUB_REF
@@ -107,7 +108,7 @@ jobs:
             goVersion     = (go version)
             cargoVersion  = (cargo --version)
             runnerOs      = $env:RUNNER_OS
-            binaries      = @('api.exe', 'migrate.exe', 'mt5-stream.exe', 'execution-gateway.exe')
+            binaries      = @('api.exe', 'migrate.exe', 'mt5-stream.exe', 'execution-gateway.exe', 'mt5-vm-agent.exe')
           }
           $manifest | ConvertTo-Json -Depth 4 | Set-Content stage/MANIFEST.json -Encoding utf8
           # sha256sum-compatible lines with stage-relative, forward-slash paths.

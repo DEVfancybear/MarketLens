@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::env;
+use std::fs;
 use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -17,15 +19,17 @@ use execution_domain::{
     CopyGroupId, CopyGroupRuntimeStatus, CopyGroupWriteRequest, CopyProtectionConfig, CopyTarget,
     CopyTargetDefinition, CopyTargetRuntimeStatus, CopyTargetWriteRequest,
     EXECUTION_PROTOCOL_VERSION, EaAccountSnapshot, EaCommand, EaEvent, EaEventBatch,
-    EaInstrumentSnapshot, EaPendingOrderSnapshot, EaPositionSnapshot, EaSessionRequest,
-    EaSessionResponse, ExecutionAccount, IdempotencyKey, InstrumentSpec, ModifyPendingOrderCommand,
-    ModifyPositionCommand, OrderIntent, OrderKind, OrderSizing, PropRiskActions,
-    PropRiskEvaluation, PropRiskEvaluationInput, PropRiskHistoryQuality, PropRiskMaxLossMode,
-    PropRiskReason, PropRiskRules, PropRiskStatus, QuantityUnit, RiskPolicy, RouteRejectCode,
-    RouteTargetContext, RouteWarning, RoutedOrder, SessionId, Side, TargetRouteResult, VenueKind,
-    evaluate_prop_risk, prop_risk_money, should_repair_legacy_prop_risk_daily_lock,
+    EaInstrumentSnapshot, EaManagedRuntimeBinding, EaPendingOrderSnapshot, EaPositionSnapshot,
+    EaSessionRequest, EaSessionResponse, ExecutionAccount, IdempotencyKey, InstrumentSpec,
+    ModifyPendingOrderCommand, ModifyPositionCommand, OrderIntent, OrderKind, OrderSizing,
+    PropRiskActions, PropRiskEvaluation, PropRiskEvaluationInput, PropRiskHistoryQuality,
+    PropRiskMaxLossMode, PropRiskReason, PropRiskRules, PropRiskStatus, QuantityUnit, RiskPolicy,
+    RouteRejectCode, RouteTargetContext, RouteWarning, RoutedOrder, SessionId, Side,
+    TargetRouteResult, VenueKind, evaluate_prop_risk, prop_risk_money,
+    should_repair_legacy_prop_risk_daily_lock,
 };
 use execution_engine::route_order;
+use hmac::{Hmac, Mac};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -66,7 +70,7 @@ const DEFERRED_ORDER_TTL: Duration = Duration::from_secs(5 * 60);
 const DEFERRED_EXPIRY_SWEEP_INTERVAL: Duration = Duration::from_secs(5);
 const MAX_DEFERRED_ACTIVATIONS_PER_EVENT: usize = 16;
 const EA_POLL_FRESHNESS: Duration = Duration::from_secs(15);
-const MIN_SUPPORTED_EA_VERSION: (u32, u32, u32) = (1, 25, 0);
+const MIN_SUPPORTED_EA_VERSION: (u32, u32, u32) = (1, 26, 0);
 const DEFAULT_PAIRING_TTL: Duration = Duration::from_secs(5 * 60);
 const MAX_PAIRING_TTL: Duration = Duration::from_secs(10 * 60);
 const MAX_ACTIVE_PAIRING_TOKENS_PER_OWNER: usize = 5;
@@ -79,6 +83,7 @@ struct GatewayState {
 
 struct GatewayInner {
     admin_token_hash: [u8; 32],
+    mt5_identity_key: [u8; 32],
     mt5_vm_bootstrap_token_hash: Option<[u8; 32]>,
     database: Option<PgPool>,
     pairing_tokens: Mutex<HashMap<[u8; 32], PairingGrant>>,
@@ -94,12 +99,35 @@ struct EaSession {
     account_id: AccountId,
     owner_id: String,
     expires_at_ms: u64,
+    managed_identity: Option<ManagedEaSessionIdentity>,
+}
+
+#[derive(Clone, Debug)]
+struct ManagedEaSessionIdentity {
+    identity_fingerprint: Vec<u8>,
+    runtime_binding: EaManagedRuntimeBinding,
 }
 
 #[derive(Clone)]
 struct PairingGrant {
     owner_id: String,
     expires_at_ms: u64,
+    managed_binding: Option<ManagedEaPairingBinding>,
+}
+
+#[derive(Clone, Debug)]
+struct ManagedEaPairingBinding {
+    account_id: AccountId,
+    worker_id: String,
+    worker_session_generation: u64,
+    lease_generation: u64,
+    connection_revision: u64,
+    slot_id: String,
+    terminal_pid: u32,
+    gateway_origin: String,
+    #[cfg(test)]
+    masked_login_suffix: Option<String>,
+    identity_fingerprint: Vec<u8>,
 }
 
 #[derive(Clone)]
@@ -747,6 +775,7 @@ enum AdminTargetSubmission {
 }
 
 #[tokio::main]
+#[cfg_attr(test, allow(unreachable_code, unused_variables))]
 async fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -762,6 +791,7 @@ async fn main() {
             std::process::exit(2);
         }
     };
+    #[cfg(not(test))]
     let database = PgPoolOptions::new()
         .max_connections(config.database_max_connections)
         .acquire_timeout(Duration::from_secs(10))
@@ -782,11 +812,14 @@ async fn main() {
         .connect(&config.database_url)
         .await
         .unwrap_or_else(|error| panic!("failed to connect execution database: {error}"));
-    let state = GatewayState::new_production(
-        &config.admin_token,
-        config.mt5_vm_bootstrap_token.as_deref(),
-        database,
-    );
+    #[cfg(test)]
+    let database = PgPoolOptions::new()
+        .max_connections(config.database_max_connections)
+        .connect_lazy(&config.database_url)
+        .expect("test configuration must contain a valid PostgreSQL URL");
+    let state = production_state(&config, database);
+    #[cfg(test)]
+    return;
     let deferred_expiry_state = state.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(DEFERRED_EXPIRY_SWEEP_INTERVAL);
@@ -858,10 +891,20 @@ async fn main() {
     }
 }
 
+fn production_state(config: &Config, database: PgPool) -> GatewayState {
+    GatewayState::new_production(
+        &config.admin_token,
+        &config.mt5_identity_hmac_key,
+        config.mt5_vm_bootstrap_token.as_deref(),
+        database,
+    )
+}
+
 struct Config {
     bind: SocketAddr,
     admin_bind: SocketAddr,
     admin_token: String,
+    mt5_identity_hmac_key: String,
     mt5_vm_bootstrap_token: Option<String>,
     database_url: String,
     database_max_connections: u32,
@@ -870,10 +913,19 @@ struct Config {
 impl Config {
     fn from_env() -> Result<Self, String> {
         let admin_token = required_secret("EXECUTION_ADMIN_TOKEN")?;
+        let mt5_identity_hmac_key = required_secret_file("EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE")?;
         let mt5_vm_bootstrap_token = optional_secret("EXECUTION_MT5_VM_BOOTSTRAP_TOKEN")?;
         if mt5_vm_bootstrap_token.as_deref() == Some(admin_token.as_str()) {
             return Err(
                 "EXECUTION_MT5_VM_BOOTSTRAP_TOKEN must be distinct from EXECUTION_ADMIN_TOKEN"
+                    .into(),
+            );
+        }
+        if mt5_identity_hmac_key == admin_token
+            || mt5_vm_bootstrap_token.as_deref() == Some(mt5_identity_hmac_key.as_str())
+        {
+            return Err(
+                "EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE must contain a secret distinct from execution authentication tokens"
                     .into(),
             );
         }
@@ -898,6 +950,7 @@ impl Config {
             bind,
             admin_bind,
             admin_token,
+            mt5_identity_hmac_key,
             mt5_vm_bootstrap_token,
             database_url,
             database_max_connections,
@@ -925,6 +978,50 @@ fn required_secret(name: &str) -> Result<String, String> {
     Ok(value)
 }
 
+fn required_secret_file(name: &str) -> Result<String, String> {
+    let raw_path = env::var(name)
+        .map_err(|_| format!("{name} is required; durable MT5 identities need a stable key"))?;
+    let path = PathBuf::from(raw_path.trim());
+    if !path.is_absolute() {
+        return Err(format!("{name} must be an absolute path"));
+    }
+    let metadata = fs::symlink_metadata(&path)
+        .map_err(|_| format!("{name} must name a readable regular file"))?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > 4096 {
+        return Err(format!("{name} must name a small regular file, not a link"));
+    }
+    let canonical =
+        fs::canonicalize(&path).map_err(|_| format!("{name} path could not be canonicalized"))?;
+    if !canonical_paths_match(&path, &canonical) {
+        return Err(format!("{name} path must not traverse a link"));
+    }
+    let raw = fs::read_to_string(&path)
+        .map_err(|_| format!("{name} must contain valid UTF-8 secret text"))?;
+    let secret = raw.trim().to_owned();
+    validate_secret(name, &secret)?;
+    if secret.len() > 4096 || secret.contains(['\r', '\n', '\0']) {
+        return Err(format!("{name} contains invalid characters"));
+    }
+    Ok(secret)
+}
+
+fn canonical_paths_match(requested: &Path, canonical: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        fn normalize(path: &Path) -> String {
+            path.to_string_lossy()
+                .trim_start_matches(r"\\?\")
+                .replace('/', "\\")
+                .to_ascii_lowercase()
+        }
+        normalize(requested) == normalize(canonical)
+    }
+    #[cfg(not(windows))]
+    {
+        requested == canonical
+    }
+}
+
 fn optional_secret(name: &str) -> Result<Option<String>, String> {
     match env::var(name) {
         Ok(value) => {
@@ -946,25 +1043,38 @@ fn validate_secret(name: &str, value: &str) -> Result<(), String> {
 impl GatewayState {
     fn new_production(
         admin_token: &str,
+        mt5_identity_hmac_key: &str,
         mt5_vm_bootstrap_token: Option<&str>,
         database: PgPool,
     ) -> Self {
-        Self::new_with_mt5_vm(admin_token, mt5_vm_bootstrap_token, Some(database))
+        Self::new_with_mt5_vm(
+            admin_token,
+            mt5_identity_hmac_key,
+            mt5_vm_bootstrap_token,
+            Some(database),
+        )
     }
 
     #[cfg(test)]
     fn new(admin_token: &str, database: Option<PgPool>) -> Self {
-        Self::new_with_mt5_vm(admin_token, None, database)
+        Self::new_with_mt5_vm(
+            admin_token,
+            "stable-test-mt5-identity-key-at-least-32-bytes",
+            None,
+            database,
+        )
     }
 
     fn new_with_mt5_vm(
         admin_token: &str,
+        mt5_identity_hmac_key: &str,
         mt5_vm_bootstrap_token: Option<&str>,
         database: Option<PgPool>,
     ) -> Self {
         Self {
             inner: Arc::new(GatewayInner {
                 admin_token_hash: sha256(admin_token.as_bytes()),
+                mt5_identity_key: derive_mt5_identity_key(mt5_identity_hmac_key),
                 mt5_vm_bootstrap_token_hash: mt5_vm_bootstrap_token
                     .map(|token| sha256(token.as_bytes())),
                 database,
@@ -1082,6 +1192,156 @@ impl GatewayState {
             PairingGrant {
                 owner_id: owner_id.to_owned(),
                 expires_at_ms,
+                managed_binding: None,
+            },
+        );
+        Ok(expires_at_ms)
+    }
+
+    #[cfg(test)]
+    async fn insert_managed_pairing_token(
+        &self,
+        token: &str,
+        owner_id: &str,
+        ttl: Duration,
+        binding: ManagedEaPairingBinding,
+    ) -> Result<u64, ApiError> {
+        validate_identifier("workerId", &binding.worker_id, 64)?;
+        validate_identifier("accountId", binding.account_id.as_str(), 96)?;
+        if token.len() != 64
+            || !token.bytes().all(|value| value.is_ascii_hexdigit())
+            || binding.worker_session_generation == 0
+            || binding.lease_generation == 0
+            || binding.connection_revision == 0
+            || validate_identifier("slotId", &binding.slot_id, 64).is_err()
+            || binding.terminal_pid == 0
+            || !mt5_vm_control::valid_ea_gateway_origin(&binding.gateway_origin)
+            || binding.identity_fingerprint.len() != 32
+            || binding.masked_login_suffix.as_ref().is_none_or(|suffix| {
+                suffix.is_empty()
+                    || suffix.len() > 4
+                    || !suffix.bytes().all(|value| value.is_ascii_digit())
+            })
+            || ttl.is_zero()
+            || ttl > MAX_PAIRING_TTL
+        {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "MANAGED_EA_BOOTSTRAP_INVALID",
+                "managed EA bootstrap binding is invalid",
+            ));
+        }
+        let expires_at_ms = now_ms() + ttl.as_millis() as u64;
+        if let Some(database) = &self.inner.database {
+            let owner_uuid = parse_owner_id(owner_id)?;
+            let mut transaction = database
+                .begin()
+                .await
+                .map_err(map_database_error("begin managed EA bootstrap transaction"))?;
+            let assignment_exists = sqlx::query_scalar::<_, bool>(
+                r#"
+                SELECT EXISTS (
+                  SELECT 1
+                  FROM execution_mt5_vm_accounts account
+                  JOIN execution_mt5_vm_workers worker
+                    ON worker.worker_id = account.worker_id
+                  JOIN execution_mt5_vm_account_leases lease
+                    ON lease.account_id = account.account_id
+                  WHERE account.user_id = $1 AND account.account_id = $2
+                    AND account.worker_id = $3
+                    AND account.connection_revision = $4
+                    AND account.lease_generation = $5
+                    AND account.disconnect_requested_revision IS NULL
+                    AND worker.session_generation = $6
+                    AND worker.worker_substrate = 'bare_metal'
+                    AND lease.worker_id = $3
+                    AND lease.worker_session_generation = $6
+                    AND lease.generation = $5
+                    AND lease.status = 'active' AND lease.expires_at > now()
+                    AND account.masked_login_suffix = $7
+                    AND account.identity_fingerprint = $8
+                )
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(binding.account_id.as_str())
+            .bind(&binding.worker_id)
+            .bind(binding.connection_revision as i64)
+            .bind(binding.lease_generation as i64)
+            .bind(binding.worker_session_generation as i64)
+            .bind(binding.masked_login_suffix.as_deref())
+            .bind(&binding.identity_fingerprint)
+            .fetch_one(&mut *transaction)
+            .await
+            .map_err(|error| ApiError::database("validate managed EA assignment", error))?;
+            require_active_managed_assignment(assignment_exists)?;
+            sqlx::query(
+                r#"
+                UPDATE execution_pairing_tokens
+                SET consumed_at = now()
+                WHERE managed_account_id = $1 AND managed_worker_id = $2
+                  AND worker_session_generation = $3 AND lease_generation = $4
+                  AND consumed_at IS NULL
+                "#,
+            )
+            .bind(binding.account_id.as_str())
+            .bind(&binding.worker_id)
+            .bind(binding.worker_session_generation as i64)
+            .bind(binding.lease_generation as i64)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| ApiError::database("revoke prior managed EA bootstrap", error))?;
+            sqlx::query(
+                r#"
+                INSERT INTO execution_pairing_tokens (
+                  user_id, token_hash, expires_at, managed_account_id,
+                  managed_worker_id, worker_session_generation, lease_generation,
+                  connection_revision, masked_login_suffix,
+                  identity_fingerprint, managed_slot_id,
+                  managed_terminal_pid, managed_gateway_origin
+                ) VALUES (
+                  $1, $2, to_timestamp($3::double precision / 1000.0), $4,
+                  $5, $6, $7, $8, $9, $10, $11, $12, $13
+                )
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(sha256(token.as_bytes()).to_vec())
+            .bind(expires_at_ms as i64)
+            .bind(binding.account_id.as_str())
+            .bind(&binding.worker_id)
+            .bind(binding.worker_session_generation as i64)
+            .bind(binding.lease_generation as i64)
+            .bind(binding.connection_revision as i64)
+            .bind(binding.masked_login_suffix.as_deref())
+            .bind(&binding.identity_fingerprint)
+            .bind(&binding.slot_id)
+            .bind(i64::from(binding.terminal_pid))
+            .bind(&binding.gateway_origin)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| ApiError::database("issue managed EA bootstrap", error))?;
+            commit_managed_pairing_transaction(transaction).await?;
+            return Ok(expires_at_ms);
+        }
+
+        let now = now_ms();
+        let mut tokens = self.inner.pairing_tokens.lock().await;
+        tokens.retain(|_, grant| grant.expires_at_ms > now);
+        tokens.retain(|_, grant| {
+            grant.managed_binding.as_ref().is_none_or(|current| {
+                current.account_id != binding.account_id
+                    || current.worker_id != binding.worker_id
+                    || current.worker_session_generation != binding.worker_session_generation
+                    || current.lease_generation != binding.lease_generation
+            })
+        });
+        tokens.insert(
+            sha256(token.as_bytes()),
+            PairingGrant {
+                owner_id: owner_id.to_owned(),
+                expires_at_ms,
+                managed_binding: Some(binding),
             },
         );
         Ok(expires_at_ms)
@@ -1472,7 +1732,18 @@ impl GatewayState {
             .await
             .ok_or_else(|| ApiError::unauthorized("EA pairing token is invalid or expired"))?;
 
-        let account_id = stable_mt5_account_id(&grant.owner_id, &request.account);
+        if let Some(binding) = &grant.managed_binding {
+            validate_managed_ea_identity(&self.inner.mt5_identity_key, binding, &request.account)?;
+            validate_managed_runtime_binding(binding, request.runtime_binding.as_ref())?;
+        } else {
+            validate_unmanaged_runtime_binding(request.runtime_binding.as_ref())?;
+        }
+
+        let account_id = grant
+            .managed_binding
+            .as_ref()
+            .map(|binding| binding.account_id.clone())
+            .unwrap_or_else(|| stable_mt5_account_id(&grant.owner_id, &request.account));
         let session_id = SessionId::new(Uuid::new_v4().to_string());
         let raw_token = format!("{}.{}", Uuid::new_v4(), Uuid::new_v4());
         let token_hash = sha256(raw_token.as_bytes());
@@ -1490,6 +1761,16 @@ impl GatewayState {
                 account_id: account_id.clone(),
                 owner_id: grant.owner_id.clone(),
                 expires_at_ms,
+                managed_identity: grant.managed_binding.as_ref().map(|binding| {
+                    ManagedEaSessionIdentity {
+                        identity_fingerprint: binding.identity_fingerprint.clone(),
+                        runtime_binding: EaManagedRuntimeBinding {
+                            slot_id: binding.slot_id.clone(),
+                            terminal_pid: binding.terminal_pid,
+                            gateway_origin: binding.gateway_origin.clone(),
+                        },
+                    }
+                }),
             },
         );
         drop(sessions);
@@ -1528,37 +1809,175 @@ impl GatewayState {
             .begin()
             .await
             .map_err(|error| ApiError::database("begin EA session transaction", error))?;
-        let owner_uuid = sqlx::query_scalar::<_, Uuid>(
+        let pairing_row = sqlx::query(
             r#"
             UPDATE execution_pairing_tokens
             SET consumed_at = now()
             WHERE token_hash = $1
               AND consumed_at IS NULL
               AND expires_at > now()
-            RETURNING user_id
+              AND (
+                (
+                  managed_account_id IS NULL AND $2::text IS NULL AND
+                  $3::bigint IS NULL AND $4::text IS NULL
+                ) OR (
+                  managed_account_id IS NOT NULL AND
+                  managed_slot_id = $2 AND managed_terminal_pid = $3 AND
+                  managed_gateway_origin = $4
+                )
+              )
+            RETURNING user_id, managed_account_id, managed_worker_id,
+                      worker_session_generation, lease_generation,
+                      connection_revision, masked_login_suffix,
+                      identity_fingerprint, managed_slot_id,
+                      managed_terminal_pid, managed_gateway_origin
             "#,
         )
         .bind(sha256(request.pairing_token.as_bytes()).to_vec())
+        .bind(
+            request
+                .runtime_binding
+                .as_ref()
+                .map(|binding| binding.slot_id.as_str()),
+        )
+        .bind(
+            request
+                .runtime_binding
+                .as_ref()
+                .map(|binding| i64::from(binding.terminal_pid)),
+        )
+        .bind(
+            request
+                .runtime_binding
+                .as_ref()
+                .map(|binding| binding.gateway_origin.as_str()),
+        )
         .fetch_optional(&mut *transaction)
         .await
         .map_err(|error| ApiError::database("consume pairing token", error))?
         .ok_or_else(|| ApiError::unauthorized("EA pairing token is invalid or expired"))?;
 
+        let owner_uuid = pairing_row
+            .try_get::<Uuid, _>("user_id")
+            .map_err(|error| ApiError::database("decode pairing token owner", error))?;
+        let managed_binding = if let Some(account_id) = pairing_row
+            .try_get::<Option<String>, _>("managed_account_id")
+            .map_err(|error| ApiError::database("decode managed pairing account", error))?
+        {
+            let worker_session_generation = pairing_row
+                .try_get::<i64, _>("worker_session_generation")
+                .map_err(map_database_error(DECODE_PAIRING_WORKER_GENERATION))?
+                as u64;
+            let lease_generation = pairing_row
+                .try_get::<i64, _>("lease_generation")
+                .map_err(map_database_error(DECODE_PAIRING_LEASE_GENERATION))?
+                as u64;
+            let connection_revision = pairing_row
+                .try_get::<i64, _>("connection_revision")
+                .map_err(map_database_error(DECODE_PAIRING_CONNECTION_REVISION))?
+                as u64;
+            let identity_fingerprint = pairing_row
+                .try_get("identity_fingerprint")
+                .map_err(map_database_error(DECODE_PAIRING_IDENTITY))?;
+            Some(ManagedEaPairingBinding {
+                account_id: AccountId::new(account_id),
+                worker_id: pairing_row
+                    .try_get("managed_worker_id")
+                    .map_err(map_database_error(DECODE_PAIRING_WORKER))?,
+                worker_session_generation,
+                lease_generation,
+                connection_revision,
+                slot_id: pairing_row
+                    .try_get("managed_slot_id")
+                    .map_err(map_database_error(DECODE_PAIRING_SLOT))?,
+                terminal_pid: pairing_row
+                    .try_get::<i64, _>("managed_terminal_pid")
+                    .map_err(map_database_error("decode managed pairing terminal PID"))?
+                    .try_into()
+                    .map_err(invalid_managed_terminal_pid)?,
+                gateway_origin: pairing_row
+                    .try_get("managed_gateway_origin")
+                    .map_err(map_database_error("decode managed pairing gateway origin"))?,
+                #[cfg(test)]
+                masked_login_suffix: pairing_row
+                    .try_get("masked_login_suffix")
+                    .map_err(map_database_error("decode managed pairing login suffix"))?,
+                identity_fingerprint,
+            })
+        } else {
+            None
+        };
         let owner_id = owner_uuid.to_string();
-        let account_id = stable_mt5_account_id(&owner_id, &request.account);
+        if let Some(binding) = &managed_binding {
+            validate_managed_ea_identity(&self.inner.mt5_identity_key, binding, &request.account)?;
+            validate_managed_runtime_binding(binding, request.runtime_binding.as_ref())?;
+            let active = sqlx::query_scalar::<_, i32>(
+                r#"
+                SELECT 1
+                FROM execution_mt5_vm_accounts account
+                JOIN execution_mt5_vm_workers worker
+                  ON worker.worker_id = account.worker_id
+                JOIN execution_mt5_vm_account_leases lease
+                  ON lease.account_id = account.account_id
+                WHERE account.user_id = $1 AND account.account_id = $2
+                  AND account.worker_id = $3 AND account.connection_revision = $4
+                  AND account.lease_generation = $5
+                  AND account.disconnect_requested_revision IS NULL
+                  AND worker.session_generation = $6
+                  AND worker.worker_substrate = 'bare_metal'
+                  AND lease.worker_id = $3
+                  AND lease.worker_session_generation = $6
+                  AND lease.generation = $5
+                  AND lease.status = 'active' AND lease.expires_at > now()
+                  AND account.identity_fingerprint = $7
+                FOR UPDATE OF account, worker, lease
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(binding.account_id.as_str())
+            .bind(&binding.worker_id)
+            .bind(binding.connection_revision as i64)
+            .bind(binding.lease_generation as i64)
+            .bind(binding.worker_session_generation as i64)
+            .bind(&binding.identity_fingerprint)
+            .fetch_optional(&mut *transaction)
+            .await
+            .map_err(|error| ApiError::database("lock managed EA assignment", error))?;
+            require_active_managed_assignment(active.is_some())?;
+        } else {
+            validate_unmanaged_runtime_binding(request.runtime_binding.as_ref())?;
+        }
+        let account_id = managed_binding
+            .as_ref()
+            .map(|binding| binding.account_id.clone())
+            .unwrap_or_else(|| stable_mt5_account_id(&owner_id, &request.account));
         let broker_code = normalize_broker_code(&request.account.broker);
         let label = format!(
             "{} {}",
             request.account.broker.trim(),
             request.account.login.trim()
         );
-        let status = if request.account.trade_allowed {
+        let status = if managed_binding.is_some() {
+            "connecting"
+        } else if request.account.trade_allowed {
             "ready"
         } else {
             "blocked"
         };
-        let snapshot_json = serde_json::to_value(&request.account)
-            .map_err(|error| ApiError::internal("serialize EA account", error))?;
+        let snapshot_json = if managed_binding.is_some() {
+            serde_json::json!({
+                "managedEa": true,
+                "eaVersion": request.account.ea_version,
+                "terminalBuild": request.account.terminal_build
+            })
+        } else {
+            serde_json::to_value(&request.account)
+                .map_err(|error| ApiError::internal("serialize EA account", error))?
+        };
+        let external_account_ref = managed_binding
+            .as_ref()
+            .map(|_| account_id.as_str())
+            .unwrap_or_else(|| request.account.login.trim());
         let account_result = sqlx::query(
             r#"
             INSERT INTO execution_accounts (
@@ -1575,9 +1994,17 @@ impl GatewayState {
             )
             ON CONFLICT (id) DO UPDATE SET
                 broker_code = EXCLUDED.broker_code,
-                external_account_ref = EXCLUDED.external_account_ref,
+                external_account_ref = CASE
+                  WHEN execution_accounts.connector_kind = 'windows_vm'
+                    THEN execution_accounts.external_account_ref
+                  ELSE EXCLUDED.external_account_ref
+                END,
                 server = EXCLUDED.server,
-                label = EXCLUDED.label,
+                label = CASE
+                  WHEN execution_accounts.connector_kind = 'windows_vm'
+                    THEN execution_accounts.label
+                  ELSE EXCLUDED.label
+                END,
                 mode = EXCLUDED.mode,
                 status = EXCLUDED.status,
                 currency = EXCLUDED.currency,
@@ -1594,8 +2021,12 @@ impl GatewayState {
         .bind(account_id.as_str())
         .bind(owner_uuid)
         .bind(broker_code)
-        .bind(request.account.login.trim())
-        .bind(request.account.server.trim())
+        .bind(external_account_ref)
+        .bind(if managed_binding.is_some() {
+            ""
+        } else {
+            request.account.server.trim()
+        })
         .bind(label.trim())
         .bind(account_mode_name(request.account.mode))
         .bind(status)
@@ -1613,6 +2044,30 @@ impl GatewayState {
                 "ACCOUNT_IDENTITY_COLLISION",
                 "account identity conflicts with an existing owner",
             ));
+        }
+        if let Some(binding) = &managed_binding {
+            let updated = sqlx::query(
+                r#"
+                UPDATE execution_mt5_vm_accounts
+                SET connection_status = 'synchronizing', agent_version = $3,
+                    terminal_version = $4, last_heartbeat_at = now()
+                WHERE user_id = $1 AND account_id = $2
+                  AND worker_id = $5 AND connection_revision = $6
+                  AND lease_generation = $7
+                  AND disconnect_requested_revision IS NULL
+                "#,
+            )
+            .bind(owner_uuid)
+            .bind(account_id.as_str())
+            .bind(request.account.ea_version.as_deref())
+            .bind(request.account.terminal_build.to_string())
+            .bind(&binding.worker_id)
+            .bind(binding.connection_revision as i64)
+            .bind(binding.lease_generation as i64)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| ApiError::database("mark managed EA synchronizing", error))?;
+            require_single_managed_session_update(updated.rows_affected())?;
         }
 
         // Exactly one active EA session owns command leases for an account.
@@ -1639,12 +2094,15 @@ impl GatewayState {
             r#"
             INSERT INTO execution_ea_sessions (
                 id, user_id, account_id, agent_id, token_hash,
-                expires_at, absolute_expires_at
+                expires_at, absolute_expires_at, managed_worker_id,
+                worker_session_generation, lease_generation, connection_revision,
+                managed_slot_id, managed_terminal_pid, managed_gateway_origin
             )
             VALUES (
                 $1, $2, $3, $4, $5,
                 to_timestamp($6::double precision / 1000.0),
-                to_timestamp($7::double precision / 1000.0)
+                to_timestamp($7::double precision / 1000.0),
+                $8, $9, $10, $11, $12, $13, $14
             )
             "#,
         )
@@ -1655,6 +2113,41 @@ impl GatewayState {
         .bind(sha256(raw_token.as_bytes()).to_vec())
         .bind(expires_at_ms as i64)
         .bind(absolute_expires_at_ms as i64)
+        .bind(
+            managed_binding
+                .as_ref()
+                .map(|binding| binding.worker_id.as_str()),
+        )
+        .bind(
+            managed_binding
+                .as_ref()
+                .map(|binding| binding.worker_session_generation as i64),
+        )
+        .bind(
+            managed_binding
+                .as_ref()
+                .map(|binding| binding.lease_generation as i64),
+        )
+        .bind(
+            managed_binding
+                .as_ref()
+                .map(|binding| binding.connection_revision as i64),
+        )
+        .bind(
+            managed_binding
+                .as_ref()
+                .map(|binding| binding.slot_id.as_str()),
+        )
+        .bind(
+            managed_binding
+                .as_ref()
+                .map(|binding| i64::from(binding.terminal_pid)),
+        )
+        .bind(
+            managed_binding
+                .as_ref()
+                .map(|binding| binding.gateway_origin.as_str()),
+        )
         .execute(&mut *transaction)
         .await
         .map_err(|error| ApiError::database("insert EA session", error))?;
@@ -1667,7 +2160,11 @@ impl GatewayState {
             )
             VALUES (
                 $1, 'ea', $2, 'session.paired', 'execution_account', $3,
-                jsonb_build_object('agentId', $4, 'mode', $5, 'server', $6)
+                jsonb_build_object(
+                  'agentId', $4, 'mode', $5, 'server', $6,
+                  'managedSlotId', $7, 'managedTerminalPid', $8,
+                  'managedGatewayOrigin', $9
+                )
             )
             "#,
         )
@@ -1676,7 +2173,26 @@ impl GatewayState {
         .bind(account_id.as_str())
         .bind(request.agent_id.trim())
         .bind(account_mode_name(request.account.mode))
-        .bind(request.account.server.trim())
+        .bind(
+            managed_binding
+                .is_none()
+                .then(|| request.account.server.trim()),
+        )
+        .bind(
+            managed_binding
+                .as_ref()
+                .map(|binding| binding.slot_id.as_str()),
+        )
+        .bind(
+            managed_binding
+                .as_ref()
+                .map(|binding| i64::from(binding.terminal_pid)),
+        )
+        .bind(
+            managed_binding
+                .as_ref()
+                .map(|binding| binding.gateway_origin.as_str()),
+        )
         .execute(&mut *transaction)
         .await
         .map_err(|error| ApiError::database("audit EA pairing", error))?;
@@ -1724,10 +2240,38 @@ impl GatewayState {
                       AND accounts.id = execution_ea_sessions.account_id
                       AND accounts.status <> 'disabled'
                   )
+                  AND (
+                    execution_ea_sessions.managed_worker_id IS NULL OR EXISTS (
+                      SELECT 1
+                      FROM execution_mt5_vm_accounts managed
+                      JOIN execution_mt5_vm_workers worker
+                        ON worker.worker_id = managed.worker_id
+                      JOIN execution_mt5_vm_account_leases lease
+                        ON lease.account_id = managed.account_id
+                      WHERE managed.user_id = execution_ea_sessions.user_id
+                        AND managed.account_id = execution_ea_sessions.account_id
+                        AND managed.worker_id = execution_ea_sessions.managed_worker_id
+                        AND managed.lease_generation = execution_ea_sessions.lease_generation
+                        AND managed.connection_revision =
+                            execution_ea_sessions.connection_revision
+                        AND managed.disconnect_requested_revision IS NULL
+                        AND worker.session_generation =
+                            execution_ea_sessions.worker_session_generation
+                        AND worker.status = 'healthy' AND NOT worker.drain
+                        AND worker.heartbeat_expires_at > now()
+                        AND lease.worker_id = managed.worker_id
+                        AND lease.worker_session_generation = worker.session_generation
+                        AND lease.generation = managed.lease_generation
+                        AND lease.status = 'active' AND lease.expires_at > now()
+                    )
+                  )
                 RETURNING
                     id,
                     user_id::text AS owner_id,
                     account_id,
+                    managed_worker_id, worker_session_generation,
+                    lease_generation, connection_revision, managed_slot_id,
+                    managed_terminal_pid, managed_gateway_origin,
                     floor(extract(epoch FROM expires_at) * 1000)::bigint
                         AS expires_at_ms
                 "#,
@@ -1737,23 +2281,71 @@ impl GatewayState {
             .await
             .map_err(|error| ApiError::database("authenticate EA session", error))?
             .ok_or_else(|| ApiError::unauthorized("EA session is invalid or expired"))?;
+            let owner_uuid = row
+                .try_get::<String, _>("owner_id")
+                .map_err(|error| ApiError::database("decode EA owner", error))?;
+            let account_id = row
+                .try_get::<String, _>("account_id")
+                .map_err(|error| ApiError::database("decode EA account id", error))?;
+            let managed_identity = if row
+                .try_get::<Option<String>, _>("managed_worker_id")
+                .map_err(|error| ApiError::database("decode managed EA session worker", error))?
+                .is_some()
+            {
+                let identity = sqlx::query(
+                    r#"
+                    SELECT identity_fingerprint
+                    FROM execution_mt5_vm_accounts
+                    WHERE user_id = $1 AND account_id = $2
+                      AND disconnect_requested_revision IS NULL
+                    "#,
+                )
+                .bind(parse_owner_id(&owner_uuid)?)
+                .bind(&account_id)
+                .fetch_optional(database)
+                .await
+                .map_err(|error| ApiError::database("load managed EA session identity", error))?
+                .ok_or_else(|| ApiError::unauthorized("managed EA session is fenced"))?;
+                let terminal_pid = row
+                    .try_get::<Option<i64>, _>("managed_terminal_pid")
+                    .map_err(map_database_error("decode managed EA session terminal PID"))?
+                    .and_then(|pid| pid.try_into().ok())
+                    .ok_or_else(|| ApiError::unauthorized("managed EA session is fenced"))?;
+                let identity_fingerprint = identity
+                    .try_get("identity_fingerprint")
+                    .map_err(map_database_error(DECODE_SESSION_IDENTITY))?;
+                let slot_id = row
+                    .try_get::<Option<String>, _>("managed_slot_id")
+                    .map_err(map_database_error(DECODE_SESSION_SLOT))?;
+                let slot_id = required_managed_session_value(slot_id)?;
+                let gateway_origin = row
+                    .try_get::<Option<String>, _>("managed_gateway_origin")
+                    .map_err(map_database_error(DECODE_SESSION_GATEWAY))?;
+                let gateway_origin = required_managed_session_value(gateway_origin)?;
+                Some(ManagedEaSessionIdentity {
+                    identity_fingerprint,
+                    runtime_binding: EaManagedRuntimeBinding {
+                        slot_id,
+                        terminal_pid,
+                        gateway_origin,
+                    },
+                })
+            } else {
+                None
+            };
             return Ok(EaSession {
                 session_id: SessionId::new(
                     row.try_get::<Uuid, _>("id")
                         .map_err(|error| ApiError::database("decode EA session id", error))?
                         .to_string(),
                 ),
-                account_id: AccountId::new(
-                    row.try_get::<String, _>("account_id")
-                        .map_err(|error| ApiError::database("decode EA account id", error))?,
-                ),
-                owner_id: row
-                    .try_get("owner_id")
-                    .map_err(|error| ApiError::database("decode EA owner", error))?,
+                account_id: AccountId::new(account_id),
+                owner_id: owner_uuid,
                 expires_at_ms: row
                     .try_get::<i64, _>("expires_at_ms")
                     .map_err(|error| ApiError::database("decode EA session expiry", error))?
                     as u64,
+                managed_identity,
             });
         }
         let now = now_ms();
@@ -1783,15 +2375,33 @@ impl GatewayState {
                 r#"
                 UPDATE execution_accounts
                 SET broker_code = $3,
-                    external_account_ref = $4,
-                    server = $5,
+                    external_account_ref = CASE
+                      WHEN connector_kind = 'windows_vm' THEN external_account_ref
+                      ELSE $4
+                    END,
+                    server = CASE
+                      WHEN connector_kind = 'windows_vm' THEN ''
+                      ELSE $5
+                    END,
                     mode = $6,
-                    status = $7,
+                    status = CASE
+                      WHEN connector_kind = 'windows_vm' THEN status
+                      ELSE $7
+                    END,
                     currency = $8,
                     balance = $9,
                     equity = $10,
                     trade_allowed = $11,
-                    metadata = $12,
+                    metadata = CASE
+                      WHEN connector_kind = 'windows_vm' THEN jsonb_strip_nulls(
+                        jsonb_build_object(
+                          'managedEa', true,
+                          'eaVersion', $12::jsonb -> 'eaVersion',
+                          'terminalBuild', $12::jsonb -> 'terminalBuild'
+                        )
+                      )
+                      ELSE $12
+                    END,
                     last_seen_at = now(),
                     updated_at = now()
                 WHERE user_id = $1 AND id = $2 AND status <> 'disabled'
@@ -1846,6 +2456,26 @@ impl GatewayState {
         Ok(())
     }
 
+    async fn advance_managed_ea_readiness_after_event(
+        &self,
+        owner_id: &str,
+        account_id: &AccountId,
+    ) -> Result<(), ApiError> {
+        let Some(database) = &self.inner.database else {
+            return Ok(());
+        };
+        let owner_uuid = parse_owner_id(owner_id)?;
+        sqlx::query("SELECT execution_advance_mt5_managed_readiness($1, $2, $3)")
+            .bind(owner_uuid)
+            .bind(account_id.as_str())
+            .bind(EA_POLL_FRESHNESS.as_millis() as i64)
+            .execute(database)
+            .await
+            .map_err(|error| ApiError::database("advance managed EA readiness", error))?;
+        Ok(())
+    }
+
+    #[allow(clippy::needless_borrow)]
     async fn prop_risk_guard_view(
         &self,
         owner_uuid: Uuid,
@@ -1993,6 +2623,7 @@ impl GatewayState {
         })
     }
 
+    #[allow(clippy::needless_borrow)]
     async fn load_prop_risk_runtime(
         &self,
         owner_uuid: Uuid,
@@ -4288,7 +4919,7 @@ impl GatewayState {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::collapsible_if)]
     async fn stage_generated_copier_work(
         &self,
         transaction: &mut sqlx_postgres::PgConnection,
@@ -5106,6 +5737,7 @@ impl GatewayState {
         Ok(processed)
     }
 
+    #[allow(clippy::too_many_arguments, clippy::collapsible_if)]
     async fn execute_continuous_copier_work(
         &self,
         owner_uuid: Uuid,
@@ -5903,6 +6535,7 @@ impl GatewayState {
         })
     }
 
+    #[allow(clippy::too_many_arguments, clippy::collapsible_if)]
     async fn persist_copier_outbox(
         &self,
         owner_uuid: Uuid,
@@ -7427,24 +8060,30 @@ impl GatewayState {
         })?;
         let account_exists = sqlx::query_scalar::<_, bool>(
             r#"
-            SELECT EXISTS (
-                SELECT 1
-                FROM execution_accounts
-                WHERE user_id = $1
-                  AND id = $2
-                  AND status <> 'disabled'
-                  AND venue_kind = 'metatrader5'
-            )
+            SELECT true
+            FROM execution_accounts account
+            LEFT JOIN execution_mt5_vm_accounts managed
+              ON managed.user_id = account.user_id
+             AND managed.account_id = account.id
+            WHERE account.user_id = $1
+              AND account.id = $2
+              AND account.status <> 'disabled'
+              AND account.venue_kind = 'metatrader5'
+              AND (
+                account.connector_kind <> 'windows_vm' OR (
+                  managed.account_id IS NOT NULL AND
+                  managed.disconnect_requested_revision IS NULL
+                )
+              )
+            FOR UPDATE OF account
             "#,
         )
         .bind(owner_uuid)
         .bind(target.account_id.as_str())
-        .fetch_one(&mut *transaction)
+        .fetch_optional(&mut *transaction)
         .await
-        .map_err(|error| {
-            error!(%error, "failed to resolve deferred target account");
-            AdapterError::Transport("deferred order repository unavailable".into())
-        })?;
+        .map_err(deferred_repository_error("resolve deferred target account"))?
+        .unwrap_or(false);
         if !account_exists {
             return Err(AdapterError::AccountOffline);
         }
@@ -7621,6 +8260,20 @@ impl GatewayState {
                 WHERE user_id = $1
                   AND target_account_id = $2
                   AND status = 'waiting'
+                  AND EXISTS (
+                    SELECT 1
+                    FROM execution_accounts account
+                    LEFT JOIN execution_mt5_vm_accounts managed
+                      ON managed.user_id = account.user_id
+                     AND managed.account_id = account.id
+                    WHERE account.user_id = $1 AND account.id = $2
+                      AND (
+                        account.connector_kind <> 'windows_vm' OR (
+                          account.status = 'ready' AND account.trade_allowed AND
+                          managed.disconnect_requested_revision IS NULL
+                        )
+                      )
+                  )
                   AND deliver_by > now()
                   AND next_attempt_at <= now()
                   AND (lease_expires_at IS NULL OR lease_expires_at <= now())
@@ -8469,6 +9122,10 @@ async fn poll_commands(
                   AND terminal_ack_at IS NULL
                   AND status IN ('ready', 'queued', 'unknown')
                   AND (
+                    status <> 'unknown' OR
+                    reject_code IS DISTINCT FROM 'DELIVERY_OUTCOME_UNKNOWN'
+                  )
+                  AND (
                       first_delivered_at IS NULL OR
                       reject_code IS DISTINCT FROM 'DELIVERY_OUTCOME_UNKNOWN'
                   )
@@ -8541,6 +9198,10 @@ async fn poll_commands(
                   AND target_account_id = $2
                   AND terminal_ack_at IS NULL
                   AND status IN ('ready', 'queued', 'unknown')
+                  AND (
+                    status <> 'unknown' OR
+                    reject_code IS DISTINCT FROM 'DELIVERY_OUTCOME_UNKNOWN'
+                  )
                   AND COALESCE(first_delivered_at, next_attempt_at, created_at) >
                       now() - ($6 * interval '1 millisecond')
                   AND next_attempt_at <= now()
@@ -8656,13 +9317,7 @@ async fn accept_events(
             "EA and gateway protocol versions do not match",
         ));
     }
-    if stable_mt5_account_id(&session.owner_id, &batch.account) != session.account_id {
-        return Err(ApiError::new(
-            StatusCode::FORBIDDEN,
-            "ACCOUNT_SESSION_MISMATCH",
-            "EA account identity changed; create a new session",
-        ));
-    }
+    validate_session_account_identity(&state.inner.mt5_identity_key, &session, &batch.account)?;
     let normalized_timestamps = normalize_legacy_ea_clock_skew(&mut batch, now_ms());
     if normalized_timestamps > 0 {
         warn!(
@@ -8727,6 +9382,9 @@ async fn accept_events(
     let events = normalize_events(raw_events)?;
     state
         .persist_database_payload(&session, &[], &[], &[], false, &events)
+        .await?;
+    state
+        .advance_managed_ea_readiness_after_event(&session.owner_id, &session.account_id)
         .await?;
     // A deferred copy is activated only after this authenticated terminal has
     // refreshed its account and instrument snapshots. The next EA poll will
@@ -9722,6 +10380,7 @@ async fn list_copy_groups(
 ) -> Result<Json<Vec<CopyGroupView>>, ApiError> {
     require_admin(&state, &headers)?;
     let owner_uuid = parse_owner_id(&query.owner_id)?;
+    let group_id = parse_optional_copy_group_id(query.group_id.as_ref())?;
     let database = state.inner.database.as_ref().ok_or_else(|| {
         ApiError::new(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -9729,11 +10388,6 @@ async fn list_copy_groups(
             "continuous copier settings require PostgreSQL",
         )
     })?;
-    let group_id = query
-        .group_id
-        .as_ref()
-        .map(|value| parse_copy_group_id(value))
-        .transpose()?;
     Ok(Json(
         load_copy_group_views(database, owner_uuid, &query.owner_id, group_id).await?,
     ))
@@ -10814,6 +11468,10 @@ fn parse_copy_group_id(value: &CopyGroupId) -> Result<Uuid, ApiError> {
     })
 }
 
+fn parse_optional_copy_group_id(value: Option<&CopyGroupId>) -> Result<Option<Uuid>, ApiError> {
+    value.map(parse_copy_group_id).transpose()
+}
+
 fn copy_group_revision_conflict() -> ApiError {
     ApiError::new(
         StatusCode::CONFLICT,
@@ -10974,6 +11632,7 @@ async fn issue_pairing_token(
     ))
 }
 
+#[allow(clippy::collapsible_if)]
 async fn route_admin_order(
     State(state): State<GatewayState>,
     headers: HeaderMap,
@@ -11558,6 +12217,7 @@ fn validate_pending_order_modification(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn validate_prop_risk_modification(
     rules: &PropRiskRules,
     actions: &PropRiskActions,
@@ -11728,6 +12388,18 @@ fn validate_session_request(request: &EaSessionRequest) -> Result<(), ApiError> 
         ));
     }
     validate_plain_text("agentId", &request.agent_id, 1, 200)?;
+    if let Some(binding) = &request.runtime_binding {
+        validate_identifier("slotId", &binding.slot_id, 64)?;
+        if binding.terminal_pid == 0
+            || !mt5_vm_control::valid_ea_gateway_origin(&binding.gateway_origin)
+        {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "MANAGED_EA_RUNTIME_BINDING_INVALID",
+                "managed EA runtime binding is invalid",
+            ));
+        }
+    }
     validate_account_snapshot(&request.account)
 }
 
@@ -12110,6 +12782,87 @@ fn floor_to_step(value: Decimal, step: Decimal) -> Decimal {
         return value;
     }
     (value / step).floor() * step
+}
+
+fn validate_managed_ea_identity(
+    identity_key: &[u8; 32],
+    binding: &ManagedEaPairingBinding,
+    account: &EaAccountSnapshot,
+) -> Result<(), ApiError> {
+    validate_managed_identity_fingerprint(identity_key, &binding.identity_fingerprint, account)
+}
+
+fn validate_managed_runtime_binding(
+    expected: &ManagedEaPairingBinding,
+    observed: Option<&EaManagedRuntimeBinding>,
+) -> Result<(), ApiError> {
+    let matches = observed.is_some_and(|observed| {
+        observed.slot_id == expected.slot_id
+            && observed.terminal_pid == expected.terminal_pid
+            && observed.gateway_origin == expected.gateway_origin
+    });
+    if matches {
+        Ok(())
+    } else {
+        Err(ApiError::new(
+            StatusCode::CONFLICT,
+            "MANAGED_EA_RUNTIME_BINDING_MISMATCH",
+            "managed EA runtime does not match the attested worker slot",
+        ))
+    }
+}
+
+fn validate_managed_identity_fingerprint(
+    identity_key: &[u8; 32],
+    expected_fingerprint: &[u8],
+    account: &EaAccountSnapshot,
+) -> Result<(), ApiError> {
+    let observed = mt5_identity_fingerprint(identity_key, &account.login, &account.server);
+    if expected_fingerprint.len() != observed.len()
+        || !secret_matches(
+            &observed,
+            expected_fingerprint.try_into().expect("length checked"),
+        )
+    {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            "MANAGED_EA_IDENTITY_MISMATCH",
+            "managed EA terminal identity does not match the reserved account",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_session_account_identity(
+    identity_key: &[u8; 32],
+    session: &EaSession,
+    account: &EaAccountSnapshot,
+) -> Result<(), ApiError> {
+    if let Some(identity) = &session.managed_identity {
+        if validate_identifier("slotId", &identity.runtime_binding.slot_id, 64).is_err()
+            || identity.runtime_binding.terminal_pid == 0
+            || !mt5_vm_control::valid_ea_gateway_origin(&identity.runtime_binding.gateway_origin)
+        {
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                "MANAGED_EA_RUNTIME_BINDING_INVALID",
+                "managed EA session runtime binding is invalid",
+            ));
+        }
+        return validate_managed_identity_fingerprint(
+            identity_key,
+            &identity.identity_fingerprint,
+            account,
+        );
+    }
+    if stable_mt5_account_id(&session.owner_id, account) != session.account_id {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "ACCOUNT_SESSION_MISMATCH",
+            "EA account identity changed; create a new session",
+        ));
+    }
+    Ok(())
 }
 
 fn stable_mt5_account_id(owner_id: &str, account: &EaAccountSnapshot) -> AccountId {
@@ -12781,6 +13534,29 @@ fn sha256(value: &[u8]) -> [u8; 32] {
     Sha256::digest(value).into()
 }
 
+fn derive_mt5_identity_key(secret: &str) -> [u8; 32] {
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
+        .expect("HMAC accepts an arbitrary secret length");
+    mac.update(b"marketlens/mt5-managed-identity/v1");
+    mac.finalize().into_bytes().into()
+}
+
+fn mt5_identity_fingerprint(key: &[u8; 32], login: &str, server: &str) -> [u8; 32] {
+    let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC accepts a SHA-256-sized key");
+    mac.update(server.trim().to_ascii_lowercase().as_bytes());
+    mac.update(&[0]);
+    mac.update(login.trim().as_bytes());
+    mac.finalize().into_bytes().into()
+}
+
+fn mt5_server_fingerprint(key: &[u8; 32], server: &str) -> [u8; 32] {
+    let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC accepts a SHA-256-sized key");
+    mac.update(b"server");
+    mac.update(&[0]);
+    mac.update(server.trim().to_ascii_lowercase().as_bytes());
+    mac.finalize().into_bytes().into()
+}
+
 fn secret_matches(candidate: &[u8; 32], expected: &[u8; 32]) -> bool {
     candidate
         .iter()
@@ -12875,6 +13651,83 @@ struct ApiError {
     body: ApiErrorBody,
 }
 
+const DECODE_PAIRING_WORKER_GENERATION: &str = "decode managed pairing worker generation";
+const DECODE_PAIRING_LEASE_GENERATION: &str = "decode managed pairing lease generation";
+const DECODE_PAIRING_CONNECTION_REVISION: &str = "decode managed pairing connection revision";
+const DECODE_PAIRING_IDENTITY: &str = "decode managed pairing identity fingerprint";
+const DECODE_PAIRING_WORKER: &str = "decode managed pairing worker";
+const DECODE_PAIRING_SLOT: &str = "decode managed pairing slot";
+const DECODE_SESSION_IDENTITY: &str = "decode managed EA session identity fingerprint";
+const DECODE_SESSION_SLOT: &str = "decode managed EA session slot";
+const DECODE_SESSION_GATEWAY: &str = "decode managed EA session gateway origin";
+
+#[cfg(test)]
+async fn commit_managed_pairing_transaction(
+    transaction: sqlx_core::transaction::Transaction<'_, sqlx_postgres::Postgres>,
+) -> Result<(), ApiError> {
+    transaction.commit().await.map_err(map_database_error(
+        "commit managed EA bootstrap transaction",
+    ))
+}
+
+fn map_database_error(operation: &'static str) -> impl FnOnce(sqlx::Error) -> ApiError {
+    move |error| ApiError::database(operation, error)
+}
+
+fn deferred_repository_error(operation: &'static str) -> impl FnOnce(sqlx::Error) -> AdapterError {
+    move |error| {
+        error!(%error, operation, "deferred order repository operation failed");
+        AdapterError::Transport("deferred order repository unavailable".into())
+    }
+}
+
+fn require_active_managed_assignment(active: bool) -> Result<(), ApiError> {
+    if active {
+        return Ok(());
+    }
+    Err(ApiError::new(
+        StatusCode::CONFLICT,
+        "MANAGED_EA_ASSIGNMENT_FENCED",
+        "managed EA assignment is no longer active",
+    ))
+}
+
+fn validate_unmanaged_runtime_binding(
+    runtime_binding: Option<&EaManagedRuntimeBinding>,
+) -> Result<(), ApiError> {
+    if runtime_binding.is_none() {
+        return Ok(());
+    }
+    Err(ApiError::new(
+        StatusCode::BAD_REQUEST,
+        "MANAGED_EA_RUNTIME_BINDING_UNEXPECTED",
+        "runtime binding is valid only for a managed EA bootstrap",
+    ))
+}
+
+fn required_managed_session_value<T>(value: Option<T>) -> Result<T, ApiError> {
+    value.ok_or_else(|| ApiError::unauthorized("managed EA session is fenced"))
+}
+
+fn invalid_managed_terminal_pid<T>(_: T) -> ApiError {
+    ApiError::new(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "MANAGED_EA_RUNTIME_BINDING_INVALID",
+        "managed EA runtime binding is invalid",
+    )
+}
+
+fn require_single_managed_session_update(rows_affected: u64) -> Result<(), ApiError> {
+    if rows_affected == 1 {
+        return Ok(());
+    }
+    Err(ApiError::new(
+        StatusCode::CONFLICT,
+        "MANAGED_EA_ASSIGNMENT_FENCED",
+        "managed EA assignment changed before session creation",
+    ))
+}
+
 impl ApiError {
     fn new(status: StatusCode, code: &'static str, message: impl Into<String>) -> Self {
         Self {
@@ -12954,7 +13807,278 @@ mod tests {
     const OWNER_A: &str = "11111111-1111-4111-8111-111111111111";
     const OWNER_B: &str = "22222222-2222-4222-8222-222222222222";
     const PAIR_TOKEN: &str = "pairing-token-with-at-least-32-characters";
+    const MANAGED_PAIR_TOKEN: &str =
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const EXPIRED_PAIR_TOKEN: &str = "expired-pairing-token-at-least-32-chars";
+
+    #[test]
+    fn managed_database_error_helpers_are_fail_closed() {
+        let database =
+            map_database_error("synthetic managed database operation")(sqlx::Error::RowNotFound);
+        assert_eq!(database.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(database.body.code, "INTERNAL_ERROR");
+
+        assert!(require_single_managed_session_update(1).is_ok());
+        let fenced = require_single_managed_session_update(0)
+            .expect_err("zero updated rows must fence a stale managed assignment");
+        assert_eq!(fenced.status, StatusCode::CONFLICT);
+        assert_eq!(fenced.body.code, "MANAGED_EA_ASSIGNMENT_FENCED");
+
+        let invalid_pid = invalid_managed_terminal_pid(());
+        assert_eq!(invalid_pid.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(invalid_pid.body.code, "MANAGED_EA_RUNTIME_BINDING_INVALID");
+
+        assert!(require_active_managed_assignment(true).is_ok());
+        let inactive = require_active_managed_assignment(false)
+            .expect_err("an inactive managed assignment must be fenced");
+        assert_eq!(inactive.body.code, "MANAGED_EA_ASSIGNMENT_FENCED");
+
+        assert!(validate_unmanaged_runtime_binding(None).is_ok());
+        let runtime_binding = EaManagedRuntimeBinding {
+            slot_id: "slot-01".into(),
+            terminal_pid: 42,
+            gateway_origin: "http://127.0.0.1:8790".into(),
+        };
+        let unexpected = validate_unmanaged_runtime_binding(Some(&runtime_binding))
+            .expect_err("an unmanaged pairing cannot carry a managed runtime binding");
+        assert_eq!(
+            unexpected.body.code,
+            "MANAGED_EA_RUNTIME_BINDING_UNEXPECTED"
+        );
+
+        assert_eq!(required_managed_session_value(Some(7_u64)).unwrap(), 7);
+        assert_eq!(
+            required_managed_session_value::<u64>(None)
+                .expect_err("missing managed identity field must fence the session")
+                .status,
+            StatusCode::UNAUTHORIZED
+        );
+
+        let repository = deferred_repository_error("synthetic deferred repository operation")(
+            sqlx::Error::RowNotFound,
+        );
+        assert!(matches!(repository, AdapterError::Transport(_)));
+    }
+
+    #[test]
+    fn optional_copy_group_ids_are_validated_when_present() {
+        assert_eq!(parse_optional_copy_group_id(None).unwrap(), None);
+        let valid = CopyGroupId::new("11111111-1111-4111-8111-111111111111");
+        assert_eq!(
+            parse_optional_copy_group_id(Some(&valid)).unwrap(),
+            Some(Uuid::parse_str(valid.as_str()).unwrap())
+        );
+        let invalid = CopyGroupId::new("not-a-uuid");
+        assert_eq!(
+            parse_optional_copy_group_id(Some(&invalid))
+                .expect_err("invalid optional group id must fail")
+                .body
+                .code,
+            "COPY_GROUP_ID_INVALID"
+        );
+    }
+
+    #[test]
+    fn modified_position_commands_retain_their_command_id() {
+        let command = EaCommand::ModifyPosition {
+            command: ModifyPositionCommand {
+                command_id: CommandId::new("modify-position-01"),
+                idempotency_key: IdempotencyKey::new("modify-position-idempotency-01"),
+                target_account_id: AccountId::new("account-01"),
+                broker_position_id: "position-01".into(),
+                stop_loss: Some(Decimal::new(109, 2)),
+                take_profit: Some(Decimal::new(112, 2)),
+            },
+        };
+        assert_eq!(command_id(&command), Some("modify-position-01"));
+    }
+
+    #[tokio::test]
+    async fn copy_group_list_validates_the_optional_group_before_database_access() {
+        let error = list_copy_groups(
+            State(GatewayState::new(ADMIN_TOKEN, None)),
+            admin_headers(),
+            Query(CopyGroupQuery {
+                owner_id: OWNER_A.into(),
+                group_id: None,
+            }),
+        )
+        .await
+        .expect_err("an in-memory gateway cannot serve persisted copier settings");
+        assert_eq!(error.body.code, "PERSISTENT_STORE_REQUIRED");
+    }
+
+    #[tokio::test]
+    async fn file_backed_identity_config_is_fail_closed_and_builds_production_state() {
+        let root = env::temp_dir().join(format!(
+            "marketlens-gateway-config-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        fs::create_dir_all(root.join("nested")).expect("create config fixture");
+        let key_path = root.join("identity.key");
+        let large_path = root.join("large.key");
+        let invalid_utf8_path = root.join("invalid-utf8.key");
+        let short_path = root.join("short.key");
+        let multiline_path = root.join("multiline.key");
+        let identity = "identity-hmac-key-material-that-is-distinct";
+
+        unsafe { env::remove_var("TEST_MT5_IDENTITY_FILE") };
+        assert!(
+            required_secret_file("TEST_MT5_IDENTITY_FILE")
+                .unwrap_err()
+                .contains("is required")
+        );
+        unsafe { env::set_var("TEST_MT5_IDENTITY_FILE", "relative.key") };
+        assert!(
+            required_secret_file("TEST_MT5_IDENTITY_FILE")
+                .unwrap_err()
+                .contains("absolute path")
+        );
+        unsafe { env::set_var("TEST_MT5_IDENTITY_FILE", root.join("missing.key")) };
+        assert!(
+            required_secret_file("TEST_MT5_IDENTITY_FILE")
+                .unwrap_err()
+                .contains("readable regular file")
+        );
+        unsafe { env::set_var("TEST_MT5_IDENTITY_FILE", &root) };
+        assert!(
+            required_secret_file("TEST_MT5_IDENTITY_FILE")
+                .unwrap_err()
+                .contains("small regular file")
+        );
+
+        fs::write(&large_path, vec![b'x'; 4097]).expect("write oversized identity key");
+        unsafe { env::set_var("TEST_MT5_IDENTITY_FILE", &large_path) };
+        assert!(
+            required_secret_file("TEST_MT5_IDENTITY_FILE")
+                .unwrap_err()
+                .contains("small regular file")
+        );
+        fs::write(&key_path, identity).expect("write identity key");
+        unsafe {
+            env::set_var(
+                "TEST_MT5_IDENTITY_FILE",
+                root.join("nested").join("..").join("identity.key"),
+            )
+        };
+        assert!(
+            required_secret_file("TEST_MT5_IDENTITY_FILE")
+                .unwrap_err()
+                .contains("must not traverse a link")
+        );
+
+        fs::write(&invalid_utf8_path, [0xff, 0xfe, 0xfd]).expect("write invalid UTF-8 key");
+        unsafe { env::set_var("TEST_MT5_IDENTITY_FILE", &invalid_utf8_path) };
+        assert!(
+            required_secret_file("TEST_MT5_IDENTITY_FILE")
+                .unwrap_err()
+                .contains("valid UTF-8")
+        );
+        fs::write(&short_path, "short").expect("write short key");
+        unsafe { env::set_var("TEST_MT5_IDENTITY_FILE", &short_path) };
+        assert!(
+            required_secret_file("TEST_MT5_IDENTITY_FILE")
+                .unwrap_err()
+                .contains("at least 32")
+        );
+        fs::write(&multiline_path, format!("{identity}\nsecond-line"))
+            .expect("write multiline key");
+        unsafe { env::set_var("TEST_MT5_IDENTITY_FILE", &multiline_path) };
+        assert!(
+            required_secret_file("TEST_MT5_IDENTITY_FILE")
+                .unwrap_err()
+                .contains("invalid characters")
+        );
+
+        unsafe {
+            env::set_var("EXECUTION_ADMIN_TOKEN", ADMIN_TOKEN);
+            env::set_var("EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE", &key_path);
+            env::set_var(
+                "EXECUTION_MT5_VM_BOOTSTRAP_TOKEN",
+                "bootstrap-token-that-is-distinct-and-long-enough",
+            );
+            env::set_var("DATABASE_URL", "postgres://localhost/execution");
+            env::set_var("EXECUTION_GATEWAY_BIND", "127.0.0.1:18790");
+            env::set_var("EXECUTION_ADMIN_BIND", "127.0.0.1:18791");
+        }
+        let config = Config::from_env().expect("valid file-backed config");
+        assert_eq!(config.mt5_identity_hmac_key, identity);
+        let database = PgPoolOptions::new()
+            .connect_lazy(&config.database_url)
+            .expect("lazy PostgreSQL pool");
+        let state = production_state(&config, database);
+        assert!(state.inner.database.is_some());
+
+        unsafe { env::set_var("EXECUTION_ADMIN_TOKEN", identity) };
+        assert!(
+            Config::from_env()
+                .err()
+                .expect("identity/admin collision must fail")
+                .contains("distinct")
+        );
+        unsafe {
+            env::set_var("EXECUTION_ADMIN_TOKEN", ADMIN_TOKEN);
+            env::set_var("EXECUTION_MT5_VM_BOOTSTRAP_TOKEN", identity);
+        }
+        assert!(
+            Config::from_env()
+                .err()
+                .expect("identity/bootstrap collision must fail")
+                .contains("distinct")
+        );
+
+        for name in [
+            "TEST_MT5_IDENTITY_FILE",
+            "EXECUTION_ADMIN_TOKEN",
+            "EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE",
+            "EXECUTION_MT5_VM_BOOTSTRAP_TOKEN",
+            "DATABASE_URL",
+            "EXECUTION_GATEWAY_BIND",
+            "EXECUTION_ADMIN_BIND",
+        ] {
+            unsafe { env::remove_var(name) };
+        }
+        fs::remove_dir_all(root).expect("remove config fixture");
+    }
+
+    #[test]
+    fn gateway_main_builds_production_state_without_connecting_in_tests() {
+        let root = env::temp_dir().join(format!(
+            "marketlens-gateway-main-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        fs::create_dir_all(&root).expect("create main config fixture");
+        let key_path = root.join("identity.key");
+        fs::write(&key_path, "gateway-main-identity-key-material-01")
+            .expect("write main identity key");
+        unsafe {
+            env::set_var("EXECUTION_ADMIN_TOKEN", ADMIN_TOKEN);
+            env::set_var("EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE", &key_path);
+            env::set_var(
+                "EXECUTION_MT5_VM_BOOTSTRAP_TOKEN",
+                "gateway-main-bootstrap-token-material-01",
+            );
+            env::set_var("DATABASE_URL", "postgres://localhost/execution");
+            env::set_var("EXECUTION_GATEWAY_BIND", "127.0.0.1:18790");
+            env::set_var("EXECUTION_ADMIN_BIND", "127.0.0.1:18791");
+        }
+
+        main();
+
+        for name in [
+            "EXECUTION_ADMIN_TOKEN",
+            "EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE",
+            "EXECUTION_MT5_VM_BOOTSTRAP_TOKEN",
+            "DATABASE_URL",
+            "EXECUTION_GATEWAY_BIND",
+            "EXECUTION_ADMIN_BIND",
+        ] {
+            unsafe { env::remove_var(name) };
+        }
+        fs::remove_dir_all(root).expect("remove main config fixture");
+    }
 
     fn test_prop_risk_profile() -> PropRiskProfileTemplate {
         PropRiskProfileTemplate {
@@ -13141,6 +14265,7 @@ mod tests {
             protocol_version: EXECUTION_PROTOCOL_VERSION,
             pairing_token: token.into(),
             agent_id: "test-agent".into(),
+            runtime_binding: None,
             account,
         }
     }
@@ -13339,6 +14464,44 @@ mod tests {
     }
 
     #[test]
+    fn explicit_managed_disconnect_blocks_new_defer_activation_and_unknown_replay() {
+        let source = include_str!("main.rs");
+        let defer_start = source
+            .find("async fn defer_order(")
+            .expect("defer route exists");
+        let defer_end = source[defer_start..]
+            .find("async fn activate_deferred_orders(")
+            .map(|offset| defer_start + offset)
+            .expect("defer route has a boundary");
+        let defer = &source[defer_start..defer_end];
+        assert!(defer.contains("disconnect_requested_revision IS NULL"));
+        assert!(defer.contains("FOR UPDATE OF account"));
+
+        let activate_end = source[defer_end..]
+            .find("async fn deferred_instrument_refreshed(")
+            .map(|offset| defer_end + offset)
+            .expect("deferred activation has a boundary");
+        let activate = &source[defer_end..activate_end];
+        assert!(activate.contains("disconnect_requested_revision IS NULL"));
+
+        let poll_start = source
+            .find("async fn poll_commands(")
+            .expect("EA poll implementation exists");
+        let poll_end = source[poll_start..]
+            .find("async fn accept_events(")
+            .map(|offset| poll_start + offset)
+            .expect("EA poll implementation has a boundary");
+        let poll = &source[poll_start..poll_end];
+        let delivery_candidates = poll
+            .rfind("WITH candidates AS (")
+            .map(|offset| &poll[offset..])
+            .expect("EA poll delivery candidate query exists");
+        assert!(
+            delivery_candidates.contains("reject_code IS DISTINCT FROM 'DELIVERY_OUTCOME_UNKNOWN'")
+        );
+    }
+
+    #[test]
     fn account_liveness_uses_the_freshest_authenticated_ea_activity() {
         assert_eq!(effective_last_seen_at_ms(1_000, Some(2_000)), 2_000);
         assert_eq!(effective_last_seen_at_ms(3_000, Some(2_000)), 3_000);
@@ -13347,13 +14510,45 @@ mod tests {
 
     #[test]
     fn ea_version_gate_accepts_current_and_future_releases_only() {
-        assert_eq!(minimum_supported_ea_version(), "1.25");
+        assert_eq!(minimum_supported_ea_version(), "1.26");
         assert!(!ea_version_supported(None));
-        assert!(!ea_version_supported(Some("1.24.9")));
+        assert!(!ea_version_supported(Some("1.25.9")));
         assert!(!ea_version_supported(Some("invalid")));
-        assert!(ea_version_supported(Some("1.25")));
-        assert!(ea_version_supported(Some("1.25.1")));
+        assert!(ea_version_supported(Some("1.26")));
+        assert!(ea_version_supported(Some("1.26.1")));
         assert!(ea_version_supported(Some("2.0.0")));
+    }
+
+    #[test]
+    fn managed_identity_key_survives_admin_token_rotation() {
+        let before = GatewayState::new("admin-token-before-rotation-at-least-32-bytes", None);
+        let after = GatewayState::new("admin-token-after-rotation-at-least-32-bytes", None);
+
+        assert_eq!(
+            before.inner.mt5_identity_key, after.inner.mt5_identity_key,
+            "rotating the admin credential must not change durable MT5 identity fingerprints"
+        );
+    }
+
+    #[test]
+    fn managed_identity_fingerprint_matches_go_vector() {
+        let key = derive_mt5_identity_key("stable-identity-master-key-32bytes!");
+        assert_eq!(
+            key,
+            [
+                0x91, 0x2b, 0xe3, 0xd8, 0xb8, 0x10, 0x05, 0x1f, 0xc8, 0x05, 0xe4, 0x33, 0xbd, 0x38,
+                0x71, 0xe4, 0x82, 0xba, 0xc7, 0xae, 0xb3, 0x54, 0xa3, 0x00, 0xd3, 0x46, 0xc1, 0x23,
+                0x64, 0xfd, 0x92, 0xb0,
+            ]
+        );
+        assert_eq!(
+            mt5_identity_fingerprint(&key, " 123456 ", " Broker-Live "),
+            [
+                0x20, 0x8c, 0x9a, 0xa2, 0xb1, 0x12, 0x47, 0xc4, 0x45, 0x02, 0x4f, 0xfd, 0x79, 0x62,
+                0x4b, 0xbc, 0x89, 0xbd, 0x89, 0xb9, 0x07, 0x55, 0x2f, 0xdf, 0x3b, 0xa2, 0x99, 0x4a,
+                0x30, 0x39, 0xc6, 0x9d,
+            ]
+        );
     }
 
     fn copier_test_position(
@@ -13828,6 +15023,39 @@ mod tests {
     }
 
     #[test]
+    fn durable_unknown_outcome_is_excluded_from_command_expiry() {
+        let source = include_str!("main.rs");
+        assert!(source.contains("reject_code IS DISTINCT FROM 'DELIVERY_OUTCOME_UNKNOWN'"));
+    }
+
+    #[test]
+    fn managed_ea_heartbeat_cannot_publish_ready_before_the_atomic_gate() {
+        let source = include_str!("main.rs");
+        let touch_start = source
+            .find("    async fn touch_account(")
+            .expect("touch_account exists");
+        let gate_start = source[touch_start..]
+            .find("    async fn advance_managed_ea_readiness_after_event(")
+            .map(|offset| touch_start + offset)
+            .expect("managed readiness gate exists");
+        let touch = &source[touch_start..gate_start];
+        let gate_end = source[gate_start..]
+            .find("    async fn prop_risk_guard_view(")
+            .map(|offset| gate_start + offset)
+            .expect("managed readiness gate boundary exists");
+        let gate = &source[gate_start..gate_end];
+
+        assert!(
+            touch.contains("WHEN connector_kind = 'windows_vm' THEN status"),
+            "managed EA heartbeat must preserve registry readiness until the full gate passes"
+        );
+        assert!(
+            gate.contains("execution_advance_mt5_managed_readiness"),
+            "managed readiness must use the atomic database gate"
+        );
+    }
+
+    #[test]
     fn trade_authorization_migration_enforces_exact_one_time_payloads() {
         let original_migration =
             include_str!("../../../../migrations/0031_trade_passkey_authorization.up.sql");
@@ -14088,6 +15316,78 @@ mod tests {
         (account, session)
     }
 
+    async fn managed_database_state() -> GatewayState {
+        let database_url = std::env::var("MT5_MANAGED_TEST_DATABASE_URL")
+            .expect("the disposable PostgreSQL harness supplies a loopback database URL");
+        let database = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(&database_url)
+            .await
+            .expect("connect to the disposable managed MT5 database");
+        GatewayState::new_production(
+            ADMIN_TOKEN,
+            "stable-managed-database-identity-key-at-least-32-bytes",
+            Some("managed-database-worker-bootstrap-token-at-least-32-bytes"),
+            database,
+        )
+    }
+
+    #[tokio::test]
+    #[ignore = "run only inside the disposable PostgreSQL 17 harness"]
+    async fn managed_database_pairing_session_and_reconnect_state_are_durable() {
+        let state = managed_database_state().await;
+        let owner_uuid = Uuid::new_v4();
+        let owner_id = owner_uuid.to_string();
+        let pairing_token = random_token();
+        let account = snapshot("81234567", "Synthetic-Broker-Demo");
+
+        sqlx::query(
+            "INSERT INTO users (id, email, email_verified, display_name, status) \
+             VALUES ($1, $2, true, 'Managed database owner', 'active')",
+        )
+        .bind(owner_uuid)
+        .bind(format!("managed-database-{owner_uuid}@example.invalid"))
+        .execute(
+            state
+                .inner
+                .database
+                .as_ref()
+                .expect("production state has a database"),
+        )
+        .await
+        .expect("seed an active disposable owner");
+
+        state
+            .insert_pairing_token(&pairing_token, &owner_id, DEFAULT_PAIRING_TTL)
+            .await
+            .expect("persist a one-time pairing token");
+        let session = state
+            .create_session(session_request(&pairing_token, account.clone()))
+            .await
+            .expect("persist the EA account and session");
+        let authenticated = state
+            .authenticate(&bearer(&session.session_token))
+            .await
+            .expect("authenticate the database-backed EA session");
+        assert_eq!(authenticated.owner_id, owner_id);
+        assert_eq!(authenticated.account_id, session.account_id);
+
+        state
+            .touch_account(&owner_id, &session.account_id, account)
+            .await
+            .expect("refresh database-backed EA liveness");
+        state
+            .manage_account(&owner_id, &session.account_id, false)
+            .await
+            .expect("disconnect the database-backed EA session");
+        assert!(
+            state
+                .authenticate(&bearer(&session.session_token))
+                .await
+                .is_err()
+        );
+    }
+
     #[test]
     fn live_mt5_account_is_valid_for_execution() {
         let request = session_request(PAIR_TOKEN, snapshot("123456", "Broker-Live"));
@@ -14193,6 +15493,16 @@ mod tests {
         let short_token = session_request("short", snapshot("123456", "Broker-Live"));
         let error = validate_session_request(&short_token).expect_err("short token must fail");
         assert_eq!(error.status, StatusCode::BAD_REQUEST);
+
+        let mut invalid_runtime = session_request(PAIR_TOKEN, snapshot("123456", "Broker-Live"));
+        invalid_runtime.runtime_binding = Some(EaManagedRuntimeBinding {
+            slot_id: "slot-01".into(),
+            terminal_pid: 0,
+            gateway_origin: "https://execution.example.test".into(),
+        });
+        let error = validate_session_request(&invalid_runtime)
+            .expect_err("zero managed terminal PID must fail");
+        assert_eq!(error.body.code, "MANAGED_EA_RUNTIME_BINDING_INVALID");
     }
 
     #[test]
@@ -14224,6 +15534,226 @@ mod tests {
             .await
             .expect_err("replayed token must fail");
         assert_eq!(replay.status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn managed_ea_pairing_adopts_the_reserved_account_id() {
+        let state = GatewayState::new(ADMIN_TOKEN, None);
+        let reserved_account_id = AccountId::new("managed-account-1");
+        let invalid = state
+            .insert_managed_pairing_token(
+                "short",
+                OWNER_A,
+                DEFAULT_PAIRING_TTL,
+                ManagedEaPairingBinding {
+                    account_id: reserved_account_id.clone(),
+                    worker_id: "worker-a".into(),
+                    worker_session_generation: 7,
+                    lease_generation: 11,
+                    connection_revision: 3,
+                    slot_id: "slot-01".into(),
+                    terminal_pid: 4242,
+                    gateway_origin: "https://execution.example.test".into(),
+                    masked_login_suffix: Some("3456".into()),
+                    identity_fingerprint: vec![1; 32],
+                },
+            )
+            .await
+            .expect_err("invalid managed pairing token must fail");
+        assert_eq!(invalid.body.code, "MANAGED_EA_BOOTSTRAP_INVALID");
+        let binding = ManagedEaPairingBinding {
+            account_id: reserved_account_id.clone(),
+            worker_id: "worker-a".into(),
+            worker_session_generation: 7,
+            lease_generation: 11,
+            connection_revision: 3,
+            slot_id: "slot-01".into(),
+            terminal_pid: 4242,
+            gateway_origin: "https://execution.example.test".into(),
+            masked_login_suffix: Some("3456".into()),
+            identity_fingerprint: mt5_identity_fingerprint(
+                &state.inner.mt5_identity_key,
+                "123456",
+                "Broker-Live",
+            )
+            .to_vec(),
+        };
+        state
+            .insert_managed_pairing_token(
+                MANAGED_PAIR_TOKEN,
+                OWNER_A,
+                DEFAULT_PAIRING_TTL,
+                binding.clone(),
+            )
+            .await
+            .expect("managed token is issued");
+        let replacement_pairing_token = random_token();
+        state
+            .insert_managed_pairing_token(
+                &replacement_pairing_token,
+                OWNER_A,
+                DEFAULT_PAIRING_TTL,
+                binding,
+            )
+            .await
+            .expect("replacement managed token is issued");
+        let revoked = state
+            .create_session(session_request(
+                MANAGED_PAIR_TOKEN,
+                snapshot("123456", "Broker-Live"),
+            ))
+            .await
+            .expect_err("issuing a replacement must revoke the prior managed token");
+        assert_eq!(revoked.status, StatusCode::UNAUTHORIZED);
+
+        let mut request = session_request(
+            &replacement_pairing_token,
+            snapshot("123456", "Broker-Live"),
+        );
+        request.runtime_binding = Some(EaManagedRuntimeBinding {
+            slot_id: "slot-01".into(),
+            terminal_pid: 4242,
+            gateway_origin: "https://execution.example.test".into(),
+        });
+        let session = state
+            .create_session(request)
+            .await
+            .expect("managed pairing succeeds");
+
+        assert_eq!(session.account_id, reserved_account_id);
+        let stored = state
+            .inner
+            .sessions
+            .lock()
+            .await
+            .get(&sha256(session.session_token.as_bytes()))
+            .cloned()
+            .expect("managed EA session is retained");
+        validate_session_account_identity(
+            &state.inner.mt5_identity_key,
+            &stored,
+            &snapshot("123456", "Broker-Live"),
+        )
+        .expect("managed heartbeat keeps the reserved account binding");
+        let mut invalid_session = stored.clone();
+        invalid_session
+            .managed_identity
+            .as_mut()
+            .expect("managed identity")
+            .runtime_binding
+            .terminal_pid = 0;
+        let error = validate_session_account_identity(
+            &state.inner.mt5_identity_key,
+            &invalid_session,
+            &snapshot("123456", "Broker-Live"),
+        )
+        .expect_err("invalid stored runtime binding must fail");
+        assert_eq!(error.body.code, "MANAGED_EA_RUNTIME_BINDING_INVALID");
+    }
+
+    #[tokio::test]
+    async fn unmanaged_pairing_rejects_a_managed_runtime_binding() {
+        let state = GatewayState::new(ADMIN_TOKEN, None);
+        state
+            .insert_pairing_token(PAIR_TOKEN, OWNER_A, DEFAULT_PAIRING_TTL)
+            .await
+            .expect("insert unmanaged pairing token");
+        let mut request = session_request(PAIR_TOKEN, snapshot("123456", "Broker-Live"));
+        request.runtime_binding = Some(EaManagedRuntimeBinding {
+            slot_id: "slot-01".into(),
+            terminal_pid: 4242,
+            gateway_origin: "https://execution.example.test".into(),
+        });
+        let error = state
+            .create_session(request)
+            .await
+            .expect_err("unmanaged pairing must reject runtime binding");
+        assert_eq!(error.body.code, "MANAGED_EA_RUNTIME_BINDING_UNEXPECTED");
+    }
+
+    #[tokio::test]
+    async fn managed_ea_pairing_rejects_the_wrong_terminal_identity() {
+        let state = GatewayState::new(ADMIN_TOKEN, None);
+        state.inner.pairing_tokens.lock().await.insert(
+            sha256(PAIR_TOKEN.as_bytes()),
+            PairingGrant {
+                owner_id: OWNER_A.into(),
+                expires_at_ms: now_ms() + DEFAULT_PAIRING_TTL.as_millis() as u64,
+                managed_binding: Some(ManagedEaPairingBinding {
+                    account_id: AccountId::new("managed-account-1"),
+                    worker_id: "worker-a".into(),
+                    worker_session_generation: 7,
+                    lease_generation: 11,
+                    connection_revision: 3,
+                    slot_id: "slot-01".into(),
+                    terminal_pid: 4242,
+                    gateway_origin: "https://execution.example.test".into(),
+                    masked_login_suffix: Some("3456".into()),
+                    identity_fingerprint: mt5_identity_fingerprint(
+                        &state.inner.mt5_identity_key,
+                        "123456",
+                        "Broker-Live",
+                    )
+                    .to_vec(),
+                }),
+            },
+        );
+
+        let error = state
+            .create_session(session_request(
+                PAIR_TOKEN,
+                snapshot("999999", "Other-Broker"),
+            ))
+            .await
+            .expect_err("a different terminal identity must fail closed");
+
+        assert_eq!(error.status, StatusCode::CONFLICT);
+        assert_eq!(error.body.code, "MANAGED_EA_IDENTITY_MISMATCH");
+        assert!(state.inner.accounts.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn managed_ea_pairing_rejects_a_different_runtime_binding() {
+        let state = GatewayState::new(ADMIN_TOKEN, None);
+        state.inner.pairing_tokens.lock().await.insert(
+            sha256(PAIR_TOKEN.as_bytes()),
+            PairingGrant {
+                owner_id: OWNER_A.into(),
+                expires_at_ms: now_ms() + DEFAULT_PAIRING_TTL.as_millis() as u64,
+                managed_binding: Some(ManagedEaPairingBinding {
+                    account_id: AccountId::new("managed-account-1"),
+                    worker_id: "worker-a".into(),
+                    worker_session_generation: 7,
+                    lease_generation: 11,
+                    connection_revision: 3,
+                    slot_id: "slot-01".into(),
+                    terminal_pid: 4242,
+                    gateway_origin: "https://execution.example.test".into(),
+                    masked_login_suffix: Some("3456".into()),
+                    identity_fingerprint: mt5_identity_fingerprint(
+                        &state.inner.mt5_identity_key,
+                        "123456",
+                        "Broker-Live",
+                    )
+                    .to_vec(),
+                }),
+            },
+        );
+        let mut request = session_request(PAIR_TOKEN, snapshot("123456", "Broker-Live"));
+        request.runtime_binding = Some(execution_domain::EaManagedRuntimeBinding {
+            slot_id: "other-slot".into(),
+            terminal_pid: 9001,
+            gateway_origin: "https://other.example.test".into(),
+        });
+
+        let error = state
+            .create_session(request)
+            .await
+            .expect_err("a different runtime binding must fail closed");
+
+        assert_eq!(error.status, StatusCode::CONFLICT);
+        assert_eq!(error.body.code, "MANAGED_EA_RUNTIME_BINDING_MISMATCH");
+        assert!(state.inner.accounts.lock().await.is_empty());
     }
 
     #[tokio::test]

@@ -74,8 +74,9 @@ $modulePath = Join-Path $PSScriptRoot "lib\MarketLensBackend.psm1"
 Import-Module $modulePath -Force
 
 # Binaries the artifact must contain. mt5-stream.exe is the Go consumer of the
-# Python market-data bridge; the runner starts it when configured.
-$RequiredBinaries = @("api.exe", "migrate.exe", "mt5-stream.exe", "execution-gateway.exe")
+# Python market-data bridge; mt5-vm-agent.exe is copied into the immutable
+# worker root only by the separate explicit bare-metal installer.
+$RequiredBinaries = @("api.exe", "migrate.exe", "mt5-stream.exe", "execution-gateway.exe", "mt5-vm-agent.exe")
 
 function Write-Step {
     param([string]$Text)
@@ -227,7 +228,7 @@ if ($SelfTest) {
         $incomplete = Join-Path $sandbox "incomplete"
         New-Item -ItemType Directory -Force (Join-Path $incomplete "bin") | Out-Null
         Set-Content -LiteralPath (Join-Path $incomplete "bin\api.exe") -Value "x" -Encoding ascii
-        Assert-True "missing binaries are reported" ((@(Get-MissingBinary -Root $incomplete) -join ',') -eq 'migrate.exe,mt5-stream.exe,execution-gateway.exe')
+        Assert-True "missing binaries are reported" ((@(Get-MissingBinary -Root $incomplete) -join ',') -eq 'migrate.exe,mt5-stream.exe,execution-gateway.exe,mt5-vm-agent.exe')
 
         $complete = Join-Path $sandbox "complete"
         New-Item -ItemType Directory -Force (Join-Path $complete "bin") | Out-Null
@@ -302,6 +303,21 @@ if ([string]::IsNullOrWhiteSpace($databaseUrl)) {
 $adminToken = Get-BackendEnvValue -Name "EXECUTION_ADMIN_TOKEN" -EnvFilePath $backendEnv
 if ([string]::IsNullOrWhiteSpace($adminToken) -or $adminToken.Length -lt 32) {
     throw "EXECUTION_ADMIN_TOKEN must be an unpredictable secret of at least 32 characters."
+}
+$identityKeyFile = Get-BackendEnvValue -Name "EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE" -EnvFilePath $backendEnv
+if ([string]::IsNullOrWhiteSpace($identityKeyFile) -or
+    -not [IO.Path]::IsPathRooted($identityKeyFile)) {
+    throw "The identity HMAC key file must be an absolute path."
+}
+$identityKeyFile = [IO.Path]::GetFullPath($identityKeyFile)
+if (-not (Test-Path -LiteralPath $identityKeyFile -PathType Leaf)) {
+    throw "The identity HMAC key file does not exist."
+}
+$identityKeyItem = Get-Item -LiteralPath $identityKeyFile -Force
+if (($identityKeyItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+    $identityKeyItem.Length -lt 32 -or
+    $identityKeyItem.Length -gt 4096) {
+    throw "The identity HMAC key file must be a small non-link file."
 }
 
 # The runner refuses -SkipBuild without the managed MT5 Python environment, and

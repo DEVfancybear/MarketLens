@@ -71,6 +71,7 @@ export interface ManagedMT5Mutation {
 }
 
 export interface ManagedMT5ConnectInput {
+  requestId: string;
   platform: "mt5";
   login: string;
   password: string;

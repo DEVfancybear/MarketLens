@@ -2,27 +2,25 @@
 
 ## Immediate
 
-0b. **Connect and publish the local Hyper-V MT5 worker image** (2026-08-21, blocked on host and
-    operator inputs). The clean signed slot, official broker-neutral catalog enrollment, bootstrap,
-    and FTMO/Exness read-only coexistence are proven. Enable the Hyper-V management plane in an
-    approved reboot window, supply a generalized base VHDX, virtual switch and resource policy,
-    then implement the currently fail-closed guest provision/image self-test and worker
-    health/private-registration boundaries. Publish only after attestation and rerun
-    `tools/run-mt5-vm-powershell-regression-gauntlet.ps1` with both real switches. Follow
-    `MT5_VM_LOCAL_IMAGE_AUTOMATION.md`; never install MT5 in the user account-connect path.
+0b. **Run the Revision 15 production-like Demo gate** (2026-08-23, blocked on explicit runtime
+    authorization and operator prerequisites). Provide a secure Vault, the dedicated interactive
+    worker identity, three clean preattested slots, and three disposable Demo accounts owned by two
+    authenticated test users. Install/start the worker only through
+    `MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md`, then execute R15-9 connect, readiness, isolation,
+    routing, restart, reconnect, cleanup, and ambiguous-outcome checks. No Live/funded account is
+    permitted in this gate.
 
-0a. **Run the remaining MT5 Phase 4 operator gates** (2026-08-20, blocked externally). The
-    repository 4a/4b slice and code-native gauntlet are complete. Set a disposable
-    `MT5_PHASE4_DATABASE_URL` and rerun `tools/verify-mt5-phase4.ps1` for migration 0040/0041
-    round-trip; then execute the signed Phase 1, Phase 2 rotation/reassignment, Phase 3 Vault,
-    and Phase 4 independent terminal/web checklist in
-    `MT5_WINDOWS_VM_CONNECTOR_PHASE0_4_OPERATOR_CHECKLIST.md`. Do not start Phase 5 until every
-    stop condition is cleared.
+0a. **Authorize and rehearse the one-host production cutover only after R15-9 passes.** Run the
+    forward-only migration, canonical backend restart, explicit worker install/start, local/public
+    health checks, and rollback rehearsal as separate operator-confirmed steps. Do not add worker
+    lifecycle to `run-backend-production.ps1`, use recovery switches in a normal source run, or
+    infer Live authorization from a Demo result.
 
 0. **Confirm the `backend-artifact` CI re-run** (2026-08-19, complexity: trivial). The first run
    failed in `Package artifact` on an invalid regex; the fix is pushed but the re-run has not been
    observed. Check that the job produces `marketlens-backend-windows-amd64` and that `SHA256SUMS`
-   lists all five files with forward-slash paths and does not list itself. Then run
+   lists all six files, including `mt5-vm-agent.exe`, with forward-slash paths and does not list
+   itself. Then run
    `.\tools\deploy-backend.ps1` on the Windows host for the first real deploy, ideally with
    `-SkipPublicHealthCheck` on a rehearsal.
 
@@ -197,15 +195,10 @@ Detailed code plan: `docs/PHASE6_IMPLEMENTATION_PLAN.md`.
 - **Phase 6A extension - Telegram/Discord Alert Channels:** server-side external message delivery
   for browser-open and closed-browser alerts. Implemented in
   `docs/PHASE6A_TELEGRAM_DISCORD_PLAN.md`.
-- **Phase 6B - MT5 Bridge Integration:** protocol types, WebSocket client, store/runtime hook, mock
-  bridge, execution-mode UI, order routing, positions/logs, simulator fallback, and authenticated
-  per-user **Save & Verify MT5** are implemented. MT5 selection is unlocked from the current user's
-  backend `verified` state; every live command also requires the bridge account login/server to
-  match. FTMO dry-run bridge is available via `npm run ftmo-mt5-bridge`; the Python MT5 adapter is
-  under `backend/bridge/ftmo_mt5/`. Next: validate Verify success/failure and account isolation on a
-  Windows/VPS demo terminal, then exercise snapshots, `order_check`, and tiny demo execution. For
-  Exness, IC Markets, and other MT5 brokers, use
-  `docs/PHASE6B_MULTI_BROKER_MT5_COPY_TRADING_PLAN.md`.
+- **Phase 6B - historical MT5 bridge milestone:** the original browser-facing bridge and saved
+  verifier workflow were removed. Current work continues from the broker-neutral Go/Rust/common-EA
+  architecture and the Revision 15 bare-metal managed runbook. Do not restore the old bridge or use
+  this archived milestone as runtime guidance.
 
 ---
 

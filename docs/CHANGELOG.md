@@ -4,6 +4,24 @@ All notable changes to the MarketLens. Dates are UTC.
 
 ## [Unreleased]
 
+### Added - Bare-metal managed MT5 + automatic EA lifecycle (2026-08-23)
+
+- Completed the authenticated browser-to-Go/Vault-to-Rust worker lifecycle for a bounded one-host
+  deployment: durable generation-fenced placement, one-time credential grants, redirected-stdin MT5
+  login, exact terminal identity, named-pipe EA 1.26 bootstrap, readiness, reconnect, cleanup, and
+  restart recovery.
+- Added the dry-run-first bare-metal worker installer/status tooling with exact roots, hash/signature
+  and topology attestation, protected ACLs, a dedicated interactive Scheduled Task, immutable
+  installed agent copy, loopback-only HTTP exception, and correct long-running task health.
+- Added migration `0042`, owner/identity HMAC boundaries, browser password clearing, EA publication,
+  changed-line coverage, mutation controls, capability/secret gates, and the single persisted
+  `tools/verify-mt5-baremetal-managed-ea.ps1` entry point.
+- Production build and CI artifact paths now build/package `mt5-vm-agent.exe`; deploy verifies it and
+  preflights the required identity-key file. The canonical runner wires that file to Rust but does
+  not install or launch the worker.
+- Added `MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md`. Production cutover and the R15-9 two-owner/three-Demo
+  broker gate remain separate explicit actions; no Live/funded operation was authorized.
+
 ### Added - MT5 local image automation and broker-neutral enrollment (2026-08-21)
 
 - Added hash/signer-pinned unattended installation for one to four distinct MT5 terminal slots,

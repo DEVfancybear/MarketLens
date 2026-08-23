@@ -23,6 +23,7 @@ $gatewayArtifactName = if ($StageApi) { "execution-gateway.next.exe" } else { "e
 $gatewayArtifact = Join-Path $backendDir "bin\$gatewayArtifactName"
 $executionManifest = Join-Path $backendDir "execution\Cargo.toml"
 $builtGateway = Join-Path $backendDir "execution\target\release\execution-gateway.exe"
+$builtAgent = Join-Path $backendDir "execution\target\release\mt5-vm-agent.exe"
 $eaPublishScript = Join-Path $backendDir "bridge\mt5_ea\Publish-MarketLensExecutionEA.ps1"
 
 if (-not $SkipMT5PythonSetup) {
@@ -110,11 +111,14 @@ if (-not $cargoPath) {
   throw "Rust Cargo was not found. Install stable Rust or provision the repository toolchain."
 }
 
-Write-Host "Building Rust execution gateway..." -ForegroundColor Cyan
+Write-Host "Building Rust execution gateway and managed worker..." -ForegroundColor Cyan
 & $cargoPath @cargoPrefix build --manifest-path $executionManifest --workspace --locked --release
 if ($LASTEXITCODE -ne 0) { throw "Rust execution gateway build failed (exit $LASTEXITCODE)." }
 if (-not (Test-Path -LiteralPath $builtGateway -PathType Leaf)) {
   throw "Rust build did not produce backend\execution\target\release\execution-gateway.exe."
+}
+if (-not (Test-Path -LiteralPath $builtAgent -PathType Leaf)) {
+  throw "Rust build did not produce backend\execution\target\release\mt5-vm-agent.exe."
 }
 Copy-Item -LiteralPath $builtGateway -Destination $gatewayArtifact -Force
 
@@ -143,6 +147,7 @@ if (-not $BackendOnly) {
 Write-Host "Production build complete." -ForegroundColor Green
 Write-Host "Go artifact: backend\bin\$apiArtifactName"
 Write-Host "Rust artifact: backend\bin\$gatewayArtifactName"
+Write-Host "Managed worker artifact: backend\execution\target\release\mt5-vm-agent.exe"
 if (-not $BackendOnly) { Write-Host "Next artifact: frontend\.next" }
 if (-not $SkipMT5PythonSetup) {
   Write-Host "MT5 market-data Python: backend\.venv-mt5\Scripts\python.exe"

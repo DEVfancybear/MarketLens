@@ -1,0 +1,148 @@
+# Bare-metal managed MT5 + EA runbook
+
+Status: implementation and local synthetic/disposable gates are complete. Production migration,
+worker installation/start, backend cutover, and broker connection remain explicit operator actions.
+The R15-9 three-demo-account gate must pass before any Live/funded activation.
+
+## Topology
+
+- Public TLS terminates at the reverse proxy and exposes only Go on port `8080`.
+- Rust EA/admin listeners remain on `127.0.0.1:8790` and `127.0.0.1:8791`.
+- The managed worker uses the private admin URL `http://127.0.0.1:8791` and the credential API URL
+  `http://127.0.0.1:8080`; remote plain HTTP is rejected.
+- One dedicated interactive Windows identity runs one bounded Scheduled Task. Each active account
+  owns a distinct preinstalled, attested terminal slot and writable runtime root.
+- `run-backend-production.ps1` never starts the worker. Backend and worker lifecycle are separate.
+
+## Required protected files
+
+Create these outside the repository with inheritance disabled and access limited to the service
+identities that consume them. Do not print their contents or put them in command arguments.
+
+1. A 32-byte-or-longer identity HMAC key file, distinct from every other token.
+2. A narrow-role Vault API token file.
+3. A 32-byte-or-longer worker bootstrap-token file, matching
+   `EXECUTION_MT5_VM_BOOTSTRAP_TOKEN` in `backend/.env`.
+
+Set the absolute paths in `backend/.env`:
+
+```dotenv
+EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE=C:\ProgramData\MarketLens\secrets\mt5-identity-hmac.key
+MT5_VAULT_ADDR=https://vault.internal.example
+MT5_VAULT_API_TOKEN_FILE=C:\ProgramData\MarketLens\secrets\vault-api.token
+MT5_VAULT_NAMESPACE=
+EXECUTION_MT5_VM_BOOTSTRAP_TOKEN=<independent random value matching the protected bootstrap file>
+```
+
+The canonical runner and deploy preflight reject a missing, relative, linked, too-small, or
+oversized identity-key file. Go and Rust also reject a key equal to an auth/admin/bootstrap secret.
+
+## Build or deploy the binaries
+
+Build from source and start the backend only through:
+
+```powershell
+.\run-backend-production.ps1
+```
+
+Deploy a CI-built artifact only through:
+
+```powershell
+.\tools\deploy-backend.ps1
+```
+
+Both production build paths supply `execution-gateway.exe` and `mt5-vm-agent.exe`. The deploy path
+verifies `SHA256SUMS`; it does not install or start the worker. A source build leaves the worker at
+`backend\execution\target\release\mt5-vm-agent.exe`; an artifact deploy stages it at
+`backend\bin\mt5-vm-agent.exe`.
+
+## Prepare the slot descriptor
+
+For every slot, independently attest the terminal, state root, server catalog, license, published
+EA, chart template, WebRequest settings, and topology attestation. Build one to four descriptors:
+
+```powershell
+$slots = @(
+  [pscustomobject]@{
+    slot_id = 'slot-01'
+    terminal_path = 'C:\Program Files\MetaTrader 5 Slot 01\terminal64.exe'
+    terminal_state_root = 'C:\ProgramData\MetaQuotes\Terminal\<exact-instance-id>'
+    terminal_sha256 = '<terminal SHA-256>'
+    servers_sha256 = '<servers.dat SHA-256>'
+    terminal_license_sha256 = '<terminal license SHA-256>'
+    ea_path = 'C:\ProgramData\MetaQuotes\Terminal\<exact-instance-id>\MQL5\Experts\MarketLensExecutionEA.ex5'
+    ea_sha256 = '<published EA SHA-256>'
+    ea_bootstrap_pipe = 'marketlens-slot-01'
+    ea_profile = 'MarketLens-slot-01'
+    ea_gateway_origin = 'http://127.0.0.1:8790'
+    ea_chart_template_path = 'C:\MarketLens\slot-inputs\slot-01\chart01.chr'
+    ea_chart_template_sha256 = '<chart template SHA-256>'
+    ea_webrequest_settings_source_path = 'C:\MarketLens\slot-inputs\slot-01\experts.ini'
+    ea_webrequest_settings_sha256 = '<WebRequest settings SHA-256>'
+    ea_topology_attestation_source_path = 'C:\MarketLens\slot-inputs\slot-01\webrequest-attestation.json'
+    ea_topology_attestation_sha256 = '<topology attestation SHA-256>'
+  }
+)
+```
+
+Do not reuse a terminal path, state root, runtime root, profile, pipe name, or slot ID.
+
+## Dry-run, install, start, and check health
+
+Populate the non-secret paths and hashes locally. The same argument map is used for dry-run and
+execution; only the explicit `-Execute` switch mutates the host.
+
+```powershell
+$installArgs = @{
+  WorkerRoot = 'C:\MarketLens\worker'
+  DataRoot = 'D:\MarketLens\runtime'
+  WorkerIdentity = 'HOST\MarketLensWorker'
+  TaskName = 'MarketLens MT5 Worker'
+  WorkerId = 'marketlens-baremetal-01'
+  AgentPath = (Resolve-Path '.\backend\bin\mt5-vm-agent.exe').Path
+  AgentSha256 = (Get-FileHash '.\backend\bin\mt5-vm-agent.exe' -Algorithm SHA256).Hash
+  PythonPath = (Resolve-Path '.\backend\.venv-mt5\Scripts\python.exe').Path
+  PythonSha256 = (Get-FileHash '.\backend\.venv-mt5\Scripts\python.exe' -Algorithm SHA256).Hash
+  AdapterPath = (Resolve-Path '.\backend\bridge\mt5_vm\phase1_adapter.py').Path
+  AdapterSha256 = (Get-FileHash '.\backend\bridge\mt5_vm\phase1_adapter.py' -Algorithm SHA256).Hash
+  AclHelperPath = (Resolve-Path '.\backend\bridge\mt5_vm\Set-MT5VmPhase1RuntimeAcl.ps1').Path
+  PowerShellPath = "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
+  BootstrapTokenFile = 'C:\ProgramData\MarketLens\secrets\worker-bootstrap.token'
+  EaReleaseManifestPath = (Resolve-Path '.\frontend\public\downloads\MarketLensExecutionEA.release.json').Path
+  EaReleaseChecksumPath = (Resolve-Path '.\frontend\public\downloads\MarketLensExecutionEA.sha256.txt').Path
+  MinimumEaVersion = '1.26'
+  GatewayUrl = 'http://127.0.0.1:8791'
+  CredentialApiUrl = 'http://127.0.0.1:8080'
+  TerminalSlots = $slots
+}
+
+.\tools\mt5-baremetal\Install-MT5BareMetalWorker.ps1 @installArgs
+
+$install = .\tools\mt5-baremetal\Install-MT5BareMetalWorker.ps1 `
+  @installArgs -Execute | ConvertFrom-Json
+
+Start-ScheduledTask -TaskName $install.task_name
+
+.\tools\mt5-baremetal\Get-MT5BareMetalWorkerStatus.ps1 `
+  -TaskName $install.task_name `
+  -WorkerIdentity $install.worker_identity `
+  -PowerShellPath $install.powershell_path `
+  -LauncherPath $install.launcher_path `
+  -AgentPath $install.agent_path `
+  -AgentSha256 $install.agent_sha256 `
+  -ConfigPath $install.config_path `
+  -ConfigSha256 $install.config_sha256
+```
+
+The installer copies the pinned agent into `WorkerRoot`, writes a non-secret config, replaces and
+verifies root ACLs, and registers the exact action/identity/logon trigger. `HEALTHY` accepts both
+Task Scheduler result `0` and `0x41301` while the long-running action is still executing. Any other
+result is `DEGRADED`.
+
+## Activation gates
+
+Before broker onboarding, verify the backend, gateway, worker heartbeat/lease, slot capacity,
+terminal/EA hashes, Vault role, and reverse-proxy route allow-list. Then run R15-9 with two test
+owners and three disposable Demo accounts. Keep Live/funded credentials and orders out of this
+gate. Stop on any identity mismatch, secret exposure, duplicate controller, stale generation,
+unknown cleanup state, failed reconciliation, or gauntlet failure.

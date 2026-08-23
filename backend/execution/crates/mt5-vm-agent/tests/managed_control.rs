@@ -375,6 +375,9 @@ fn credential_grant_uses_private_go_route_and_returns_redacted_material() {
     assert!(consume.contains(r#""sessionGeneration":7"#));
     assert!(consume.contains(r#""leaseGeneration":3"#));
     assert!(consume.contains(&format!(r#""grantToken":"{grant_token}""#)));
+    assert!(consume.to_ascii_lowercase().contains(
+        "authorization: bearer 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    ));
     assert!(!consume.contains("bootstrap-secret"));
 }
 

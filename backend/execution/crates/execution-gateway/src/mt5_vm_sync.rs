@@ -26,7 +26,10 @@ use sqlx_core::row::Row;
 use sqlx_postgres::{PgPool, Postgres};
 use uuid::Uuid;
 
-use super::{ApiError, GatewayState, now_ms, parse_owner_id, require_admin};
+use super::{
+    ApiError, EA_POLL_FRESHNESS, GatewayState, mt5_server_fingerprint, now_ms, parse_owner_id,
+    require_admin, secret_matches,
+};
 
 /// The four data families Phase 4a synchronizes. These are exactly the families
 /// plan section 5.1 requires before an account may report `ready`.
@@ -471,6 +474,7 @@ pub fn reconcile_plan(
 ///
 /// A registered login suffix that the terminal did not report is a mismatch, not
 /// a pass: absence must never be read as agreement.
+#[cfg(test)]
 pub fn identity_matches(
     registered_server: &str,
     registered_login_suffix: Option<&str>,
@@ -488,8 +492,30 @@ pub fn identity_matches(
     }
 }
 
+#[cfg(test)]
 fn normalized_server_eq(left: &str, right: &str) -> bool {
     left.trim().eq_ignore_ascii_case(right.trim())
+}
+
+fn fingerprint_identity_matches(
+    identity_key: &[u8; 32],
+    registered_server_fingerprint: &[u8],
+    registered_login_suffix: Option<&str>,
+    observed_server: &str,
+    observed_login_suffix: Option<&str>,
+) -> bool {
+    let observed = mt5_server_fingerprint(identity_key, observed_server);
+    let server_matches = registered_server_fingerprint
+        .try_into()
+        .ok()
+        .is_some_and(|expected: &[u8; 32]| secret_matches(&observed, expected));
+    server_matches
+        && match registered_login_suffix {
+            None => true,
+            Some(expected) => observed_login_suffix
+                .map(|observed| observed.trim() == expected.trim())
+                .unwrap_or(false),
+        }
 }
 
 /// Classify how much a reader may rely on the last observation.
@@ -970,7 +996,7 @@ async fn ingest_snapshot(
         r#"
         SELECT lease.user_id, lease.worker_id, lease.worker_session_generation,
                lease.generation, lease.expires_at > now() AS lease_valid,
-               vm.normalized_server, vm.masked_login_suffix
+               vm.server_fingerprint, vm.masked_login_suffix
         FROM execution_mt5_vm_account_leases lease
         JOIN execution_mt5_vm_accounts vm
           ON vm.user_id = lease.user_id AND vm.account_id = lease.account_id
@@ -1053,14 +1079,11 @@ async fn ingest_snapshot(
         account: Some(account),
     } = &request.payload
     {
-        let registered_server: String = lease
-            .try_get("normalized_server")
-            .map_err(|error| ApiError::database("decode registered MT5 server", error))?;
-        let registered_suffix: Option<String> = lease
-            .try_get("masked_login_suffix")
-            .map_err(|error| ApiError::database("decode registered MT5 suffix", error))?;
-        if !identity_matches(
-            &registered_server,
+        let (registered_server_fingerprint, registered_suffix) =
+            decode_registered_identity(&lease)?;
+        if !fingerprint_identity_matches(
+            &state.inner.mt5_identity_key,
+            &registered_server_fingerprint,
             registered_suffix.as_deref(),
             &account.observed_server,
             account.observed_login_suffix.as_deref(),
@@ -1092,12 +1115,24 @@ async fn ingest_snapshot(
     )
     .await?;
     update_freshness_anchor(&mut transaction, &request).await?;
-    update_readiness(&mut transaction, &request).await?;
+    update_readiness(&mut transaction, &request, user_id).await?;
     transaction
         .commit()
         .await
         .map_err(|error| ApiError::database("commit MT5 VM snapshot", error))?;
     Ok(true)
+}
+
+fn decode_registered_identity(
+    lease: &sqlx_postgres::PgRow,
+) -> Result<(Vec<u8>, Option<String>), ApiError> {
+    let server_fingerprint = lease
+        .try_get("server_fingerprint")
+        .map_err(|error| ApiError::database("decode registered MT5 server fingerprint", error))?;
+    let suffix = lease
+        .try_get("masked_login_suffix")
+        .map_err(|error| ApiError::database("decode registered MT5 suffix", error))?;
+    Ok((server_fingerprint, suffix))
 }
 
 async fn record_sync_result(
@@ -1183,7 +1218,7 @@ async fn upsert_snapshot_rows(
             .bind(&account.margin_mode)
             .bind(&account.account_mode)
             .bind(account.trade_allowed)
-            .bind(account.observed_server.trim())
+            .bind("")
             .bind(account.observed_login_suffix.as_deref())
             .bind(&request.worker_id)
             .bind(request.lease_generation as i64)
@@ -1412,6 +1447,7 @@ async fn update_freshness_anchor(
 async fn update_readiness(
     transaction: &mut sqlx_core::transaction::Transaction<'_, Postgres>,
     request: &SnapshotSubmission,
+    user_id: Uuid,
 ) -> Result<(), ApiError> {
     if !request.result.is_authoritative() {
         return Ok(());
@@ -1421,8 +1457,14 @@ async fn update_readiness(
         UPDATE execution_mt5_vm_accounts account
         SET connection_status = 'ready', connection_revision = connection_revision + 1,
             last_error_code = NULL
+        FROM execution_mt5_vm_workers worker
         WHERE account.account_id = $1 AND account.worker_id = $2
           AND account.lease_generation = $3
+          AND account.disconnect_requested_revision IS NULL
+          AND worker.worker_id = account.worker_id
+          AND worker.worker_substrate <> 'bare_metal'
+          AND worker.status = 'healthy' AND NOT worker.drain
+          AND worker.heartbeat_expires_at > now()
           AND EXISTS (
             SELECT 1 FROM execution_mt5_vm_account_state state
             WHERE state.account_id = account.account_id
@@ -1447,6 +1489,13 @@ async fn update_readiness(
     .execute(&mut **transaction)
     .await
     .map_err(|error| ApiError::database("advance MT5 account readiness", error))?;
+    sqlx_core::query::query("SELECT execution_advance_mt5_managed_readiness($1, $2, $3)")
+        .bind(user_id)
+        .bind(&request.account_id)
+        .bind(EA_POLL_FRESHNESS.as_millis() as i64)
+        .execute(&mut **transaction)
+        .await
+        .map_err(|error| ApiError::database("advance managed MT5 account readiness", error))?;
     Ok(())
 }
 
@@ -1463,7 +1512,7 @@ async fn read_state_route(
     let database = database(&state)?;
     let account = sqlx_core::query::query(
         r#"
-        SELECT vm.connection_status, vm.connection_revision, vm.normalized_server,
+        SELECT vm.connection_status, vm.connection_revision,
                vm.masked_login_suffix,
                (extract(epoch FROM vm.updated_at) * 1000)::bigint AS updated_at_ms
         FROM execution_mt5_vm_accounts vm
@@ -1489,7 +1538,6 @@ async fn read_state_route(
         "accountId": query.account_id,
         "connectionStatus": account.try_get::<String, _>("connection_status").map_err(|error| ApiError::database("decode MT5 state status", error))?,
         "connectionRevision": account.try_get::<i64, _>("connection_revision").map_err(|error| ApiError::database("decode MT5 state revision", error))?,
-        "server": account.try_get::<String, _>("normalized_server").map_err(|error| ApiError::database("decode MT5 state server", error))?,
         "maskedLoginSuffix": account.try_get::<Option<String>, _>("masked_login_suffix").map_err(|error| ApiError::database("decode MT5 state suffix", error))?,
         "updatedAtMs": account.try_get::<i64, _>("updated_at_ms").map_err(|error| ApiError::database("decode MT5 state update", error))?,
     });
@@ -1499,7 +1547,7 @@ async fn read_state_route(
         SELECT currency, leverage, balance::text AS balance, equity::text AS equity,
                margin::text AS margin, free_margin::text AS free_margin,
                margin_level::text AS margin_level, margin_mode, account_mode,
-               trade_allowed, observed_server, observed_login_suffix
+               trade_allowed, observed_login_suffix
         FROM execution_mt5_vm_account_state
         WHERE user_id = $1 AND account_id = $2
         "#,
@@ -1523,7 +1571,6 @@ async fn read_state_route(
                 "marginMode": row.try_get::<String, _>("margin_mode").map_err(|error| ApiError::database("decode MT5 margin mode", error))?,
                 "accountMode": row.try_get::<String, _>("account_mode").map_err(|error| ApiError::database("decode MT5 account mode", error))?,
                 "tradeAllowed": row.try_get::<bool, _>("trade_allowed").map_err(|error| ApiError::database("decode MT5 trade permission", error))?,
-                "observedServer": row.try_get::<String, _>("observed_server").map_err(|error| ApiError::database("decode MT5 observed server", error))?,
                 "observedLoginSuffix": row.try_get::<Option<String>, _>("observed_login_suffix").map_err(|error| ApiError::database("decode MT5 observed suffix", error))?,
             }))
         })
@@ -1954,6 +2001,296 @@ async fn read_history_page(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::http::HeaderValue;
+
+    const MANAGED_DATABASE_ADMIN_TOKEN: &str = "managed-database-admin-token-at-least-32-bytes";
+
+    async fn managed_database_state() -> GatewayState {
+        let database_url = std::env::var("MT5_MANAGED_TEST_DATABASE_URL")
+            .expect("the disposable PostgreSQL harness supplies a loopback database URL");
+        let database = sqlx_postgres::PgPoolOptions::new()
+            .max_connections(4)
+            .connect(&database_url)
+            .await
+            .expect("connect to the disposable managed MT5 database");
+        GatewayState::new_production(
+            MANAGED_DATABASE_ADMIN_TOKEN,
+            "stable-managed-database-identity-key-at-least-32-bytes",
+            Some("managed-database-worker-bootstrap-token-at-least-32-bytes"),
+            database,
+        )
+    }
+
+    fn bearer_headers(token: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {token}"))
+                .expect("worker bearer header is valid"),
+        );
+        headers
+    }
+
+    fn admin_headers() -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-execution-admin-token",
+            HeaderValue::from_static(MANAGED_DATABASE_ADMIN_TOKEN),
+        );
+        headers
+    }
+
+    #[tokio::test]
+    #[ignore = "run only inside the disposable PostgreSQL 17 harness"]
+    async fn managed_database_four_authoritative_families_publish_ready_state_atomically() {
+        let state = managed_database_state().await;
+        let database = database(&state).expect("production state has a database");
+        let valid_identity_row = sqlx_core::query::query(
+            "SELECT decode(repeat('ab', 32), 'hex') AS server_fingerprint, \
+             NULL::text AS masked_login_suffix",
+        )
+        .fetch_one(database)
+        .await
+        .expect("build a valid registered identity row");
+        let (decoded_fingerprint, decoded_suffix) =
+            decode_registered_identity(&valid_identity_row).expect("decode a valid identity row");
+        assert_eq!(vec![0xab_u8; 32], decoded_fingerprint);
+        assert_eq!(None, decoded_suffix);
+        let invalid_fingerprint_row = sqlx_core::query::query(
+            "SELECT 'not-bytea'::text AS server_fingerprint, \
+             NULL::text AS masked_login_suffix",
+        )
+        .fetch_one(database)
+        .await
+        .expect("build an invalid fingerprint row");
+        assert!(decode_registered_identity(&invalid_fingerprint_row).is_err());
+        let invalid_suffix_row = sqlx_core::query::query(
+            "SELECT decode(repeat('ab', 32), 'hex') AS server_fingerprint, \
+             7::integer AS masked_login_suffix",
+        )
+        .fetch_one(database)
+        .await
+        .expect("build an invalid suffix row");
+        assert!(decode_registered_identity(&invalid_suffix_row).is_err());
+        let owner_id = Uuid::new_v4();
+        let account_id = format!("account-{}", Uuid::new_v4().simple());
+        let worker_id = format!("worker-{}", Uuid::new_v4().simple());
+        let session_token = "ab".repeat(32);
+        let broker_server = format!("Synthetic-Broker-{}", Uuid::new_v4().simple());
+        let server_fingerprint =
+            mt5_server_fingerprint(&state.inner.mt5_identity_key, &broker_server);
+
+        sqlx_core::query::query(
+            "INSERT INTO users (id, email, email_verified, display_name, status) \
+             VALUES ($1, $2, true, 'Managed sync owner', 'active')",
+        )
+        .bind(owner_id)
+        .bind(format!("managed-sync-{owner_id}@example.invalid"))
+        .execute(database)
+        .await
+        .expect("seed an active disposable owner");
+        sqlx_core::query::query(
+            r#"
+            INSERT INTO execution_accounts (
+              id, user_id, venue_kind, broker_code, external_account_ref, server,
+              label, mode, status, trade_allowed, connector_kind
+            ) VALUES (
+              $1, $2, 'metatrader5', 'mt5', $1, '', 'Synthetic sync account',
+              'demo', 'connecting', false, 'windows_vm'
+            )
+            "#,
+        )
+        .bind(&account_id)
+        .bind(owner_id)
+        .execute(database)
+        .await
+        .expect("seed the execution account");
+        sqlx_core::query::query(
+            r#"
+            INSERT INTO execution_mt5_vm_workers (
+              worker_id, protocol_version, session_generation, session_token_hash,
+              agent_version, image_version, runtime_version, capacity, region,
+              capabilities, worker_substrate, status, drain,
+              last_heartbeat_at, heartbeat_expires_at
+            ) VALUES (
+              $1, 1, 1, $2, '1.0.0', 'test-image', 'test-runtime', 1,
+              'test-region', '{}'::jsonb, 'windows_vm', 'healthy', false,
+              now(), now() + interval '45 seconds'
+            )
+            "#,
+        )
+        .bind(&worker_id)
+        .bind(crate::sha256(session_token.as_bytes()).to_vec())
+        .execute(database)
+        .await
+        .expect("seed an authenticated disposable worker");
+        sqlx_core::query::query(
+            r#"
+            INSERT INTO execution_mt5_vm_accounts (
+              user_id, account_id, normalized_server, masked_login_suffix,
+              persistence_mode, connection_status, connection_revision,
+              worker_id, lease_generation, identity_fingerprint, server_fingerprint
+            ) VALUES (
+              $1, $2, '', '4567', 'managed', 'synchronizing', 1,
+              $3, 1, $4, $5
+            )
+            "#,
+        )
+        .bind(owner_id)
+        .bind(&account_id)
+        .bind(&worker_id)
+        .bind(
+            crate::mt5_identity_fingerprint(
+                &state.inner.mt5_identity_key,
+                "81234567",
+                &broker_server,
+            )
+            .to_vec(),
+        )
+        .bind(server_fingerprint.to_vec())
+        .execute(database)
+        .await
+        .expect("seed the assigned synchronizing account");
+        sqlx_core::query::query(
+            r#"
+            INSERT INTO execution_mt5_vm_account_leases (
+              user_id, account_id, worker_id, worker_session_generation,
+              generation, status, expires_at
+            ) VALUES ($1, $2, $3, 1, 1, 'active', now() + interval '45 seconds')
+            "#,
+        )
+        .bind(owner_id)
+        .bind(&account_id)
+        .bind(&worker_id)
+        .execute(database)
+        .await
+        .expect("seed the active fenced lease");
+
+        let observed_at_ms = now_ms() as i64;
+        let submissions = vec![
+            SnapshotSubmission {
+                protocol_version: 1,
+                worker_id: worker_id.clone(),
+                session_generation: 1,
+                account_id: account_id.clone(),
+                lease_generation: 1,
+                sync_sequence: 1,
+                observed_at_ms,
+                family: SnapshotFamily::Account,
+                result: SnapshotResult::Complete,
+                error_code: None,
+                payload: SnapshotPayload::Account {
+                    account: Some(Box::new(AccountObservation {
+                        currency: "USD".into(),
+                        leverage: Some(100),
+                        balance: "10000".into(),
+                        equity: "10000".into(),
+                        margin: "0".into(),
+                        free_margin: "10000".into(),
+                        margin_level: None,
+                        margin_mode: "hedging".into(),
+                        account_mode: "demo".into(),
+                        trade_allowed: true,
+                        observed_server: broker_server.clone(),
+                        observed_login_suffix: Some("4567".into()),
+                    })),
+                },
+            },
+            SnapshotSubmission {
+                protocol_version: 1,
+                worker_id: worker_id.clone(),
+                session_generation: 1,
+                account_id: account_id.clone(),
+                lease_generation: 1,
+                sync_sequence: 1,
+                observed_at_ms,
+                family: SnapshotFamily::Positions,
+                result: SnapshotResult::Complete,
+                error_code: None,
+                payload: SnapshotPayload::Positions { positions: vec![] },
+            },
+            SnapshotSubmission {
+                protocol_version: 1,
+                worker_id: worker_id.clone(),
+                session_generation: 1,
+                account_id: account_id.clone(),
+                lease_generation: 1,
+                sync_sequence: 1,
+                observed_at_ms,
+                family: SnapshotFamily::PendingOrders,
+                result: SnapshotResult::Complete,
+                error_code: None,
+                payload: SnapshotPayload::PendingOrders {
+                    pending_orders: vec![],
+                },
+            },
+            SnapshotSubmission {
+                protocol_version: 1,
+                worker_id: worker_id.clone(),
+                session_generation: 1,
+                account_id: account_id.clone(),
+                lease_generation: 1,
+                sync_sequence: 1,
+                observed_at_ms,
+                family: SnapshotFamily::Instruments,
+                result: SnapshotResult::Complete,
+                error_code: None,
+                payload: SnapshotPayload::Instruments {
+                    instruments: vec![],
+                },
+            },
+        ];
+        for submission in submissions {
+            let Json(response) = ingest_snapshot_route(
+                State(state.clone()),
+                bearer_headers(&session_token),
+                Json(submission),
+            )
+            .await
+            .expect("ingest one authoritative fenced snapshot family");
+            assert_eq!(
+                Some(true),
+                response.get("accepted").and_then(Value::as_bool)
+            );
+        }
+
+        let Json(read_state) = read_state_route(
+            State(state.clone()),
+            admin_headers(),
+            Query(AccountQuery {
+                owner_id: owner_id.to_string(),
+                account_id: account_id.clone(),
+            }),
+        )
+        .await
+        .expect("read the owner-scoped synchronized state");
+        assert_eq!("ready", read_state["account"]["connectionStatus"]);
+        let status = sqlx_core::query::query(
+            "SELECT connection_status FROM execution_mt5_vm_accounts WHERE account_id = $1",
+        )
+        .bind(&account_id)
+        .fetch_one(database)
+        .await
+        .expect("load the atomic readiness transition")
+        .try_get::<String, _>("connection_status")
+        .expect("decode synchronized account status");
+        assert_eq!("ready", status);
+    }
+
+    #[test]
+    fn snapshot_readiness_cannot_resurrect_an_explicitly_disconnected_account() {
+        let source = include_str!("mt5_vm_sync.rs");
+        let start = source
+            .find("async fn update_readiness(")
+            .expect("readiness transition exists");
+        let end = source[start..]
+            .find("async fn read_state_route(")
+            .map(|offset| start + offset)
+            .expect("readiness transition boundary exists");
+        let transition = &source[start..end];
+
+        assert!(transition.contains("account.disconnect_requested_revision IS NULL"));
+    }
 
     fn envelope(lease: i64, session: i64, sequence: i64) -> SyncEnvelope {
         SyncEnvelope {
@@ -2143,6 +2480,15 @@ mod tests {
             None,
             "ftmo-demo",
             Some("4321")
+        ));
+        let identity_key = [7_u8; 32];
+        let fingerprint = mt5_server_fingerprint(&identity_key, "FTMO-Demo");
+        assert!(fingerprint_identity_matches(
+            &identity_key,
+            &fingerprint,
+            None,
+            "FTMO-Demo",
+            Some("ignored")
         ));
     }
 

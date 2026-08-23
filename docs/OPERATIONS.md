@@ -9,6 +9,20 @@ Day-to-day commands for developing, testing, and deploying the monorepo.
 Security hardening and the production release checklist are documented in
  [`SECURITY.md`](SECURITY.md). Read it before exposing either service publicly.
 
+## Production backend and managed MT5 worker
+
+- Build/start the production backend from source with `.\run-backend-production.ps1`.
+- Deploy the CI-built backend artifact with `.\tools\deploy-backend.ps1`.
+- Both paths now provide `execution-gateway.exe` and `mt5-vm-agent.exe`; the
+  artifact path verifies both through `SHA256SUMS`.
+- The worker is installed and started separately. Use
+  [`MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md`](MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md)
+  for the dry run, exact hash/ACL install, Scheduled Task start, and health check.
+- Never add worker lifecycle to the canonical backend runner. Never use recovery
+  switches for a normal source build, and never perform a production migration,
+  worker install/start, or broker connection without the corresponding operator
+  authorization.
+
 ## Frontend
 
 ```bash
@@ -121,45 +135,20 @@ Backend framework decision: **Go Fiber**. Phase 0 migrated the backend to Fiber,
 the `/api/v1/auth/*` routes. Current backend work should continue with Phase 5 settings +
 `sync/bootstrap` and follow Fiber handler/route-group conventions.
 
-## Python MT5 Execution Bridge (Backend Sidecar, port 8787)
+## MT5 runtime boundaries
 
-The full Windows production build provisions the shared MT5 virtual environment and installs these
-dependencies automatically:
+The only Python long-running sidecar is the private read-only market-data bridge on
+`localhost:8765`. It supplies symbol catalogs, ticks, history, and broker-session observations to
+Go; it cannot authorize or submit orders.
 
-```powershell
-.\build-production.ps1
-```
+Live execution uses the Go BFF, loopback Rust gateway (`8790` EA, `8791` admin), and common MT5 EA.
+The managed path adds an explicitly installed bare-metal worker with bounded pre-provisioned slots,
+Vault credential grants, redirected-stdin login, and exact-PID named-pipe EA bootstrap. Account
+connect never downloads or installs MT5/EA and never puts credentials in arguments or environment.
 
-For backend development without a full build, create `backend\.venv-mt5` and install
-`bridge/ftmo_mt5/requirements.txt` into it manually.
-
-Dry-run (no MT5 required):
-
-```bash
-cd backend
-$env:FTMO_MT5_ENABLED="true"
-$env:FTMO_BRIDGE_DRY_RUN="true"
-.\.venv-mt5\Scripts\python.exe -m bridge.ftmo_mt5.service
-```
-
-MT5 availability in the web app is not controlled by a frontend feature flag. Leave
-`MT5_VERIFY_PYTHON` unset so the Go API auto-detects the production venv, sign in, and use
-**Connections & notifications -> Save & Verify MT5**. Verification belongs to that user. Live
-commands additionally require this execution bridge to report the same login/server.
-
-Live mode:
-
-```bash
-cd backend
-$env:FTMO_MT5_ENABLED="true"
-$env:FTMO_BRIDGE_DRY_RUN="false"
-$env:FTMO_BRIDGE_ALLOW_LIVE="true"
-$env:FTMO_MT5_LOGIN="12345678"
-$env:FTMO_MT5_PASSWORD="master-password"
-$env:FTMO_MT5_SERVER="FTMO-Server"
-$env:FTMO_MT5_TERMINAL_PATH="C:\Program Files\MetaTrader 5\terminal64.exe"
-.\.venv-mt5\Scripts\python.exe -m bridge.ftmo_mt5.service
-```
+Run normal production through `run-backend-production.ps1`. Install/start the managed worker only
+through `MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md`; the backend runner deliberately does not own worker
+installation or startup.
 
 ## Environment Variables
 
@@ -173,27 +162,12 @@ vars should be treated as the primary source for deployment.
 For local auth, the frontend needs the `NEXT_PUBLIC_FIREBASE_*` values. The backend API base defaults
 to `http://localhost:8080` in development; set `NEXT_PUBLIC_API_BASE_URL` explicitly in production.
 
-### Backend (Go)
+### Backend
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `PORT` | `8080` | HTTP listen port |
-| `APP_ENV` | `development` | Runtime environment |
-
-### Backend (Python MT5 Bridge)
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `FTMO_MT5_ENABLED` | `false` | Enable the bridge |
-| `FTMO_BRIDGE_DRY_RUN` | `true` | Simulate without MT5 |
-| `FTMO_BRIDGE_ALLOW_LIVE` | `false` | Allow live MT5 connection |
-| `FTMO_BRIDGE_BIND_HOST` | `127.0.0.1` | WebSocket listen host |
-| `FTMO_BRIDGE_BIND_PORT` | `8787` | WebSocket listen port |
-| `FTMO_BRIDGE_TOKEN` | (empty) | 32+ random bytes required for live mode or any non-loopback bind |
-| `FTMO_MT5_LOGIN` | (empty) | MT5 account login |
-| `FTMO_MT5_PASSWORD` | (empty) | MT5 account password |
-| `FTMO_MT5_SERVER` | (empty) | MT5 broker server |
-| `FTMO_MT5_TERMINAL_PATH` | (empty) | Path to terminal64.exe |
+Use `backend/.env.example` and `backend/docs/CONFIGURATION.md` as the complete source-derived
+reference. Production must keep Rust and Python listeners on loopback, use independent admin and
+worker bootstrap secrets, and provide the MT5 identity HMAC key and Vault token through absolute
+ACL-protected files.
 
 ## Deployment
 
@@ -259,7 +233,7 @@ expanded to include the request body, Firebase UID, bearer token, or FCM token.
 
 Cloudflare DNS keeps the Vercel apex CNAME in DNS-only mode. The `api` hostname is a proxied
 Cloudflare Tunnel record targeting the Go API on this Windows host. Do not expose the private MT5
-market-data sidecar on port 8765 or the execution bridge on port 8787.
+market-data sidecar on port 8765 or either Rust listener on ports 8790/8791.
 
 If Vercel reports `The specified Root Directory "frontend" does not exist`, the deployment is using
 an old commit from before the monorepo split. Redeploy the latest `master` commit where the
@@ -306,16 +280,16 @@ backend retains `/auth/google`, `/auth/refresh`, and `/auth/me`.
 For the runner contract, exceptional switches, manual recovery, Cloudflare Tunnel configuration,
 and troubleshooting, follow `backend/docs/PRODUCTION_BUILD.md`.
 
-### MT5 EA 1.25 compatibility release
+### MT5 EA 1.26 compatibility release
 
 Roll out the portfolio synchronization path backend-first:
 
 1. From the repository root, run `.\run-backend-production.ps1`.
 2. Deploy the frontend.
-3. Upgrade each MT5 terminal to the published EA 1.25 artifact, one account at a
+3. Upgrade each MT5 terminal to the published EA 1.26 artifact, one account at a
    time, and verify its downloaded SHA-256 checksum.
 
-EA 1.25 is required before the account becomes `READY`; it retains in-place
+EA 1.26 is required before the account becomes `READY`; it retains in-place
 pending-order mutation and adds the current copier telemetry and broker-margin
 safety contract. Older releases are blocked from command routing.
 Existing broker positions and pending orders do not need to be closed during

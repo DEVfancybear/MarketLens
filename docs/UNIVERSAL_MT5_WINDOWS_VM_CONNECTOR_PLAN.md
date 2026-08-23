@@ -1,9 +1,11 @@
 # Universal MT5 Windows VM connector plan
 
-- Status: **approved architecture; Phase 0 complete; Phase 1 conditional; Phase 2 disposable operational gate PASS; Phase 3 Vault client PASS but API lifecycle gate open; Phase 4 repository gauntlet PASS but live broker gate open**
+- Status: **Revision 15 one-host bare-metal managed flow implemented and locally gated; R15-9 production-like three-demo-account gate not executed**
 - Decision date: 12 August 2026
 - Replaces the deleted TickerAll/MetaApi cloud-provider plan
-- Runtime model: MarketLens-managed Windows VM pool, multiple terminals per VM
+- Selected runtime model: one operator-controlled Windows host, one bounded bare-metal worker,
+  one preinstalled/attested terminal slot per active account
+- Optional future model: MarketLens-managed Windows VM pool; not a dependency of the selected host
 - VM worker implementation: Rust (`mt5-vm-agent`)
 - MT5 integration: official MetaTrader 5 terminal plus the official Python package
 - User-side requirement: browser only; no local MT5, EA, extension, or connector
@@ -11,8 +13,10 @@
 This is the authoritative implementation plan for connecting user-owned MT5
 accounts to MarketLens. A user signs in to MarketLens, enters the MT5 login,
 master password, and exact server, and then trades from MarketLens web. The
-MarketLens Windows worker pool owns every MT5 terminal process and keeps it
-connected to the broker.
+operator-controlled Windows worker owns every managed MT5 terminal process and
+keeps it connected to the broker. The approved bare-metal path reuses the
+durable worker/session/lease control plane without claiming VM-grade tenant
+isolation.
 
 The design is broker-neutral. FTMO, Exness, and other MT5 brokers use the same
 connector code. Broker-specific behavior is represented by discovered terminal
@@ -21,6 +25,22 @@ broker-name branches in order or risk logic.
 
 Do not start a later phase until the preceding exit gate passes. Demo and live
 accounts share code, but live activation remains a separate production gate.
+
+### Revision 15 bare-metal refresh — 23 August 2026
+
+- Authenticated Go connect/reconnect keeps owner identity server-derived and moves broker
+  credentials only through Vault-backed one-time grants.
+- The Rust worker supports the `bare_metal` substrate, bounded preattested slots, exact-PID
+  terminal lifecycle, redirected-stdin login, named-pipe EA bootstrap, generation fencing,
+  restart adoption/cleanup, and the existing durable EA execution engine.
+- The operator installer is dry-run-first, copies the hash-pinned worker binary into the protected
+  worker root, accepts private HTTPS or exact loopback HTTP service URLs, registers a bounded
+  interactive Scheduled Task, and reports long-running Task Scheduler state correctly.
+- CI/source builds now produce both Rust production binaries. Artifact deploy verifies and stages
+  `mt5-vm-agent.exe`; worker installation/start remains a separate explicit action and is not added
+  to `run-backend-production.ps1`.
+- No production migration, worker install, backend restart, Vault mutation, broker credential, or
+  demo/live order was used for the local implementation gate. R15-9 remains explicitly unverified.
 
 ### Local exit-gate refresh — 21 August 2026
 

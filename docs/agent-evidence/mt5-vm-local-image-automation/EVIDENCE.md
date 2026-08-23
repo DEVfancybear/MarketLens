@@ -146,3 +146,64 @@ generalized Windows base VHDX, virtual switch, VM/image roots, and explicit reso
 are infrastructure inputs, not per-user MT5 installation steps. Once supplied, image publication
 and worker cloning must be rerun through the same gauntlet; this evidence does not claim that a
 golden VHDX or production worker VM already exists.
+
+---
+
+# Revision 15-16 evidence - bare-metal managed MT5 + EA lifecycle
+
+## Outcome and source state
+
+- Revisions 15 and 16 were explicitly approved on 2026-08-21; the backend-docs Revision 1 commit
+  expansion was explicitly approved on 2026-08-23.
+- Fresh combined gauntlet result: `PASS_WITH_ALLOWED_UNVERIFIED`, with 44 passed layers, no failed
+  layer, and two recorded SPEC-authorized unverified layers.
+- Base HEAD: `5a61554c2255d18e0162c6dd9b71e8244ec6eb4a`.
+- Verified task tree SHA-256:
+  `793ed4bcbd5c8f38159e4633bf628ce67c885c833d8777c71e3a28371f567a48` (96 files).
+- Run window: 2026-08-23 15:09:16Z through 15:20:14Z on Windows.
+- No production deploy/restart, real-account connection, live broker request, or trade mutation was
+  performed.
+
+## R15 acceptance map
+
+| Scenario | Fresh evidence | Result |
+|---|---|---|
+| R15-1 authenticated connect and secret lifecycle | Go/Rust auth tests, disposable database integration, secret scan, mutants M1-M3 | PASS |
+| R15-2 bounded worker and terminal slots | Rust agent/managed tests, Python managed/safety contracts, dirty-slot mutant M7 | PASS |
+| R15-3 automatic start and in-memory login | Agent process/control tests, disposable migration/Rust integration, capability audit | PASS |
+| R15-4 preinstalled EA bootstrap without secret files | Common EA MetaEditor compile/release attestation, exact named-pipe PID mutant M5, secret scan | PASS |
+| R15-5 readiness, isolation, and uniqueness | Migration `0042` positive/negative gates, lease-generation mutant M4, freshness mutant M6 | PASS |
+| R15-6 lifecycle and restart recovery | Rust agent tests, Python VM regressions, dirty-slot and unknown-outcome mutants M7-M8 | PASS |
+| R15-7 execution safety | Full Go/Rust test suites, changed-line coverage gates, stress/property tests, all eight mutants killed | PASS |
+| R15-8 UI and operations | Frontend typecheck/lint and 83 trade tests; 2,546 backend-doc checks | PASS |
+| R15-9 live end-to-end demo | Required runtime confirmation, secure Vault/worker identity, and three disposable demo accounts were not supplied | UNVERIFIED_ALLOWED |
+
+## Fresh final gauntlet
+
+Rerunnable entry point:
+
+```powershell
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `
+  .\tools\verify-mt5-baremetal-managed-ea.ps1
+```
+
+Exact high-level results:
+
+- Go format/vet/tests/module integrity: PASS; changed-line coverage `200/200`.
+- Go race: `UNVERIFIED_ALLOWED` because this Windows host lacks the supported CGO/C compiler path.
+- Rust fmt/check/clippy/tests/agent/stress/supply-chain/database: PASS; changed-line coverage
+  `6897/6897` using the approved bundled LLVM tools.
+- Python managed: 54/54 PASS; VM regression: PASS.
+- Disposable PostgreSQL migration `0042`: positive PASS; known-bad negative control rejected.
+- Mutation score: `8/8`; M1 through M8 were killed.
+- Common EA: compiled and attested SHA-256
+  `516D54DDDC1EC4651C4D3E90F66F45B705E1E9FED1062BB66CDE78F6AD2B86AC`.
+- Frontend: typecheck/lint PASS; trade tests 83/83 PASS; production audit found zero
+  vulnerabilities.
+- Backend docs: 2,546 checks PASS, including 149 Go routes, 75 environment keys, and migration
+  head `0042`.
+- Diff whitespace, secret controls/scan, dependency delta, and capability boundary: PASS.
+
+The persisted generated report is `.artifacts/mt5-baremetal-managed-ea/summary.json`; generated
+artifacts are intentionally excluded from the commit. Independent-verifier rounds did not cover
+this final documentation state, so no final independent-verifier verdict is claimed.

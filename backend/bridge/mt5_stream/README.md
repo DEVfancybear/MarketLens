@@ -298,4 +298,5 @@ A Python history response uses:
 - The Go consumer reconnects with exponential backoff if the Python bridge restarts.
 - `stream_symbols` is the confirmed base-plus-dynamic polling set. The default is on-demand;
   `MT5_STREAM_ALL_VISIBLE=true` is an explicit higher-CPU compatibility mode.
-- This stream is market-data only. Order execution remains a separate FTMO/MT5 bridge concern.
+- This stream is market-data only. Order execution remains in the separate Go BFF, Rust gateway,
+  and common MT5 EA path.

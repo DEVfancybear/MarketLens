@@ -4,6 +4,14 @@ _Post-monorepo update 2026-07-07._
 
 The historical issue log below is preserved. Current monorepo-specific issues:
 
+- Revision 15's local implementation gate does not replace the production-like R15-9 broker gate.
+  No production migration, worker install/start, backend cutover, Vault mutation, or three-account
+  Demo flow has been executed. Live/funded activation remains unauthorized until that gate passes.
+- CI produces and checksums `mt5-vm-agent.exe`, but the repository has no authorized code-signing
+  identity or signing service. A production host whose Application Control policy rejects unsigned
+  binaries still needs a legitimately signed/policy-approved agent artifact; hash pinning proves
+  artifact identity, not publisher trust. Do not self-sign, weaken policy, or use a bypass.
+
 - `cargo fmt` cannot run on the Windows development host: `cargo-fmt` is blocked by Application
   Control (`os error 4551`). CI still enforces `cargo fmt --all -- --check`, so a change that skips
   formatting will fail there. The `rustfmt` binary itself is **not** blocked - format and verify

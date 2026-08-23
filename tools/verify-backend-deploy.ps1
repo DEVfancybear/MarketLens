@@ -152,16 +152,19 @@ Invoke-Layer 'Layer 3 - reproduce the CI artifact recipe locally' {
             Write-Host "  built $cmd.exe"
         }
         $gateway = Join-Path $BackendDir 'execution\target\release\execution-gateway.exe'
-        if (-not (Test-Path -LiteralPath $gateway)) {
-            throw "execution-gateway.exe not found; run 'cargo build --release -p execution-gateway' in backend/execution first."
+        $agent = Join-Path $BackendDir 'execution\target\release\mt5-vm-agent.exe'
+        if (-not (Test-Path -LiteralPath $gateway) -or
+            -not (Test-Path -LiteralPath $agent)) {
+            throw "Rust production binaries not found; run 'cargo build --release -p execution-gateway -p mt5-vm-agent' in backend/execution first."
         }
         Copy-Item -LiteralPath $gateway -Destination (Join-Path $stage 'bin') -Force
+        Copy-Item -LiteralPath $agent -Destination (Join-Path $stage 'bin') -Force
 
         # Manifest + checksums, mirroring the workflow's packaging step.
         $manifest = [ordered]@{
             commit     = (& git -C $RepoRoot rev-parse HEAD)
             builtAtUtc = (Get-Date).ToUniversalTime().ToString('o')
-            binaries   = @('api.exe', 'migrate.exe', 'mt5-stream.exe', 'execution-gateway.exe')
+            binaries   = @('api.exe', 'migrate.exe', 'mt5-stream.exe', 'execution-gateway.exe', 'mt5-vm-agent.exe')
         }
         $manifest | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $stage 'MANIFEST.json') -Encoding utf8
         Push-Location $stage
@@ -176,7 +179,7 @@ Invoke-Layer 'Layer 3 - reproduce the CI artifact recipe locally' {
         Import-Module (Join-Path $ToolsDir 'lib\MarketLensBackend.psm1') -Force
         $verified = Test-ArtifactChecksums -Root $stage -SumsPath (Join-Path $stage 'SHA256SUMS')
         Write-Host "  packaged and verified $verified file(s)"
-        if ($verified -ne 5) { throw "expected 5 packaged files, got $verified" }
+        if ($verified -ne 6) { throw "expected 6 packaged files, got $verified" }
 
         # The packaged migrator must run standalone, proving the SQL really is
         # embedded and no repository file is consulted. With a reachable database
@@ -223,10 +226,23 @@ Invoke-Layer 'Layer 4 - architecture invariants' {
     }
     Write-Host '  no tools script invokes a migration rollback'
 
-    # The canonical runner must remain behaviourally untouched by this task.
-    $runnerDiff = Get-CommandOutput -Command 'git' -CommandArgs @('diff', 'HEAD', '--', 'run-backend-production.ps1')
-    if ($runnerDiff.Output.Trim()) { throw 'run-backend-production.ps1 was modified; the deploy path must delegate to it unchanged.' }
-    Write-Host '  run-backend-production.ps1 unchanged'
+    # The canonical runner owns backend lifecycle and must export the stable
+    # identity key required by the Rust gateway. Worker lifecycle stays a
+    # separate explicit operator action.
+    $runnerSource = Get-Content -LiteralPath (Join-Path $RepoRoot 'run-backend-production.ps1') -Raw
+    foreach ($requiredRunnerLine in @(
+        '$executionMt5IdentityHmacKeyFile = Get-BackendEnvValue "EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE"',
+        '$env:EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE = $executionMt5IdentityHmacKeyFile'
+    )) {
+        if ([regex]::Matches($runnerSource, [regex]::Escape($requiredRunnerLine)).Count -ne 1) {
+            throw 'production runner identity-key security wiring is missing or duplicated'
+        }
+    }
+    $workerLifecyclePattern = '(?i)(?:mt5-vm-agent(?:\.exe)?|Start-MT5BareMetalWorker\.ps1|--managed-worker|Start-ScheduledTask)'
+    if ($runnerSource -match $workerLifecyclePattern) {
+        throw 'unapproved managed-worker lifecycle in production runner'
+    }
+    Write-Host '  runner security wiring valid; worker lifecycle remains separate'
 
     # Delegation, not duplication.
     foreach ($flag in @('-SkipPull', '-SkipBuild', '-SkipMigrations')) {

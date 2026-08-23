@@ -1,108 +1,173 @@
-# Backend Architecture
+# Backend architecture
 
-> Execution note (2026-07-26): legacy `mt5verify`, FTMO Connector, and stored
-> terminal-credential sections below are superseded and must not be followed.
-> The current Go BFF + Rust gateway + common EA design is in
-> `../../docs/TRADE_EXECUTION_ARCHITECTURE.md`.
+MarketLens separates browser authentication, execution authority, broker adaptation, credentials,
+market data, and persistence so no browser or broker adapter can bypass server-side policy.
 
-## Overview
+## Runtime boundaries
 
-The backend has four relevant runtime components:
+1. **Go API/BFF (`:8080`)**
+   - Fiber HTTP/WebSocket server for browser-facing APIs.
+   - Verifies Firebase Google identities, owns backend sessions, injects the authenticated owner,
+     applies Origin/rate-limit/security middleware, and relays an exact execution allow-list.
+   - Owns workspace CRUD, alerts, replay, journal, simulated trading, trade authorization, and the
+     browser-facing market-data fan-out.
+2. **Rust execution gateway (`127.0.0.1:8790` and `127.0.0.1:8791`)**
+   - `127.0.0.1:8790` is the common MT5 EA listener.
+   - `127.0.0.1:8791` is the internal admin and managed-worker listener.
+   - Owns deterministic risk, account lifecycle, copy routing, idempotency, durable commands,
+     reconciliation, prop-risk policy, and broker-neutral adapter contracts.
+3. **Common MT5 EA**
+   - One EA per terminal/account for FTMO, Exness, and other MT5 brokers.
+   - Receives already-authorized commands, runs terminal/broker checks, submits them, and returns
+     portfolio, instrument, transaction, and command evidence.
+   - Current gateway minimum is EA `1.26`.
+4. **MT5 Windows worker/agent**
+   - Supervises bounded terminal/adapter slots and the managed common-EA bootstrap path.
+   - Uses private, authenticated, replay-protected, generation/lease-fenced control sessions.
+   - The bare-metal managed path is activation-gated by the operator runbook and Demo evidence.
+5. **Vault KV v2**
+   - Stores managed broker credentials behind opaque references.
+   - Go performs Vault I/O; Rust and PostgreSQL never receive or retain a broker password.
+   - Workers consume one-time, worker/session/lease/command-bound credential grants.
+6. **PostgreSQL**
+   - Durable source of truth for users, sessions, workspace state, replay, execution state, audit,
+     managed-worker lifecycle, and synchronized account data.
+7. **Private MT5 market-data sidecar (`localhost:8765`)**
+   - Python adapter for symbol catalogs, ticks, history, and broker session observations.
+   - Go consumes it and fans data out to browsers. It is read-only and cannot authorize orders.
 
-1. **Go API** - the primary Fiber HTTP server handling web requests.
-2. **Python MT5 Bridge** - an isolated sidecar service that manages FTMO broker connectivity over
-   browser-facing WebSockets on port 8787.
-3. **Python MT5 Market-Data Sidecar** - a private tick/history bridge consumed by Go on port 8765.
-4. **Python MT5 Verifier** - a short-lived helper launched by the Go API to verify one signed-in
-   user's saved MT5 credentials.
-
-The long-running Python bridges remain outside the Go HTTP request path and do not share memory or
-state with the Go server. The verifier is deliberately separate from those bridges: the API sends
-one credential request over stdin, reads one bounded sanitized JSON response, and never exposes the
-password in command arguments or API responses. Verifier processes are serialized because the
-native MetaTrader terminal owns one active local account session.
-
-Current implementation note: the Fiber API and migrations through `0023` are implemented. The
-runtime includes authenticated workspace sync, drawings/revisions, alerts with dynamic technical
-targets and evidence verification, layouts, replay/trading, journal/screenshot contracts, and the
-MT5 stream plus per-user verification. Keep business logic outside handlers so modules remain
-testable without an HTTP server.
-
-## Package Layout
-
-```text
-cmd/api/main.go          # Entrypoint, wires config and starts the server
-internal/
-  config/                # Environment-based configuration
-  httpserver/            # HTTP app setup, routing, middleware, lifecycle
-  health/                # Health-check endpoint
-  auth/                  # Firebase verification, sessions, cookies, auth routes/middleware
-  settings/              # User settings and integration repos/handlers
-  mt5verify/             # Bounded stdin-only MT5 verifier process adapter
-  workspace/             # Sync bootstrap envelope, including alert lifecycle state
-  alerts/                # Fixed/dynamic alert targets, evidence validation, and history
-  drawings/              # Drawing persistence and revision/tombstone sync
-  layouts/               # Layout persistence and bootstrap
-  replay/                # Replay sessions, datasets, clock, and trading
-  journal/               # Journal/screenshot API and retention
-  middleware/            # Shared Fiber middleware
-bridge/                  # Python MT5 helpers and WebSocket sidecars
-  ftmo_mt5/              # FTMO execution bridge (:8787) + verifier helper
-  mt5_stream/            # Go-consumed market-data bridge (:8765)
-```
-
-## Python MT5 Execution Bridge (Sidecar)
-
-The `bridge/` directory contains a standalone Python WebSocket service for FTMO MT5 broker
-integration. It is an **isolated sidecar** - it does not share memory, state, or request paths with
-the Go API.
-
-Key characteristics:
-
-- Runs as a separate OS process (`python -m bridge.ftmo_mt5.service`).
-- Communicates with the frontend directly over WebSockets (port 8787 by default).
-- Handles broker credentials, order execution, risk guards, symbol metadata, and audit logging.
-- Does not depend on the Go server and can be started/stopped independently.
-
-## MT5 Market Data And Verification
-
-`bridge/mt5_stream` publishes private market data on `ws://localhost:8765`; the Go API consumes it
-and exposes authenticated/public HTTP/WebSocket market-data routes to the frontend. Separately,
-`internal/mt5verify` launches `bridge/ftmo_mt5/verify_account.py` for the authenticated Verify
-endpoint. That helper has no listening port and is not the long-running execution bridge. In
-production the canonical runner maintains a dedicated portable terminal clone under
-`backend/.data`; sharing the market-data terminal would let a credential check switch or disconnect
-the live quote session.
-
-Python is intentionally a thin terminal adapter, not the fan-out layer. Go owns browser
-subscriptions, caches, reconnects, and the replaceable dynamic symbol set. By default the sidecar
-polls only configured base symbols plus the union sent by Go; changing or closing the last browser
-subscription releases that dynamic symbol. MetaTrader5 calls remain on one thread, with queued tick
-work ordered before queued history work.
-
-## Request Flow
+## Exposure model
 
 ```text
-Client
-  -> HTTP app
-  -> Shared middleware
-  -> Route group
-  -> Handler
-  -> Service/domain code
-  -> JSON response
+Browser
+  -> public HTTPS
+  -> Go API/BFF :8080
+       -> PostgreSQL
+       -> Vault KV v2
+       -> private MT5 stream localhost:8765
+       -> Rust admin 127.0.0.1:8791
+
+Common MT5 EA
+  -> public HTTPS /execution-ea allow-list on Go
+  -> Rust EA listener 127.0.0.1:8790
+
+Managed MT5 Windows worker
+  -> private authenticated Go/Rust worker routes
+  -> Rust admin listener 127.0.0.1:8791
 ```
 
-## Design Decisions
+Only Go is internet-facing. Neither Rust listener nor the Python market-data sidecar may be
+published. The public `/execution-ea` relay exposes only health, session creation, command polling,
+and event upload.
 
-- **Fiber**: Go web framework for API routing and middleware.
-- **zerolog**: structured JSON logging suitable for production.
-- **Graceful shutdown**: the API process should drain in-flight requests before exiting.
-- **Internal packages**: backend code under `internal/` is private to this service.
+## Trust and ownership rules
 
-## Adding A New Endpoint
+- Browser cookies identify a user but do not authorize a trade by themselves. Sensitive execution
+  mutations require an active backend session and, when configured, a short-lived
+  `X-Trade-Authorization` capability bound to the operation and payload.
+- Go derives owner identity from the authenticated session. Client-supplied owner IDs are never
+  authoritative.
+- Rust is the execution authority. It validates account ownership, risk, venue capability,
+  idempotency, liveness, instrument constraints, and command lifecycle before queueing work.
+- Account identity is tenant-bound and derived with a server-side HMAC key from owner, broker
+  server, and login. Raw login credentials are not an identity key.
+- A successful MT5 submission is not proof of a fill. Broker events and reconciliation are
+  authoritative, and unknown delivery outcomes are never blindly resubmitted.
+- PostgreSQL is required for production. In-memory or browser-only state is not a production
+  substitute for commands, events, sessions, audit, or managed lifecycle.
 
-1. Create a package under `internal/` for the domain area, for example `internal/marketdata/`.
-2. Keep request/response DTOs near the handler.
-3. Expose a route registration function that accepts a Fiber router or route group.
-4. Register the route from `internal/httpserver/server.go`.
-5. Add tests for domain logic separately from handler plumbing when possible.
+## Go package map
+
+```text
+backend/
+  cmd/api/                 production HTTP API entry point
+  cmd/migrate/             embedded migration runner
+  cmd/mt5-stream/          standalone market-data diagnostic consumer
+  internal/
+    alerts/                alert state, evidence, history, push-worker contracts
+    auth/                  Firebase verification, sessions, JWTs, cookies
+    config/                environment loading and validation
+    db/                    PostgreSQL pool and migration integration
+    drawings/              drawings, templates, tool favorites
+    execution/             authenticated BFF and exact EA relay
+    health/                liveness and readiness
+    httpserver/            Fiber app, middleware order, route mounting
+    indicators/            indicator preset persistence
+    journal/               journal and screenshot metadata
+    layouts/               saved layouts
+    mt5stream/             Go market-data consumer/cache/fan-out
+    mt5vault/              narrow Vault KV v2 client
+    pineruntime/           backend indicator/Pine runtime endpoints
+    pinescripts/           private scripts and public indicator store
+    replay/                deterministic replay sessions and actor engine
+    settings/              settings and notification integrations
+    simtrading/            durable simulated accounts and positions
+    tradeauth/             optional trade password and authorization capability
+    watchlists/            watchlists, sections, order, preferences
+    workspace/             authenticated bootstrap envelope
+  bridge/
+    mt5_ea/                common broker-neutral execution EA
+    mt5_session/           read-only native session-schedule helper
+    mt5_stream/            private Python market-data adapter
+    mt5_vm/                validation harnesses and worker adapter
+  execution/               Rust workspace
+  migrations/              ordered PostgreSQL migrations
+```
+
+## Rust execution workspace
+
+- `execution-domain`: versioned wire/domain types and validation.
+- `execution-engine`: deterministic normalization, risk, and multi-target routing.
+- `execution-adapters`: venue adapter boundary.
+- `execution-gateway`: EA/admin HTTP listeners, PostgreSQL persistence, copier, reconciliation,
+  managed control plane, and read synchronization.
+- `mt5-vm-agent`: bounded Windows process/slot supervisor and managed worker client.
+
+See [the execution workspace README](../execution/README.md) for crate-specific checks.
+
+## Request flows
+
+### Ordinary protected API
+
+```text
+request -> request ID/recovery/security/Origin/CORS middleware
+        -> access-cookie authentication
+        -> owner-scoped handler/service/repository
+        -> PostgreSQL
+        -> standard JSON/error envelope
+```
+
+### Browser execution
+
+```text
+browser -> Go auth + active-session + rate limits
+        -> optional payload-bound trade authorization
+        -> Rust admin API with server token and owner identity
+        -> risk/idempotency/adapter routing
+        -> durable target command
+        -> EA poll -> MT5 -> event/reconciliation -> browser state
+```
+
+### Managed account connection
+
+```text
+browser -> Go reserves owner-scoped account and writes credential to Vault
+        -> Rust places lifecycle work on a compatible private worker
+        -> worker consumes a one-time credential grant
+        -> isolated terminal login and exact-PID common-EA bootstrap
+        -> snapshots/history synchronized to Rust/PostgreSQL
+```
+
+Deletion and credential rotation are multi-step, fail-closed flows. Go finalizes Vault deletion only
+after Rust has fenced or removed the corresponding lifecycle state.
+
+## Adding a backend endpoint
+
+1. Put domain logic and DTO validation in the owning `internal/<domain>` package.
+2. Scope protected resources from authenticated locals, never a body/query owner ID.
+3. Register the route under `/api/v1` from its handler and wire it in `cmd/api/main.go` and
+   `internal/httpserver/server.go`.
+4. Add unit/handler tests, ownership/error cases, and an integration test when persistence or an
+   external boundary changes.
+5. Update [API.md](API.md), [CONFIGURATION.md](CONFIGURATION.md), and
+   [DATABASE.md](DATABASE.md) when their contracts change.

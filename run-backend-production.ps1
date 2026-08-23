@@ -152,6 +152,7 @@ New-Item -ItemType Directory -Path $runtimeLogs -Force | Out-Null
 $databaseUrl = Get-BackendEnvValue "DATABASE_URL"
 $executionAdminToken = Get-BackendEnvValue "EXECUTION_ADMIN_TOKEN"
 $executionMt5VmBootstrapToken = Get-BackendEnvValue "EXECUTION_MT5_VM_BOOTSTRAP_TOKEN"
+$executionMt5IdentityHmacKeyFile = Get-BackendEnvValue "EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE"
 if ([string]::IsNullOrWhiteSpace($databaseUrl)) {
   throw "DATABASE_URL is required by both the API and durable Rust execution gateway."
 }
@@ -165,6 +166,20 @@ if (-not [string]::IsNullOrWhiteSpace($executionMt5VmBootstrapToken) -and
 if (-not [string]::IsNullOrWhiteSpace($executionMt5VmBootstrapToken) -and
     $executionMt5VmBootstrapToken -ceq $executionAdminToken) {
   throw "EXECUTION_MT5_VM_BOOTSTRAP_TOKEN must be distinct from EXECUTION_ADMIN_TOKEN."
+}
+if ([string]::IsNullOrWhiteSpace($executionMt5IdentityHmacKeyFile) -or
+    -not [IO.Path]::IsPathRooted($executionMt5IdentityHmacKeyFile)) {
+  throw "EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE must be an absolute path."
+}
+$executionMt5IdentityHmacKeyFile = [IO.Path]::GetFullPath($executionMt5IdentityHmacKeyFile)
+if (-not (Test-Path -LiteralPath $executionMt5IdentityHmacKeyFile -PathType Leaf)) {
+  throw "EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE must name a readable regular file."
+}
+$executionMt5IdentityHmacKeyItem = Get-Item -LiteralPath $executionMt5IdentityHmacKeyFile -Force
+if (($executionMt5IdentityHmacKeyItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+    $executionMt5IdentityHmacKeyItem.Length -lt 32 -or
+    $executionMt5IdentityHmacKeyItem.Length -gt 4096) {
+  throw "EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE must name a small non-link secret file."
 }
 $executionGatewayBind = Get-BackendEnvValue "EXECUTION_GATEWAY_BIND"
 if ([string]::IsNullOrWhiteSpace($executionGatewayBind)) {
@@ -189,6 +204,7 @@ $executionAdminPort = Get-BindPort -Bind $executionAdminBind -Name "EXECUTION_AD
 # does not read dotenv files by itself.
 $env:DATABASE_URL = $databaseUrl
 $env:EXECUTION_ADMIN_TOKEN = $executionAdminToken
+$env:EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE = $executionMt5IdentityHmacKeyFile
 if ([string]::IsNullOrWhiteSpace($executionMt5VmBootstrapToken)) {
   Remove-Item Env:EXECUTION_MT5_VM_BOOTSTRAP_TOKEN -ErrorAction SilentlyContinue
 } else {

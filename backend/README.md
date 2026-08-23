@@ -94,7 +94,7 @@ The same EA binary is used for all brokers. The derived account identity is
 tenant-bound and stable for `owner + server + login`; raw credentials are never
 stored.
 
-The production minimum is `MarketLensExecutionEA 1.25`. The EA reports its version in
+The production minimum is `MarketLensExecutionEA 1.26`. The EA reports its version in
 the account heartbeat, while Rust records a separate successful command-poll
 timestamp. Rust publishes the active minimum through the account registry so
 the Go BFF and browser use the same compatibility gate. The Trade workspace
@@ -139,6 +139,9 @@ backend/
   migrations/0027_*           irreversible legacy credential removal
   migrations/0028_*           successful EA command-poll liveness
   migrations/0029_*           unknown delivery-outcome reconciliation
+  migrations/0030..0037_*     layout, trade authorization, copier, prop-risk, recovery
+  migrations/0038..0041_*     managed MT5 control, credentials, read/history sync
+  migrations/0042_*           bare-metal managed EA bootstrap and fencing
 ```
 
 The historical FTMO Connector/verifier code and routes no longer exist.

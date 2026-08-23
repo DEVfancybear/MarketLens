@@ -8,8 +8,9 @@ use axum::{Json, Router};
 use execution_domain::mt5_vm_control::{
     MT5_VM_CONTROL_PROTOCOL_VERSION, MT5_VM_MAX_COMMANDS_PER_POLL, MT5_VM_MAX_SCHEDULED_TERMINALS,
     WorkerCommandAckKind, WorkerCommandAckRequest, WorkerCommandAckResponse, WorkerCommandKind,
-    WorkerControlCommand, WorkerHeartbeatRequest, WorkerHeartbeatResponse, WorkerHelloRequest,
-    WorkerHelloResponse, WorkerPollRequest, WorkerPollResponse,
+    WorkerControlCommand, WorkerEaBootstrapBindRequest, WorkerEaBootstrapBindResponse,
+    WorkerHeartbeatRequest, WorkerHeartbeatResponse, WorkerHelloRequest, WorkerHelloResponse,
+    WorkerPollRequest, WorkerPollResponse,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -37,6 +38,10 @@ pub(super) fn routes() -> Router<GatewayState> {
         .route("/v1/mt5-vm/workers/heartbeat", post(worker_heartbeat))
         .route("/v1/mt5-vm/workers/poll", post(worker_poll))
         .route("/v1/mt5-vm/workers/ack", post(worker_ack))
+        .route(
+            "/v1/mt5-vm/workers/ea-bootstrap/bind",
+            post(worker_bind_ea_bootstrap),
+        )
         .route("/v1/admin/mt5-vm/workers", get(list_workers))
         .route("/v1/admin/mt5-vm/commands", post(queue_admin_command))
 }
@@ -112,6 +117,53 @@ fn valid_identifier(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
 }
 
+pub(super) fn valid_ea_gateway_origin(value: &str) -> bool {
+    if !(8..=2_048).contains(&value.len())
+        || value
+            .chars()
+            .any(|character| matches!(character, '@' | '?' | '#' | '\\'))
+    {
+        return false;
+    }
+    let Ok(uri) = value.parse::<axum::http::Uri>() else {
+        return false;
+    };
+    valid_ea_gateway_uri(value, &uri)
+}
+
+fn valid_ea_gateway_uri(value: &str, uri: &axum::http::Uri) -> bool {
+    let Some((scheme, authority)) = uri.scheme_str().zip(uri.authority()) else {
+        return false;
+    };
+    if format!("{scheme}://{authority}") != value {
+        return false;
+    }
+    match scheme {
+        "https" => true,
+        "http" => uri.host().is_some_and(|host| {
+            host.eq_ignore_ascii_case("localhost")
+                || host == "127.0.0.1"
+                || matches!(host, "::1" | "[::1]")
+        }),
+        _ => false,
+    }
+}
+
+fn decode_lower_hex_32(value: &str) -> Option<[u8; 32]> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        return None;
+    }
+    let mut decoded = [0_u8; 32];
+    for (index, byte) in decoded.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&value[index * 2..index * 2 + 2], 16).ok()?;
+    }
+    Some(decoded)
+}
+
 fn valid_version(value: &str) -> bool {
     let value = value.trim().as_bytes();
     !value.is_empty()
@@ -145,6 +197,14 @@ fn validate_hello(request: &WorkerHelloRequest) -> Result<u16, ApiError> {
     Ok(protocol)
 }
 
+fn worker_substrate(request: &WorkerHelloRequest) -> &'static str {
+    if request.capabilities.contains("bare_metal") {
+        "bare_metal"
+    } else {
+        "windows_vm"
+    }
+}
+
 async fn worker_hello(
     State(state): State<GatewayState>,
     headers: HeaderMap,
@@ -155,6 +215,7 @@ async fn worker_hello(
     let database = database(&state)?;
     let raw_token = random_token();
     let token_hash = sha256(raw_token.as_bytes());
+    let worker_substrate = worker_substrate(&request);
     let mut transaction = database
         .begin()
         .await
@@ -165,11 +226,12 @@ async fn worker_hello(
         INSERT INTO execution_mt5_vm_workers (
           worker_id, protocol_version, session_generation, session_token_hash,
           agent_version, image_version, runtime_version, capacity, region,
-          capabilities, status, drain, last_heartbeat_at, heartbeat_expires_at
+          capabilities, worker_substrate, status, drain,
+          last_heartbeat_at, heartbeat_expires_at
         )
         VALUES (
           $1, $2, 1, $3, $4, $5, $6, $7, $8, $9,
-          'healthy', false, now(), now() + interval '45 seconds'
+          $10, 'healthy', false, now(), now() + interval '45 seconds'
         )
         ON CONFLICT (worker_id) DO UPDATE SET
           protocol_version = EXCLUDED.protocol_version,
@@ -181,6 +243,7 @@ async fn worker_hello(
           capacity = EXCLUDED.capacity,
           region = EXCLUDED.region,
           capabilities = EXCLUDED.capabilities,
+          worker_substrate = EXCLUDED.worker_substrate,
           status = CASE WHEN execution_mt5_vm_workers.drain THEN 'draining' ELSE 'healthy' END,
           last_heartbeat_at = now(),
           heartbeat_expires_at = now() + interval '45 seconds'
@@ -198,6 +261,7 @@ async fn worker_hello(
     .bind(sqlx_core::types::Json(json!({
         "features": request.capabilities
     })))
+    .bind(worker_substrate)
     .fetch_one(&mut *transaction)
     .await
     .map_err(|error| ApiError::database("register MT5 VM worker", error))?
@@ -243,6 +307,7 @@ async fn worker_hello(
             connection_revision = connection_revision + 1,
             last_error_code = 'WORKER_SESSION_REPLACED'
         WHERE worker_id = $1
+          AND disconnect_requested_revision IS NULL
         "#,
     )
     .bind(&request.worker_id)
@@ -266,7 +331,7 @@ async fn worker_hello(
     }))
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(super) struct WorkerAuth {
     pub(super) protocol_version: u16,
     pub(super) session_generation: u64,
@@ -281,8 +346,37 @@ pub(super) async fn authenticate_worker(
     protocol_version: u16,
 ) -> Result<WorkerAuth, ApiError> {
     let token = bearer_token(headers)
-        .filter(|token| token.len() == 64)
+        .filter(|token| valid_worker_session_token(token))
         .ok_or_else(|| ApiError::unauthorized("MT5 VM worker bearer token is required"))?;
+    authenticate_worker_token(
+        transaction,
+        token,
+        worker_id,
+        session_generation,
+        protocol_version,
+    )
+    .await
+}
+
+pub(super) fn valid_worker_session_token(token: &str) -> bool {
+    token.len() == 64
+        && token
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+}
+
+pub(super) async fn authenticate_worker_token(
+    transaction: &mut sqlx_core::transaction::Transaction<'_, Postgres>,
+    token: &str,
+    worker_id: &str,
+    session_generation: u64,
+    protocol_version: u16,
+) -> Result<WorkerAuth, ApiError> {
+    if !valid_worker_session_token(token) {
+        return Err(ApiError::unauthorized(
+            "MT5 VM worker bearer token is required",
+        ));
+    }
     let row = sqlx_core::query::query(
         r#"
         SELECT protocol_version, session_generation, session_token_hash, capacity,
@@ -339,6 +433,94 @@ pub(super) async fn authenticate_worker(
             .map_err(|error| ApiError::database("decode worker capacity", error))?
             as u16,
     })
+}
+
+async fn worker_bind_ea_bootstrap(
+    State(state): State<GatewayState>,
+    headers: HeaderMap,
+    Json(request): Json<WorkerEaBootstrapBindRequest>,
+) -> Result<Json<WorkerEaBootstrapBindResponse>, ApiError> {
+    validate_session_envelope(
+        &request.worker_id,
+        request.session_generation,
+        request.protocol_version,
+    )?;
+    let token_hash = decode_lower_hex_32(&request.pairing_token_sha256).ok_or_else(|| {
+        ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "MANAGED_EA_RUNTIME_BINDING_INVALID",
+            "managed EA runtime binding is invalid",
+        )
+    })?;
+    if !valid_identifier(&request.account_id)
+        || !valid_identifier(&request.slot_id)
+        || request.lease_generation == 0
+        || request.connection_revision == 0
+        || request.terminal_pid == 0
+        || !valid_ea_gateway_origin(&request.gateway_origin)
+    {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "MANAGED_EA_RUNTIME_BINDING_INVALID",
+            "managed EA runtime binding is invalid",
+        ));
+    }
+
+    let database = database(&state)?;
+    let mut transaction = database
+        .begin()
+        .await
+        .map_err(|error| ApiError::database("begin managed EA runtime binding", error))?;
+    authenticate_worker(
+        &mut transaction,
+        &headers,
+        &request.worker_id,
+        request.session_generation,
+        request.protocol_version,
+    )
+    .await?;
+    let row = sqlx_core::query::query(
+        r#"
+        SELECT outcome, idempotent
+        FROM execution_bind_mt5_managed_ea_bootstrap(
+          $1, $2, $3, $4, $5, $6, $7, $8, $9
+        )
+        "#,
+    )
+    .bind(token_hash.to_vec())
+    .bind(&request.worker_id)
+    .bind(request.session_generation as i64)
+    .bind(&request.account_id)
+    .bind(request.lease_generation as i64)
+    .bind(request.connection_revision as i64)
+    .bind(&request.slot_id)
+    .bind(i64::from(request.terminal_pid))
+    .bind(&request.gateway_origin)
+    .fetch_one(&mut *transaction)
+    .await
+    .map_err(|error| ApiError::database("bind managed EA runtime", error))?;
+    let outcome: String = row
+        .try_get("outcome")
+        .map_err(|error| ApiError::database("decode managed EA runtime binding", error))?;
+    let idempotent: bool = row
+        .try_get("idempotent")
+        .map_err(|error| ApiError::database("decode managed EA runtime idempotency", error))?;
+    if outcome != "bound" {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            "MANAGED_EA_RUNTIME_BINDING_FENCED",
+            "managed EA runtime binding is no longer active",
+        ));
+    }
+    transaction
+        .commit()
+        .await
+        .map_err(|error| ApiError::database("commit managed EA runtime binding", error))?;
+    Ok(Json(WorkerEaBootstrapBindResponse {
+        bound: true,
+        idempotent,
+        server_time_ms: now_ms(),
+    }))
 }
 
 pub(super) fn validate_session_envelope(
@@ -553,6 +735,7 @@ async fn worker_poll(
     .await
     .map_err(|error| ApiError::database("lease worker commands", error))?;
     let mut credential_grants = HashMap::new();
+    let mut ea_bootstrap_tokens = HashMap::new();
     for row in &rows {
         let command_kind: String = row
             .try_get("command_kind")
@@ -611,6 +794,69 @@ async fn worker_poll(
         .map_err(|error| ApiError::database("issue MT5 credential grant", error))?;
         if issued.is_some() {
             credential_grants.insert(command_id, raw_token);
+
+            let raw_ea_token = random_token();
+            sqlx_core::query::query(
+                r#"
+                UPDATE execution_pairing_tokens token
+                SET consumed_at = now()
+                FROM execution_mt5_vm_control_commands command
+                WHERE command.id = $1
+                  AND token.managed_account_id = command.account_id
+                  AND token.managed_worker_id = command.worker_id
+                  AND token.worker_session_generation = command.worker_session_generation
+                  AND token.lease_generation = command.lease_generation
+                  AND token.consumed_at IS NULL
+                "#,
+            )
+            .bind(command_id)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| ApiError::database("revoke prior managed EA bootstrap", error))?;
+            let ea_token_issued = sqlx_core::query::query(
+                r#"
+                INSERT INTO execution_pairing_tokens (
+                  user_id, token_hash, expires_at, managed_account_id,
+                  managed_worker_id, worker_session_generation, lease_generation,
+                  connection_revision, masked_login_suffix,
+                  identity_fingerprint
+                )
+                SELECT command.user_id, $2,
+                       LEAST(command.expires_at, now() + interval '2 minutes'),
+                       command.account_id, command.worker_id,
+                       command.worker_session_generation, command.lease_generation,
+                       account.connection_revision, account.masked_login_suffix,
+                       account.identity_fingerprint
+                FROM execution_mt5_vm_control_commands command
+                JOIN execution_mt5_vm_accounts account
+                  ON account.user_id = command.user_id AND account.account_id = command.account_id
+                JOIN execution_mt5_vm_workers worker
+                  ON worker.worker_id = command.worker_id
+                JOIN execution_mt5_vm_account_leases lease
+                  ON lease.account_id = command.account_id
+                WHERE command.id = $1
+                  AND worker.worker_substrate = 'bare_metal'
+                  AND worker.session_generation = command.worker_session_generation
+                  AND account.connection_revision > 0
+                  AND account.identity_fingerprint IS NOT NULL
+                  AND account.disconnect_requested_revision IS NULL
+                  AND account.worker_id = command.worker_id
+                  AND account.lease_generation = command.lease_generation
+                  AND lease.worker_id = command.worker_id
+                  AND lease.worker_session_generation = command.worker_session_generation
+                  AND lease.generation = command.lease_generation
+                  AND lease.status = 'active' AND lease.expires_at > now()
+                RETURNING id
+                "#,
+            )
+            .bind(command_id)
+            .bind(sha256(raw_ea_token.as_bytes()).to_vec())
+            .fetch_optional(&mut *transaction)
+            .await
+            .map_err(|error| ApiError::database("issue managed EA bootstrap", error))?;
+            if ea_token_issued.is_some() {
+                ea_bootstrap_tokens.insert(command_id, raw_ea_token);
+            }
         }
     }
     transaction
@@ -662,6 +908,7 @@ async fn worker_poll(
             payload_json: serde_json::to_string(&payload)
                 .map_err(|error| ApiError::internal("encode worker command payload", error))?,
             credential_grant: credential_grants.remove(&command_id),
+            ea_bootstrap_token: ea_bootstrap_tokens.remove(&command_id),
         });
     }
     Ok(Json(WorkerPollResponse {
@@ -976,6 +1223,7 @@ async fn apply_terminal_ack(
                 last_error_code = $4
             WHERE user_id = $1 AND account_id = $2
               AND worker_id = $3 AND lease_generation = $5
+              AND disconnect_requested_revision IS NULL
             "#,
         )
         .bind(user_id)
@@ -990,7 +1238,7 @@ async fn apply_terminal_ack(
     }
     match command_kind {
         "provision_account" => {
-            sqlx_core::query::query(
+            let advanced = sqlx_core::query::query(
                 r#"
                 UPDATE execution_mt5_vm_accounts
                 SET connection_status = 'synchronizing',
@@ -998,6 +1246,7 @@ async fn apply_terminal_ack(
                     last_error_code = NULL
                 WHERE user_id = $1 AND account_id = $2
                   AND worker_id = $3 AND lease_generation = $4
+                  AND disconnect_requested_revision IS NULL
                 "#,
             )
             .bind(user_id)
@@ -1007,6 +1256,9 @@ async fn apply_terminal_ack(
             .execute(&mut **transaction)
             .await
             .map_err(|error| ApiError::database("advance provisioned account", error))?;
+            if advanced.rows_affected() != 1 {
+                return Ok(());
+            }
             sqlx_core::query::query(
                 r#"
                 INSERT INTO execution_mt5_vm_control_commands (
@@ -1042,12 +1294,19 @@ async fn apply_terminal_ack(
             // transactions in mt5_vm_sync.
             sqlx_core::query::query(
                 r#"
-                UPDATE execution_mt5_vm_accounts
+                UPDATE execution_mt5_vm_accounts account
                 SET connection_status = 'synchronizing',
-                    connection_revision = connection_revision + 1,
+                    connection_revision = CASE
+                      WHEN worker.worker_substrate = 'bare_metal'
+                        THEN account.connection_revision
+                      ELSE account.connection_revision + 1
+                    END,
                     last_error_code = NULL
-                WHERE user_id = $1 AND account_id = $2
-                  AND worker_id = $3 AND lease_generation = $4
+                FROM execution_mt5_vm_workers worker
+                WHERE account.user_id = $1 AND account.account_id = $2
+                  AND account.worker_id = $3 AND account.lease_generation = $4
+                  AND worker.worker_id = account.worker_id
+                  AND account.disconnect_requested_revision IS NULL
                 "#,
             )
             .bind(user_id)
@@ -1077,9 +1336,12 @@ async fn apply_terminal_ack(
                 r#"
                 UPDATE execution_mt5_vm_accounts
                 SET connection_status = 'disconnected', worker_id = NULL,
-                    connection_revision = connection_revision + 1,
                     last_error_code = NULL
                 WHERE user_id = $1 AND account_id = $2 AND lease_generation = $3
+                  AND (
+                    disconnect_requested_revision IS NOT NULL OR
+                    removal_requested_at IS NOT NULL
+                  )
                 "#,
             )
             .bind(user_id)
@@ -1090,10 +1352,23 @@ async fn apply_terminal_ack(
             .map_err(|error| ApiError::database("disconnect stopped account", error))?;
             sqlx_core::query::query(
                 r#"
+                UPDATE execution_accounts
+                SET status = 'offline', trade_allowed = false, updated_at = now()
+                WHERE user_id = $1 AND id = $2 AND connector_kind = 'windows_vm'
+                "#,
+            )
+            .bind(user_id)
+            .bind(&request.account_id)
+            .execute(&mut **transaction)
+            .await
+            .map_err(|error| ApiError::database("publish stopped account offline", error))?;
+            sqlx_core::query::query(
+                r#"
                 UPDATE execution_mt5_vm_control_commands
                 SET status = 'fenced', completed_at = now(), dispatch_lease_until = NULL,
                     error_code = 'ACCOUNT_STOPPED'
                 WHERE account_id = $1 AND lease_generation = $2
+                  AND command_kind <> 'stop_account'
                   AND status IN ('queued', 'dispatched', 'received')
                 "#,
             )
@@ -1457,6 +1732,7 @@ async fn expire_stale_state(database: &PgPool) -> Result<(), ApiError> {
         FROM expired
         WHERE account.account_id = expired.account_id
           AND account.lease_generation = expired.generation
+          AND account.disconnect_requested_revision IS NULL
         "#,
     )
     .execute(&mut *transaction)
@@ -1511,6 +1787,7 @@ async fn schedule_one(database: &PgPool) -> Result<bool, ApiError> {
          AND registry.id = account.account_id
         WHERE account.connection_status IN ('queued', 'reconnecting')
           AND account.worker_id IS NULL
+          AND account.disconnect_requested_revision IS NULL
           AND registry.connector_kind = 'windows_vm'
           AND registry.venue_kind = 'metatrader5'
           AND EXISTS (
@@ -1705,7 +1982,764 @@ async fn schedule_one(database: &PgPool) -> Result<bool, ApiError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{AdminOrderTarget, ManagedEaPairingBinding, accept_events, poll_commands};
     use axum::http::HeaderValue;
+    use execution_domain::mt5_vm_control::WorkerLeaseClaim;
+    use execution_domain::{
+        AccountId, AccountMode, CommandId, CopyAllocation, EXECUTION_PROTOCOL_VERSION,
+        EaAccountSnapshot, EaEventBatch, EaManagedRuntimeBinding, EaSessionRequest, IdempotencyKey,
+        OrderIntent, OrderKind, OrderSizing, QuantityUnit, Side,
+    };
+    use rust_decimal::Decimal;
+    use std::collections::BTreeMap;
+
+    const MANAGED_DATABASE_ADMIN_TOKEN: &str = "managed-database-admin-token-at-least-32-bytes";
+    const MANAGED_DATABASE_BOOTSTRAP_TOKEN: &str =
+        "managed-database-worker-bootstrap-token-at-least-32-bytes";
+
+    async fn managed_database_state() -> GatewayState {
+        let database_url = std::env::var("MT5_MANAGED_TEST_DATABASE_URL")
+            .expect("the disposable PostgreSQL harness supplies a loopback database URL");
+        let database = sqlx_postgres::PgPoolOptions::new()
+            .max_connections(4)
+            .connect(&database_url)
+            .await
+            .expect("connect to the disposable managed MT5 database");
+        GatewayState::new_production(
+            MANAGED_DATABASE_ADMIN_TOKEN,
+            "stable-managed-database-identity-key-at-least-32-bytes",
+            Some(MANAGED_DATABASE_BOOTSTRAP_TOKEN),
+            database,
+        )
+    }
+
+    fn worker_headers(session_token: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {session_token}"))
+                .expect("worker bearer header is valid"),
+        );
+        headers
+    }
+
+    fn lower_hex_32(value: &[u8; 32]) -> String {
+        use std::fmt::Write;
+
+        value
+            .iter()
+            .fold(String::with_capacity(64), |mut hex, byte| {
+                write!(&mut hex, "{byte:02x}").expect("writing to a String cannot fail");
+                hex
+            })
+    }
+
+    fn managed_account_snapshot(login: &str, server: &str) -> EaAccountSnapshot {
+        EaAccountSnapshot {
+            login: login.into(),
+            broker: "Synthetic Broker".into(),
+            server: server.into(),
+            mode: AccountMode::Demo,
+            currency: "USD".into(),
+            balance: Decimal::new(10_000, 0),
+            equity: Decimal::new(10_000, 0),
+            margin: Decimal::ZERO,
+            free_margin: Decimal::new(10_000, 0),
+            leverage: 100,
+            trade_allowed: true,
+            terminal_build: 5_000,
+            ea_version: Some("1.26".into()),
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "run only inside the disposable PostgreSQL 17 harness"]
+    async fn managed_database_worker_provision_bootstrap_and_reconcile_are_fenced_end_to_end() {
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+        let state = managed_database_state().await;
+        let owner_id = Uuid::new_v4();
+        let account_id = format!("account-{}", Uuid::new_v4().simple());
+        let worker_id = format!("worker-{}", Uuid::new_v4().simple());
+        let runtime_version = format!("test-{}", Uuid::new_v4().simple());
+        let broker_login = "81234567";
+        let broker_server = "Synthetic-Broker-Demo";
+        let database = database(&state).expect("production state has a database");
+        let mut invalid_auth_transaction = database.begin().await.expect("begin invalid auth");
+        let invalid_auth = authenticate_worker_token(
+            &mut invalid_auth_transaction,
+            "short",
+            "worker-invalid",
+            1,
+            MT5_VM_CONTROL_PROTOCOL_VERSION,
+        )
+        .await
+        .expect_err("malformed session token fails before worker lookup");
+        assert_eq!(StatusCode::UNAUTHORIZED, invalid_auth.status);
+        invalid_auth_transaction
+            .rollback()
+            .await
+            .expect("rollback invalid auth");
+        let identity_fingerprint = crate::mt5_identity_fingerprint(
+            &state.inner.mt5_identity_key,
+            broker_login,
+            broker_server,
+        );
+        let server_fingerprint =
+            crate::mt5_server_fingerprint(&state.inner.mt5_identity_key, broker_server);
+
+        sqlx_core::query::query(
+            "INSERT INTO users (id, email, email_verified, display_name, status) \
+             VALUES ($1, $2, true, 'Managed control owner', 'active')",
+        )
+        .bind(owner_id)
+        .bind(format!("managed-control-{owner_id}@example.invalid"))
+        .execute(database)
+        .await
+        .expect("seed an active disposable owner");
+        sqlx_core::query::query(
+            r#"
+            INSERT INTO execution_accounts (
+              id, user_id, venue_kind, broker_code, external_account_ref, server,
+              label, mode, status, trade_allowed, secret_ref, connector_kind
+            ) VALUES (
+              $1, $2, 'metatrader5', 'mt5', $1, '', 'Synthetic managed account',
+              'unknown', 'connecting', false, $3, 'windows_vm'
+            )
+            "#,
+        )
+        .bind(&account_id)
+        .bind(owner_id)
+        .bind(format!("mt5-{}", Uuid::new_v4().simple()))
+        .execute(database)
+        .await
+        .expect("seed the opaque execution-account credential reference");
+        sqlx_core::query::query(
+            r#"
+            INSERT INTO execution_mt5_vm_accounts (
+              user_id, account_id, normalized_server, masked_login_suffix,
+              persistence_mode, connection_status, connection_revision,
+              identity_fingerprint, server_fingerprint, required_runtime_version
+            ) VALUES ($1, $2, '', '4567', 'managed', 'queued', 1, $3, $4, $5)
+            "#,
+        )
+        .bind(owner_id)
+        .bind(&account_id)
+        .bind(identity_fingerprint.to_vec())
+        .bind(server_fingerprint.to_vec())
+        .bind(&runtime_version)
+        .execute(database)
+        .await
+        .expect("seed a schedulable managed account");
+
+        let mut bootstrap_headers = HeaderMap::new();
+        bootstrap_headers.insert(
+            "x-mt5-vm-bootstrap-token",
+            HeaderValue::from_static(MANAGED_DATABASE_BOOTSTRAP_TOKEN),
+        );
+        let Json(hello) = worker_hello(
+            State(state.clone()),
+            bootstrap_headers,
+            Json(WorkerHelloRequest {
+                worker_id: worker_id.clone(),
+                protocol_min: MT5_VM_CONTROL_PROTOCOL_VERSION,
+                protocol_max: MT5_VM_CONTROL_PROTOCOL_VERSION,
+                agent_version: "1.0.0".into(),
+                image_version: "2026.08.22".into(),
+                runtime_version,
+                capacity: MT5_VM_MAX_SCHEDULED_TERMINALS,
+                region: "test-region".into(),
+                capabilities: ["installed_slots".to_owned(), "bare_metal".to_owned()]
+                    .into_iter()
+                    .collect(),
+            }),
+        )
+        .await
+        .expect("enroll a bare-metal worker with a one-time bootstrap secret");
+        assert_eq!(worker_id, hello.worker_id);
+        assert_eq!(MT5_VM_CONTROL_PROTOCOL_VERSION, hello.protocol_version);
+
+        let scheduled = scheduler_tick(&state)
+            .await
+            .expect("schedule all compatible queued accounts");
+        assert!(scheduled >= 1);
+        let assignment = sqlx_core::query::query(
+            "SELECT worker_id, lease_generation, connection_revision \
+             FROM execution_mt5_vm_accounts WHERE user_id = $1 AND account_id = $2",
+        )
+        .bind(owner_id)
+        .bind(&account_id)
+        .fetch_one(database)
+        .await
+        .expect("load the durable worker assignment");
+        assert_eq!(
+            worker_id,
+            assignment
+                .try_get::<String, _>("worker_id")
+                .expect("decode assigned worker")
+        );
+        let lease_generation = assignment
+            .try_get::<i64, _>("lease_generation")
+            .expect("decode lease generation") as u64;
+        let connection_revision = assignment
+            .try_get::<i64, _>("connection_revision")
+            .expect("decode connection revision") as u64;
+
+        let Json(polled) = worker_poll(
+            State(state.clone()),
+            worker_headers(&hello.session_token),
+            Json(WorkerPollRequest {
+                protocol_version: hello.protocol_version,
+                worker_id: worker_id.clone(),
+                session_generation: hello.session_generation,
+                max_commands: None,
+            }),
+        )
+        .await
+        .expect("lease the provision command to the authenticated worker");
+        let provision = polled
+            .commands
+            .into_iter()
+            .find(|command| command.account_id == account_id)
+            .expect("the scheduled account has a provision command");
+        assert_eq!(WorkerCommandKind::ProvisionAccount, provision.kind);
+        let credential_grant = provision
+            .credential_grant
+            .clone()
+            .expect("provisioning issues a one-time credential grant");
+        let ea_bootstrap_token = provision
+            .ea_bootstrap_token
+            .expect("bare-metal provisioning issues a fenced EA bootstrap token");
+        let pairing_token_sha256 = lower_hex_32(&sha256(ea_bootstrap_token.as_bytes()));
+
+        let binding = WorkerEaBootstrapBindRequest {
+            protocol_version: hello.protocol_version,
+            worker_id: worker_id.clone(),
+            session_generation: hello.session_generation,
+            account_id: account_id.clone(),
+            lease_generation,
+            connection_revision,
+            pairing_token_sha256,
+            slot_id: "slot-01".into(),
+            terminal_pid: 42_424,
+            gateway_origin: "http://127.0.0.1:8790".into(),
+        };
+        let Json(first_binding) = worker_bind_ea_bootstrap(
+            State(state.clone()),
+            worker_headers(&hello.session_token),
+            Json(binding.clone()),
+        )
+        .await
+        .expect("bind the EA token to the exact worker, lease, revision, slot, and process");
+        assert!(first_binding.bound);
+        assert!(!first_binding.idempotent);
+        let Json(retried_binding) = worker_bind_ea_bootstrap(
+            State(state.clone()),
+            worker_headers(&hello.session_token),
+            Json(binding.clone()),
+        )
+        .await
+        .expect("retry the identical runtime binding idempotently");
+        assert!(retried_binding.bound);
+        assert!(retried_binding.idempotent);
+        let mut fenced_binding = binding;
+        fenced_binding.terminal_pid += 1;
+        let fenced = worker_bind_ea_bootstrap(
+            State(state.clone()),
+            worker_headers(&hello.session_token),
+            Json(fenced_binding),
+        )
+        .await
+        .expect_err("a changed terminal PID is fenced");
+        assert_eq!("MANAGED_EA_RUNTIME_BINDING_FENCED", fenced.body.code);
+
+        let ea_session = state
+            .create_session(EaSessionRequest {
+                protocol_version: EXECUTION_PROTOCOL_VERSION,
+                pairing_token: ea_bootstrap_token,
+                agent_id: "managed-ea-agent".into(),
+                runtime_binding: Some(EaManagedRuntimeBinding {
+                    slot_id: "slot-01".into(),
+                    terminal_pid: 42_424,
+                    gateway_origin: "http://127.0.0.1:8790".into(),
+                }),
+                account: managed_account_snapshot(broker_login, broker_server),
+            })
+            .await
+            .expect("pair the bound managed EA session against the active assignment");
+        assert_eq!(account_id, ea_session.account_id.as_str());
+        let mut ea_headers = HeaderMap::new();
+        ea_headers.insert(
+            axum::http::header::AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {}", ea_session.session_token))
+                .expect("EA bearer header is valid"),
+        );
+        let authenticated = state
+            .authenticate(&ea_headers)
+            .await
+            .expect("authenticate the managed EA session after pairing");
+        assert_eq!(account_id, authenticated.account_id.as_str());
+
+        let deferred_intent = OrderIntent {
+            command_id: CommandId::new(format!("parent-{}", Uuid::new_v4().simple())),
+            idempotency_key: IdempotencyKey::new(format!("intent-{}", Uuid::new_v4().simple())),
+            source_account_id: None,
+            canonical_symbol: "EURUSD".into(),
+            side: Side::Buy,
+            kind: OrderKind::Market,
+            sizing: OrderSizing::Fixed {
+                quantity: Decimal::ONE,
+                unit: QuantityUnit::Lots,
+            },
+            limit_price: None,
+            stop_price: None,
+            stop_loss: Some(Decimal::new(109, 2)),
+            take_profit: Some(Decimal::new(112, 2)),
+            metadata: BTreeMap::new(),
+        };
+        let deferred_target = AdminOrderTarget {
+            account_id: AccountId::new(account_id.clone()),
+            allocation: CopyAllocation::SameQuantity,
+            max_quantity: None,
+        };
+        let (deferred_command_id, _) = state
+            .defer_order(owner_id, &deferred_intent, &deferred_target)
+            .await
+            .expect("persist a waiting command for the active managed account");
+        let Json(before_readiness) = poll_commands(State(state.clone()), ea_headers.clone())
+            .await
+            .expect("poll before the atomic readiness gate");
+        assert!(
+            before_readiness.commands.is_empty(),
+            "a synchronizing managed account cannot receive the waiting command"
+        );
+
+        let replacement_pairing_token = random_token();
+        state
+            .insert_managed_pairing_token(
+                &replacement_pairing_token,
+                &owner_id.to_string(),
+                Duration::from_secs(60),
+                ManagedEaPairingBinding {
+                    account_id: AccountId::new(account_id.clone()),
+                    worker_id: worker_id.clone(),
+                    worker_session_generation: hello.session_generation,
+                    lease_generation,
+                    connection_revision,
+                    slot_id: "slot-01".into(),
+                    terminal_pid: 42_424,
+                    gateway_origin: "http://127.0.0.1:8790".into(),
+                    masked_login_suffix: Some("4567".into()),
+                    identity_fingerprint: identity_fingerprint.to_vec(),
+                },
+            )
+            .await
+            .expect("replace the durable managed pairing token only for the active assignment");
+        let replacement_session = state
+            .create_session(EaSessionRequest {
+                protocol_version: EXECUTION_PROTOCOL_VERSION,
+                pairing_token: replacement_pairing_token,
+                agent_id: "managed-ea-agent-reconnected".into(),
+                runtime_binding: Some(EaManagedRuntimeBinding {
+                    slot_id: "slot-01".into(),
+                    terminal_pid: 42_424,
+                    gateway_origin: "http://127.0.0.1:8790".into(),
+                }),
+                account: managed_account_snapshot(broker_login, broker_server),
+            })
+            .await
+            .expect("replace the prior EA session without changing the managed account identity");
+        assert_eq!(account_id, replacement_session.account_id.as_str());
+        assert_ne!(ea_session.session_token, replacement_session.session_token);
+
+        let received = WorkerCommandAckRequest {
+            protocol_version: hello.protocol_version,
+            worker_id: worker_id.clone(),
+            session_generation: hello.session_generation,
+            account_id: account_id.clone(),
+            lease_generation,
+            command_id: provision.command_id.clone(),
+            ack: WorkerCommandAckKind::Received,
+            result_json: None,
+            error_code: None,
+        };
+        let Json(received_ack) = worker_ack(
+            State(state.clone()),
+            worker_headers(&hello.session_token),
+            Json(received),
+        )
+        .await
+        .expect("acknowledge durable receipt of the provision command");
+        assert_eq!("received", received_ack.status);
+        let (consumed_secret_ref, consumed_persistence) =
+            crate::mt5_vm_connections::consume_credential_grant_for_test(
+                state.clone(),
+                MANAGED_DATABASE_ADMIN_TOKEN,
+                &hello.session_token,
+                crate::mt5_vm_connections::TestCredentialGrantEnvelope {
+                    protocol_version: hello.protocol_version,
+                    worker_id: worker_id.clone(),
+                    session_generation: hello.session_generation,
+                    account_id: account_id.clone(),
+                    lease_generation,
+                    command_id: provision.command_id.clone(),
+                    grant_token: credential_grant.clone(),
+                },
+            )
+            .await
+            .expect("consume the one-time grant only from the authenticated assigned worker");
+        assert!(consumed_secret_ref.starts_with("mt5-"));
+        assert_eq!("managed", consumed_persistence);
+        let replay = crate::mt5_vm_connections::consume_credential_grant_for_test(
+            state.clone(),
+            MANAGED_DATABASE_ADMIN_TOKEN,
+            &hello.session_token,
+            crate::mt5_vm_connections::TestCredentialGrantEnvelope {
+                protocol_version: hello.protocol_version,
+                worker_id: worker_id.clone(),
+                session_generation: hello.session_generation,
+                account_id: account_id.clone(),
+                lease_generation,
+                command_id: provision.command_id.clone(),
+                grant_token: credential_grant,
+            },
+        )
+        .await
+        .expect_err("a consumed credential grant cannot be replayed");
+        assert_eq!(StatusCode::UNAUTHORIZED, replay.status);
+        let Json(succeeded_ack) = worker_ack(
+            State(state.clone()),
+            worker_headers(&hello.session_token),
+            Json(WorkerCommandAckRequest {
+                protocol_version: hello.protocol_version,
+                worker_id: worker_id.clone(),
+                session_generation: hello.session_generation,
+                account_id: account_id.clone(),
+                lease_generation,
+                command_id: provision.command_id,
+                ack: WorkerCommandAckKind::Succeeded,
+                result_json: Some("{}".into()),
+                error_code: None,
+            }),
+        )
+        .await
+        .expect("complete provisioning and queue initial reconciliation");
+        assert_eq!("succeeded", succeeded_ack.status);
+
+        let Json(reconcile_poll) = worker_poll(
+            State(state.clone()),
+            worker_headers(&hello.session_token),
+            Json(WorkerPollRequest {
+                protocol_version: hello.protocol_version,
+                worker_id: worker_id.clone(),
+                session_generation: hello.session_generation,
+                max_commands: Some(MT5_VM_MAX_COMMANDS_PER_POLL),
+            }),
+        )
+        .await
+        .expect("lease the reconciliation command after provisioning");
+        let reconcile = reconcile_poll
+            .commands
+            .into_iter()
+            .find(|command| command.account_id == account_id)
+            .expect("the provisioned account has a reconciliation command");
+        assert_eq!(WorkerCommandKind::ReconcileAccount, reconcile.kind);
+        assert!(reconcile.credential_grant.is_none());
+        assert!(reconcile.ea_bootstrap_token.is_none());
+        let Json(reconciled) = worker_ack(
+            State(state.clone()),
+            worker_headers(&hello.session_token),
+            Json(WorkerCommandAckRequest {
+                protocol_version: hello.protocol_version,
+                worker_id: worker_id.clone(),
+                session_generation: hello.session_generation,
+                account_id: account_id.clone(),
+                lease_generation,
+                command_id: reconcile.command_id,
+                ack: WorkerCommandAckKind::Succeeded,
+                result_json: Some(
+                    json!({
+                        "ready": true,
+                        "accountSync": true,
+                        "portfolioSync": true,
+                        "instrumentSync": true
+                    })
+                    .to_string(),
+                ),
+                error_code: None,
+            }),
+        )
+        .await
+        .expect("complete the reconciliation command without bypassing snapshot readiness");
+        assert_eq!("succeeded", reconciled.status);
+
+        let Json(heartbeat) = worker_heartbeat(
+            State(state.clone()),
+            worker_headers(&hello.session_token),
+            Json(WorkerHeartbeatRequest {
+                protocol_version: hello.protocol_version,
+                worker_id: worker_id.clone(),
+                session_generation: hello.session_generation,
+                leases: vec![WorkerLeaseClaim {
+                    account_id: account_id.clone(),
+                    lease_generation,
+                }],
+            }),
+        )
+        .await
+        .expect("renew the same fenced account lease");
+        assert!(heartbeat.ok);
+
+        let current_assignment = sqlx_core::query::query(
+            "SELECT lease_generation, connection_revision \
+             FROM execution_mt5_vm_accounts WHERE user_id = $1 AND account_id = $2",
+        )
+        .bind(owner_id)
+        .bind(&account_id)
+        .fetch_one(database)
+        .await
+        .expect("reload the post-reconcile assignment fence");
+        let current_lease_generation = current_assignment
+            .try_get::<i64, _>("lease_generation")
+            .expect("decode post-reconcile lease generation")
+            as u64;
+        let current_connection_revision = current_assignment
+            .try_get::<i64, _>("connection_revision")
+            .expect("decode post-reconcile connection revision")
+            as u64;
+        let post_reconcile_pairing_token = random_token();
+        state
+            .insert_managed_pairing_token(
+                &post_reconcile_pairing_token,
+                &owner_id.to_string(),
+                Duration::from_secs(60),
+                ManagedEaPairingBinding {
+                    account_id: AccountId::new(account_id.clone()),
+                    worker_id: worker_id.clone(),
+                    worker_session_generation: hello.session_generation,
+                    lease_generation: current_lease_generation,
+                    connection_revision: current_connection_revision,
+                    slot_id: "slot-01".into(),
+                    terminal_pid: 42_424,
+                    gateway_origin: "http://127.0.0.1:8790".into(),
+                    masked_login_suffix: Some("4567".into()),
+                    identity_fingerprint: identity_fingerprint.to_vec(),
+                },
+            )
+            .await
+            .expect("issue a fresh EA bootstrap after provisioning and reconciliation");
+        let post_reconcile_session = state
+            .create_session(EaSessionRequest {
+                protocol_version: EXECUTION_PROTOCOL_VERSION,
+                pairing_token: post_reconcile_pairing_token,
+                agent_id: "managed-ea-agent-post-reconcile".into(),
+                runtime_binding: Some(EaManagedRuntimeBinding {
+                    slot_id: "slot-01".into(),
+                    terminal_pid: 42_424,
+                    gateway_origin: "http://127.0.0.1:8790".into(),
+                }),
+                account: managed_account_snapshot(broker_login, broker_server),
+            })
+            .await
+            .expect("pair a fresh EA session after provisioning and reconciliation");
+        let mut post_reconcile_headers = HeaderMap::new();
+        post_reconcile_headers.insert(
+            axum::http::header::AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {}", post_reconcile_session.session_token))
+                .expect("post-reconcile EA bearer header is valid"),
+        );
+
+        let Json(accepted) = accept_events(
+            State(state.clone()),
+            post_reconcile_headers.clone(),
+            Json(EaEventBatch {
+                protocol_version: EXECUTION_PROTOCOL_VERSION,
+                account: managed_account_snapshot(broker_login, broker_server),
+                instruments: Vec::new(),
+                positions: Vec::new(),
+                pending_orders: Vec::new(),
+                portfolio_snapshot_complete: true,
+                events: Vec::new(),
+            }),
+        )
+        .await
+        .expect("publish the first authenticated snapshot through the atomic readiness gate");
+        assert!(accepted.ok);
+        let Json(after_readiness) = poll_commands(State(state.clone()), post_reconcile_headers)
+            .await
+            .expect("poll after the atomic readiness gate");
+        assert!(
+            after_readiness.commands.is_empty(),
+            "worker reconcile metadata alone cannot replace the four authoritative sync families"
+        );
+        let deferred_status = sqlx_core::query::query(
+            "SELECT status FROM execution_target_commands WHERE user_id = $1 AND id = $2",
+        )
+        .bind(owner_id)
+        .bind(deferred_command_id.as_str())
+        .fetch_one(database)
+        .await
+        .expect("load the still-fenced deferred command")
+        .try_get::<String, _>("status")
+        .expect("decode deferred command status");
+        assert_eq!(
+            deferred_status, "waiting",
+            "the command stays waiting until the four authoritative sync families are complete"
+        );
+
+        let failed_ack_request = WorkerCommandAckRequest {
+            protocol_version: hello.protocol_version,
+            worker_id: worker_id.clone(),
+            session_generation: hello.session_generation,
+            account_id: account_id.clone(),
+            lease_generation,
+            command_id: Uuid::new_v4().to_string(),
+            ack: WorkerCommandAckKind::Failed,
+            result_json: None,
+            error_code: Some("SYNTHETIC_RUNTIME_FAILURE".into()),
+        };
+        let mut failed_ack_transaction = database.begin().await.expect("begin failed ack probe");
+        apply_terminal_ack(
+            &mut failed_ack_transaction,
+            owner_id,
+            &failed_ack_request,
+            "reconcile_account",
+            "failed",
+            None,
+        )
+        .await
+        .expect("a failed terminal acknowledgement degrades the active account");
+        failed_ack_transaction
+            .rollback()
+            .await
+            .expect("roll back the failed ack probe");
+
+        let mut stale_provision_request = failed_ack_request;
+        stale_provision_request.account_id = format!("missing-{}", Uuid::new_v4().simple());
+        stale_provision_request.ack = WorkerCommandAckKind::Succeeded;
+        stale_provision_request.error_code = None;
+        let mut stale_provision_transaction =
+            database.begin().await.expect("begin stale provision probe");
+        apply_terminal_ack(
+            &mut stale_provision_transaction,
+            owner_id,
+            &stale_provision_request,
+            "provision_account",
+            "succeeded",
+            Some(&json!({})),
+        )
+        .await
+        .expect("a fenced provision acknowledgement is a no-op");
+        stale_provision_transaction
+            .rollback()
+            .await
+            .expect("roll back the stale provision probe");
+
+        let account_row = sqlx_core::query::query(
+            "SELECT connection_status, connection_revision FROM execution_mt5_vm_accounts \
+             WHERE user_id = $1 AND account_id = $2",
+        )
+        .bind(owner_id)
+        .bind(&account_id)
+        .fetch_one(database)
+        .await
+        .expect("load the reconciled managed account");
+        let status = account_row
+            .try_get::<String, _>("connection_status")
+            .expect("decode managed account status");
+        assert_eq!("synchronizing", status);
+        let current_revision = account_row
+            .try_get::<i64, _>("connection_revision")
+            .expect("decode managed account revision") as u64;
+
+        let (disconnect_status, disconnect_revision) =
+            crate::mt5_vm_connections::disconnect_account_for_test(
+                state.clone(),
+                MANAGED_DATABASE_ADMIN_TOKEN,
+                owner_id.to_string(),
+                account_id.clone(),
+                current_revision,
+            )
+            .await
+            .expect("fence the active runtime and durably queue its stop command");
+        assert_eq!("degraded", disconnect_status);
+        assert!(disconnect_revision > current_revision);
+
+        let Json(stop_poll) = worker_poll(
+            State(state.clone()),
+            worker_headers(&hello.session_token),
+            Json(WorkerPollRequest {
+                protocol_version: hello.protocol_version,
+                worker_id: worker_id.clone(),
+                session_generation: hello.session_generation,
+                max_commands: Some(MT5_VM_MAX_COMMANDS_PER_POLL),
+            }),
+        )
+        .await
+        .expect("poll the fenced runtime stop command");
+        let stop = stop_poll
+            .commands
+            .into_iter()
+            .find(|command| command.account_id == account_id)
+            .expect("disconnect queues a stop command for the assigned account");
+        assert_eq!(WorkerCommandKind::StopAccount, stop.kind);
+        let Json(stop_received) = worker_ack(
+            State(state.clone()),
+            worker_headers(&hello.session_token),
+            Json(WorkerCommandAckRequest {
+                protocol_version: hello.protocol_version,
+                worker_id: worker_id.clone(),
+                session_generation: hello.session_generation,
+                account_id: account_id.clone(),
+                lease_generation,
+                command_id: stop.command_id.clone(),
+                ack: WorkerCommandAckKind::Received,
+                result_json: None,
+                error_code: None,
+            }),
+        )
+        .await
+        .expect("acknowledge durable receipt of the stop command");
+        assert_eq!("received", stop_received.status);
+        let Json(stopped) = worker_ack(
+            State(state.clone()),
+            worker_headers(&hello.session_token),
+            Json(WorkerCommandAckRequest {
+                protocol_version: hello.protocol_version,
+                worker_id,
+                session_generation: hello.session_generation,
+                account_id: account_id.clone(),
+                lease_generation,
+                command_id: stop.command_id,
+                ack: WorkerCommandAckKind::Succeeded,
+                result_json: Some("{}".into()),
+                error_code: None,
+            }),
+        )
+        .await
+        .expect("release the runtime assignment only after terminal cleanup succeeds");
+        assert_eq!("succeeded", stopped.status);
+        let released = sqlx_core::query::query(
+            "SELECT connection_status, worker_id FROM execution_mt5_vm_accounts \
+             WHERE user_id = $1 AND account_id = $2",
+        )
+        .bind(owner_id)
+        .bind(&account_id)
+        .fetch_one(database)
+        .await
+        .expect("load the stopped managed account");
+        assert_eq!(
+            "disconnected",
+            released
+                .try_get::<String, _>("connection_status")
+                .expect("decode stopped status")
+        );
+        assert!(
+            released
+                .try_get::<Option<String>, _>("worker_id")
+                .expect("decode released worker")
+                .is_none()
+        );
+    }
 
     #[test]
     fn protocol_negotiation_requires_an_explicit_overlap() {
@@ -1720,6 +2754,7 @@ mod tests {
         const BOOTSTRAP: &str = "worker-bootstrap-token-with-32-characters";
         let state = GatewayState::new_with_mt5_vm(
             "admin-token-with-at-least-32-characters",
+            "stable-test-mt5-identity-key-at-least-32-bytes",
             Some(BOOTSTRAP),
             None,
         );
@@ -1731,6 +2766,33 @@ mod tests {
         );
         require_bootstrap(&state, &headers).expect("worker bootstrap token matches");
         assert!(!state.admin_token_matches(&headers));
+    }
+
+    #[test]
+    fn managed_ea_gateway_origin_is_an_exact_secure_origin() {
+        let _ = routes();
+        assert!(valid_ea_gateway_origin("https://execution.example.test"));
+        assert!(valid_ea_gateway_origin("http://127.0.0.1:8790"));
+        assert!(!valid_ea_gateway_origin(
+            "https://execution.example.test/v1/ea"
+        ));
+        assert!(!valid_ea_gateway_origin(
+            "https://execution.example.test?token=secret"
+        ));
+        assert!(!valid_ea_gateway_origin("http://execution.example.test"));
+        assert!(!valid_ea_gateway_origin(
+            "https://user@execution.example.test"
+        ));
+        assert!(!valid_ea_gateway_origin("https://[::1"));
+        assert!(!valid_ea_gateway_origin("https:relative"));
+        let relative_uri: axum::http::Uri = "/relative"
+            .parse()
+            .expect("relative URI parses without an authority");
+        assert!(!valid_ea_gateway_uri("/relative", &relative_uri));
+        assert!(!valid_ea_gateway_origin("ftp://localhost"));
+        assert_eq!(decode_lower_hex_32(&"ab".repeat(32)), Some([0xab; 32]));
+        assert_eq!(decode_lower_hex_32(&"AB".repeat(32)), None);
+        assert_eq!(decode_lower_hex_32("short"), None);
     }
 
     #[test]
@@ -1747,8 +2809,56 @@ mod tests {
             capabilities: ["installed_slots".to_owned()].into_iter().collect(),
         };
         assert_eq!(validate_hello(&hello).expect("valid hello"), 1);
+        assert_eq!(worker_substrate(&hello), "windows_vm");
+        hello.capabilities.insert("bare_metal".into());
+        assert_eq!(worker_substrate(&hello), "bare_metal");
         hello.capacity += 1;
         assert!(validate_hello(&hello).is_err());
+    }
+
+    #[tokio::test]
+    async fn managed_ea_binding_validation_fails_before_database_access() {
+        let state = GatewayState::new("admin-token-with-at-least-32-characters", None);
+        let request = WorkerEaBootstrapBindRequest {
+            protocol_version: 1,
+            worker_id: "worker-01".into(),
+            session_generation: 1,
+            account_id: "account-01".into(),
+            lease_generation: 1,
+            connection_revision: 1,
+            pairing_token_sha256: "short".into(),
+            slot_id: "slot-01".into(),
+            terminal_pid: 42,
+            gateway_origin: "http://127.0.0.1:8790".into(),
+        };
+        let mut invalid_envelope = request.clone();
+        invalid_envelope.worker_id.clear();
+        invalid_envelope.pairing_token_sha256 = "ab".repeat(32);
+        let error = worker_bind_ea_bootstrap(
+            State(state.clone()),
+            HeaderMap::new(),
+            Json(invalid_envelope),
+        )
+        .await
+        .expect_err("invalid worker envelope fails before auth and database");
+        assert_eq!(error.body.code, "MT5_VM_WORKER_REQUEST_INVALID");
+
+        let error = worker_bind_ea_bootstrap(
+            State(state.clone()),
+            HeaderMap::new(),
+            Json(request.clone()),
+        )
+        .await
+        .expect_err("malformed pairing hash fails before auth and database");
+        assert_eq!(error.body.code, "MANAGED_EA_RUNTIME_BINDING_INVALID");
+
+        let mut zero_pid = request;
+        zero_pid.pairing_token_sha256 = "ab".repeat(32);
+        zero_pid.terminal_pid = 0;
+        let error = worker_bind_ea_bootstrap(State(state), HeaderMap::new(), Json(zero_pid))
+            .await
+            .expect_err("zero terminal PID fails before auth and database");
+        assert_eq!(error.body.code, "MANAGED_EA_RUNTIME_BINDING_INVALID");
     }
 
     #[test]
@@ -1789,6 +2899,22 @@ mod tests {
     }
 
     #[test]
+    fn stop_ack_finishes_disconnect_without_advancing_the_request_revision_again() {
+        let source = include_str!("mt5_vm_control.rs");
+        let start = source
+            .find("\"stop_account\" => {")
+            .expect("stop acknowledgement transition exists");
+        let end = source[start..]
+            .find("fn ack_target_status(")
+            .map(|offset| start + offset)
+            .expect("stop acknowledgement transition has a boundary");
+        let transition = &source[start..end];
+
+        assert!(transition.contains("disconnect_requested_revision IS NOT NULL"));
+        assert!(!transition.contains("connection_revision = connection_revision + 1"));
+    }
+
+    #[test]
     fn ready_requires_all_reconciliation_domains() {
         let complete = json!({
             "ready": true,
@@ -1822,6 +2948,62 @@ mod tests {
     }
 
     #[test]
+    fn managed_ea_bootstrap_migration_binds_tokens_to_one_fenced_assignment() {
+        let migration = include_str!("../../../../migrations/0042_mt5_managed_ea_bootstrap.up.sql");
+        let rollback =
+            include_str!("../../../../migrations/0042_mt5_managed_ea_bootstrap.down.sql");
+        assert!(migration.contains("ALTER TABLE execution_pairing_tokens"));
+        assert!(migration.contains("managed_account_id"));
+        assert!(migration.contains("managed_worker_id"));
+        assert!(migration.contains("worker_session_generation"));
+        assert!(migration.contains("lease_generation"));
+        assert!(migration.contains("connection_revision"));
+        assert!(!migration.contains("ADD COLUMN normalized_server"));
+        assert!(migration.contains("masked_login_suffix"));
+        assert!(migration.contains("identity_fingerprint"));
+        assert!(migration.contains("server_fingerprint"));
+        assert!(migration.contains("UPDATE execution_accounts"));
+        assert!(migration.contains("UPDATE execution_mt5_vm_accounts"));
+        assert!(migration.contains("UPDATE execution_mt5_vm_account_state"));
+        assert!(migration.contains("execution_mt5_vm_accounts_active_identity_idx"));
+        assert!(migration.contains("REFERENCES execution_mt5_vm_accounts"));
+        assert!(migration.contains("worker_substrate"));
+        assert!(migration.contains("bare_metal"));
+        assert!(!migration.contains("raw_password"));
+        assert!(!migration.contains("raw_login"));
+        assert!(!rollback.contains("DROP COLUMN IF EXISTS normalized_server"));
+        for column in [
+            "managed_account_id",
+            "managed_worker_id",
+            "worker_session_generation",
+            "lease_generation",
+            "connection_revision",
+            "masked_login_suffix",
+            "identity_fingerprint",
+        ] {
+            assert!(rollback.contains(&format!("DROP COLUMN IF EXISTS {column}")));
+        }
+    }
+
+    #[test]
+    fn managed_ea_readiness_requires_a_fresh_successful_poll() {
+        let gateway = include_str!("main.rs");
+        let migration = include_str!("../../../../migrations/0042_mt5_managed_ea_bootstrap.up.sql");
+        let start = gateway
+            .find("async fn advance_managed_ea_readiness_after_event")
+            .expect("managed EA readiness query must exist");
+        let end = gateway[start..]
+            .find("async fn prop_risk_guard_view")
+            .expect("managed EA readiness query must remain bounded");
+        let readiness = &gateway[start..start + end];
+
+        assert!(readiness.contains("execution_advance_mt5_managed_readiness"));
+        assert!(readiness.contains("EA_POLL_FRESHNESS"));
+        assert!(migration.contains("session.last_poll_at >"));
+        assert!(migration.contains("p_poll_freshness_ms * interval '1 millisecond'"));
+    }
+
+    #[test]
     fn durable_command_wire_shape_keeps_payload_as_bounded_json_text() {
         let command = WorkerControlCommand {
             protocol_version: 1,
@@ -1835,6 +3017,7 @@ mod tests {
             kind: WorkerCommandKind::ReconcileAccount,
             payload_json: "{}".into(),
             credential_grant: None,
+            ea_bootstrap_token: None,
         };
         let value = serde_json::to_value(command).expect("command serializes");
         assert_eq!(value["leaseGeneration"], 2);

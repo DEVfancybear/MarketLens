@@ -30,6 +30,7 @@ type harnessConfig struct {
 	ListenAddress           string           `json:"listenAddress"`
 	ExecutionAdminURL       string           `json:"executionAdminUrl"`
 	ExecutionAdminTokenFile string           `json:"executionAdminTokenFile"`
+	MT5IdentityHMACKeyFile  string           `json:"mt5IdentityHmacKeyFile"`
 	VaultAddress            string           `json:"vaultAddress"`
 	VaultTokenFile          string           `json:"vaultTokenFile"`
 	AuthJWTSecretFile       string           `json:"authJwtSecretFile"`
@@ -128,6 +129,13 @@ func main() {
 }
 
 func readConfig(reader io.Reader) (harnessConfig, error) {
+	return readConfigWithEnvironment(reader, os.Setenv)
+}
+
+func readConfigWithEnvironment(
+	reader io.Reader,
+	setEnvironment func(string, string) error,
+) (harnessConfig, error) {
 	decoder := json.NewDecoder(io.LimitReader(reader, 64*1024))
 	decoder.DisallowUnknownFields()
 	var cfg harnessConfig
@@ -150,12 +158,16 @@ func readConfig(reader io.Reader) (harnessConfig, error) {
 	}
 	for _, path := range []string{
 		cfg.ExecutionAdminTokenFile,
+		cfg.MT5IdentityHMACKeyFile,
 		cfg.VaultTokenFile,
 		cfg.AuthJWTSecretFile,
 	} {
 		if _, err := checkedRealFile(path); err != nil {
 			return harnessConfig{}, err
 		}
+	}
+	if err := setEnvironment("EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE", cfg.MT5IdentityHMACKeyFile); err != nil {
+		return harnessConfig{}, fmt.Errorf("identity key path registration failed")
 	}
 	if len(cfg.Sessions) != 2 {
 		return harnessConfig{}, fmt.Errorf("exactly two sessions are required")

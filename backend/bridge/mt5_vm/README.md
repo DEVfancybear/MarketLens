@@ -4,6 +4,13 @@ This directory contains the read-only Phase 0 feasibility harness and Phase 1
 secure multi-runtime prototype validation for the MarketLens-managed Windows VM
 connector.
 
+The current managed deployment is the Revision 15 one-host bare-metal path. It
+reuses `phase1_adapter.py` for broker-neutral login/read synchronization while
+the Rust agent owns lifecycle, fencing, and EA bootstrap. Operator preparation
+is under `../../../tools/mt5-baremetal/`; the production procedure is
+`../../../docs/MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md`. Phase 0/1 harnesses below
+remain validation and regression surfaces, not the production entrypoint.
+
 Phase 0 is not the production worker agent. It proves that a Windows host can find
 the approved terminal/runtime and can read a disposable MT5 demo account
 without putting its password in a command line, environment variable, log, or

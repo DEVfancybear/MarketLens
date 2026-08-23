@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { useSetAtom } from "jotai";
 import { KeyRound, LoaderCircle, ServerCog, ShieldCheck } from "lucide-react";
@@ -26,6 +26,7 @@ export function Mt5ManagedConnectionDialog({
   onClose: () => void;
 }) {
   const formId = useId();
+  const connectRequestId = useRef("");
   const [label, setLabel] = useState("");
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
@@ -47,6 +48,7 @@ export function Mt5ManagedConnectionDialog({
     setPassword("");
     setServer(account?.server ?? "");
     setPersistence(account?.persistence ?? "managed");
+    connectRequestId.current = crypto.randomUUID();
     setError("");
   }, [account, open]);
 
@@ -57,6 +59,7 @@ export function Mt5ManagedConnectionDialog({
     setPassword("");
     setLogin("");
     setError("");
+    connectRequestId.current = "";
     onClose();
   };
 
@@ -75,6 +78,7 @@ export function Mt5ManagedConnectionDialog({
         });
       } else {
         await connectManagedMT5Account({
+          requestId: connectRequestId.current || crypto.randomUUID(),
           platform: "mt5",
           login: login.trim(),
           password,
@@ -85,6 +89,7 @@ export function Mt5ManagedConnectionDialog({
       }
       setPassword("");
       setLogin("");
+      connectRequestId.current = "";
       applyAccounts(await getExecutionAccounts());
       pushToast({
         title: rotating

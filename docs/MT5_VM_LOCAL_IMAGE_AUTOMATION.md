@@ -5,6 +5,12 @@
 - Updated: 21 August 2026
 - Scope: the MarketLens-owned Windows worker pool, not an end user's computer
 
+> Deployment decision (23 August 2026): Revision 15 selects a bounded bare-metal worker on the
+> operator's existing Windows host. Hyper-V image publication remains an optional future scaling
+> path and is not a prerequisite for the selected production topology. Bare-metal preparation and
+> runtime use the preinstalled/attested slot contract and `tools/mt5-baremetal/`; they never invoke
+> the image installer or cloning tools from an account-connect request.
+
 MarketLens users enter an MT5 login, master password, and exact server in the web product. They do
 not install MT5 and the account-connect path must never run an installer, enable Hyper-V, build an
 image, or clone a VM. Those are bounded operator actions performed when a worker image is built or

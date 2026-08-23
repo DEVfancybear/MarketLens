@@ -19,6 +19,25 @@ function Get-Sha256([string]$Path) {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToUpperInvariant()
 }
 
+function Get-EaSourceVersion {
+    $source = Get-Content -LiteralPath $sourcePath -Raw
+    $propertyMatch = [regex]::Match(
+        $source,
+        '(?m)^#property\s+version\s+"(?<version>\d+\.\d+(?:\.\d+)?)"\s*$'
+    )
+    $constantMatch = [regex]::Match(
+        $source,
+        '(?m)^const\s+string\s+EA_VERSION\s*=\s*"(?<version>\d+\.\d+(?:\.\d+)?)";\s*$'
+    )
+    if (-not $propertyMatch.Success -or -not $constantMatch.Success) {
+        throw "EA source does not declare both #property version and EA_VERSION."
+    }
+    if ($propertyMatch.Groups["version"].Value -cne $constantMatch.Groups["version"].Value) {
+        throw "EA #property version and EA_VERSION do not match."
+    }
+    return $propertyMatch.Groups["version"].Value
+}
+
 function Assert-Release {
     if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
         throw "EA source was not found: $sourcePath"
@@ -36,8 +55,21 @@ function Assert-Release {
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     $sourceHash = Get-Sha256 $sourcePath
     $binaryHash = Get-Sha256 $releasePath
-    if ($manifest.schemaVersion -ne 1) {
+    $sourceVersion = Get-EaSourceVersion
+    if ($manifest.schemaVersion -ne 2) {
         throw "Unsupported EA release manifest schema."
+    }
+    if ($manifest.fileName -cne "MarketLensExecutionEA.ex5") {
+        throw "EA release manifest file name is invalid."
+    }
+    if ($manifest.eaVersion -cne $sourceVersion) {
+        throw "Published EA version does not match its source."
+    }
+    if ([string]::IsNullOrWhiteSpace($manifest.compilerVersion)) {
+        throw "EA release manifest does not identify the compiler version."
+    }
+    if ($manifest.compilerSha256 -notmatch '^[A-F0-9]{64}$') {
+        throw "EA release manifest compiler hash is invalid."
     }
     if ($manifest.sourceSha256 -ne $sourceHash) {
         throw "Published EA is stale. Run backend\bridge\mt5_ea\Publish-MarketLensExecutionEA.ps1 on a trusted Windows build host."
@@ -101,8 +133,20 @@ if ($VerifyOnly) {
 }
 
 $metaEditor = Resolve-MetaEditor
+$compilerSignature = Get-AuthenticodeSignature -LiteralPath $metaEditor
+if ($compilerSignature.Status -ne "Valid") {
+    throw "MetaEditor64.exe does not have a valid Authenticode signature."
+}
+$compilerSignerSubject = $compilerSignature.SignerCertificate.Subject
+if (
+    -not $compilerSignerSubject.StartsWith("CN=MetaQuotes Ltd., O=MetaQuotes Ltd.,") -or
+    -not $compilerSignerSubject.EndsWith(", C=CY")
+) {
+    throw "MetaEditor64.exe publisher is not the pinned MetaQuotes Ltd. identity."
+}
 $compileLog = Join-Path $PSScriptRoot "MarketLensExecutionEA.compile.log"
 Remove-Item -LiteralPath $compileLog -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $compiledPath -Force -ErrorAction SilentlyContinue
 
 Write-Host "Compiling the common MT5 EA..." -ForegroundColor Cyan
 $compile = Start-Process -FilePath $metaEditor `
@@ -123,11 +167,21 @@ Copy-Item -LiteralPath $compiledPath -Destination $releasePath -Force
 
 $sourceHash = Get-Sha256 $sourcePath
 $binaryHash = Get-Sha256 $releasePath
+$eaVersion = Get-EaSourceVersion
+$compilerVersion = (Get-Item -LiteralPath $metaEditor).VersionInfo.FileVersion
+$compilerHash = Get-Sha256 $metaEditor
+if ([string]::IsNullOrWhiteSpace($compilerVersion)) {
+    throw "MetaEditor64.exe does not expose a compiler file version."
+}
 "$binaryHash  MarketLensExecutionEA.ex5" |
     Set-Content -LiteralPath $checksumPath -Encoding ascii -NoNewline
 [ordered]@{
-    schemaVersion = 1
+    schemaVersion = 2
     fileName = "MarketLensExecutionEA.ex5"
+    eaVersion = $eaVersion
+    compilerVersion = $compilerVersion
+    compilerSha256 = $compilerHash
+    compilerSignerSubject = $compilerSignerSubject
     sourceSha256 = $sourceHash
     binarySha256 = $binaryHash
 } |

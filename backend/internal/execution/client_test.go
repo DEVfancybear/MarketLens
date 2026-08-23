@@ -362,3 +362,51 @@ func TestClientForwardsCopyGroupAuthorizationWithoutChangingApprovedPayload(t *t
 		t.Fatalf("copier gateway requests=%d, want 2", requests)
 	}
 }
+
+func TestCredentialGrantClientForwardsWorkerSessionOnlyInInternalHeader(t *testing.T) {
+	const adminToken = "admin-token-with-at-least-32-characters"
+	const workerToken = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/v1/admin/mt5-vm/credential-grants/consume" {
+			t.Errorf("unexpected credential route: %s", request.URL.Path)
+		}
+		if request.Header.Get("X-Execution-Admin-Token") != adminToken {
+			t.Error("missing internal admin credential")
+		}
+		if request.Header.Get("X-MT5-Worker-Session-Token") != workerToken {
+			t.Error("missing worker session credential")
+		}
+		var body map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatalf("decode credential request: %v", err)
+		}
+		for key, value := range body {
+			if value == workerToken {
+				t.Errorf("worker session token leaked into JSON field %q", key)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"secretRef":"mt5-11111111111111111111111111111111","persistence":"managed"}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(server.URL, adminToken)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	grant, err := client.ConsumeMT5CredentialGrantAuthenticated(t.Context(), MT5CredentialGrantConsumeRequest{
+		ProtocolVersion:   1,
+		WorkerID:          "worker-01",
+		SessionGeneration: 7,
+		AccountID:         "account-01",
+		LeaseGeneration:   3,
+		CommandID:         "11111111-1111-4111-8111-111111111111",
+		GrantToken:        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	}, workerToken)
+	if err != nil {
+		t.Fatalf("ConsumeMT5CredentialGrantAuthenticated: %v", err)
+	}
+	if grant.SecretRef != "mt5-11111111111111111111111111111111" || grant.Persistence != "managed" {
+		t.Fatalf("unexpected credential grant response: %+v", grant)
+	}
+}

@@ -491,6 +491,7 @@ dependencies = [
  "execution-adapters",
  "execution-domain",
  "execution-engine",
+ "hmac",
  "rust_decimal",
  "serde",
  "serde_json",

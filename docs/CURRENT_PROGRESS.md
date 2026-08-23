@@ -1,5 +1,17 @@
 ﻿# Current Progress
 
+- Revision 15 bare-metal managed MT5 + EA flow (2026-08-23): the selected one-host production
+  topology is implemented across authenticated Go/Vault connect, Rust durable placement and
+  generation fencing, the bounded `mt5-vm-agent`, redirected-stdin MT5 login, exact-PID named-pipe
+  EA bootstrap, EA 1.26, restart recovery, and browser readiness. The operator installer is
+  dry-run-first and installs a hash-pinned agent under a protected worker root. CI/source builds and
+  artifact deploy now include both Rust production binaries; the canonical runner only wires the
+  required identity-key file and still does not launch the worker. Local tests, release builds, and
+  the persisted R15 gauntlet are the completion evidence surface. The R15-9 two-owner/three-Demo
+  broker gate, production migration, worker installation/start, backend cutover, and any Live trade
+  remain unexecuted and require explicit operator authorization. See
+  `MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md` and `docs/agent-evidence/mt5-baremetal-managed-ea/`.
+
 - MT5 local image automation and broker-neutral enrollment (2026-08-21): the clean signed retail
   slot now has an officially enrolled exact server catalog and passes full terminal/profile/catalog/
   license attestation. Its safe Python/API bootstrap passes, and FTMO plus Exness pass both
@@ -231,7 +243,7 @@ Backend persistence, authenticated per-user MT5 access, and drawing maintenance.
 - MT5 execution is now **per signed-in user and broker-neutral** through the
   common EA. No MT5 password is stored. Migration
   `0028_execution_ea_poll_liveness` separates generic session activity from a
-  successful command poll; only EA 1.25+ with a poll in the last 15 seconds can
+  successful command poll; only EA 1.26+ with a poll in the last 15 seconds can
   appear `READY` or receive Live/Demo commands. Migration
   `0029_execution_delivery_outcome_unknown` keeps delivered-but-unacknowledged
   orders reconcilable without redelivery or a false broker-rejection status.

@@ -1161,12 +1161,63 @@ pub struct EaAccountSnapshot {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EaManagedRuntimeBinding {
+    pub slot_id: String,
+    pub terminal_pid: u32,
+    pub gateway_origin: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EaSessionRequest {
     pub protocol_version: u16,
     pub pairing_token: String,
     pub agent_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_binding: Option<EaManagedRuntimeBinding>,
     pub account: EaAccountSnapshot,
+}
+
+#[cfg(test)]
+mod ea_managed_runtime_binding_contract_tests {
+    use super::EaSessionRequest;
+
+    #[test]
+    fn session_request_carries_the_exact_managed_slot_pid_and_gateway_origin() {
+        let request: EaSessionRequest = serde_json::from_value(serde_json::json!({
+            "protocolVersion": 1,
+            "pairingToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "agentId": "agent-01",
+            "runtimeBinding": {
+                "slotId": "slot-01",
+                "terminalPid": 4242,
+                "gatewayOrigin": "https://execution.example.test"
+            },
+            "account": {
+                "login": "12345678",
+                "broker": "Broker",
+                "server": "Broker-Demo",
+                "mode": "demo",
+                "currency": "USD",
+                "balance": "10000",
+                "equity": "10000",
+                "margin": "0",
+                "freeMargin": "10000",
+                "leverage": 100,
+                "tradeAllowed": true,
+                "terminalBuild": 5000
+            }
+        }))
+        .expect("managed session request must deserialize");
+
+        let binding = request
+            .runtime_binding
+            .expect("managed runtime binding must be retained");
+        assert_eq!(binding.slot_id, "slot-01");
+        assert_eq!(binding.terminal_pid, 4242);
+        assert_eq!(binding.gateway_origin, "https://execution.example.test");
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

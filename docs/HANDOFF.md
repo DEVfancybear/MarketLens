@@ -1,5 +1,20 @@
 ﻿# HANDOFF
 
+> Revision 15 bare-metal managed MT5 + EA handoff (2026-08-23): the selected deployment is one
+> operator-controlled Windows host, not a Hyper-V pool. Managed connect/Vault grants, durable Rust
+> placement, bounded worker slots, redirected-stdin MT5 login, exact-PID named-pipe EA 1.26
+> bootstrap, restart fencing, and browser readiness are implemented. CI/source production builds
+> include `mt5-vm-agent.exe`; the explicit installer copies a hash-pinned binary into the protected
+> worker root. The canonical backend runner exports the required identity-key file but never starts
+> the worker.
+>
+> Continue from `docs/MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md` and the final R15 evidence. Do not run a
+> production migration, install/start the worker, restart production, connect broker credentials,
+> or execute R15-9 without separate runtime authorization. R15-9 still needs two test owners, three
+> disposable Demo accounts, secure Vault, and three attested slots. Live/funded activation remains
+> unauthorized.
+
+
 > MT5 local image automation handoff (2026-08-21): **the FTMO refresh, clean Exness IPC
 > discriminator, broker-neutral official catalog enrollment, and final read-only coexistence matrix
 > pass.** The earlier `-10005` result is retained only as RED chronology.
@@ -43,15 +58,17 @@
 > entrypoints, documented in `docs/OPERATIONS.md` and `AGENTS.md`.
 >
 > - `.\tools\deploy-backend.ps1` is the normal path. It downloads the artifact CI already built,
->   verifies `SHA256SUMS`, refuses a commit that differs from the checked-out `HEAD`, migrates
+>   verifies `SHA256SUMS` including `mt5-vm-agent.exe`, refuses a commit that differs from the checked-out `HEAD`, migrates
 >   forward with the packaged `migrate.exe`, then calls
 >   `run-backend-production.ps1 -SkipPull -SkipBuild -SkipMigrations`. No Go or Rust on the host.
 > - `.\run-backend-production.ps1` still means **build backend production** / **run backend** and is
->   unchanged. Use it for recovery, hotfixes, or to provision the MT5 Python environment.
+>   the canonical source-build runner. Its only Revision 15 lifecycle change is validating/exporting
+>   the identity-key file required by Go and Rust; it does not install or start the worker.
 >
 > Do not reimplement restart/MT5/health logic inside the deploy script: delegating to the runner is
-> deliberate, and `tools/verify-backend-deploy.ps1` fails if `run-backend-production.ps1` is
-> modified. Migrations are forward-only; a failed restart rolls binaries back but never the schema.
+> deliberate, and `tools/verify-backend-deploy.ps1` verifies the required security wiring while
+> rejecting worker lifecycle in the runner. Migrations are forward-only; a failed restart rolls
+> binaries back but never the schema.
 >
 > Rerun everything with:
 > `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\verify-backend-deploy.ps1`
@@ -162,7 +179,9 @@ older references:
   Firebase verification, sessions/tokens, auth endpoints, settings persistence,
   `/api/v1/sync/bootstrap`, and watchlists CRUD. Next is Phase 7 drawings. **Protected routes only
   mount when both a DB and Firebase are configured**. Neon is migrated to version 4.
-- The Python MT5 bridge path is now `backend/bridge/ftmo_mt5/`.
+- The historical browser-facing Python execution bridge was removed. Current execution uses the Go
+  BFF, Rust gateway, common EA, and optional bare-metal managed worker; the remaining Python sidecar
+  under `backend/bridge/mt5_stream/` is read-only market data.
 
 Recent post-split work:
 
@@ -183,9 +202,10 @@ Recent post-split work:
   Treat the phrases **build backend production** and **run backend** as exactly
   `.\run-backend-production.ps1` from the repository root, with no switches in the normal case.
   The runner pulls, provisions/import-checks `backend/.venv-mt5`, builds a staged API, migrates,
-  safely replaces only repo-owned listeners, starts the MT5 stream and Go API, and gates success on
-  local/public health. `build-production.ps1` only creates artifacts and must not substitute for
-  the runner. Port `8787` remains browser/account-local and is intentionally excluded.
+  safely replaces only repo-owned listeners, starts the MT5 stream, Rust gateway, and Go API, and
+  gates success on local/public health. `build-production.ps1` only creates artifacts and must not
+  substitute for the runner. Managed worker installation/start remains a separate explicit
+  operator action.
 
 - **Generic Pine source runtime and legacy Swing S/R removal (2026-07-19):**
   replay cutoff is enforced before backend evaluation, the submitted Pine v5

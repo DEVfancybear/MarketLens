@@ -91,28 +91,28 @@ pub fn diff_portfolio(
         // coincide with an unrelated same-symbol position increase. Only the
         // MT5 trade transaction's order->position identity may suppress the
         // independent cancel and open/increase transitions.
-        if let Some(position_id) = pending_fill_positions.get(order_id) {
-            if let Some(position) = current_positions.get(position_id) {
-                let available = unmatched_position_increase
-                    .get(position_id)
-                    .copied()
-                    .unwrap_or(Decimal::ZERO);
-                let filled_quantity = if available > Decimal::ZERO {
-                    previous.quantity.min(available)
-                } else {
-                    previous.quantity
-                };
-                let mut filled_order = (*previous).clone();
-                filled_order.quantity = filled_quantity;
-                if let Some(remaining) = unmatched_position_increase.get_mut(position_id) {
-                    *remaining -= filled_quantity;
-                }
-                changes.push(PortfolioChange::PendingFilled {
-                    previous: filled_order,
-                    position: (*position).clone(),
-                });
-                continue;
+        if let Some(position_id) = pending_fill_positions.get(order_id)
+            && let Some(position) = current_positions.get(position_id)
+        {
+            let available = unmatched_position_increase
+                .get(position_id)
+                .copied()
+                .unwrap_or(Decimal::ZERO);
+            let filled_quantity = if available > Decimal::ZERO {
+                previous.quantity.min(available)
+            } else {
+                previous.quantity
+            };
+            let mut filled_order = (*previous).clone();
+            filled_order.quantity = filled_quantity;
+            if let Some(remaining) = unmatched_position_increase.get_mut(position_id) {
+                *remaining -= filled_quantity;
             }
+            changes.push(PortfolioChange::PendingFilled {
+                previous: filled_order,
+                position: (*position).clone(),
+            });
+            continue;
         }
         changes.push(PortfolioChange::PendingCancelled {
             previous: (*previous).clone(),
@@ -374,6 +374,27 @@ mod tests {
         assert!(matches!(
             &changes[0],
             PortfolioChange::PendingReplaced { .. }
+        ));
+    }
+
+    #[test]
+    fn fill_evidence_uses_order_quantity_without_a_position_increase() {
+        let order = pending("o-1", 25);
+        let current = position("p-1", 50, None);
+        let previous = current.clone();
+        let evidence = BTreeMap::from([("o-1".to_owned(), "p-1".to_owned())]);
+        let changes = diff_portfolio(
+            std::slice::from_ref(&previous),
+            &[order],
+            std::slice::from_ref(&current),
+            &[],
+            &evidence,
+        );
+
+        assert!(matches!(
+            &changes[0],
+            PortfolioChange::PendingFilled { previous, .. }
+                if previous.quantity == Decimal::new(25, 2)
         ));
     }
 }
