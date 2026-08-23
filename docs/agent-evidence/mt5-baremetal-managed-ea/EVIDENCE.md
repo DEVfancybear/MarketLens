@@ -150,3 +150,29 @@ No assertion was weakened to make a production behavior pass. Negative controls 
 Production cutover remains a separate explicitly authorized operation. The canonical entrypoints stay
 `run-backend-production.ps1` for build-on-host and `tools/deploy-backend.ps1` for a CI-built artifact;
 the managed worker lifecycle remains a separate operator action as required by the SPEC.
+
+## Post-commit frontend/API deployment handoff
+
+The implementation was committed and pushed to `origin/master` as `ffd5626` before the requested
+deployment-smoke documentation follow-up completed. Source inspection confirms that the desktop and
+mobile managed MT5 dialog calls the authenticated Go connector endpoints through the shared API
+client and refreshes the execution registry after a successful mutation. The production UI still
+requires a Vercel build with `NEXT_PUBLIC_API_BASE_URL=https://api.tradingterminal.io.vn`, and the
+button remains intentionally hidden unless the deployed backend advertises
+`connectors.mt5Managed=true`.
+
+Fresh checks for the follow-up documentation and one-item verifier regression:
+
+- `verify-backend-docs.ps1 -DocsOnly`: **2546 checks PASS**, including its known-bad negative control.
+- `python -m unittest backend.bridge.mt5_vm.test_managed_gauntlet`: **2/2 PASS**.
+- `npm run typecheck`: PASS with zero errors.
+- `npm run lint`: PASS with zero errors.
+- `npm run test:trade`: **83/83 PASS**.
+- `npm run build`: Next.js 16.3.1 production build PASS; 12/12 static pages generated.
+
+The verifier regression was observed RED when PowerShell unwrapped a single changed-source result
+and strict mode rejected `.Count`; wrapping the conditional result in an array made the focused
+contract GREEN. A new full R15 diff gauntlet is not claimed for this follow-up because the R15
+production changes were already committed into `HEAD`, so the task-diff coverage layer correctly has
+no changed Go/Rust production source to measure. The earlier full 46-layer final run remains the
+implementation evidence; this section reports only the post-commit docs/frontend checks above.

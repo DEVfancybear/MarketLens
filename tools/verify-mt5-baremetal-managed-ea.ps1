@@ -544,18 +544,18 @@ function Get-ChangedCoverageSources([ValidateSet('go', 'rust')][string]$Language
     )
     $paths += @(Invoke-GitLines @('ls-files', '--others', '--exclude-standard'))
     $normalized = @($paths | ForEach-Object { $_.Replace('\', '/') } | Sort-Object -Unique)
-    $selected = if ($Language -eq 'go') {
-        @($normalized | Where-Object {
+    $selected = @(if ($Language -eq 'go') {
+        $normalized | Where-Object {
             $_.StartsWith('backend/', [StringComparison]::OrdinalIgnoreCase) -and
             $_.EndsWith('.go', [StringComparison]::OrdinalIgnoreCase) -and
             -not $_.EndsWith('_test.go', [StringComparison]::OrdinalIgnoreCase)
-        })
+        }
     } else {
-        @($normalized | Where-Object {
+        $normalized | Where-Object {
             $_.StartsWith('backend/execution/crates/', [StringComparison]::OrdinalIgnoreCase) -and
             $_ -match '(?i)/src/.*\.rs$'
-        })
-    }
+        }
+    })
     if ($selected.Count -eq 0) {
         throw "No changed $Language production source files were discovered"
     }

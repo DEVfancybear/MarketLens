@@ -7,12 +7,21 @@
 > include `mt5-vm-agent.exe`; the explicit installer copies a hash-pinned binary into the protected
 > worker root. The canonical backend runner exports the required identity-key file but never starts
 > the worker.
+> The desktop and mobile managed-connect UI call the authenticated Go API directly through the
+> shared API client (`credentials: include`). New connect uses
+> `POST /api/v1/execution/connectors/mt5/accounts`; reconnect/disconnect/delete use the account-scoped
+> connector routes; success refreshes `GET /api/v1/execution/accounts`. The UI is capability-gated by
+> the backend's `connectors.mt5Managed` response rather than a frontend feature flag.
 >
 > Continue from `docs/MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md` and the final R15 evidence. Do not run a
 > production migration, install/start the worker, restart production, connect broker credentials,
 > or execute R15-9 without separate runtime authorization. R15-9 still needs two test owners, three
 > disposable Demo accounts, secure Vault, and three attested slots. Live/funded activation remains
 > unauthorized.
+> For the operator-requested post-push test, deploy the backend commit first, verify migration 0042
+> and private gateway/worker readiness, then redeploy Vercel with
+> `NEXT_PUBLIC_API_BASE_URL=https://api.tradingterminal.io.vn`. A missing managed-connect button means
+> the backend capability is still disabled; it is not evidence that the frontend route is unwired.
 
 
 > MT5 local image automation handoff (2026-08-21): **the FTMO refresh, clean Exness IPC

@@ -239,6 +239,41 @@ If Vercel reports `The specified Root Directory "frontend" does not exist`, the 
 an old commit from before the monorepo split. Redeploy the latest `master` commit where the
 `frontend/` folder exists.
 
+#### Managed MT5 frontend/API smoke test after push
+
+Deploy the backend commit before rebuilding the frontend. The managed connector is not a
+frontend-only feature: the Go registry returns `connectors.mt5Managed=true` only when its Vault,
+identity-key, admin gateway, and worker-enrollment prerequisites are configured.
+
+The production frontend build must contain:
+
+```env
+NEXT_PUBLIC_API_BASE_URL=https://api.tradingterminal.io.vn
+NEXT_PUBLIC_APP_URL=https://tradingterminal.io.vn
+```
+
+After both deployments use the same commit:
+
+1. Sign in normally and confirm `GET /api/v1/execution/accounts` returns `200` with
+   `connectors.mt5Managed=true`. Do not copy response cookies or credentials into a ticket.
+2. Open Trade, select **Add account**, and confirm the managed browser-connect option is visible on
+   desktop and mobile.
+3. With a disposable Demo account only, submit the managed form. The browser must send
+   `POST /api/v1/execution/connectors/mt5/accounts`; `202` means the backend accepted provisioning,
+   not that MT5 is ready yet.
+4. Confirm the password field clears immediately and the account appears after the registry refresh.
+   Follow status until `ready`; any `queued`, `provisioning`, `synchronizing`, `degraded`, or
+   `credentials_required` state is a backend/worker prerequisite to diagnose, not a reason to resend
+   the request blindly.
+5. Test reconnect/disconnect only against that disposable Demo account. These lifecycle actions do
+   not close broker positions. Do not use Live/funded credentials for this smoke test.
+
+If the browser calls its own origin instead of `https://api.tradingterminal.io.vn`, redeploy Vercel
+after correcting `NEXT_PUBLIC_API_BASE_URL`; Next.js embeds public environment variables at build
+time. If the request reaches the API but returns `401`, repair the normal backend session/cookie and
+CORS origin configuration. If the managed option is absent, verify backend configuration and
+readiness before changing frontend code.
+
 ### Backend
 
 Deploy the Go backend as a separate service from `backend/`. Do not include it in the Vercel

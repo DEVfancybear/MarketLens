@@ -98,6 +98,7 @@ class ManagedGauntletContractTests(unittest.TestCase):
         self.assertIn("$rustCoverageObjectRoot", source)
         self.assertIn("$rustAgentTargetRoot", source)
         self.assertIn("CARGO_TARGET_DIR = $rustAgentTargetRoot", source)
+        self.assertIn("$selected = @(if ($Language -eq 'go')", source)
         self.assertNotIn("\n    RUSTFLAGS = '-C instrument-coverage'", source)
         rust_agent_block = source.split(
             "Invoke-NativeLayer 'rust-agent-tests'", 1

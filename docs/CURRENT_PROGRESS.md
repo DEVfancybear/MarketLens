@@ -11,6 +11,13 @@
   broker gate, production migration, worker installation/start, backend cutover, and any Live trade
   remain unexecuted and require explicit operator authorization. See
   `MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md` and `docs/agent-evidence/mt5-baremetal-managed-ea/`.
+  The frontend connection is also wired: the managed MT5 dialog posts to
+  `/api/v1/execution/connectors/mt5/accounts`, reconnects through the account-scoped endpoint, then
+  refreshes `/api/v1/execution/accounts`. The Go registry advertises the button only when the
+  managed connector prerequisites are configured. Production browser testing therefore requires a
+  backend-first deployment of the same commit and a frontend build with
+  `NEXT_PUBLIC_API_BASE_URL=https://api.tradingterminal.io.vn`; source wiring alone does not activate
+  a backend that is missing Vault, identity-key, bootstrap-token, migration, gateway, or worker setup.
 
 - MT5 local image automation and broker-neutral enrollment (2026-08-21): the clean signed retail
   slot now has an officially enrolled exact server catalog and passes full terminal/profile/catalog/

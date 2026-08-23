@@ -21,6 +21,10 @@ All notable changes to the MarketLens. Dates are UTC.
   not install or launch the worker.
 - Added `MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md`. Production cutover and the R15-9 two-owner/three-Demo
   broker gate remain separate explicit actions; no Live/funded operation was authorized.
+- Wired the desktop/mobile managed MT5 dialog to the authenticated Go connector API for connect,
+  credential rotation/reconnect, registry refresh, disconnect, and removal. The shared client uses
+  the production `NEXT_PUBLIC_API_BASE_URL` and cookie session; backend capability advertisement
+  controls whether the managed flow is visible.
 
 ### Added - MT5 local image automation and broker-neutral enrollment (2026-08-21)
 
