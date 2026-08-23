@@ -1,5 +1,5 @@
 use std::collections::BTreeSet;
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::net::TcpListener;
 use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread;
@@ -441,6 +441,117 @@ fn command(
     }
 }
 
+fn write_scripted_response<W: Write>(writer: &mut W, status: &str, body: &str) -> io::Result<()> {
+    let result = write!(
+        writer,
+        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    )
+    .and_then(|()| writer.flush());
+
+    match result {
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::BrokenPipe
+                    | io::ErrorKind::ConnectionReset
+                    | io::ErrorKind::ConnectionAborted
+            ) =>
+        {
+            Ok(())
+        }
+        other => other,
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ControlledWriterFailure {
+    Never,
+    Write(io::ErrorKind),
+    Flush(io::ErrorKind),
+}
+
+struct ControlledWriter {
+    bytes: Vec<u8>,
+    failure: ControlledWriterFailure,
+    flushes: usize,
+}
+
+impl ControlledWriter {
+    fn new(failure: ControlledWriterFailure) -> Self {
+        Self {
+            bytes: Vec::new(),
+            failure,
+            flushes: 0,
+        }
+    }
+}
+
+impl Write for ControlledWriter {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        if let ControlledWriterFailure::Write(kind) = self.failure {
+            return Err(io::Error::from(kind));
+        }
+        self.bytes.extend_from_slice(buffer);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.flushes += 1;
+        if let ControlledWriterFailure::Flush(kind) = self.failure {
+            return Err(io::Error::from(kind));
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn scripted_response_preserves_http_wire_contract() {
+    let mut writer = ControlledWriter::new(ControlledWriterFailure::Never);
+
+    write_scripted_response(&mut writer, "409 Conflict", r#"{"code":"conflict"}"#).unwrap();
+
+    assert_eq!(
+        concat!(
+            "HTTP/1.1 409 Conflict\r\n",
+            "Content-Type: application/json\r\n",
+            "Content-Length: 19\r\n",
+            "Connection: close\r\n\r\n",
+            r#"{"code":"conflict"}"#
+        ),
+        String::from_utf8(writer.bytes).unwrap()
+    );
+    assert_eq!(1, writer.flushes);
+}
+
+#[test]
+fn scripted_response_accepts_peer_disconnect_during_write_or_flush() {
+    for kind in [
+        io::ErrorKind::BrokenPipe,
+        io::ErrorKind::ConnectionReset,
+        io::ErrorKind::ConnectionAborted,
+    ] {
+        for failure in [
+            ControlledWriterFailure::Write(kind),
+            ControlledWriterFailure::Flush(kind),
+        ] {
+            let mut writer = ControlledWriter::new(failure);
+            write_scripted_response(&mut writer, "200 OK", "{}").unwrap();
+        }
+    }
+}
+
+#[test]
+fn scripted_response_rejects_non_disconnect_io_failures() {
+    for failure in [
+        ControlledWriterFailure::Write(io::ErrorKind::PermissionDenied),
+        ControlledWriterFailure::Flush(io::ErrorKind::WriteZero),
+    ] {
+        let mut writer = ControlledWriter::new(failure);
+        assert!(write_scripted_response(&mut writer, "200 OK", "{}").is_err());
+    }
+}
+
 fn serve_scripted(
     responses: Vec<(&'static str, &'static str)>,
 ) -> (Url, mpsc::Receiver<String>, thread::JoinHandle<()>) {
@@ -492,13 +603,7 @@ fn serve_scripted(
                 }
             }
             sender.send(String::from_utf8(request).unwrap()).unwrap();
-            write!(
-                stream,
-                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                body.len()
-            )
-            .unwrap();
-            stream.flush().unwrap();
+            write_scripted_response(&mut stream, status, body).unwrap();
         }
     });
     (

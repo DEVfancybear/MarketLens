@@ -1680,8 +1680,9 @@ All notable changes to the MarketLens. Dates are UTC.
   conversion, broker lot rules, and free-margin caps.
 - Extended the bridge `symbol.info` metadata contract with tick loss/profit values, contract and
   calculation modes, symbol currencies, margin fields, spread, and an optional `risk.snapshot`.
-- Added focused TypeScript and Python regression coverage plus a frontend guide at
-  [`frontend/docs/MT5_POSITION_SIZING.md`](../frontend/docs/MT5_POSITION_SIZING.md).
+- Added focused TypeScript and Python regression coverage plus the historical frontend guide
+  `frontend/docs/MT5_POSITION_SIZING.md` (later retired with the browser bridge; use
+  [trade execution architecture](TRADE_EXECUTION_ARCHITECTURE.md) for the current contract).
 - Documented the remaining scope boundary: the web ticket covers the core one-stop/one-target
   workflow; the full MQL5 application's multi-target, swap/carry, and Trading-tab workflows
   are not yet represented.

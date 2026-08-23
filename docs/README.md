@@ -1,62 +1,74 @@
-# Root Documentation
+# MarketLens documentation
 
-Root docs are the cross-project memory for the monorepo. Feature-level details belong in the
-owning package docs.
+Verified against the repository on 2026-08-24.
 
-## Index
+This directory contains cross-package documentation for MarketLens. Package-specific implementation
+details belong under `frontend/docs/`, `backend/docs/`, or `backend/execution/`.
 
-| File | Purpose |
+## Start here
+
+| Document | Use it for |
 | --- | --- |
-| `PROJECT_STRUCTURE.md` | Monorepo layout, ownership boundaries, and package rules |
-| `OPERATIONS.md` | Running, testing, deploying, and troubleshooting the monorepo |
-| `CURRENT_STATE.md` | Current repo/runtime state after the monorepo split |
-| `CURRENT_PROGRESS.md` | Completed work, active milestone, and recent changes |
-| `HANDOFF.md` | Cross-session handoff; read this before continuing work |
-| `NEXT_TASKS.md` | Prioritized implementation backlog |
-| `KNOWN_ISSUES.md` | Known mismatches, limitations, and operational gotchas |
-| `CHANGELOG.md` | Dated log of major changes |
-| `TRADE_EXECUTION_ARCHITECTURE.md` | Durable multi-account web execution architecture and safety boundaries |
-| `UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md` | Authoritative Plans 0-9 for a secure broker-neutral Windows VM connector with multiple isolated MT5 terminals per Rust-managed worker |
-| `MT5_WINDOWS_VM_CONNECTOR_PHASE0_VALIDATION.md` | Completed host/runtime and credential-safe FTMO Free Trial read-only evidence for Phase 0 |
-| `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md` | Implemented worker prototype, passing clean two-account read-only coexistence, and remaining signed/cross-fault gates |
-| `MT5_VM_LOCAL_IMAGE_AUTOMATION.md` | Zero-touch local image/slot workflow, broker-neutral catalog enrollment, and remaining Hyper-V publication prerequisites |
-| `MT5_WINDOWS_VM_CONNECTOR_PHASE2.md` | Durable control-plane repository implementation and remaining operational activation gates |
-| `MT5_WINDOWS_VM_CONNECTOR_PHASE3.md` | Vault/authenticated connection API implementation, security boundaries, verification record, and activation runbook |
-| `MT5_WINDOWS_VM_CONNECTOR_PHASE4A.md` | Phase 4a normalized account/portfolio/instrument synchronization and readiness boundary |
-| `MT5_WINDOWS_VM_CONNECTOR_PHASE4B.md` | Phase 4b historical orders/deals, coverage and cursor contract |
-| `MT5_WINDOWS_VM_CONNECTOR_PHASE0_4_OPERATOR_CHECKLIST.md` | Secret-safe external gates required before Phase 5 |
-| `PROP_RISK_GUARD.md` | Automated, versioned prop-firm drawdown protection on the web execution path |
+| [Current state](CURRENT_STATE.md) | What is implemented, where it runs, and which external gates remain |
+| [Current progress](CURRENT_PROGRESS.md) | Recently completed work and the active delivery focus |
+| [Handoff](HANDOFF.md) | Safe session startup, verification, deployment, and continuation commands |
+| [Next tasks](NEXT_TASKS.md) | Prioritized work that is still open |
+| [Known issues](KNOWN_ISSUES.md) | Current limitations and operational caveats |
+| [Operations](OPERATIONS.md) | Local checks, production build/deploy, health gates, and recovery |
+| [Security](SECURITY.md) | Authentication, secret handling, transaction controls, and release checklist |
+| [Codebase memory](CODEBASE_MEMORY.md) | Knowledge-graph setup, maintenance, CLI fallback, and recovery |
+| [Project structure](PROJECT_STRUCTURE.md) | Monorepo ownership and runtime boundaries |
+| [Changelog](CHANGELOG.md) | Append-only historical record of major repository changes |
 
-## Package Docs
+## Execution and production
 
-| Package | Docs |
+| Document | Status |
 | --- | --- |
-| Frontend | [`../frontend/docs/README.md`](../frontend/docs/README.md) |
-| Backend | [`../backend/docs/README.md`](../backend/docs/README.md) |
+| [Trade execution architecture](TRADE_EXECUTION_ARCHITECTURE.md) | Current Go/Rust/common-EA safety and account model |
+| [Bare-metal managed MT5 runbook](MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md) | Current Windows worker/terminal/EA installation and activation gates |
+| [Production trade security runbook](TRADE_PRODUCTION_SECURITY_RUNBOOK.md) | Current production release and incident controls |
+| [Prop risk guard](PROP_RISK_GUARD.md) | Current automated drawdown protection contract |
+| [MT5 local image automation](MT5_VM_LOCAL_IMAGE_AUTOMATION.md) | Current image, broker catalog, and slot automation |
+| [MT5 operator checklist](MT5_WINDOWS_VM_CONNECTOR_PHASE0_4_OPERATOR_CHECKLIST.md) | External evidence required before production activation |
 
-## Cross-Package Plans
+The numbered MT5 phase documents and universal connector plan remain design/validation records. Use
+the architecture and runbooks above for current operations.
 
-| File | Purpose |
+## Cross-package architecture
+
+| Document | Scope |
 | --- | --- |
-| [`../frontend/docs/BACKEND_API_SYNC_ARCHITECTURE.md`](../frontend/docs/BACKEND_API_SYNC_ARCHITECTURE.md) | Frontend plan for applying backend JSON/API as the authenticated workspace source of truth |
-| `REPLAY_BACKEND_MIGRATION_PLAN.md` | Cross-stack design for moving replay sessions, clock, aggregation, and replay trading from frontend to Go/PostgreSQL |
-| `REPLAY_BACKEND_PHASE6.md` | Final Replay cutover, mandatory deletion proof, boundary guard, and verification runbook |
-| `PINE_RUNTIME_GO_MIGRATION.md` | Cross-package plan for moving Pine parsing/compilation from frontend TypeScript to the Go backend |
-| `PIVOT_FORMATION_ALERT_PLAN.md` | Deferred cross-stack plan for backend-owned, durable Swing pivot-formation alerts |
-| `UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md` | Plans 0-9 for Rust worker control, credential security, multi-terminal isolation, durable execution, measured VM density, multi-broker certification, and rollout |
-| `MT5_WINDOWS_VM_CONNECTOR_PHASE0_VALIDATION.md` | Phase 0 execution record; host/runtime/tests and credentialed FTMO Free Trial read-only gate pass |
-| `MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md` | Phase 1 execution record; clean FTMO/Exness read-only coexistence passes while signed-agent, independent-view, and cross-fault gates remain |
-| `MT5_VM_LOCAL_IMAGE_AUTOMATION.md` | Operator runbook for attested terminal slots, server enrollment, golden images, and bounded worker cloning |
-| `MT5_WINDOWS_VM_CONNECTOR_PHASE2.md` | Phase 2 durable worker-control implementation and restart/reassignment gates |
-| `MT5_WINDOWS_VM_CONNECTOR_PHASE3.md` | Phase 3 vault, account lifecycle, one-time grant, UI, and deployment record |
-| `MT5_WINDOWS_VM_CONNECTOR_PHASE4A.md` | Phase 4a normalized read synchronization |
-| `MT5_WINDOWS_VM_CONNECTOR_PHASE4B.md` | Phase 4b history and cursor semantics |
+| [Replay backend migration](REPLAY_BACKEND_MIGRATION_PLAN.md) | Historical design and completed frontend-to-Go replay cutover |
+| [Replay backend Phase 6](REPLAY_BACKEND_PHASE6.md) | Final client-authority deletion and boundary gate |
+| [Pine runtime Go migration](PINE_RUNTIME_GO_MIGRATION.md) | Pine ownership and migration boundary |
+| [Trade password authorization](TRADE_PASSWORD_AUTHORIZATION.md) | High-value trade authorization contract |
+| [Platform dialogs](PLATFORM_DIALOGS.md) | Cross-platform dialog ownership |
 
-## Documentation Rules
+## Package documentation
 
-- Put frontend chart, Pine, drawing, replay, indicator, UI, and test docs under `frontend/docs/`.
-- Put Go API, Fiber, routing, middleware, configuration, and backend deployment docs under
-  `backend/docs/`.
-- Keep root docs short and cross-project only.
-- Update `HANDOFF.md`, `CURRENT_PROGRESS.md`, `NEXT_TASKS.md`, and `CHANGELOG.md` when a task changes
-  project direction or leaves important state for the next engineer.
+- [Frontend documentation](../frontend/docs/README.md)
+- [Frontend package README](../frontend/README.md)
+- [Backend documentation](../backend/docs/README.md)
+- [Backend package README](../backend/README.md)
+- [Rust execution workspace](../backend/execution/README.md)
+
+## Historical records
+
+The following are evidence, not mutable current-state documentation:
+
+- `agent-evidence/` contains approved SPEC/EVIDENCE pairs tied to exact source states.
+- `fixtures/` contains sanitized validation fixtures and schemas.
+- dated audits, release notes, phase plans, and phase validation documents preserve the decision or
+  result recorded at that time.
+
+Do not rewrite historical evidence to match current behavior. When guidance changes, update the
+maintained documents in **Start here** and add a new dated evidence record.
+
+## Documentation maintenance rules
+
+- Keep current-state pages concise and link to the owning architecture/runbook instead of copying it.
+- Mark superseded plans as historical; never leave deleted paths in a current index.
+- Verify every relative link and every named file before committing.
+- Update package versions from manifests/lockfiles, not memory.
+- Update `CURRENT_STATE.md`, `CURRENT_PROGRESS.md`, `HANDOFF.md`, `NEXT_TASKS.md`, and
+  `KNOWN_ISSUES.md` together when project direction or operational truth changes.

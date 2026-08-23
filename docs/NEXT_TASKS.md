@@ -1,210 +1,44 @@
-# NEXT TASKS
+# Next tasks
 
-## Immediate
+Verified on 2026-08-24. Priorities are ordered by production risk and dependency, not feature appeal.
 
-0b. **Run the Revision 15 production-like Demo gate** (2026-08-23, blocked on explicit runtime
-    authorization and operator prerequisites). Provide a secure Vault, the dedicated interactive
-    worker identity, three clean preattested slots, and three disposable Demo accounts owned by two
-    authenticated test users. Install/start the worker only through
-    `MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md`, then execute R15-9 connect, readiness, isolation,
-    routing, restart, reconnect, cleanup, and ambiguous-outcome checks. No Live/funded account is
-    permitted in this gate.
+## P0 — delivery health
 
-0a. **Authorize and rehearse the one-host production cutover only after R15-9 passes.** Run the
-    forward-only migration, canonical backend restart, explicit worker install/start, local/public
-    health checks, and rollback rehearsal as separate operator-confirmed steps. Do not add worker
-    lifecycle to `run-backend-production.ps1`, use recovery switches in a normal source run, or
-    infer Live authorization from a Demo result.
+1. Keep `master` green across frontend, Go backend, Rust execution, and Windows artifact jobs.
+2. Deploy only an artifact whose manifest commit matches checked-out `HEAD` and whose
+   `SHA256SUMS` passes verification.
+3. Record local and public health results for the exact deployed commit.
 
-0. **Confirm the `backend-artifact` CI re-run** (2026-08-19, complexity: trivial). The first run
-   failed in `Package artifact` on an invalid regex; the fix is pushed but the re-run has not been
-   observed. Check that the job produces `marketlens-backend-windows-amd64` and that `SHA256SUMS`
-   lists all six files, including `mt5-vm-agent.exe`, with forward-slash paths and does not list
-   itself. Then run
-   `.\tools\deploy-backend.ps1` on the Windows host for the first real deploy, ideally with
-   `-SkipPublicHealthCheck` on a rehearsal.
+## P0 — managed MT5 activation
 
-1. **Review and commit the frontend framework upgrade** (2026-08-18, complexity:
-   low). Next 16.3.1 / Tailwind 4.3.3 / TypeScript 7.0.2 are in the working tree,
-   verified but deliberately uncommitted. Read
-   `docs/agent-evidence/frontend-framework-upgrade/EVIDENCE.md`, rerun
-   `tools/verify-frontend-framework-upgrade.ps1`, then commit and push.
-2. **Decide the `SMC Terminal` brand-label breakpoint** (complexity: low).
-   `platformUi.spec.ts:227` expects the label visible at 1366px while
-   `TopToolbar.tsx` gates it behind `hidden min-[1720px]:block`. This predates the
-   upgrade. Fix the component or the expectation - not both.
-3. **Fix the missing mobile watchlist delete confirmation** (complexity: low-medium).
-   `platformUi.spec.ts:184` expects a `Delete "Mobile list"?` platform dialog that
-   `MobileMarkets.tsx` never renders. Also pre-existing.
-4. **Restore the zero-finding production audit** (complexity: medium).
-   `npm audit --omit=dev --audit-level=low` in `frontend/` reports one high advisory,
-   `nanoid@3.3.16` (GHSA-2v37-7h3g-55p8), reached through the repository's pinned
-   `postcss@8.5.23` override. Pre-existing, not caused by the framework upgrade.
-   Advancing the override requires a clean production audit and build per
-   `docs/SECURITY.md`.
+1. Verify backend, execution gateway, Vault role, worker heartbeat/lease, terminal-slot capacity,
+   terminal/EA hashes, and reverse-proxy allow-list.
+2. Run the R15-9 gate with two test owners and three disposable Demo accounts.
+3. Prove restart/reconciliation, generation fencing, secret redaction, independent account
+   isolation, and no duplicate controller before any Live/funded onboarding.
+4. Stop and preserve evidence on any identity mismatch, unknown cleanup state, stale generation,
+   failed reconciliation, or gauntlet failure.
 
+Use [Bare-metal managed MT5 runbook](MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md) and
+[MT5 operator checklist](MT5_WINDOWS_VM_CONNECTOR_PHASE0_4_OPERATOR_CHECKLIST.md).
 
-## Approved universal MT5 Windows VM connector initiative
+## P1 — production validation
 
-The authoritative initiative is
-[`UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md`](UNIVERSAL_MT5_WINDOWS_VM_CONNECTOR_PLAN.md).
-MarketLens owns a private Windows VM pool; one Rust agent supervises multiple
-isolated MT5 terminal/Python-adapter pairs. Users connect login, master password,
-and exact server in MarketLens web and install nothing locally. The old
-TickerAll/MetaApi cloud-provider plan and fixtures have been deleted.
+1. Run the maintained frontend/API/managed-MT5 smoke checks after deployment.
+2. Verify audit/event persistence and copy-target outcomes through restart and transient transport
+   failures.
+3. Capture capacity/resource measurements from the actual Windows production host rather than
+   extrapolating local synthetic results.
 
-Phase 0 is complete. The Phase 1 local prototype is implemented and its 21 Rust
-tests plus ten Python tests pass, but Phase 1 is **not complete**. The driver now
-uses separately installed, signed, pinned terminal slots; the FTMO provision,
-two clean restarts, forced-crash recovery, heartbeat, graceful stop, and settled
-one-pair resource observation pass through the explicit Application Control
-test host. The normal path has no shared terminal fallback, requires an explicit
-valid Authenticode-signed agent, and is mutually exclusive with the Cargo-only
-live-test switch. Phase 1 remains conditional on a signed normal-agent rerun,
-independent FTMO web comparison, and live two-account isolation/aggregate-load
-evidence. Follow
-[`MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md`](MT5_WINDOWS_VM_CONNECTOR_PHASE1_VALIDATION.md)
-and do not claim the Phase 1 exit gate has passed until that evidence exists.
+## P2 — future execution venues
 
-The Phase 2 durable control-plane repository slice is implemented behind a
-disabled-by-default private boundary: migration `0038`, version negotiation,
-worker registry/session fencing, monotonic account leases, four-slot scheduler,
-durable lifecycle queue, and idempotent worker acknowledgements. Next, perform
-the disposable-PostgreSQL restart and signed-worker rotation/reassignment gates
-in [`MT5_WINDOWS_VM_CONNECTOR_PHASE2.md`](MT5_WINDOWS_VM_CONNECTOR_PHASE2.md).
-This does not authorize the Phase 3 public password/vault surface or Phase 5
-order execution.
+Native Binance remains disabled. Treat it as a separate approved security vertical covering secret
+storage, signing/time sync, exchange filters, rate limits, idempotency, reconciliation, testnet, and
+minimal mainnet canary evidence. Do not enable the enum/trait stub as production support.
 
-Security precedes performance and cost. The prototype includes private
-authenticated stdio, ACL/reparse checks, bounded per-account queues, process/job
-limits, redaction tests, startup throttling, and installed-slot artifact pins.
-Do not raise the default four-terminal density, add a public password route,
-production vault secret, or order execution while the remaining Phase 1 gates
-are open.
+## Documentation upkeep
 
-> Trade execution update (2026-07-26): older Phase 6 verifier/Connector tasks
-> are cancelled, not pending. The only native-venue completion sequence is the
-> fail-closed plan in `TRADE_EXECUTION_ARCHITECTURE.md`.
-
-_Post-monorepo update 2026-07-06._
-
-## Deferred indicator-event alerts
-
-- The former `SWING_SR`-specific pivot alert task is retired with that catalog
-  entry. Any future pivot-high/pivot-low alerts must be source-driven and use a
-  common backend Pine event contract rather than restoring a hidden formula.
-- [`PIVOT_FORMATION_ALERT_PLAN.md`](PIVOT_FORMATION_ALERT_PLAN.md) is retained
-  as an archived design reference; its `SWING_SR` payloads are not an active
-  implementation target.
-- The frontend may configure and render future indicator-event alerts, but it must not
-  scan candles, infer events from returned series, or submit pivot triggers.
-
-## Drawing maintenance refactor
-
-- Phase 8 Waves A-C are complete; do not reopen their shared interaction/persistence boundaries to add
-  tool-specific branches.
-- Next drawing catalog delivery is Wave D from
-  `frontend/docs/DRAWING_TOOLS_MAINTENANCE_REFACTOR_PLAN.md`: data-dependent projections/profiles
-  and rich content. Define candle/volume/data-source and content-sandbox contracts before adding
-  those tools; do not implement them as coordinate-only approximations.
-
-## Approved backend replay initiative (design first)
-
-Replay will migrate from a frontend-owned candle cursor to a deterministic Go/PostgreSQL session
-engine. The detailed architecture, database schema, API/WebSocket contracts, frontend ownership
-map, test gates, and six implementation phases are in
-[`REPLAY_BACKEND_MIGRATION_PLAN.md`](REPLAY_BACKEND_MIGRATION_PLAN.md).
-
-Replay backend Phases 0-6 are complete and repository-verified. Phase 6 physically deleted the
-legacy frontend clock/store/engine, provider-history replay path, client MTF aggregation, and replay
-trade processing. Backend Replay is now the default authenticated path; the deployment flag is a UI
-kill switch only. `npm run check:replay-client-boundary` prevents local Replay authority from being
-reintroduced. See [`REPLAY_BACKEND_PHASE6.md`](REPLAY_BACKEND_PHASE6.md).
-
-The next implementation priority returns to backend per-resource persistence, beginning with Phase
-7 drawings, plus operational Replay E2E/performance validation against a deployed PostgreSQL/MT5
-environment.
-
-The historical roadmap below is preserved. The current top priority after the monorepo split is:
-
-1. ~~Migrate the Go backend scaffold from stdlib `net/http` to Fiber.~~ Done (backend Phase 0).
-   ~~Phase 1 - Database layer.~~ Done (auth migrations and sqlc are in place; live Neon smoke has verified auth tables).
-   ~~Phase 2 - Firebase ID-token verification (`internal/auth/firebase.go` + `verify.go`).~~ Done.
-   ~~Phase 3 - Sessions & tokens (`jwt.go`, `session.go` rotation/reuse, `cookies.go`).~~ Done.
-   ~~Phase 4 - Auth endpoints & middleware (`/api/v1/auth/*`, `RequireAuth`, CORS,
-   `users.UpsertFromIdentity`).~~ Done (code + `app.Test`; live Neon/Firebase login, refresh, me, and logout smoke passed).
-   ~~Phase 5 - Sync bootstrap + settings (`0003_settings`, `internal/settings` GET/PUT/PATCH,
-   `GET /api/v1/sync/bootstrap`).~~ Done.
-   ~~Phase 6 - Watchlists (`0004_watchlists` + `0005_watchlist_layout`,
-   `internal/watchlists` CRUD + full layout + active list, bootstrap slice) + local MT5 tick
-   streaming (`bridge/mt5_stream`, `cmd/mt5-stream`).~~ Done (watchlists verified live on Neon;
-   MT5 stream code is ready for a Windows host with MT5 installed).
-   Current backend step is **Phase 7 - Drawings** (`0005`-ish charting migration: `drawings` +
-   `drawing_templates`; batch upsert deduped on `client_id`; `GET /drawings?symbol=`, bulk
-   `/drawings/batch`, `drawing-templates` CRUD), then Phases 8-13 per-resource.
-2. Implement remaining backend per-resource persistence according to
-   `backend/docs/BACKEND_IMPLEMENTATION_PLAN.md`, starting with Phase 7 drawings.
-3. Add frontend remote workspace sync according to
-   `frontend/docs/BACKEND_API_SYNC_ARCHITECTURE.md`: shared `ky` API client, typed adapters,
-   `sync/bootstrap` apply path, and feature-by-feature mutations for settings, watchlists,
-   drawings, indicators, alerts, journal, layouts, and simulated trading. Bootstrap read/apply is
-   now wired for UI settings, SMC settings, notification defaults, and watchlists. Watchlist
-   list/symbol/section/reorder/active-list write-through is wired to backend Phase 6. Settings
-   write-back remains pending.
-4. Keep frontend feature docs under `frontend/docs/`; use `frontend/docs/archive/` for historical
-   audit/parity reports.
-
-For frontend changes, continue using the validation baseline from `docs/HANDOFF.md`.
-
-## Current status
-
-- **✅ Phase 1 — Realtime Market Data Foundation: COMPLETE (Steps 1–17).**
-- **✅ Phase 2 — Alert Engine: COMPLETE** (engine + notifications + Alert Center + audit + Phase 2.1
-  interactive chart alerts).
-- **✅ OANDA Integration: COMPLETE** (forex/metals/indices via OANDA v20 REST; fallback to
-  TwelveData; extension points for FxcmProvider + ICMarketsProvider).
-- **✅ Phase 3 — TradingView UI Parity: COMPLETE** (90% visual, 85% interaction).
-  16 files modified, 2 created. See `docs/TRADINGVIEW_PARITY_REPORT.md`.
-- **✅ Phase 4.1 — Drawing Engine Foundation: COMPLETE.**
-- **✅ Phase 4.2 — Trend Line Suite: COMPLETE** (8 line tools + DrawingContextMenu + styles).
-- **✅ Phase 4.2.1 — Tool Activation: COMPLETE** (state machine, cursor system, live preview).
-- **✅ Phase 4.2.2 — Tool Group System: COMPLETE** (4 grouped icons + flyout portal fix).
-- **✅ Phase 4.3 — Shape Tools Suite: COMPLETE** (8 shapes + fill + supply/demand zones).
-- **✅ Phase 4.4 — Fibonacci Suite: COMPLETE** (fibRetracement + trend-based fibExtension,
-  plugin architecture, retracement 2-point creation, extension 3-click creation, auto-levels with
-  labels/background bands, full hitTest/movePoints/boundingBox).
-- **✅ Phase 5 — Left Toolbar / Indicator Engine: COMPLETE** (see below).
-- **✅ Jotai migration — COMPLETE** (all 11 stores converted to atoms, Zustand removed).
-
-## Completed — Phase 5 (Left Toolbar / Indicator Engine)
-
-1. Full 17+ tool TradingView left toolbar with 9 visual groups and separators.
-2. Indicator settings dialogs with parameter customization (SMA/EMA length, RSI period, etc.).
-3. Indicator style customization (colors, line width, overlay vs. pane).
-4. Hotkey system for drawing tools and indicators (1–9 switch tools, Delete, Ctrl+D, Ctrl+A, Ctrl+I, etc.).
-
----
-
-## Next milestone - Phase 6
-
-Detailed code plan: `docs/PHASE6_IMPLEMENTATION_PLAN.md`.
-
-- **Phase 6A - Push Notifications:** Firebase Cloud Messaging as the next alert delivery channel,
-  including closed-browser delivery through `npm run push-worker`. Implemented in
-  `docs/PHASE6A_PUSH_NOTIFICATIONS.md`.
-- **Phase 6A extension - Telegram/Discord Alert Channels:** server-side external message delivery
-  for browser-open and closed-browser alerts. Implemented in
-  `docs/PHASE6A_TELEGRAM_DISCORD_PLAN.md`.
-- **Phase 6B - historical MT5 bridge milestone:** the original browser-facing bridge and saved
-  verifier workflow were removed. Current work continues from the broker-neutral Go/Rust/common-EA
-  architecture and the Revision 15 bare-metal managed runbook. Do not restore the old bridge or use
-  this archived milestone as runtime guidance.
-
----
-
-## Later phases (from PHASE3_11_PLAN.md)
-
-- **Phase 6 - Push Notifications + MT5 Integration:** see `docs/PHASE6_IMPLEMENTATION_PLAN.md`.
-- **Phase 8 — Trading Panel:** TradingView-style order panel.
-- **Phase 9 — Position Visualization:** interactive entry/SL/TP lines.
-- **Phase 10 — Polish & Optimization:** performance, memory, mobile, accessibility.
+- Update current-state pages from source/manifests and successful runs, not old phase plans.
+- Keep prior SPEC/EVIDENCE, audits, and phase records immutable.
+- Move durable conclusions into maintained architecture/runbooks and link the historical evidence.
+- Run the documentation link/stale-reference verifier whenever files are renamed or deleted.

@@ -13810,6 +13810,7 @@ mod tests {
     const MANAGED_PAIR_TOKEN: &str =
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const EXPIRED_PAIR_TOKEN: &str = "expired-pairing-token-at-least-32-chars";
+    static CONFIG_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn managed_database_error_helpers_are_fail_closed() {
@@ -13910,6 +13911,9 @@ mod tests {
 
     #[tokio::test]
     async fn file_backed_identity_config_is_fail_closed_and_builds_production_state() {
+        let _config_env_guard = CONFIG_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let root = env::temp_dir().join(format!(
             "marketlens-gateway-config-{}-{}",
             std::process::id(),
@@ -14044,6 +14048,9 @@ mod tests {
 
     #[test]
     fn gateway_main_builds_production_state_without_connecting_in_tests() {
+        let _config_env_guard = CONFIG_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let root = env::temp_dir().join(format!(
             "marketlens-gateway-main-{}-{}",
             std::process::id(),

@@ -1,100 +1,99 @@
-# Project Structure
+# Project structure
 
-> Trade execution update (2026-07-26): current paths are
-> `backend/execution`, `backend/internal/execution`, and
-> `backend/bridge/mt5_ea`. Legacy verifier/Connector paths mentioned below have
-> been deleted.
+Verified on 2026-08-24.
 
-This repository is organized as a monorepo. The frontend and backend are independent packages with
-separate runtimes, dependencies, docs, and deployment paths.
+MarketLens is a monorepo with independently testable/deployable frontend, Go backend, Rust execution,
+and MT5 integration boundaries.
 
-## Top-Level Layout
+## Top level
 
 ```text
 .
-|-- frontend/          # Next.js trading terminal UI
-|-- backend/           # Go API + MT5 sidecars and credential verifier
-|-- docs/              # Root monorepo docs
-|-- .env.example       # Shared example env file
-`-- README.md          # Project entrypoint
+|-- .github/workflows/       GitHub Actions CI and artifact build
+|-- frontend/                Next.js browser application
+|-- backend/                 Go API, Rust execution, migrations, and MT5 helpers
+|-- docs/                    Cross-package state, architecture, security, and operations
+|-- tools/                   Repository verification and deployment tooling
+|-- run-backend-production.ps1
+|-- README.md
+`-- LICENSE
 ```
 
-## Frontend Ownership
-
-`frontend/` owns the browser trading application.
+## Frontend ownership
 
 ```text
 frontend/
-|-- src/               # App code, components, stores, services, hooks, types
-|-- public/            # Static assets
-|-- tests/             # TypeScript behavior, architecture, and browser suites
-|-- tools/             # Typed workers, migrations, and benchmark entrypoints
-|-- docs/              # Frontend architecture and feature docs
-|-- tsconfig.test.json # Node test compilation
-|-- tsconfig.tools.json # Operational tool compilation
-`-- package.json       # Frontend dependencies and scripts
+|-- src/app/                 Next App Router shell and server route handlers
+|-- src/components/          Product workspaces and shared UI
+|-- src/services/            API, auth, market data, notifications, and domain services
+|-- src/store/               Jotai state modules
+|-- src/workers/             Browser workers
+|-- tests/                   Architecture, unit/integration, and browser suites
+|-- tools/                   Benchmarks, workers, and migrations
+|-- docs/                    Frontend architecture and feature contracts
+|-- design-system/           MarketLens design-system source
+`-- package.json             Frontend scripts and dependency source of truth
 ```
 
-Frontend docs should cover chart behavior, drawing tools, Pine runtime, indicator settings, replay,
-trade simulator UI, responsive layout, and frontend test conventions.
+The frontend owns presentation, browser interaction, local/anonymous persistence explicitly allowed
+by a feature contract, and adapters to authenticated backend resources. It does not own durable
+broker secrets or execution authority.
 
-## Backend Ownership
-
-`backend/` owns the Go API service, both Python MT5 sidecars, and the short-lived credential
-verifier.
+## Backend ownership
 
 ```text
 backend/
-|-- cmd/api/           # API entrypoint
-|-- internal/          # Private backend packages
-|   |-- config/        # Environment configuration
-|   |-- httpserver/    # HTTP app and server lifecycle
-|   |-- health/        # Health endpoint
-|   |-- settings/      # Per-user settings/integrations and Verify endpoint
-|   |-- mt5verify/     # Bounded stdin-only verifier process adapter
-|   `-- middleware/    # Shared HTTP middleware
-|-- bridge/            # Python MT5 helpers and WebSocket sidecars
-|   |-- ftmo_mt5/      # FTMO execution bridge (:8787) + verify_account.py
-|   `-- mt5_stream/    # Market-data bridge (:8765)
-|-- docs/              # Backend architecture, API, and configuration docs
+|-- cmd/
+|   |-- api/                 Go HTTP API
+|   |-- migrate/             Forward database migrations
+|   |-- mt5-stream/          MT5 market-data consumer
+|   `-- mt5-phase3-harness/  Bounded validation harness
+|-- internal/                Private Go domain/repository/http packages
+|-- migrations/              PostgreSQL schema history and validation fixtures
+|-- execution/
+|   |-- crates/execution-domain/
+|   |-- crates/execution-engine/
+|   |-- crates/execution-adapters/
+|   |-- crates/execution-gateway/
+|   `-- crates/mt5-vm-agent/
+|-- bridge/
+|   |-- mt5_ea/              Common managed MT5 Expert Advisor
+|   |-- mt5_session/         Session helper
+|   |-- mt5_stream/          Local market-data sidecar
+|   `-- mt5_vm/              Generic MT5 Python/bootstrap helpers
+|-- docs/                    Backend API/auth/configuration/production docs
 |-- go.mod
 `-- README.md
 ```
 
-Backend framework decision: **Fiber**. The current backend is already on Fiber, with health,
-readiness, CORS, Phase 4 auth routes, Phase 5 settings/bootstrap routes, and Phase 6 watchlist
-routes mounted under
-`/api/v1`. New backend endpoints and middleware should continue using Fiber handlers, route groups,
-and middleware. The next backend persistence task is Phase 7: drawings and drawing templates.
+Go/PostgreSQL owns durable API state, authorization, commands, events, and audit. Rust owns execution
+domain/risk/routing and managed worker control. Python/MQL components are bounded adapters to the
+installed MT5 runtime. The deleted `ftmo_mt5` browser bridge and credential verifier are not part of
+the current tree.
 
-The market-data (`:8765`) and execution (`:8787`) Python bridges are **sidecar services**: they run
-as separate processes and communicate over WebSockets. The verifier is different: the authenticated
-Go endpoint launches `verify_account.py` for one bounded request, sends credentials over stdin, and
-stores the resulting verification timestamp only for that user.
+## Documentation ownership
 
-## Root Docs Ownership
+- Root `docs/`: cross-package state, security, operations, execution architecture, runbooks, and
+  historical evidence.
+- `frontend/docs/`: frontend architecture, interaction, rendering, and feature contracts.
+- `backend/docs/`: Go API, auth, database, configuration, and production build/deploy guidance.
+- `backend/execution/README.md`: Rust workspace and execution development guidance.
 
-`docs/` is intentionally small. It should only contain cross-project documentation:
+See [root documentation index](README.md) and
+[frontend documentation index](../frontend/docs/README.md).
 
-- repository structure
-- package boundaries
-- shared operations
-- deployment boundaries
-- handoff notes that involve both frontend and backend
+## Deployment boundaries
 
-If a document only affects one package, move it into that package's `docs/` folder.
+- Vercel builds from `frontend/`.
+- The Go API and Rust binaries are packaged together by the Windows artifact job.
+- `tools/deploy-backend.ps1` deploys the verified CI artifact without compiling on the host.
+- `run-backend-production.ps1` is the canonical source-build production runner.
+- MT5 terminals/EAs/workers are host-managed runtimes; they are not browser processes.
 
-## Deployment Boundaries
+## Contribution rules
 
-- Frontend deployment root: `frontend`
-- Backend deployment root: `backend`
-- Frontend and backend should be deployed independently.
-- Vercel should not build from the repository root after the monorepo split.
-
-## Contribution Rules
-
-- Do not add frontend source code at the repository root.
-- Do not add backend source code under `frontend/`.
-- Keep package-specific dependencies inside the owning package.
-- Update root docs when changing folder ownership, deployment roots, or shared commands.
-- Update package docs when changing runtime behavior inside a package.
+- Keep dependencies and package-specific docs inside their owner.
+- Do not add execution authority or reusable broker secrets to the frontend.
+- Do not bypass Go/Rust durable/audited command boundaries with direct browser-to-MT5 paths.
+- Update structure docs only after verifying actual paths and manifests.
+- Keep generated/runtime trees out of Git and codebase-memory indexes.

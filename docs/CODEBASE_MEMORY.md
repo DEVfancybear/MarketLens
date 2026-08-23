@@ -215,12 +215,14 @@ MCP and CLI clients.
 
 ## Current verified snapshot
 
-The graph was rebuilt from commit `f4e48a0a188474163bfa3a4dada0cfa7ebbd17fd` on 2026-08-23 with
-codebase-memory-mcp v0.10.8. The matching project reported `ready` with 18,190 nodes and 80,226
+The graph was rebuilt from commit `3dcf45d57bfababd213317993b6958237e023115` on 2026-08-24 with
+codebase-memory-mcp v0.10.8. The matching project reported `ready` with 18,225 nodes and 80,308
 edges. Indexing excluded 14 generated/runtime directories and 87 files by design, skipped zero
-files, and reported 50 partially parsed files. Those partial results are best-effort signals—read
+files, and reported 52 partially parsed files. Those partial results are best-effort signals—read
 the current source directly for any flagged range.
 
 The persisted artifact uses schema version 2, contains the same node and edge counts, and is
-compressed from 46,006,272 bytes to 8,246,117 bytes. A task-relevant `get_architecture` query
-returned the project overview after the rebuild, confirming the recovered graph is queryable.
+compressed to 8,249,231 bytes. Task-relevant graph queries returned the changed Rust test symbols
+after the rebuild. A later Codex MCP call reported `Transport closed`, while the documented CLI
+fallback still returned the exact matching project as `ready`; this is a bridge-session failure,
+not evidence that the graph is corrupt.

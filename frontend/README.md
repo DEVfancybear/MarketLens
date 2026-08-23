@@ -9,11 +9,11 @@ feature flags.
 
 ## Current Stack
 
-- Next.js 16 App Router, React 19, TypeScript strict mode
+- Next.js 16.3.1 App Router, React 19.0.0, TypeScript 6.0.2 strict mode
 - TailwindCSS, CSS variables, lucide-react
 - Jotai atoms for app/runtime state
 - TanStack Query for async app infrastructure where needed
-- TradingView Lightweight Charts 4.2.3
+- TradingView Lightweight Charts 5.2.0
 - `ky` for backend API calls
 - Firebase client SDK for Google sign-in and browser/push notification support
 - IndexedDB and localStorage for anonymous/local persistence
