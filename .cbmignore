@@ -1,0 +1,4 @@
+# Generated evidence and runtime trees are not authoritative source code.
+/.artifacts/
+/.tmp-tencentdb-agent-memory/
+/backend/.artifacts/

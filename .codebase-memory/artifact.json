@@ -1,11 +1,11 @@
 {
     "schema_version": 2,
-    "commit": "5d64929248e4b99fd095c498f2864b57ee4a13bd",
-    "indexed_at": "2026-07-29T14:42:10Z",
+    "commit": "f4e48a0a188474163bfa3a4dada0cfa7ebbd17fd",
+    "indexed_at": "2026-08-23T16:49:27Z",
     "project": "C-Users-duong-Downloads-Tradingview",
-    "nodes": 0,
-    "edges": 0,
-    "original_size": 42663936,
-    "compressed_size": 7789971,
-    "compression_level": 3
+    "nodes": 18190,
+    "edges": 80226,
+    "original_size": 46006272,
+    "compressed_size": 8246117,
+    "compression_level": 9
 }

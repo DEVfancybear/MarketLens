@@ -6,169 +6,85 @@
 
 ### Thấu thị trường. Thử mọi ý tưởng. Giao dịch vững tin.
 
-**MarketLens là nền tảng nghiên cứu và thực thi giao dịch mã nguồn riêng lấy cảm hứng từ TradingView—nơi biểu đồ chuyên sâu,**<br>
-**market replay, quản trị rủi ro và thực thi MT5 đa tài khoản hội tụ trong một terminal web song ngữ.**
+**Nền tảng giao dịch mã nguồn mở kết nối biểu đồ chuyên sâu, Market Replay,**<br>
+**quản trị rủi ro và thực thi MT5 đa tài khoản trong một trải nghiệm liền mạch.**
 
-[![Production](https://img.shields.io/badge/Production-Live-00C853?style=for-the-badge&logo=vercel&logoColor=white)](https://tradingterminal.io.vn)
-![Next.js](https://img.shields.io/badge/Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)
-![React](https://img.shields.io/badge/React_19-149ECA?style=for-the-badge&logo=react&logoColor=white)
-![Go](https://img.shields.io/badge/Go-00ADD8?style=for-the-badge&logo=go&logoColor=white)
-![Rust](https://img.shields.io/badge/Rust-CE412B?style=for-the-badge&logo=rust&logoColor=white)
+[![Live](https://img.shields.io/badge/Live-tradingterminal.io.vn-00C853?style=for-the-badge)](https://tradingterminal.io.vn)
+[![MIT License](https://img.shields.io/badge/License-MIT-7C3AED?style=for-the-badge)](LICENSE)
 
-[**Mở terminal trực tiếp →**](https://tradingterminal.io.vn) ·
-[Khám phá kiến trúc](docs/PROJECT_STRUCTURE.md) ·
-[Tài liệu vận hành production](docs/TRADE_PRODUCTION_SECURITY_RUNBOOK.md)
+[**Trải nghiệm MarketLens →**](https://tradingterminal.io.vn)
 
 </div>
 
 ---
 
-## Một không gian. Trọn vẹn hành trình giao dịch.
+## Một quyết định tốt bắt đầu trước khi đặt lệnh
 
-MarketLens dành cho những nhà giao dịch muốn sự mượt mà của một nền
-tảng biểu đồ hiện đại mà không phải chia nhỏ nghiên cứu, luyện tập, thực thi và
-đánh giá trên nhiều công cụ rời rạc. Từ lần quan sát thị trường đầu tiên đến bản
-ghi giao dịch cuối cùng, mọi giai đoạn đều nằm trong một không gian liền mạch và
-thích ứng trên mọi màn hình.
+Trader thường phải quan sát thị trường ở một nơi, kiểm chứng ý tưởng ở nơi khác,
+đặt lệnh trên một terminal riêng rồi quay lại thêm một công cụ để ghi chép và
+đánh giá. Mỗi lần chuyển đổi làm mất ngữ cảnh, lặp lại thao tác và khiến kế hoạch
+ban đầu dễ lệch khỏi quyết định cuối cùng.
 
-### Vì sao dự án này tồn tại?
+MarketLens gom toàn bộ hành trình đó vào một workspace duy nhất. Một ý tưởng có
+thể bắt đầu từ nét vẽ trên biểu đồ, được thử lại bằng Replay, chuyển thành kế
+hoạch có entry, stop loss và take profit, đi qua bước kiểm soát rủi ro, rồi tiếp
+tục được theo dõi bằng cảnh báo, nhật ký và phân tích hiệu suất.
 
-Thị trường không thiếu biểu đồ. Điều còn thiếu là một hành trình không đứt gãy.
-Trader thường nhìn cấu trúc ở một nơi, kiểm chứng ý tưởng ở nơi khác, đặt lệnh
-trên một terminal riêng rồi quay lại thêm một công cụ nữa để theo dõi và đánh
-giá. Mỗi lần chuyển đổi là một lần ngữ cảnh bị mất, thao tác bị lặp lại và rủi ro
-sai lệch tăng lên.
-
-MarketLens bắt đầu từ một câu hỏi đầy tham vọng:
-
-> **Điều gì sẽ xảy ra nếu một nét vẽ trên biểu đồ không kết thúc ở biểu đồ?**
-
-### Từ một nét vẽ đến quyết định thật
+## Từ quan sát đến kinh nghiệm
 
 <div align="center">
 
-**Quan sát** → **Vẽ kịch bản** → **Replay** → **Kiểm soát rủi ro** → **MT5** → **Cảnh báo & đánh giá**
+**Quan sát** → **Lập kịch bản** → **Replay** → **Kiểm soát rủi ro** → **MT5** → **Cảnh báo** → **Đánh giá**
 
 </div>
 
-Bạn có thể phát hiện một cấu trúc giá, dựng kịch bản bằng công cụ Long/Short
-Position, quay lại lịch sử để kiểm chứng, rồi mở ticket với entry, stop loss và
-take profit đã được chuẩn bị từ chính hình vẽ đó. Chỉ sau khi bạn xác nhận, lệnh
-mới đi qua lớp kiểm soát rủi ro và được định tuyến tới các tài khoản MT5 đã chọn.
-Trong lúc bạn rời màn hình, cảnh báo giá hoặc hình học tiếp tục canh thị trường;
-khi quay lại, journal và analytics giúp biến kết quả thành kinh nghiệm.
+MarketLens được xây dựng quanh một vòng lặp giao dịch có kỷ luật:
 
-### Khác biệt nằm ở những gì nối liền bên dưới
+- **Nhìn thị trường theo cách của bạn** — biểu đồ đa khung, chỉ báo, công cụ vẽ
+  chính xác, template và workspace giúp giữ nguyên bối cảnh phân tích.
+- **Luyện tập trước khi dùng vốn thật** — Market Replay và giao dịch mô phỏng
+  biến dữ liệu lịch sử thành môi trường thử nghiệm cho cả ý tưởng lẫn quy trình.
+- **Biến hình vẽ thành kế hoạch** — công cụ Long/Short Position giúp chuẩn bị
+  entry, stop loss, take profit và khối lượng ngay trên biểu đồ.
+- **Đặt rủi ro trước lợi nhuận** — mỗi quyết định được nhìn qua quy mô vị thế,
+  mức thua lỗ dự kiến và giới hạn đã đặt ra trước khi gửi lệnh.
+- **Quản lý nhiều tài khoản MT5** — theo dõi và thực thi trên nhiều tài khoản
+  mà vẫn giữ quyền kiểm soát độc lập cho từng đích giao dịch.
+- **Không cần nhìn màn hình liên tục** — cảnh báo giá và hình học có thể gửi qua
+  ứng dụng, trình duyệt, Telegram hoặc Discord khi điều kiện được kích hoạt.
+- **Biến kết quả thành bài học** — journal và analytics theo dõi P/L, win rate,
+  profit factor, drawdown, expectancy và hiệu suất theo thời gian.
 
-| Ý tưởng | Điều dự án thực sự làm |
+## Khác biệt nằm ở sự liền mạch
+
+| Bạn muốn | MarketLens giúp bạn |
 | --- | --- |
-| **Hình vẽ không chỉ để trang trí** | Drawing có thể tạo cảnh báo, chuẩn bị kế hoạch giao dịch và duy trì liên kết với trạng thái lệnh/vị thế. |
-| **Replay không chỉ là xem lại** | Dữ liệu lịch sử trở thành môi trường luyện tập để kiểm chứng quy trình và quyết định trước khi dùng vốn thật. |
-| **Thực thi không chỉ là một nút bấm** | Go, Rust, MT5 EA và worker Windows VM phối hợp để xác thực, kiểm tra rủi ro, lưu lệnh bền vững và giữ credential trong biên backend riêng tư. |
-| **Đa tài khoản không đồng nghĩa sao chép mù quáng** | Mỗi copy target có ánh xạ symbol, giới hạn rủi ro và dấu vết trạng thái độc lập. |
+| Giữ nguyên ý tưởng từ lúc phân tích đến lúc vào lệnh | Kế hoạch trực quan tiếp tục đồng hành qua Replay, ticket giao dịch và quá trình đánh giá. |
+| Thử một phương pháp mà không tự lừa mình | Replay, mô phỏng và nhật ký tạo thành một vòng phản hồi có thể lặp lại. |
+| Giao dịch nhiều tài khoản nhưng không mất kiểm soát | Mỗi tài khoản và mỗi mục tiêu sao chép vẫn có trạng thái và giới hạn riêng. |
+| Rời màn hình mà không bỏ lỡ điều kiện quan trọng | Hệ thống cảnh báo tiếp tục theo dõi giá và các vùng hình học đã đánh dấu. |
+| Dùng cùng một quy trình ở mọi nơi | Trải nghiệm nhất quán trên desktop và mobile, bằng cả tiếng Việt và tiếng Anh. |
 
-### Hơn cả một biểu đồ
+## Dành cho những trader coi trọng quy trình
 
-- **Biểu đồ chuyên nghiệp** — bố cục đa khung thích ứng, zoom sâu, công cụ vẽ
-  chính xác, chỉ báo, mẫu và workspace đồng bộ.
-- **Phát lại và nghiên cứu** — phát lại thị trường nhất quán, giao dịch mô phỏng,
-  nhật ký, ảnh chụp, phân tích và quy trình backtest.
-- **Thực thi production** — định tuyến MT5 trung lập với broker, sao chép đa tài
-  khoản, kiểm soát rủi ro tập trung, lệnh bền vững và trạng thái có thể kiểm toán.
-- **Bảo mật từ thiết kế** — trình duyệt và PostgreSQL không lưu mật khẩu MT5;
-  credential được quản lý qua Vault và grant một lần, gắn với đúng worker,
-  session, lease và command.
-- **Hai cách kết nối MT5** — tự quản lý terminal bằng EA dùng chung, hoặc dùng
-  connector Windows VM do backend quản lý sau khi các gate vận hành được bật.
-- **Một trải nghiệm nhất quán** — xuyên suốt desktop, mobile, tiếng Anh, tiếng
-  Việt, cảnh báo trực tiếp và cài đặt đồng bộ với backend.
+MarketLens phù hợp với trader chủ động muốn kết hợp phân tích trực quan và thực
+thi có kỷ luật; người đang luyện tập một phương pháp qua Replay; người quản lý
+nhiều tài khoản MT5; và bất kỳ ai muốn biến lịch sử giao dịch thành dữ liệu để
+ra quyết định tốt hơn ở lần tiếp theo.
 
-> **MarketLens biến biểu đồ thành hệ điều hành cho toàn bộ hành trình
-> giao dịch—lung linh ở bề mặt, kỷ luật trong từng lớp vận hành.**
+Đây không phải lời hứa về lợi nhuận. MarketLens là bộ công cụ giúp bạn chuẩn bị
+rõ hơn, kiểm soát rủi ro chặt hơn và học có hệ thống hơn từ chính quyết định của
+mình.
 
-## Kiến trúc vận hành
+## Mã nguồn mở
 
-| Thư mục | Vai trò |
-| --- | --- |
-| `frontend/` | Không gian biểu đồ và giao dịch sử dụng Next.js 16 / React 19 |
-| `backend/` | BFF Go có xác thực, lưu trữ, cảnh báo, Replay và dữ liệu thị trường |
-| `backend/execution/` | Kiểm soát rủi ro Rust, copy routing, sổ lệnh bền vững và venue adapter |
-| `backend/bridge/mt5_ea/` | Một EA MT5 dùng chung cho FTMO, Exness và các broker MT5 khác |
-| `backend/execution/crates/mt5-vm-agent/` | Worker Windows quản lý nhiều terminal MT5 cô lập, có lease và giới hạn tài nguyên |
-| `backend/bridge/mt5_stream/` | Sidecar Python MT5 riêng tư chỉ phục vụ dữ liệu thị trường, không thực thi lệnh |
-| `docs/` | Tài liệu vận hành, bảo mật và thiết kế của monorepo |
-| `.codebase-memory/` | Knowledge graph nén và dùng chung cho coding agent |
+MarketLens được phát hành theo [MIT License](LICENSE). Bạn có thể khám phá, sử
+dụng, sửa đổi và phát triển dự án theo các điều khoản của giấy phép.
 
-Giao dịch là một workspace cấp cao nhất, không nằm trong bảng dưới có thể thay
-đổi kích thước. Mỗi tài khoản MT5 chạy trong terminal riêng, thông qua EA tự
-quản lý hoặc connector Windows VM được backend cấp phát. Tài khoản Demo và Live
-đi qua cùng một miền kiểm soát rủi ro. Alias symbol của
-broker được ánh xạ theo từng tài khoản; mỗi copy target đều được kiểm tra rủi ro
-và ghi nhận độc lập.
+<div align="center">
 
-FTMO Python Connector cũ, Connector tải về, trình xác minh thông tin đăng nhập,
-giao thức thực thi browser-to-loopback và cơ chế lưu mật khẩu MT5 đã được loại
-bỏ. Ứng dụng không bao giờ cần mật khẩu MT5 của người dùng.
+**Một workspace. Một quy trình. Mỗi quyết định đều có bối cảnh.**
 
-Thiết kế thực thi và các release gate hiện tại:
+[Mở MarketLens](https://tradingterminal.io.vn)
 
-- [`docs/TRADE_EXECUTION_ARCHITECTURE.md`](docs/TRADE_EXECUTION_ARCHITECTURE.md)
-- [`docs/TRADE_PRODUCTION_SECURITY_RUNBOOK.md`](docs/TRADE_PRODUCTION_SECURITY_RUNBOOK.md)
-
-## Phát triển
-
-```powershell
-cd frontend
-npm install
-npm run dev
-```
-
-```powershell
-cd backend
-go run ./cmd/api
-```
-
-Rust workspace nằm tại `backend/execution/Cargo.toml`. Durable gateway yêu cầu
-PostgreSQL và `EXECUTION_ADMIN_TOKEN` có ít nhất 32 ký tự.
-
-## Bộ nhớ codebase dành cho agent
-
-Coding agent phải sử dụng knowledge graph dùng chung trước khi thay đổi code.
-Startup gate bắt buộc được định nghĩa trong [`AGENTS.md`](AGENTS.md); quy trình
-cài đặt, lập chỉ mục, xuất artifact, giao diện và khôi phục được ghi tại
-[`docs/CODEBASE_MEMORY.md`](docs/CODEBASE_MEMORY.md).
-
-## Production
-
-Trên máy chủ production Windows, chạy runner chuẩn từ thư mục gốc của repository:
-
-```powershell
-.\run-backend-production.ps1
-```
-
-Runner lấy clean worktree, build artifact Go và Rust theo từng giai đoạn, chuẩn
-bị private market-data runtime, áp dụng forward migration, khởi động lại an toàn
-các listener thuộc quyền sở hữu và chạy health gate local/public. Hai listener
-Rust chỉ lắng nghe trên loopback. Go API public chỉ mở `/execution-ea/*` làm relay
-nghiêm ngặt tới EA listener; Rust admin listener không có public route.
-
-Frontend production: `https://tradingterminal.io.vn`<br>
-Go API: `https://api.tradingterminal.io.vn`
-
-## Kiểm tra cốt lõi
-
-```powershell
-cd frontend
-npm run typecheck
-npm run test:trade
-npm run test:ui
-```
-
-```powershell
-cd backend
-go test ./...
-```
-
-```powershell
-cargo test --manifest-path backend/execution/Cargo.toml --workspace --all-targets
-```
+</div>
