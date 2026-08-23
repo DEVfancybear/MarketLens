@@ -73,6 +73,10 @@ jobs:
         with:
           workspaces: backend/execution -> target
 
+      - name: Run Windows managed-agent tests
+        working-directory: backend/execution
+        run: cargo test --locked -p mt5-vm-agent --lib -- --test-threads=1
+
       # SQL migrations are embedded in migrate.exe via migrations.FS, so the
       # artifact ships binaries only.
       - name: Build Go binaries

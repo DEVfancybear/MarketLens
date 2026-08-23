@@ -3149,6 +3149,7 @@ BootstrapPipe=marketlens-slot-01
             .expect("the complete managed fixture topology is valid");
     }
 
+    #[cfg(windows)]
     fn executable_on_path(name: &str) -> PathBuf {
         let output = Command::new("where.exe")
             .arg(name)
@@ -3163,6 +3164,7 @@ BootstrapPipe=marketlens-slot-01
             .expect("PATH contains executable file")
     }
 
+    #[cfg(windows)]
     fn live_local_process_config_fixture() -> (ProcessDriverConfig, AppDataGuard, PathBuf) {
         let (mut config, guard, root) = valid_process_config_fixture();
         let python_path = executable_on_path("python.exe");
@@ -3237,6 +3239,7 @@ for line in sys.stdin:
         (config, guard, root)
     }
 
+    #[cfg(windows)]
     #[test]
     fn local_process_driver_runs_signed_start_heartbeat_sync_and_stop_lifecycle() {
         let (config, guard, root) = live_local_process_config_fixture();
@@ -3295,6 +3298,7 @@ for line in sys.stdin:
         drop(guard);
         fs::remove_dir_all(root).expect("remove local process fixture");
     }
+    #[cfg(windows)]
     #[test]
     fn process_start_failure_cleans_the_reserved_runtime_assignment() {
         let (config, guard, root) = live_local_process_config_fixture();
@@ -3394,22 +3398,28 @@ for line in sys.stdin:
         assert!(split.iter().all(|slot| slot.terminal_slots.len() == 1));
 
         ensure_minimum_free_disk(&root, 1).expect("fixture volume has at least one free byte");
-        assert_eq!(
-            DriverError::new("INSUFFICIENT_RUNTIME_DISK"),
-            ensure_minimum_free_disk(&root, u64::MAX).unwrap_err()
-        );
-        assert_eq!(
-            DriverError::new("RUNTIME_DISK_QUERY_FAILED"),
-            ensure_minimum_free_disk(&root.join("missing-volume-root"), 1).unwrap_err()
-        );
-        assert_eq!(
-            DriverError::new("TERMINAL_CLEANUP_POSTCONDITION_FAILED"),
-            wait_for_terminal_exit(
-                &std::env::current_exe().expect("current test executable"),
-                Duration::ZERO,
-            )
-            .unwrap_err()
-        );
+        #[cfg(windows)]
+        {
+            assert_eq!(
+                DriverError::new("INSUFFICIENT_RUNTIME_DISK"),
+                ensure_minimum_free_disk(&root, u64::MAX).unwrap_err()
+            );
+            assert_eq!(
+                DriverError::new("RUNTIME_DISK_QUERY_FAILED"),
+                ensure_minimum_free_disk(&root.join("missing-volume-root"), 1).unwrap_err()
+            );
+            assert_eq!(
+                DriverError::new("TERMINAL_CLEANUP_POSTCONDITION_FAILED"),
+                wait_for_terminal_exit(
+                    &std::env::current_exe().expect("current test executable"),
+                    Duration::ZERO,
+                )
+                .unwrap_err()
+            );
+        }
+        #[cfg(not(windows))]
+        ensure_minimum_free_disk(&root, u64::MAX)
+            .expect("non-Windows disk guard is a documented no-op");
 
         let runtime_directory =
             checked_runtime_directory(&config.data_root, "cleanup-probe").unwrap();
