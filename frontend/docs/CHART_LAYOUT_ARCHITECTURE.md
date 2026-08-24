@@ -166,6 +166,14 @@ default saved layout, so a 2-horizontal, 2-vertical, or 2x2 session reopens
 exactly as the user left it. A default saved layout is used only when an account
 does not yet have a current-workspace snapshot.
 
+On desktop, `settings.chart.taskTabs` is now the primary revisioned container
+for one to twelve independent chart workspaces. `workspaceLayout` remains a
+compatibility mirror of only the active task. Bootstrap restores valid task
+tabs first; an account without them migrates the already restored current or
+default layout into one task. See
+[Chart task tabs architecture](CHART_TASK_TABS_ARCHITECTURE.md) for task
+ownership, drag ordering, conflict recovery, and the mobile boundary.
+
 EURUSD remains the backend default only for an account that has never selected
 a symbol. Explicitly loading a saved layout still adopts and persists that
 layout's active symbol.

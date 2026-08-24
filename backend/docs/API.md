@@ -86,6 +86,8 @@ See [AUTH.md](AUTH.md) for token, cookie, replay, rate-limit, and Origin behavio
 - `PATCH /api/v1/settings`
 - `GET /api/v1/settings/chart/favorite-timeframes`
 - `PUT /api/v1/settings/chart/favorite-timeframes`
+- `GET /api/v1/settings/chart/task-tabs`
+- `PUT /api/v1/settings/chart/task-tabs`
 - `GET /api/v1/settings/integrations`
 - `PUT /api/v1/settings/integrations`
 - `POST /api/v1/settings/integrations/test/:channel`
@@ -93,6 +95,13 @@ See [AUTH.md](AUTH.md) for token, cookie, replay, rate-limit, and Origin behavio
 
 Secret integration fields are write-only and returned only as configured/not-configured state.
 Blank replacement secrets preserve existing values unless the request explicitly clears them.
+
+Chart task tabs are stored inside `settings.chart.taskTabs` and are also returned by sync bootstrap.
+The PUT body is `{ "expectedRevision": number, "document": ChartTaskTabsDocumentV1 }`. The server
+derives the owner from authentication, locks that owner's settings row, increments revision on an
+accepted write, and preserves every unrelated chart setting. Stale revisions return `409`; malformed,
+oversized, duplicate-ID, unsupported-version, or out-of-range task documents return `400`. Version 1
+allows 1–12 tasks and caps the encoded document at 512 KiB.
 
 ### Watchlists
 

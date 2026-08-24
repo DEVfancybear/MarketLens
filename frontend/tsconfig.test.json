@@ -72,6 +72,8 @@
     "src/store/watchlistLayout.ts",
     "src/store/watchlistPersistence.ts",
     "src/store/watchlistSyncQueue.ts",
+    "src/store/chartTaskTabsStore.ts",
+    "src/services/api/chartTaskTabsSyncQueue.ts",
     "src/services/indicatorStoreModel.ts",
     "src/utils/time.ts",
     "src/services/privateWorkspaceAccess.ts",

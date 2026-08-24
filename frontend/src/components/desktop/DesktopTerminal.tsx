@@ -7,6 +7,7 @@ import { TopToolbar } from "@/components/toolbar/TopToolbar";
 import { DrawingToolbar } from "@/components/toolbar/DrawingToolbar";
 import { ChartLayoutWorkspace } from "@/components/chart/ChartLayoutWorkspace";
 import { ChartPerformanceProfiler } from "@/components/chart/ChartPerformanceProfiler";
+import { ChartTaskTabs } from "@/components/chart/ChartTaskTabs";
 import { RightSidebar } from "@/components/layout/RightSidebar";
 import { BottomPanel } from "@/components/layout/BottomPanel";
 import { TradeWorkspace } from "@/components/trade/TradeWorkspace";
@@ -14,6 +15,7 @@ import {
   desktopWorkspaceAtom,
   syncDesktopWorkspaceFromLocationAtom,
 } from "@/store/uiStore";
+import { chartTaskTabsAtom } from "@/store/chartTaskTabsRuntimeStore";
 
 /**
  * Desktop-only presentation root. Domain stores and chart services remain
@@ -21,6 +23,7 @@ import {
  */
 export function DesktopTerminal() {
   const workspace = useAtomValue(desktopWorkspaceAtom);
+  const chartTaskTabs = useAtomValue(chartTaskTabsAtom);
   const syncWorkspace = useSetAtom(syncDesktopWorkspaceFromLocationAtom);
 
   useEffect(() => {
@@ -51,9 +54,19 @@ export function DesktopTerminal() {
         toolbar={<TopToolbar />}
         leftRail={<DrawingToolbar />}
         chart={
-          <ChartPerformanceProfiler>
-            <ChartLayoutWorkspace />
-          </ChartPerformanceProfiler>
+          <div className="flex h-full min-h-0 flex-col">
+            <ChartTaskTabs />
+            <div
+              id="chart-task-panel"
+              role="tabpanel"
+              aria-labelledby={`chart-task-tab-${chartTaskTabs.activeTaskId}`}
+              className="min-h-0 flex-1"
+            >
+              <ChartPerformanceProfiler>
+                <ChartLayoutWorkspace />
+              </ChartPerformanceProfiler>
+            </div>
+          </div>
         }
         watchlist={<RightSidebar />}
         bottom={<BottomPanel />}

@@ -52,7 +52,9 @@ Never point development tests or manual down migrations at production.
 
 ### Workspace and charting
 
-- `user_settings`, `layouts`.
+- `user_settings`, `layouts`. Revisioned desktop chart task tabs live in the existing
+  `user_settings.chart.taskTabs` JSONB key; writes serialize on the owner row and preserve sibling
+  chart settings, so no migration or separate table is required.
 - `watchlists`, `watchlist_sections`, `watchlist_symbols`, `watchlist_preferences`.
 - `drawings`, `drawing_templates`, `drawing_tool_favorites`.
 - `pine_scripts`, `public_pine_scripts`, `indicator_presets`.

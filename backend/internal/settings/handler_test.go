@@ -14,8 +14,27 @@ import (
 )
 
 type fakeSettingsStore struct {
-	doc      Document
-	lastUser string
+	doc                   Document
+	lastUser              string
+	forceTaskTabsConflict bool
+}
+
+func (f *fakeSettingsStore) GetChartTaskTabs(_ context.Context, userID string) (ChartTaskTabsDocument, error) {
+	f.lastUser = userID
+	return ChartTaskTabsFromDocument(f.doc), nil
+}
+
+func (f *fakeSettingsStore) ReplaceChartTaskTabs(_ context.Context, userID string, input ChartTaskTabsWrite) (ChartTaskTabsDocument, error) {
+	f.lastUser = userID
+	if f.forceTaskTabsConflict {
+		return ChartTaskTabsDocument{}, ErrChartTaskTabsConflict
+	}
+	next, saved, err := ApplyChartTaskTabsWrite(f.doc, input)
+	if err != nil {
+		return ChartTaskTabsDocument{}, err
+	}
+	f.doc = next
+	return saved, nil
 }
 
 func newFakeSettingsStore() *fakeSettingsStore {
@@ -183,6 +202,108 @@ func TestSettingsHandlerFavoriteTimeframesRoutes(t *testing.T) {
 	}
 	if resp.StatusCode != fiber.StatusBadRequest {
 		t.Fatalf("invalid favorites status = %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestChartTaskTabsGetAndPut(t *testing.T) {
+	store := newFakeSettingsStore()
+	store.doc.Chart = raw(`{"style":"candles"}`)
+	app := newSettingsTestApp(store)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings/chart/task-tabs", strings.NewReader(`{
+		"expectedRevision":0,
+		"document":{
+			"version":1,
+			"revision":0,
+			"activeTaskId":"task-1",
+			"tasks":[{
+				"id":"task-1",
+				"drawingContextId":"scope-1",
+				"workspace":{"version":1,"chartLayoutPreset":"single"},
+				"activeLayoutId":null
+			}]
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("put chart task tabs: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("put chart task tabs status = %d, want 200", resp.StatusCode)
+	}
+	var saved ChartTaskTabsDocument
+	if err := json.NewDecoder(resp.Body).Decode(&saved); err != nil {
+		t.Fatalf("decode saved chart task tabs: %v", err)
+	}
+	if saved.Revision != 1 || saved.ActiveTaskID != "task-1" || len(saved.Tasks) != 1 {
+		t.Fatalf("saved task tabs = %#v", saved)
+	}
+	if store.lastUser != "user-1" {
+		t.Fatalf("task tabs handler should use authenticated owner, got %q", store.lastUser)
+	}
+	chart := object(t, store.doc.Chart)
+	if chart["style"] != "candles" {
+		t.Fatalf("task tabs update replaced unrelated chart settings: %#v", chart)
+	}
+
+	resp, err = app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/settings/chart/task-tabs", nil))
+	if err != nil {
+		t.Fatalf("get chart task tabs: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("get chart task tabs status = %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestChartTaskTabsConflictReturns409(t *testing.T) {
+	store := newFakeSettingsStore()
+	store.forceTaskTabsConflict = true
+	app := newSettingsTestApp(store)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings/chart/task-tabs", strings.NewReader(`{
+		"expectedRevision":0,
+		"document":{"version":1,"revision":0,"activeTaskId":"task-1","tasks":[{"id":"task-1","drawingContextId":"scope-1","workspace":{"version":1},"activeLayoutId":null}]}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("put conflicting chart task tabs: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusConflict {
+		t.Fatalf("conflict status = %d, want 409", resp.StatusCode)
+	}
+}
+
+func TestChartTaskTabsRejectsMalformedBody(t *testing.T) {
+	app := newSettingsTestApp(newFakeSettingsStore())
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings/chart/task-tabs", strings.NewReader(`{"expectedRevision":`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("put malformed chart task tabs: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusBadRequest {
+		t.Fatalf("malformed status = %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestChartTaskTabsRequiresAuthentication(t *testing.T) {
+	store := newFakeSettingsStore()
+	app := fiber.New()
+	deny := func(c fiber.Ctx) error {
+		return fiber.NewError(fiber.StatusUnauthorized, "authentication required")
+	}
+	NewHandler(store, deny).Register(app.Group("/api/v1"))
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/settings/chart/task-tabs", nil))
+	if err != nil {
+		t.Fatalf("get unauthenticated chart task tabs: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusUnauthorized {
+		t.Fatalf("unauthenticated status = %d, want 401", resp.StatusCode)
+	}
+	if store.lastUser != "" {
+		t.Fatalf("unauthenticated request reached task tabs store with user %q", store.lastUser)
 	}
 }
 

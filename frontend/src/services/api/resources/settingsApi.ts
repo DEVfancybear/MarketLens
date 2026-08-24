@@ -1,4 +1,5 @@
 import { getJson, patchJson, putJson } from "../client";
+import type { ChartTaskTabsDocument } from "@/store/chartTaskTabsStore";
 
 export type SettingsSection = Record<string, unknown>;
 
@@ -40,5 +41,19 @@ export async function replaceFavoriteTimeframes(
 ): Promise<FavoriteTimeframesResponse> {
   return putJson<FavoriteTimeframesResponse>("settings/chart/favorite-timeframes", {
     timeframes,
+  });
+}
+
+export async function getChartTaskTabs(): Promise<ChartTaskTabsDocument> {
+  return getJson<ChartTaskTabsDocument>("settings/chart/task-tabs");
+}
+
+export async function replaceChartTaskTabs(
+  expectedRevision: number,
+  document: ChartTaskTabsDocument,
+): Promise<ChartTaskTabsDocument> {
+  return putJson<ChartTaskTabsDocument>("settings/chart/task-tabs", {
+    expectedRevision,
+    document,
   });
 }

@@ -11,6 +11,7 @@ import (
 
 type Handler struct {
 	store            Store
+	chartTaskTabs    ChartTaskTabsStore
 	requireAuth      fiber.Handler
 	integrationStore IntegrationStore
 	secretBox        *SecretBox
@@ -19,7 +20,11 @@ type Handler struct {
 }
 
 func NewHandler(store Store, requireAuth fiber.Handler) *Handler {
-	return &Handler{store: store, requireAuth: requireAuth}
+	handler := &Handler{store: store, requireAuth: requireAuth}
+	if chartTaskTabs, ok := store.(ChartTaskTabsStore); ok {
+		handler.chartTaskTabs = chartTaskTabs
+	}
+	return handler
 }
 
 func (h *Handler) Register(router fiber.Router) {
@@ -28,9 +33,43 @@ func (h *Handler) Register(router fiber.Router) {
 	router.Patch("/settings", h.requireAuth, h.patch)
 	router.Get("/settings/chart/favorite-timeframes", h.requireAuth, h.getFavoriteTimeframes)
 	router.Put("/settings/chart/favorite-timeframes", h.requireAuth, h.replaceFavoriteTimeframes)
+	if h.chartTaskTabs != nil {
+		router.Get("/settings/chart/task-tabs", h.requireAuth, h.getChartTaskTabs)
+		router.Put("/settings/chart/task-tabs", h.requireAuth, h.replaceChartTaskTabs)
+	}
 	if h.integrationStore != nil && h.secretBox != nil {
 		h.registerIntegrationRoutes(router)
 	}
+}
+
+func (h *Handler) getChartTaskTabs(c fiber.Ctx) error {
+	doc, err := h.chartTaskTabs.GetChartTaskTabs(c.Context(), userID(c))
+	if err != nil {
+		return chartTaskTabsAPIError(err)
+	}
+	return c.JSON(doc)
+}
+
+func (h *Handler) replaceChartTaskTabs(c fiber.Ctx) error {
+	var input ChartTaskTabsWrite
+	if err := json.Unmarshal(c.Body(), &input); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
+	}
+	doc, err := h.chartTaskTabs.ReplaceChartTaskTabs(c.Context(), userID(c), input)
+	if err != nil {
+		return chartTaskTabsAPIError(err)
+	}
+	return c.JSON(doc)
+}
+
+func chartTaskTabsAPIError(err error) error {
+	if errors.Is(err, ErrChartTaskTabsConflict) {
+		return fiber.NewError(fiber.StatusConflict, err.Error())
+	}
+	if errors.Is(err, ErrBadPatch) {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+	return fiber.NewError(fiber.StatusInternalServerError, "internal server error")
 }
 
 func (h *Handler) get(c fiber.Ctx) error {

@@ -41,6 +41,10 @@ import {
   loadPersistedWorkspaceLayoutAtom,
 } from "@/store/layoutStore";
 import { resetChartLayoutStateAtom } from "@/store/replayLayoutStore";
+import {
+  hydrateChartTaskTabsAtom,
+  resetChartTaskTabsAtom,
+} from "@/store/chartTaskTabsRuntimeStore";
 import { getWorkspaceBootstrap } from "@/services/api/resources/syncApi";
 import { createWatchlist as createRemoteWatchlist } from "@/services/api/resources/watchlistsApi";
 import {
@@ -86,6 +90,8 @@ export function useWorkspaceBootstrap(): void {
   );
   const setTimeframe = useSetAtom(setTimeframeAtom);
   const resetChartLayout = useSetAtom(resetChartLayoutStateAtom);
+  const hydrateChartTaskTabs = useSetAtom(hydrateChartTaskTabsAtom);
+  const resetChartTaskTabs = useSetAtom(resetChartTaskTabsAtom);
   const setWorkspaceReady = useSetAtom(setWorkspaceReadyAtom);
   const log = useSetAtom(logAtom);
   const bootstrappedUserRef = useRef<string | null>(null);
@@ -106,6 +112,7 @@ export function useWorkspaceBootstrap(): void {
           applyLayouts([]);
           resetChartLayout();
           resetChartWorkspace({ clearLocal: true });
+          resetChartTaskTabs();
           clearRemoteSimTrading();
           resetPushNotifications();
         } else {
@@ -115,6 +122,7 @@ export function useWorkspaceBootstrap(): void {
           resetChartWorkspace({ clearLocal: false });
           resetChartLayout();
           hydrateChart();
+          hydrateChartTaskTabs(null);
         }
         log("info", "Workspace reset to defaults");
       }
@@ -132,6 +140,7 @@ export function useWorkspaceBootstrap(): void {
 
     if (!backendSession || !user) {
       bootstrappedUserRef.current = null;
+      if (user && backendSessionResolved) hydrateChartTaskTabs(null);
       setWorkspaceReady(backendSessionResolved);
       return;
     }
@@ -193,6 +202,7 @@ export function useWorkspaceBootstrap(): void {
           applyChartSettings(chartSettings);
           if (!loadedDefaultLayout) loadActiveDrawings();
         }
+        hydrateChartTaskTabs(chartSettings.taskTabs);
         setWorkspaceReady(true);
         log("info", "Workspace synced from backend");
       })
@@ -230,6 +240,8 @@ export function useWorkspaceBootstrap(): void {
     log,
     resetAlerts,
     resetChartLayout,
+    hydrateChartTaskTabs,
+    resetChartTaskTabs,
     resetChartWorkspace,
     resetPushNotifications,
     resetSmc,

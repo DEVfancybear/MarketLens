@@ -65,6 +65,7 @@ Important atom modules:
 | `authStore` | Firebase identity, auth status/error, backend session flag |
 | `uiStore` | theme, panels, bottom tab, bottom/right pane visibility, logs |
 | `chartStore` | symbol/timeframe mirror, drawings, indicators, Pine scripts, editor state, selection |
+| `chartTaskTabsStore` / `chartTaskTabsRuntimeStore` | Pure desktop task document plus chart/layout coordination and sync state |
 | `marketDataStore` | live quotes/candles, selected market, provider subscriptions, connection status |
 | `watchlistStore` | watchlist lists, active list, sections, symbol order, sorting |
 | `alertStore` | alerts, triggered alerts, history, alert settings, selected/editing alert |
@@ -192,7 +193,9 @@ display the previous user's workspace.
   `pineScripts`, `drawingTemplates`, legacy `watchlist`, `smc-settings`, `alerts`,
   `pushNotifications`, chart/timezone preferences, interval favorites, and drawing tool favorites.
 - IndexedDB: journal entries and screenshots through `services/storage.ts`.
-- Backend: auth/session, settings, sync bootstrap, Phase 6 watchlists, MT5 data APIs, Phase 7
+- sessionStorage: UID-scoped pending/conflict recovery for authenticated chart task tabs; it is not
+  anonymous durable storage and is cleared after acknowledgement/sign-out.
+- Backend: auth/session, settings (including revisioned chart task tabs), sync bootstrap, Phase 6 watchlists, MT5 data APIs, Phase 7
   drawings/drawing templates/drawing tool favorites, Phase 8 indicator presets, Phase 9 Pine
   scripts, and saved layouts are live;
   remaining authenticated workspace persistence is pending per resource.

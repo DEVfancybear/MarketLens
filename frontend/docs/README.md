@@ -25,6 +25,7 @@ records so old plans are not mistaken for runtime guidance.
 | Document | Scope |
 | --- | --- |
 | [Chart layout architecture](CHART_LAYOUT_ARCHITECTURE.md) | Multi-chart workspaces and pane ownership |
+| [Chart task tabs architecture](CHART_TASK_TABS_ARCHITECTURE.md) | Desktop task isolation, reorder, and backend sync |
 | [Chart time navigation](CHART_TIME_NAVIGATION_ARCHITECTURE.md) | Time scale and range shortcuts |
 | [Chart visual profile](CHART_VISUAL_PROFILE.md) | Rendering and visual contract |
 | [Zoom/viewport synchronization](ZOOM_VIEWPORT_SYNC_ARCHITECTURE.md) | Lightweight Charts 5.2 viewport lifecycle |

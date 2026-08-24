@@ -3,6 +3,7 @@ import { signOutUser } from "@/services/auth/firebaseAuth";
 import { reportFrontendError } from "@/services/feedback/errorReporter";
 import type { AuthUser } from "@/store/authStore";
 import { flushChartSettings } from "@/store/chartStore";
+import { flushChartTaskTabs } from "@/services/api/chartTaskTabsSyncRuntime";
 
 export function authUserInitials(user: AuthUser | null): string {
   if (!user) return "?";
@@ -15,7 +16,7 @@ export function authUserInitials(user: AuthUser | null): string {
 
 export async function signOutFromTerminal() {
   try {
-    await flushChartSettings();
+    await Promise.all([flushChartSettings(), flushChartTaskTabs()]);
   } catch (error) {
     reportFrontendError(error, {
       title: "Chart preference sync failed",
