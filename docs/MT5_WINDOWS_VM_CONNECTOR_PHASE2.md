@@ -4,7 +4,7 @@
 - Review date: 12 August 2026
 - Scope: private worker registry, fenced placement leases, scheduler, durable
   lifecycle commands, and worker acknowledgements
-- Explicitly excluded: credential vault/retrieval, public account-connect API,
+- Explicitly excluded: credential storage/retrieval, public account-connect API,
   broker order execution, and production worker density increases
 
 Phase 2 adds the durable server-side control plane without weakening the open
@@ -140,4 +140,4 @@ active until all of the following are recorded:
 
 Do not expose the loopback listener publicly, put either control token in a
 browser/EA, store MT5 credentials in a lifecycle payload, or add order execution
-before the later vault and demo-execution phases.
+before the later credential and demo-execution phases.

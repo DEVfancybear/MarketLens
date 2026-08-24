@@ -2870,7 +2870,7 @@ mod tests {
         assert!(!payload_is_safe(&json!({
             "nested": [{"password": "must-not-persist"}]
         })));
-        assert!(!payload_is_safe(&json!({"secretRef": "vault/path"})));
+        assert!(!payload_is_safe(&json!({"secretRef": "credential/path"})));
         assert!(!payload_is_safe(
             &json!({"brokerPassword": "must-not-persist"})
         ));

@@ -1,6 +1,6 @@
 // Command mt5-phase3-harness exposes only a loopback disposable verification server.
 // It assembles the production MT5 connector handler, gateway client, JWT middleware,
-// and Vault client without requiring an external Firebase identity provider.
+// and Windows credential store without requiring an external Firebase identity provider.
 package main
 
 import (
@@ -23,7 +23,6 @@ import (
 	"github.com/marketlens/backend/internal/auth"
 	"github.com/marketlens/backend/internal/config"
 	"github.com/marketlens/backend/internal/execution"
-	"github.com/marketlens/backend/internal/mt5vault"
 )
 
 type harnessConfig struct {
@@ -31,8 +30,6 @@ type harnessConfig struct {
 	ExecutionAdminURL       string           `json:"executionAdminUrl"`
 	ExecutionAdminTokenFile string           `json:"executionAdminTokenFile"`
 	MT5IdentityHMACKeyFile  string           `json:"mt5IdentityHmacKeyFile"`
-	VaultAddress            string           `json:"vaultAddress"`
-	VaultTokenFile          string           `json:"vaultTokenFile"`
 	AuthJWTSecretFile       string           `json:"authJwtSecretFile"`
 	Sessions                []harnessSession `json:"sessions"`
 }
@@ -43,6 +40,12 @@ type harnessSession struct {
 }
 
 type activeSessions map[string]struct{}
+
+var harnessListen = serveHarness
+
+func serveHarness(app *fiber.App, address string) error {
+	return app.Listen(address, fiber.ListenConfig{DisableStartupMessage: true})
+}
 
 func (sessions activeSessions) IsActive(_ context.Context, sessionID, userID string) (bool, error) {
 	_, ok := sessions[userID+"|"+sessionID]
@@ -73,17 +76,6 @@ func main() {
 		os.Exit(2)
 	}
 	gateway.EnableMT5Connector()
-	vault, err := mt5vault.NewClient(mt5vault.Config{
-		Address:   cfg.VaultAddress,
-		TokenFile: cfg.VaultTokenFile,
-		Mount:     "secret",
-		Prefix:    "marketlens/mt5",
-		Timeout:   5 * time.Second,
-	})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "MT5_PHASE3_HARNESS_VAULT_INVALID")
-		os.Exit(2)
-	}
 
 	tokenService := auth.NewTokenService(config.Config{
 		AuthJWTSecret: authSecret,
@@ -98,7 +90,7 @@ func main() {
 		gateway,
 		auth.RequireAuth(tokenService),
 		auth.RequireActiveSession(checker),
-	).WithMT5ConnectorVault(vault)
+	)
 
 	app := fiber.New(fiber.Config{
 		BodyLimit:    256 * 1024,
@@ -122,7 +114,7 @@ func main() {
 		<-ctx.Done()
 		_ = app.ShutdownWithTimeout(5 * time.Second)
 	}()
-	if err := app.Listen(cfg.ListenAddress, fiber.ListenConfig{DisableStartupMessage: true}); err != nil {
+	if err := harnessListen(app, cfg.ListenAddress); err != nil {
 		fmt.Fprintln(os.Stderr, "MT5_PHASE3_HARNESS_LISTEN_FAILED")
 		os.Exit(1)
 	}
@@ -150,16 +142,12 @@ func readConfigWithEnvironment(
 	if err != nil || net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback() {
 		return harnessConfig{}, fmt.Errorf("listen address must be loopback")
 	}
-	if err := validateServiceOrigin(cfg.ExecutionAdminURL, true); err != nil {
-		return harnessConfig{}, err
-	}
-	if err := validateServiceOrigin(cfg.VaultAddress, false); err != nil {
+	if err := validateLoopbackServiceOrigin(cfg.ExecutionAdminURL); err != nil {
 		return harnessConfig{}, err
 	}
 	for _, path := range []string{
 		cfg.ExecutionAdminTokenFile,
 		cfg.MT5IdentityHMACKeyFile,
-		cfg.VaultTokenFile,
 		cfg.AuthJWTSecretFile,
 	} {
 		if _, err := checkedRealFile(path); err != nil {
@@ -189,7 +177,7 @@ func readConfigWithEnvironment(
 	return cfg, nil
 }
 
-func validateServiceOrigin(raw string, loopbackOnly bool) error {
+func validateLoopbackServiceOrigin(raw string) error {
 	parsed, err := url.Parse(strings.TrimRight(strings.TrimSpace(raw), "/"))
 	if err != nil || parsed.Hostname() == "" || parsed.User != nil || parsed.Path != "" ||
 		parsed.RawQuery != "" || parsed.Fragment != "" {
@@ -197,11 +185,8 @@ func validateServiceOrigin(raw string, loopbackOnly bool) error {
 	}
 	ip := net.ParseIP(parsed.Hostname())
 	loopback := strings.EqualFold(parsed.Hostname(), "localhost") || (ip != nil && ip.IsLoopback())
-	if loopbackOnly && (parsed.Scheme != "http" || !loopback) {
+	if parsed.Scheme != "http" || !loopback {
 		return fmt.Errorf("service must use loopback HTTP")
-	}
-	if !loopbackOnly && parsed.Scheme != "https" && !(parsed.Scheme == "http" && loopback) {
-		return fmt.Errorf("service must use HTTPS or loopback HTTP")
 	}
 	return nil
 }

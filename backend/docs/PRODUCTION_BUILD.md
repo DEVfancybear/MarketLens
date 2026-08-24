@@ -105,12 +105,11 @@ EXECUTION_ADMIN_TOKEN=<independent random secret, 32+ characters>
 EXECUTION_MT5_VM_BOOTSTRAP_TOKEN=<independent worker enrollment secret>
 EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE=C:\ProgramData\MarketLens\secrets\mt5-identity.key
 EXECUTION_DATABASE_MAX_CONNECTIONS=10
-MT5_VAULT_ADDR=https://vault.internal.example
-MT5_VAULT_API_TOKEN_FILE=C:\ProgramData\MarketLens\secrets\mt5-vault.token
 ```
 
-The identity key and Vault token files must be absolute, regular, non-link, ACL-restricted files.
-Never place these values in the browser, EA, worker command line, repository, or log output.
+The identity-key file must be absolute, regular, non-link, and ACL-restricted. Managed broker
+credentials are local generic records in Windows Credential Manager under the dedicated Go API
+identity. Never place either value in the browser, EA, worker command line, repository, or log.
 
 ## Preflight
 
@@ -119,7 +118,8 @@ Before a source run or artifact deploy:
 - production branch and expected commit are checked out;
 - worktree is clean for source-run pull/build;
 - `backend/.env` exists and contains production values;
-- PostgreSQL and Vault are reachable through private paths;
+- PostgreSQL is reachable and the API service identity passes the local Windows credential-store
+  write/read/delete/absence probe;
 - Go, Rust, Python, MetaTrader, and MetaEditor prerequisites are installed for a source build;
 - `backend/.venv-mt5/Scripts/python.exe` can import `MetaTrader5` and `websockets`;
 - the configured read-only market-data terminal path exists;
@@ -164,8 +164,8 @@ The runner exposes `-SkipPull`, `-SkipBuild`, `-SkipMigrations`, and
 
 If migration fails, keep the old services/binaries and fix the schema forward. If restart fails
 after artifact placement, the deployer restores previous binaries; inspect both the original and
-rollback restart result. Do not delete runtime data, Vault values, terminal slots, or worker roots
-as a generic recovery action.
+rollback restart result. Do not delete runtime data, Windows credential records, terminal slots, or
+worker roots as a generic recovery action.
 
 ## Safe rollback and cleanup
 

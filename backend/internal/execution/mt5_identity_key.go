@@ -13,7 +13,7 @@ const maxMT5IdentityHMACKeyBytes = 4096
 
 // ReadMT5IdentityHMACKey loads the stable managed-account identity master key
 // without putting its value in an environment variable. The caller owns and
-// must clear the returned buffer after WithMT5ConnectorVault derives its key.
+// must clear the returned buffer after WithMT5CredentialStore derives its key.
 func ReadMT5IdentityHMACKey(path string) ([]byte, error) {
 	return readMT5IdentityHMACKey(path, filepath.EvalSymlinks, os.ReadFile)
 }

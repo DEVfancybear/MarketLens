@@ -10,8 +10,8 @@ import (
 
 func TestManagedMT5IdentityFingerprintMatchesRustVector(t *testing.T) {
 	handler := &Handler{gateway: &connectorGatewayFake{}}
-	handler.WithMT5ConnectorVault(
-		&connectorVaultFake{},
+	handler.WithMT5CredentialStore(
+		&connectorCredentialStoreFake{},
 		[]byte("stable-identity-master-key-32bytes!"),
 	)
 
@@ -30,7 +30,7 @@ func TestManagedMT5ConnectorLoadsStableIdentityKeyFromValidatedFilePath(t *testi
 	}
 	t.Setenv("EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE", path)
 	handler := (&Handler{gateway: &connectorGatewayFake{}}).
-		WithMT5ConnectorVault(&connectorVaultFake{})
+		WithMT5CredentialStore(&connectorCredentialStoreFake{})
 	if got := hex.EncodeToString(handler.mt5IdentityKey); got != "912be3d8b810051fc805e433bd3871e482bac7aeb354a300d346c12364fd92b0" {
 		t.Fatalf("file-backed derived identity key drifted: %s", got)
 	}
@@ -52,7 +52,7 @@ func TestManagedMT5ConnectorPanicsBeforeEnablingWithMissingOrAmbiguousIdentityKe
 				}
 			}()
 			(&Handler{gateway: &connectorGatewayFake{}}).
-				WithMT5ConnectorVault(&connectorVaultFake{}, test.secrets...)
+				WithMT5CredentialStore(&connectorCredentialStoreFake{}, test.secrets...)
 		})
 	}
 }

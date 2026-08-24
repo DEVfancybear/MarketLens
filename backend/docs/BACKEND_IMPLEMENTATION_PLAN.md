@@ -18,8 +18,8 @@ The backend is implemented through migration `0042`:
   MT5 market data, and replay.
 - Broker-neutral execution with Go BFF, Rust gateway, common EA, PostgreSQL command/event/audit
   state, multi-target copy routing, account layout, prop-risk guards, and reconciliation.
-- Managed MT5 control plane with private worker enrollment, leases, lifecycle commands, Vault-backed
-  one-time credential grants, read/history sync, and managed common-EA bootstrap.
+- Managed MT5 control plane with private worker enrollment, leases, lifecycle commands,
+  Windows-credential-backed one-time grants, read/history sync, and managed common-EA bootstrap.
 - Production source runner and CI-artifact deploy flow with staged binaries, forward migration,
   health gates, checksum/commit verification, and binary rollback.
 
@@ -32,7 +32,7 @@ Implementation does not automatically mean a feature is safe to enable in produc
 | Common MT5 EA | implemented | Publish verified EA `1.26`; upgrade each terminal and confirm poll liveness |
 | Multi-account MT5 execution | implemented | PostgreSQL, loopback Rust listeners, public Go relay, production security checklist |
 | Bare-metal managed MT5 | locally gated | Explicit worker install plus R15-9 disposable Demo evidence |
-| Vault credential path | implemented | Narrow KV v2 policy, ACL-protected token file, rotation/revocation drill |
+| Windows credential path | implemented | Stable dedicated API identity, local readiness probe, rotation/deletion drill |
 | Object-storage screenshots | implemented | Configure S3-compatible credentials and validate cleanup queue handling |
 | Replay engine | feature-gated | Enable only after retention/capacity settings and production monitoring are accepted |
 | Native Binance transport | disabled | Complete signing, secret custody, filters, reconciliation, rate limits, and testnet/live certification |
@@ -60,7 +60,7 @@ Before registration, implement and test:
 ### Operations and observability
 
 - Keep health/readiness, EA poll liveness, worker leases, copier backlog, reconciliation errors,
-  Vault failures, database pool pressure, and migration state visible to operators.
+  Windows credential-store failures, database pool pressure, and migration state visible to operators.
 - Rehearse artifact rollback while keeping migrations forward-only.
 - Keep EA/worker binaries pinned, signed where required, and checksum verified.
 - Retain command/event/audit records according to documented privacy and incident requirements.

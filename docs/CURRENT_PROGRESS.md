@@ -4,6 +4,8 @@ Verified on 2026-08-24.
 
 ## Recently completed
 
+- Replaced the managed MT5 external credential service with a source-owned Windows Credential
+  Manager adapter, fail-closed startup probe, opaque references, and identity-bound recovery.
 - Open-sourced MarketLens under MIT and replaced the public README with a product-focused
   Vietnamese/English presentation.
 - Upgraded codebase-memory-mcp to v0.10.8, rebuilt the shared graph, added `.cbmignore`, and added a
@@ -21,8 +23,9 @@ Verified on 2026-08-24.
 ## Active delivery focus
 
 1. Keep all GitHub Actions jobs green for the documentation/CI refresh commit.
-2. Activate the managed MT5 production path only after the runbook's worker, Vault, reverse-proxy,
-   terminal/EA hash, heartbeat, capacity, and R15-9 Demo gates pass.
+2. Activate the managed MT5 production path only after the runbook's worker, Windows
+   credential-store probe, stable identities, reverse-proxy, terminal/EA hash, heartbeat,
+   capacity, and R15-9 Demo gates pass.
 3. Deploy a CI-built checksummed backend artifact and attach production smoke evidence to its exact
    commit.
 

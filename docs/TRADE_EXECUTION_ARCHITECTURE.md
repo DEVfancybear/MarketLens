@@ -11,7 +11,7 @@ The approved web-only MT5 transport is specified in
 The selected production topology is one operator-controlled Windows host with
 one bounded Rust worker and one preinstalled terminal slot per active account.
 The older Hyper-V pool remains optional future infrastructure, not a readiness
-dependency for this deployment. Managed connect, Vault grants, automatic MT5
+dependency for this deployment. Managed connect, Windows credential-store grants, automatic MT5
 login, in-memory EA bootstrap, restart fencing, and the existing EA order path
 are implemented; the production-like broker gate remains separate.
 

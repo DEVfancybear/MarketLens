@@ -11,8 +11,8 @@ Verified on 2026-08-24. Priorities are ordered by production risk and dependency
 
 ## P0 — managed MT5 activation
 
-1. Verify backend, execution gateway, Vault role, worker heartbeat/lease, terminal-slot capacity,
-   terminal/EA hashes, and reverse-proxy allow-list.
+1. Verify backend, execution gateway, stable Windows API identity, credential-store probe, worker
+   heartbeat/lease, terminal-slot capacity, terminal/EA hashes, and reverse-proxy allow-list.
 2. Run the R15-9 gate with two test owners and three disposable Demo accounts.
 3. Prove restart/reconciliation, generation fencing, secret redaction, independent account
    isolation, and no duplicate controller before any Live/funded onboarding.

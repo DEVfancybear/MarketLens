@@ -10,9 +10,11 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/marketlens/backend/internal/auth"
+	"github.com/marketlens/backend/internal/mt5credentials"
 	"github.com/rs/zerolog/log"
 )
 
@@ -37,6 +39,18 @@ type Gateway interface {
 
 const tradeAuthorizationHeader = "X-Trade-Authorization"
 
+const managedMT5CredentialProbeTimeout = 5 * time.Second
+
+var (
+	errManagedMT5IdentityNotConfigured      = errors.New("managed MT5 identity key not configured")
+	errManagedMT5CredentialStoreUnavailable = errors.New("managed MT5 credential store unavailable")
+)
+
+type mt5ConnectorCapability interface {
+	EnableMT5Connector()
+	mt5ConnectorIsEnabled() bool
+}
+
 type Handler struct {
 	gateway                  Gateway
 	requireAuth              fiber.Handler
@@ -49,7 +63,7 @@ type Handler struct {
 	connectorWorkerRateLimit fiber.Handler
 	eaProxy                  *EAProxy
 	mt5ConnectorGateway      MT5ConnectorGateway
-	mt5Vault                 MT5CredentialStore
+	mt5CredentialStore       MT5CredentialStore
 	mt5IdentityKey           []byte
 }
 
@@ -58,7 +72,21 @@ func NewHandler(
 	requireAuth fiber.Handler,
 	requireActiveSession fiber.Handler,
 ) *Handler {
-	return &Handler{
+	return newHandlerWithCredentialStoreFactory(
+		gateway,
+		requireAuth,
+		requireActiveSession,
+		mt5credentials.NewStore,
+	)
+}
+
+func newHandlerWithCredentialStoreFactory(
+	gateway Gateway,
+	requireAuth fiber.Handler,
+	requireActiveSession fiber.Handler,
+	storeFactory func() (mt5credentials.Store, error),
+) *Handler {
+	handler := &Handler{
 		gateway:              gateway,
 		requireAuth:          requireAuth,
 		requireActiveSession: requireActiveSession,
@@ -87,6 +115,56 @@ func NewHandler(
 			executionConnectorWorkerRateLimitWindow,
 		),
 	}
+	capability, ok := gateway.(mt5ConnectorCapability)
+	if !ok {
+		return handler
+	}
+	required := capability.mt5ConnectorIsEnabled()
+	storeErr := handler.enableManagedMT5CredentialStore(capability, storeFactory)
+	if storeErr != nil {
+		if required {
+			panic("required MT5 credential store unavailable")
+		}
+		if errors.Is(storeErr, errManagedMT5IdentityNotConfigured) {
+			log.Warn().Msg("MT5 managed connector disabled: identity HMAC key file not configured")
+		} else {
+			log.Warn().Msg("MT5 managed connector disabled: Windows credential store unavailable")
+		}
+		return handler
+	}
+	log.Info().Msg("MT5 managed connector API enabled")
+	return handler
+}
+
+func (handler *Handler) enableManagedMT5CredentialStore(
+	capability mt5ConnectorCapability,
+	storeFactory func() (mt5credentials.Store, error),
+) error {
+	identityPath := strings.TrimSpace(os.Getenv("EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE"))
+	if identityPath == "" {
+		return errManagedMT5IdentityNotConfigured
+	}
+	identitySecret, identityErr := ReadMT5IdentityHMACKey(identityPath)
+	if identityErr != nil {
+		return errManagedMT5CredentialStoreUnavailable
+	}
+	defer clear(identitySecret)
+	store, storeErr := storeFactory()
+	if storeErr != nil || store == nil {
+		return errManagedMT5CredentialStoreUnavailable
+	}
+	probeContext, cancelProbe := context.WithTimeout(context.Background(), managedMT5CredentialProbeTimeout)
+	defer cancelProbe()
+	storeErr = store.Probe(probeContext)
+	if storeErr != nil {
+		return errManagedMT5CredentialStoreUnavailable
+	}
+	handler.WithMT5CredentialStore(store, identitySecret)
+	if handler.mt5ConnectorGateway == nil || handler.mt5CredentialStore == nil {
+		return errManagedMT5CredentialStoreUnavailable
+	}
+	capability.EnableMT5Connector()
+	return nil
 }
 
 func (h *Handler) WithEAProxy(proxy *EAProxy) *Handler {
@@ -94,7 +172,7 @@ func (h *Handler) WithEAProxy(proxy *EAProxy) *Handler {
 	return h
 }
 
-func (h *Handler) WithMT5ConnectorVault(vault MT5CredentialStore, identitySecrets ...[]byte) *Handler {
+func (h *Handler) WithMT5CredentialStore(store MT5CredentialStore, identitySecrets ...[]byte) *Handler {
 	if len(identitySecrets) > 1 {
 		panic("MT5 identity HMAC key source is ambiguous")
 	}
@@ -110,11 +188,11 @@ func (h *Handler) WithMT5ConnectorVault(vault MT5CredentialStore, identitySecret
 		identitySecret = loaded
 	}
 	connector, ok := h.gateway.(MT5ConnectorGateway)
-	if ok && vault != nil && len(identitySecret) >= 32 {
+	if ok && store != nil && len(identitySecret) >= 32 {
 		deriver := hmac.New(sha256.New, identitySecret)
 		_, _ = deriver.Write([]byte("marketlens/mt5-managed-identity/v1"))
 		h.mt5ConnectorGateway = connector
-		h.mt5Vault = vault
+		h.mt5CredentialStore = store
 		h.mt5IdentityKey = deriver.Sum(nil)
 	}
 	return h
@@ -137,7 +215,7 @@ func (h *Handler) Register(router fiber.Router) {
 	router.Post("/execution/pairing-tokens", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.pairingRateLimit, h.issuePairingToken)
 	router.Post("/execution/orders", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.tradingRateLimit, h.routeOrder)
 	router.Post("/execution/commands", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.tradingRateLimit, h.queueCommand)
-	if h.mt5ConnectorGateway != nil && h.mt5Vault != nil {
+	if h.mt5ConnectorGateway != nil && h.mt5CredentialStore != nil {
 		h.registerMT5ConnectorRoutes(router)
 	}
 }
@@ -456,7 +534,7 @@ func (h *Handler) listAccounts(c fiber.Ctx) error {
 		Accounts: accounts,
 		Connectors: struct {
 			MT5Managed bool `json:"mt5Managed"`
-		}{MT5Managed: h.mt5ConnectorGateway != nil && h.mt5Vault != nil},
+		}{MT5Managed: h.mt5ConnectorGateway != nil && h.mt5CredentialStore != nil},
 	})
 }
 

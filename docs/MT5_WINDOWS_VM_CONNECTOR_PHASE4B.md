@@ -17,7 +17,7 @@ Migration `0041_mt5_vm_history_sync` creates:
 - `execution_mt5_vm_history_coverage`, one explicit requested/covered window per family.
 
 All rows carry the worker/session/lease/sequence envelope. Decimal values are PostgreSQL numeric
-but cross every Python/Rust/Go boundary as plain strings. No password, raw login, vault reference,
+but cross every Python/Rust/Go boundary as plain strings. No password, raw login, credential reference,
 worker token, terminal path or MT5-native object is persisted.
 
 ## Ingestion and reads

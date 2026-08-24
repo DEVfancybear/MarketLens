@@ -1,7 +1,7 @@
 # MT5 Windows VM connector Phase 0–4 operator checklist
 
 This is the secret-safe handoff for the remaining external gates. Never paste credentials, tokens,
-raw login/account/ticket identifiers, terminal paths, Vault responses or unsanitized logs into chat
+raw login/account/ticket identifiers, terminal paths, credential blobs or unsanitized logs into chat
 or Git. Report only `PASS`/`BLOCKED`, sanitized timestamps, counts and stable error codes.
 
 ## 1. Repository and disposable migration gate
@@ -40,14 +40,16 @@ the old session cannot heartbeat/poll/ack, the stale command is fenced, the gene
 and the new worker receives exactly one durable provision command. Stop on any stale write accepted
 or duplicate command.
 
-## 4. Phase 3 Vault/API gate
+## 4. Phase 3 Windows credential-store/API gate
 
-Apply migration `0039` through the canonical backend runner. Configure the narrow Vault policy,
-ACL-restricted absolute token file, Vault address and token-file settings; keep worker grant routes
-on private ingress. Exercise one disposable demo through connect → ready → reconnect → rotate →
-disconnect → remove. Inspect only sanitized Vault metadata and PostgreSQL column names after removal:
-no password, credential version, raw grant token or secret reference may remain. Stop on Vault
-unavailability, stale owner/revision acceptance, replayed grant, or secret in a response/log.
+Apply migration `0039` through the canonical backend runner. Pin the Go API to one stable dedicated
+Windows identity, load its profile/credential set, configure the ACL-restricted identity HMAC key
+file, and keep worker grant routes on private ingress. Require the startup credential-store probe
+to pass, then exercise one disposable Demo through connect → ready → reconnect → rotate →
+disconnect → remove. Inspect only sanitized target counts and PostgreSQL column names after
+removal: no password, credential version, raw grant token, or secret reference may remain. Stop on
+credential-store unavailability, identity drift, stale owner/revision acceptance, replayed grant,
+or any secret in a response/log.
 
 ## 5. Phase 4 live read exit gate
 

@@ -270,8 +270,9 @@ Authorization tokens are short-lived, single-use, user/session/operation/payload
 - `POST /api/v1/execution/connectors/accounts/:accountId/disconnect`
 - `DELETE /api/v1/execution/connectors/accounts/:accountId`
 
-These are the current server-managed Windows-worker routes. Credentials go from Go to Vault, not
-to the browser response, Rust database, command line, or environment.
+These are the current server-managed Windows-worker routes. Go stores credentials locally in
+Windows Credential Manager, never in the browser response, PostgreSQL, Rust, command line, or
+environment.
 
 ## Service-authenticated Go routes
 

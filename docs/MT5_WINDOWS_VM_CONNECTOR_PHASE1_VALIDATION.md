@@ -47,7 +47,7 @@ The repository now contains:
   correctly blocks an unsigned debug agent executable.
 
 This is a local prototype boundary. It is not the durable Phase 2 scheduler,
-outbound production control-plane transport, public account-connect API, vault,
+outbound production control-plane transport, public account-connect API, credential store,
 or order-execution path.
 
 ## 2. Verification completed

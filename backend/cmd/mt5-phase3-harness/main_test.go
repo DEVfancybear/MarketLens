@@ -20,21 +20,26 @@ func TestReadConfigRejectsUnknownFieldsAndNonLoopbackListen(t *testing.T) {
 	}
 }
 
-func TestValidateServiceOriginFailsClosed(t *testing.T) {
+func TestReadConfigRejectsLegacyVaultFields(t *testing.T) {
+	legacy := `{"listenAddress":"127.0.0.1:1","vaultAddress":"http://127.0.0.1:2"}`
+	_, err := readConfig(strings.NewReader(legacy))
+	if err == nil || !strings.Contains(err.Error(), `unknown field "vaultAddress"`) {
+		t.Fatalf("legacy Vault field was not rejected as unknown: %v", err)
+	}
+}
+
+func TestValidateLoopbackServiceOriginFailsClosed(t *testing.T) {
 	for _, value := range []string{
 		"http://example.com",
 		"http://user@example.com",
 		"http://127.0.0.1/path",
 	} {
-		if err := validateServiceOrigin(value, true); err == nil {
+		if err := validateLoopbackServiceOrigin(value); err == nil {
 			t.Fatalf("unsafe gateway origin accepted: %q", value)
 		}
 	}
-	if err := validateServiceOrigin("http://127.0.0.1:8791", true); err != nil {
+	if err := validateLoopbackServiceOrigin("http://127.0.0.1:8791"); err != nil {
 		t.Fatalf("loopback gateway rejected: %v", err)
-	}
-	if err := validateServiceOrigin("https://vault.example.com", false); err != nil {
-		t.Fatalf("HTTPS Vault rejected: %v", err)
 	}
 }
 
@@ -50,8 +55,6 @@ func TestReadConfigAcceptsExactLoopbackServicesFilesAndSessions(t *testing.T) {
 		ExecutionAdminURL:       "http://127.0.0.1:8791",
 		ExecutionAdminTokenFile: secretPath,
 		MT5IdentityHMACKeyFile:  secretPath,
-		VaultAddress:            "http://127.0.0.1:18200",
-		VaultTokenFile:          secretPath,
 		AuthJWTSecretFile:       secretPath,
 		Sessions: []harnessSession{
 			{UserID: "11111111-1111-4111-8111-111111111111", SessionID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"},

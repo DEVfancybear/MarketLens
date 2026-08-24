@@ -12,13 +12,13 @@ import (
 	"unicode"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/marketlens/backend/internal/mt5vault"
+	"github.com/marketlens/backend/internal/mt5credentials"
 	"github.com/rs/zerolog/log"
 )
 
 type MT5CredentialStore interface {
-	Put(context.Context, string, mt5vault.Credential) error
-	Get(context.Context, string) (mt5vault.Credential, error)
+	Put(context.Context, string, mt5credentials.Credential) error
+	Get(context.Context, string) (mt5credentials.Credential, error)
 	Delete(context.Context, string) error
 }
 
@@ -73,7 +73,7 @@ func (h *Handler) registerMT5ConnectorRoutes(router fiber.Router) {
 	router.Delete("/execution/connectors/accounts/:accountId", h.requireAuth, h.requestRateLimit, h.requireActiveSession, h.mutationRateLimit, h.connectorRateLimit, h.deleteMT5Account)
 	// This exact route is for private workers, not browsers. Its unpredictable,
 	// one-time, worker/session/lease-bound grant is consumed by Rust before any
-	// Vault read. Production proxies must not publish this path publicly.
+	// credential-store read. Production proxies must not publish this path publicly.
 	router.Post("/execution-workers/mt5/credential-grants/consume", h.connectorWorkerRateLimit, h.consumeMT5CredentialGrant)
 }
 
@@ -85,7 +85,7 @@ func (h *Handler) connectMT5Account(c fiber.Ctx) error {
 		request.Password = ""
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request body")
 	}
-	credential := mt5vault.Credential{
+	credential := mt5credentials.Credential{
 		Login: strings.TrimSpace(request.Login), Password: request.Password, Server: strings.TrimSpace(request.Server),
 	}
 	identityFingerprint := mt5IdentityFingerprint(h.mt5IdentityKey, credential.Login, credential.Server)
@@ -96,7 +96,7 @@ func (h *Handler) connectMT5Account(c fiber.Ctx) error {
 	}()
 	ownerID := authenticatedUserID(c)
 	accountID := mt5AccountIDForRequest(h.mt5IdentityKey, ownerID, request.RequestID)
-	secretRef, err := mt5vault.NewSecretRef()
+	secretRef, err := mt5credentials.NewSecretRef()
 	if err != nil {
 		return fiber.NewError(fiber.StatusServiceUnavailable, "MT5 connection service unavailable")
 	}
@@ -117,12 +117,12 @@ func (h *Handler) connectMT5Account(c fiber.Ctx) error {
 	if reserved.SecretRef != "" {
 		secretRef = reserved.SecretRef
 	}
-	if err := h.mt5Vault.Put(c.Context(), secretRef, credential); err != nil {
+	if err := h.mt5CredentialStore.Put(c.Context(), secretRef, credential); err != nil {
 		if h.abortMT5Reservation(c.Context(), ownerID, reserved, secretRef) == nil {
-			_ = h.mt5Vault.Delete(c.Context(), secretRef)
+			_ = h.mt5CredentialStore.Delete(c.Context(), secretRef)
 		}
-		log.Error().Err(err).Str("account_id", accountID).Msg("MT5 credential vault write failed")
-		return fiber.NewError(fiber.StatusServiceUnavailable, "MT5 credential vault unavailable")
+		logMT5CredentialStoreFailure(accountID, "MT5 credential store write failed")
+		return fiber.NewError(fiber.StatusServiceUnavailable, "MT5 credential store unavailable")
 	}
 	activated, err := h.mt5ConnectorGateway.ActivateMT5ConnectorAccount(c.Context(), MT5ConnectorActivateRequest{
 		OwnerID: ownerID, AccountID: accountID, SecretRef: secretRef,
@@ -134,7 +134,7 @@ func (h *Handler) connectMT5Account(c fiber.Ctx) error {
 	})
 	if err != nil {
 		if h.abortMT5Reservation(c.Context(), ownerID, reserved, secretRef) == nil {
-			_ = h.mt5Vault.Delete(c.Context(), secretRef)
+			_ = h.mt5CredentialStore.Delete(c.Context(), secretRef)
 		}
 		return mt5ConnectorHTTPError(err)
 	}
@@ -224,11 +224,11 @@ func (h *Handler) reconnectMT5Account(c fiber.Ctx) error {
 	if current.ConnectionRevision != request.ExpectedRevision {
 		return fiber.NewError(fiber.StatusConflict, "MT5 account revision changed")
 	}
-	credential := mt5vault.Credential{Login: strings.TrimSpace(request.Login), Password: request.Password, Server: strings.TrimSpace(request.Server)}
+	credential := mt5credentials.Credential{Login: strings.TrimSpace(request.Login), Password: request.Password, Server: strings.TrimSpace(request.Server)}
 	defer func() { credential.Password = "" }()
 	identityFingerprint := mt5IdentityFingerprint(h.mt5IdentityKey, credential.Login, credential.Server)
 	serverFingerprint := mt5ServerFingerprint(h.mt5IdentityKey, credential.Server)
-	secretRef, err := mt5vault.NewSecretRef()
+	secretRef, err := mt5credentials.NewSecretRef()
 	if err != nil {
 		return fiber.NewError(fiber.StatusServiceUnavailable, "MT5 connection service unavailable")
 	}
@@ -242,11 +242,11 @@ func (h *Handler) reconnectMT5Account(c fiber.Ctx) error {
 	if err != nil {
 		return mt5ConnectorHTTPError(err)
 	}
-	if err := h.mt5Vault.Put(c.Context(), secretRef, credential); err != nil {
+	if err := h.mt5CredentialStore.Put(c.Context(), secretRef, credential); err != nil {
 		if h.abortMT5Reservation(c.Context(), authenticatedUserID(c), reserved, secretRef) == nil {
-			_ = h.mt5Vault.Delete(c.Context(), secretRef)
+			_ = h.mt5CredentialStore.Delete(c.Context(), secretRef)
 		}
-		return fiber.NewError(fiber.StatusServiceUnavailable, "MT5 credential vault unavailable")
+		return fiber.NewError(fiber.StatusServiceUnavailable, "MT5 credential store unavailable")
 	}
 	activated, err := h.mt5ConnectorGateway.ActivateMT5ConnectorAccount(c.Context(), MT5ConnectorActivateRequest{
 		OwnerID: authenticatedUserID(c), AccountID: accountID, SecretRef: secretRef,
@@ -257,13 +257,13 @@ func (h *Handler) reconnectMT5Account(c fiber.Ctx) error {
 	})
 	if err != nil {
 		if h.abortMT5Reservation(c.Context(), authenticatedUserID(c), reserved, secretRef) == nil {
-			_ = h.mt5Vault.Delete(c.Context(), secretRef)
+			_ = h.mt5CredentialStore.Delete(c.Context(), secretRef)
 		}
 		return mt5ConnectorHTTPError(err)
 	}
 	if reserved.PreviousSecretRef != "" && reserved.PreviousSecretRef != secretRef {
-		if err := h.mt5Vault.Delete(c.Context(), reserved.PreviousSecretRef); err != nil {
-			log.Error().Err(err).Str("account_id", accountID).Msg("old MT5 credential version deletion failed")
+		if err := h.mt5CredentialStore.Delete(c.Context(), reserved.PreviousSecretRef); err != nil {
+			logMT5CredentialStoreFailure(accountID, "old MT5 credential version deletion failed")
 		}
 	}
 	c.Set(fiber.HeaderCacheControl, "no-store")
@@ -281,9 +281,9 @@ func (h *Handler) disconnectMT5Account(c fiber.Ctx) error {
 		return mt5ConnectorHTTPError(err)
 	}
 	if account.Persistence == "session" && account.SecretRef != "" {
-		if err := h.mt5Vault.Delete(c.Context(), account.SecretRef); err != nil {
-			log.Error().Err(err).Str("account_id", accountID).Msg("session MT5 credential deletion failed")
-			return fiber.NewError(fiber.StatusServiceUnavailable, "MT5 credential vault unavailable")
+		if err := h.mt5CredentialStore.Delete(c.Context(), account.SecretRef); err != nil {
+			logMT5CredentialStoreFailure(accountID, "session MT5 credential deletion failed")
+			return fiber.NewError(fiber.StatusServiceUnavailable, "MT5 credential store unavailable")
 		}
 	}
 	c.Set(fiber.HeaderCacheControl, "no-store")
@@ -305,15 +305,15 @@ func (h *Handler) deleteMT5Account(c fiber.Ctx) error {
 		return c.Status(fiber.StatusAccepted).JSON(mutationResponse(prepared))
 	}
 	if prepared.SecretRef != "" {
-		if err := h.mt5Vault.Delete(c.Context(), prepared.SecretRef); err != nil {
-			log.Error().Err(err).Str("account_id", accountID).Msg("MT5 credential deletion failed")
-			return fiber.NewError(fiber.StatusServiceUnavailable, "MT5 credential vault unavailable")
+		if err := h.mt5CredentialStore.Delete(c.Context(), prepared.SecretRef); err != nil {
+			logMT5CredentialStoreFailure(accountID, "MT5 credential deletion failed")
+			return fiber.NewError(fiber.StatusServiceUnavailable, "MT5 credential store unavailable")
 		}
 	}
 	if prepared.PreviousSecretRef != "" && prepared.PreviousSecretRef != prepared.SecretRef {
-		if err := h.mt5Vault.Delete(c.Context(), prepared.PreviousSecretRef); err != nil {
-			log.Error().Err(err).Str("account_id", accountID).Msg("pending MT5 credential deletion failed")
-			return fiber.NewError(fiber.StatusServiceUnavailable, "MT5 credential vault unavailable")
+		if err := h.mt5CredentialStore.Delete(c.Context(), prepared.PreviousSecretRef); err != nil {
+			logMT5CredentialStoreFailure(accountID, "pending MT5 credential deletion failed")
+			return fiber.NewError(fiber.StatusServiceUnavailable, "MT5 credential store unavailable")
 		}
 	}
 	if err := h.mt5ConnectorGateway.FinalizeDeleteMT5ConnectorAccount(c.Context(), authenticatedUserID(c), accountID, prepared.SecretRef, prepared.PreviousSecretRef, prepared.ConnectionRevision); err != nil {
@@ -343,14 +343,14 @@ func (h *Handler) consumeMT5CredentialGrant(c fiber.Ctx) error {
 	if err != nil {
 		return mt5ConnectorHTTPError(err)
 	}
-	credential, err := h.mt5Vault.Get(c.Context(), grant.SecretRef)
+	credential, err := h.mt5CredentialStore.Get(c.Context(), grant.SecretRef)
 	if err != nil {
-		return fiber.NewError(fiber.StatusServiceUnavailable, "MT5 credential vault unavailable")
+		return fiber.NewError(fiber.StatusServiceUnavailable, "MT5 credential store unavailable")
 	}
 	defer func() { credential.Password = "" }()
 	if grant.Persistence == "session" {
-		if err := h.mt5Vault.Delete(c.Context(), grant.SecretRef); err != nil {
-			return fiber.NewError(fiber.StatusServiceUnavailable, "MT5 credential vault unavailable")
+		if err := h.mt5CredentialStore.Delete(c.Context(), grant.SecretRef); err != nil {
+			return fiber.NewError(fiber.StatusServiceUnavailable, "MT5 credential store unavailable")
 		}
 	}
 	c.Set(fiber.HeaderCacheControl, "no-store")
@@ -367,6 +367,10 @@ func (h *Handler) abortMT5Reservation(ctx context.Context, ownerID string, reser
 		return err
 	}
 	return nil
+}
+
+func logMT5CredentialStoreFailure(accountID, message string) {
+	log.Error().Str("error_category", "credential_store_unavailable").Str("account_id", accountID).Msg(message)
 }
 
 func mutationResponse(account MT5ConnectorAccount) mt5MutationResponse {

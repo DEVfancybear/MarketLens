@@ -12,6 +12,8 @@ The R15-9 three-demo-account gate must pass before any Live/funded activation.
   `http://127.0.0.1:8080`; remote plain HTTP is rejected.
 - One dedicated interactive Windows identity runs one bounded Scheduled Task. Each active account
   owns a distinct preinstalled, attested terminal slot and writable runtime root.
+- A separate stable, dedicated Windows identity runs the Go API. Its user profile and credential
+  set must load on every restart because managed broker credentials are bound to that identity.
 - `run-backend-production.ps1` never starts the worker. Backend and worker lifecycle are separate.
 
 ## Required protected files
@@ -20,22 +22,37 @@ Create these outside the repository with inheritance disabled and access limited
 identities that consume them. Do not print their contents or put them in command arguments.
 
 1. A 32-byte-or-longer identity HMAC key file, distinct from every other token.
-2. A narrow-role Vault API token file.
-3. A 32-byte-or-longer worker bootstrap-token file, matching
+2. A 32-byte-or-longer worker bootstrap-token file, matching
    `EXECUTION_MT5_VM_BOOTSTRAP_TOKEN` in `backend/.env`.
 
 Set the absolute paths in `backend/.env`:
 
 ```dotenv
 EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE=C:\ProgramData\MarketLens\secrets\mt5-identity-hmac.key
-MT5_VAULT_ADDR=https://vault.internal.example
-MT5_VAULT_API_TOKEN_FILE=C:\ProgramData\MarketLens\secrets\vault-api.token
-MT5_VAULT_NAMESPACE=
 EXECUTION_MT5_VM_BOOTSTRAP_TOKEN=<independent random value matching the protected bootstrap file>
 ```
 
 The canonical runner and deploy preflight reject a missing, relative, linked, too-small, or
 oversized identity-key file. Go and Rust also reject a key equal to an auth/admin/bootstrap secret.
+No broker password or third-party credential-store token belongs in `.env`. Go uses Windows
+Credential Manager generic records with machine persistence and opaque `MarketLens:MT5:` targets.
+
+## Pin and verify the Go API identity
+
+Run the backend under the same dedicated local/domain identity on every start. Do not switch from
+an interactive logon to a network-only logon or another Scheduled Task/service account after users
+connect. Before broker onboarding, run the disposable probe twice under that exact identity:
+
+```powershell
+Push-Location .\backend
+go test -count=2 -v ./internal/mt5credentials `
+  -run '^TestWindowsCredentialStoreDisposable(RealLifecycle|ProbeLeavesNoSyntheticTargets)$'
+Pop-Location
+```
+
+The API repeats a synthetic write/read/delete/absence probe at startup and advertises
+`connectors.mt5Managed=true` only after it succeeds. Losing the Windows profile, host, or identity
+does not expose an empty password: existing opaque references fail closed and users reconnect.
 
 ## Build or deploy the binaries
 
@@ -142,7 +159,8 @@ result is `DEGRADED`.
 ## Activation gates
 
 Before broker onboarding, verify the backend, gateway, worker heartbeat/lease, slot capacity,
-terminal/EA hashes, Vault role, and reverse-proxy route allow-list. Then run R15-9 with two test
+terminal/EA hashes, stable API identity, credential-store probe, and reverse-proxy route allow-list.
+Then run R15-9 with two test
 owners and three disposable Demo accounts. Keep Live/funded credentials and orders out of this
 gate. Stop on any identity mismatch, secret exposure, duplicate controller, stale generation,
 unknown cleanup state, failed reconciliation, or gauntlet failure.

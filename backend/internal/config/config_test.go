@@ -2,6 +2,7 @@ package config
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -194,48 +195,40 @@ func TestValidateTradeRecoveryEmailConfiguration(t *testing.T) {
 	}
 }
 
-func TestValidateMT5VaultConfiguration(t *testing.T) {
+func TestValidateManagedMT5IdentityNeedsNoVaultConfiguration(t *testing.T) {
 	base := Config{
 		Env: "development", ChartTimeZone: "UTC",
-		MT5VaultAddress:                 "https://vault.example.com",
-		MT5VaultAPITokenFile:            filepath.Join(t.TempDir(), "vault-api-token"),
 		ExecutionMT5IdentityHMACKeyFile: filepath.Join(t.TempDir(), "mt5-identity-key"),
-		MT5VaultMount:                   "secret", MT5VaultPrefix: "marketlens/mt5",
 	}
-	if err := validateMT5Vault(base); err != nil {
-		t.Fatalf("valid vault config rejected: %v", err)
-	}
-	if !base.MT5VaultConfigured() {
-		t.Fatal("complete vault configuration was not detected")
-	}
-
-	partial := base
-	partial.MT5VaultAPITokenFile = ""
-	if err := validateMT5Vault(partial); err == nil {
-		t.Fatal("partial vault configuration was accepted")
-	}
-
-	missingIdentityKey := base
-	missingIdentityKey.ExecutionMT5IdentityHMACKeyFile = ""
-	if err := validateMT5Vault(missingIdentityKey); err == nil {
-		t.Fatal("vault configuration without a stable identity HMAC key was accepted")
-	}
-
-	remoteHTTP := base
-	remoteHTTP.MT5VaultAddress = "http://vault.example.com"
-	if err := validateMT5Vault(remoteHTTP); err == nil {
-		t.Fatal("remote plaintext vault endpoint was accepted")
-	}
-
-	loopbackHTTP := base
-	loopbackHTTP.MT5VaultAddress = "http://127.0.0.1:8200"
-	if err := validateMT5Vault(loopbackHTTP); err != nil {
-		t.Fatalf("loopback development vault rejected: %v", err)
+	if err := base.validate(); err != nil {
+		t.Fatalf("managed MT5 identity without Vault was rejected: %v", err)
 	}
 
 	relativeIdentityKey := base
 	relativeIdentityKey.ExecutionMT5IdentityHMACKeyFile = "relative-identity-key"
-	if err := validateMT5Vault(relativeIdentityKey); err == nil {
+	if err := relativeIdentityKey.validate(); err == nil {
 		t.Fatal("relative stable identity HMAC key path was accepted")
+	}
+}
+
+func TestLoadRejectsLegacyVaultVariablesWithoutEchoingValues(t *testing.T) {
+	const privateValue = "must-not-appear-in-error-019d"
+	legacyNames := []string{"MT5_VAULT_ADDR", "MT5_VAULT_API_TOKEN_FILE", "MT5_VAULT_NAMESPACE"}
+	for _, legacyName := range legacyNames {
+		t.Run(legacyName, func(t *testing.T) {
+			t.Setenv("APP_ENV", "development")
+			t.Setenv("ALERT_EVALUATOR_ENABLED", "false")
+			for _, name := range legacyNames {
+				t.Setenv(name, "")
+			}
+			t.Setenv(legacyName, privateValue)
+			_, err := Load()
+			if err == nil || !strings.Contains(err.Error(), legacyName+" is obsolete") {
+				t.Fatalf("legacy variable was not rejected explicitly: %v", err)
+			}
+			if strings.Contains(err.Error(), privateValue) {
+				t.Fatal("legacy secret value was echoed")
+			}
+		})
 	}
 }

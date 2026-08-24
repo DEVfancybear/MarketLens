@@ -35,7 +35,7 @@ market data, Pine execution, or ordinary application CRUD.
   execution payload is accepted by this phase.
 - Phase 3 adds owner-scoped account lifecycle state and one-time credential-grant
   hashes to `execution-gateway`. Rust never receives a broker password: the
-  authenticated Go BFF owns Vault I/O and exchanges only opaque secret
+  authenticated Go BFF owns Windows Credential Manager I/O and exchanges only opaque secret
   references over the loopback admin listener. See
   `../../docs/MT5_WINDOWS_VM_CONNECTOR_PHASE3.md`.
 

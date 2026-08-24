@@ -58,18 +58,17 @@ Firebase values are present; `AUTH_JWT_SECRET` is then mandatory even in develop
 Go sends `EXECUTION_ADMIN_TOKEN` only to the admin listener. The EA, browser, and managed worker
 must not receive it. Do not reuse it as the worker bootstrap token or identity HMAC key.
 
-## Managed MT5 Vault
+## Managed MT5 Windows credential storage
 
-| Variable | Default | Contract |
-| --- | --- | --- |
-| `MT5_VAULT_ADDR` | empty | Absolute Vault origin; HTTPS except loopback HTTP development |
-| `MT5_VAULT_API_TOKEN_FILE` | empty | Absolute ACL-protected file containing the narrow Vault token |
-| `MT5_VAULT_NAMESPACE` | empty | Optional Vault Enterprise namespace |
+Managed broker credentials have no service URL, API token, namespace, password environment
+variable, or application plaintext file. Go stores bounded generic records in Windows Credential
+Manager under the stable Windows identity running the API. Targets contain only
+`MarketLens:MT5:<opaque-reference>`; PostgreSQL stores the opaque reference and grant hashes.
 
-`MT5_VAULT_ADDR`, `MT5_VAULT_API_TOKEN_FILE`, and
-`EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE` are configured together. The KV mount (`secret`) and prefix
-(`marketlens/mt5`) are backend contracts, not operator-selectable browser settings. Vault stores
-broker credentials; PostgreSQL stores only opaque secret references and grant hashes.
+`EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE` remains independently required for stable tenant-bound
+identity derivation. Startup advertises the connector only after the API identity completes an
+exact synthetic write/read/delete/absence probe. A host or service-identity change requires users
+to reconnect because database restore does not restore identity-bound credential records.
 
 ## Trade-password recovery email
 
@@ -138,7 +137,7 @@ contract.
 | `MT5_STREAM_LOG_LEVEL` | `INFO` | Python log level |
 
 The `MT5_LOGIN`/`MT5_PASSWORD`/`MT5_SERVER` group is only for the private read-only market-data
-terminal. Managed execution credentials use Vault and never these variables.
+terminal. Managed execution credentials use Windows Credential Manager and never these variables.
 
 ## Replay engine
 

@@ -4,6 +4,17 @@ All notable changes to the MarketLens. Dates are UTC.
 
 ## [Unreleased]
 
+### Changed - Managed MT5 Windows credential custody (2026-08-24)
+
+- Replaced the managed-MT5 HashiCorp Vault client, runtime settings, token file, disposable server,
+  and capability gate with a source-owned Windows Credential Manager adapter.
+- Added opaque 128-bit targets, bounded/versioned blobs, sanitized typed errors, exact idempotent
+  deletion, buffer clearing, stale-canary cleanup, and a startup write/read/delete/absence probe.
+- Preserved authenticated connect/rotate/grant/remove ordering while keeping broker passwords out of
+  PostgreSQL, Rust, worker arguments/environment, browser responses, and logs.
+- Added real Windows lifecycle tests, 10,000 property cases, five credential-store mutants, Linux
+  fail-closed compilation, updated operator/security docs, and legacy-setting rejection.
+
 ### Added - Bare-metal managed MT5 + automatic EA lifecycle (2026-08-23)
 
 - Completed the authenticated browser-to-Go/Vault-to-Rust worker lifecycle for a bounded one-host

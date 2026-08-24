@@ -3,8 +3,8 @@
 MarketLens is a broker-neutral trading backend for authenticated charting,
 market replay, alerts, centralized risk controls, durable multi-account MT5
 execution, and backend-managed Windows VM terminals. Go owns the browser-facing
-security boundary, Rust owns execution authority and lifecycle state, and Vault
-keeps broker credentials outside browsers and PostgreSQL.
+security boundary, Rust owns execution authority and lifecycle state, and
+Windows Credential Manager keeps broker credentials outside browsers and PostgreSQL.
 
 The backend has six deliberately separated runtime boundaries:
 
@@ -20,9 +20,9 @@ The backend has six deliberately separated runtime boundaries:
 4. **Rust MT5 Windows VM agent** supervises a bounded set of isolated terminal
    and adapter pairs through private, lease-fenced worker sessions. This
    no-install path remains activation-gated independently of the EA path.
-5. **Vault KV v2** holds managed MT5 credentials behind opaque references and
-   one-time worker/session/lease/command-bound grants. PostgreSQL never stores a
-   broker password or raw grant token.
+5. **Windows Credential Manager** holds generic managed-MT5 credentials under
+   the stable Windows identity running Go. PostgreSQL stores only opaque
+   references and one-time worker/session/lease/command-bound grant state.
 6. **MT5 market-data sidecar (`:8765`)** is private and read-only. It is not an
    order connector and cannot authorize execution.
 
@@ -53,24 +53,16 @@ EXECUTION_EA_URL=http://127.0.0.1:8790
 EXECUTION_ADMIN_URL=http://127.0.0.1:8791
 EXECUTION_ADMIN_TOKEN=at-least-32-random-characters
 EXECUTION_MT5_VM_BOOTSTRAP_TOKEN=independent-32-random-characters
+EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE=C:\ProgramData\MarketLens\secrets\mt5-identity.key
 EXECUTION_DATABASE_MAX_CONNECTIONS=10
 ```
 
-The managed, no-install MT5 connector is disabled by default. Enable its backend
-capability only after provisioning a narrow Vault KV v2 role:
-
-```dotenv
-MT5_VAULT_ADDR=https://vault.internal.example
-MT5_VAULT_API_TOKEN_FILE=C:\ProgramData\MarketLens\secrets\mt5-vault.token
-# Optional for Vault Enterprise namespaces:
-MT5_VAULT_NAMESPACE=
-```
-
-There is no frontend feature flag. Go advertises the connector in the
-authenticated account-registry response only when both required Vault settings
-are present. The KV mount and prefix are backend contracts, and the token itself
-must remain in the ACL-restricted file rather than an environment variable. See
-`../docs/MT5_WINDOWS_VM_CONNECTOR_PHASE3.md` before activation.
+The managed connector has no third-party credential service. It is advertised
+only when the protected identity-key path is configured and Go proves a
+write/read/delete/absence round-trip against Windows Credential Manager. Run Go
+under one stable, dedicated Windows identity; changing that identity makes prior
+opaque references unreadable and users must reconnect. See
+`../docs/MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md` before activation.
 
 The public EA URL is the existing Go API path, for example
 `https://api.tradingterminal.io.vn/execution-ea`. Go forwards only the exact
@@ -111,7 +103,7 @@ upgrade is active.
 ## Development checks
 
 ```powershell
-go test ./internal/execution ./internal/settings ./internal/config ./internal/httpserver ./cmd/api
+go test ./internal/mt5credentials ./internal/execution ./internal/settings ./internal/config ./internal/httpserver ./cmd/api
 ```
 
 ```powershell

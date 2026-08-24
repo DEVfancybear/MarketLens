@@ -21,7 +21,6 @@ import (
 	"github.com/marketlens/backend/internal/journal"
 	"github.com/marketlens/backend/internal/layouts"
 	"github.com/marketlens/backend/internal/mt5stream"
-	"github.com/marketlens/backend/internal/mt5vault"
 	"github.com/marketlens/backend/internal/pineruntime"
 	"github.com/marketlens/backend/internal/pinescripts"
 	"github.com/marketlens/backend/internal/replay"
@@ -178,21 +177,6 @@ func main() {
 				requireActiveSession,
 			).
 				WithEAProxy(executionEAProxy)
-			if cfg.MT5VaultConfigured() {
-				vaultClient, vaultErr := mt5vault.NewClient(mt5vault.Config{
-					Address: cfg.MT5VaultAddress, TokenFile: cfg.MT5VaultAPITokenFile,
-					Namespace: cfg.MT5VaultNamespace, Mount: cfg.MT5VaultMount,
-					Prefix: cfg.MT5VaultPrefix,
-				})
-				if vaultErr != nil {
-					stdlog.Fatalf("MT5 credential vault init error: %v", vaultErr)
-				}
-				executionClient.EnableMT5Connector()
-				executionHandler.WithMT5ConnectorVault(vaultClient)
-				log.Info().Msg("MT5 managed connector Phase 3 API enabled")
-			} else {
-				log.Warn().Msg("MT5 managed connector Phase 3 API disabled: vault not configured")
-			}
 		} else {
 			log.Warn().Msg("execution API routes disabled: EXECUTION_ADMIN_TOKEN not configured")
 		}

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Run the complete Revision 15 bare-metal managed MT5 + EA gauntlet.
+  Run the complete bare-metal managed MT5 + Windows credential-store gauntlet.
 
 .DESCRIPTION
   This is the single rerunnable synthetic/disposable verification entry point.
@@ -29,8 +29,13 @@ $goCoveragePath = Join-Path $artifactRoot 'go-cover.out'
 $rustCoveragePath = Join-Path $artifactRoot 'rust-cover.lcov'
 $rustProfilePath = Join-Path $artifactRoot 'rust-cover.profdata'
 $rustProfileRoot = Join-Path $artifactRoot 'rust-profraw'
-$rustAgentTargetRoot = Join-Path $artifactRoot 'rust-agent-target'
+$rustAgentTargetRoot = Join-Path $repoRoot 'backend\execution\target'
 $rustToolchain = 'stable-x86_64-pc-windows-msvc'
+$goRaceCompilerRoot = 'C:\msys64\ucrt64\bin'
+$goRaceGcc = Join-Path $goRaceCompilerRoot 'gcc.exe'
+$goRaceGxx = Join-Path $goRaceCompilerRoot 'g++.exe'
+$toolchainRevision2Root = Join-Path $repoRoot '.artifacts\mt5-windows-credential-store\toolchain-revision-2'
+$toolchainPreflightPath = Join-Path $toolchainRevision2Root 'preflight.json'
 $startedAt = [DateTime]::UtcNow
 $script:sequence = 0
 $script:results = [Collections.Generic.List[object]]::new()
@@ -224,6 +229,105 @@ function Invoke-CapturedProcess(
         }
     } finally {
         $process.Dispose()
+    }
+}
+
+function Get-TextSha256([AllowNull()][string]$Value) {
+    if ($null -eq $Value) { $Value = '' }
+    $hasher = [Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [Text.Encoding]::UTF8.GetBytes($Value)
+        return ([BitConverter]::ToString($hasher.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $hasher.Dispose()
+    }
+}
+
+function Assert-GoRaceToolchain([string]$CompilerRoot) {
+    if (-not [IO.Path]::IsPathRooted($CompilerRoot)) {
+        throw 'Go race compiler root must be an absolute path'
+    }
+
+    $normalizedCompilerRoot = [IO.Path]::GetFullPath($CompilerRoot).TrimEnd([char[]]@(
+        [IO.Path]::DirectorySeparatorChar,
+        [IO.Path]::AltDirectorySeparatorChar
+    ))
+    $gcc = Join-Path $normalizedCompilerRoot 'gcc.exe'
+    $gxx = Join-Path $normalizedCompilerRoot 'g++.exe'
+    if (-not (Test-Path -LiteralPath $gcc -PathType Leaf)) {
+        throw 'Go race GCC is missing from the approved compiler root'
+    }
+    if (-not (Test-Path -LiteralPath $gxx -PathType Leaf)) {
+        throw 'Go race G++ is missing from the approved compiler root'
+    }
+
+    $processEnvironment = @{ PATH = "$normalizedCompilerRoot;$env:PATH" }
+    $gccVersion = Invoke-CapturedProcess $gcc @('--version') $repoRoot 60 $processEnvironment
+    if ($gccVersion.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($gccVersion.Stdout)) {
+        throw "Go race GCC version attestation failed with exit code $($gccVersion.ExitCode)"
+    }
+    $gxxVersion = Invoke-CapturedProcess $gxx @('--version') $repoRoot 60 $processEnvironment
+    if ($gxxVersion.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($gxxVersion.Stdout)) {
+        throw "Go race G++ version attestation failed with exit code $($gxxVersion.ExitCode)"
+    }
+
+    $target = Invoke-CapturedProcess $gcc @('-dumpmachine') $repoRoot 60 $processEnvironment
+    if ($target.ExitCode -ne 0 -or $target.Stdout.Trim() -cne 'x86_64-w64-mingw32') {
+        throw "Go race GCC target is not the approved x86_64-w64-mingw32 target"
+    }
+
+    $synchronization = Invoke-CapturedProcess $gcc @(
+        '--print-file-name', 'libsynchronization.a'
+    ) $repoRoot 60 $processEnvironment
+    $synchronizationPath = $synchronization.Stdout.Trim()
+    if ($synchronization.ExitCode -ne 0 -or
+        [string]::IsNullOrWhiteSpace($synchronizationPath) -or
+        $synchronizationPath -ceq 'libsynchronization.a' -or
+        -not [IO.Path]::IsPathRooted($synchronizationPath)) {
+        throw 'Go race MinGW synchronization runtime could not be resolved'
+    }
+    $synchronizationPath = [IO.Path]::GetFullPath($synchronizationPath)
+    $ucrtRoot = [IO.Path]::GetDirectoryName($normalizedCompilerRoot)
+    $ucrtPrefix = $ucrtRoot.TrimEnd([char[]]@(
+        [IO.Path]::DirectorySeparatorChar,
+        [IO.Path]::AltDirectorySeparatorChar
+    )) + [IO.Path]::DirectorySeparatorChar
+    if (-not $synchronizationPath.StartsWith($ucrtPrefix, [StringComparison]::OrdinalIgnoreCase) -or
+        -not (Test-Path -LiteralPath $synchronizationPath -PathType Leaf)) {
+        throw 'Go race MinGW synchronization runtime is outside the approved UCRT64 tree or missing'
+    }
+
+    $msysRoot = [IO.Path]::GetDirectoryName($ucrtRoot)
+    $pacman = Join-Path $msysRoot 'usr\bin\pacman.exe'
+    if (-not (Test-Path -LiteralPath $pacman -PathType Leaf)) {
+        throw 'MSYS2 pacman is missing from the approved installation root'
+    }
+    $package = Invoke-CapturedProcess $pacman @(
+        '-Q', 'mingw-w64-ucrt-x86_64-gcc'
+    ) $repoRoot 60 $processEnvironment
+    if ($package.ExitCode -ne 0 -or
+        $package.Stdout.Trim() -notmatch '^mingw-w64-ucrt-x86_64-gcc\s+\S+$') {
+        throw 'The approved MSYS2 UCRT64 GCC package is not installed'
+    }
+    $ownership = Invoke-CapturedProcess $pacman @(
+        '-Qo', $gcc.Replace('\', '/')
+    ) $repoRoot 60 $processEnvironment
+    if ($ownership.ExitCode -ne 0 -or
+        $ownership.Output -notmatch 'mingw-w64-ucrt-x86_64-gcc') {
+        throw 'The approved MSYS2 package does not own gcc.exe'
+    }
+
+    $gccVersionLine = @($gccVersion.Stdout -split '\r?\n' | Where-Object {
+        -not [string]::IsNullOrWhiteSpace($_)
+    })[0].Trim()
+    return [pscustomobject][ordered]@{
+        compiler_root = $normalizedCompilerRoot
+        gcc = $gcc
+        gxx = $gxx
+        gcc_version = $gccVersionLine
+        target = $target.Stdout.Trim()
+        synchronization_runtime = $synchronizationPath
+        package = $package.Stdout.Trim()
     }
 }
 
@@ -490,6 +594,10 @@ function Get-ProductionCapabilityText {
         -Filter '*.ps1' -File | ForEach-Object {
             Get-RepoRelativePath $_.FullName
         })
+    $untrackedPaths += @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'backend\internal\mt5credentials') `
+        -Filter '*.go' -File | ForEach-Object {
+            Get-RepoRelativePath $_.FullName
+        })
     foreach ($relative in $untrackedPaths) {
         $path = Join-Path $repoRoot $relative
         if (Test-Path -LiteralPath $path -PathType Leaf) {
@@ -521,16 +629,24 @@ function Assert-ProductionRunnerDeltaPolicy(
         '}',
         '$env:EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE = $executionMt5IdentityHmacKeyFile'
     )
-    $delta = @(Compare-Object -ReferenceObject $expectedAddedLines `
-        -DifferenceObject @($AddedLines) -SyncWindow 0)
-    if ($delta.Count -gt 0) {
-        throw 'unapproved production runner capability change'
+    if ($AddedLines.Count -gt 0) {
+        $delta = @(Compare-Object -ReferenceObject $expectedAddedLines `
+            -DifferenceObject @($AddedLines) -SyncWindow 0)
+        if ($delta.Count -gt 0) {
+            throw 'unapproved production runner capability change'
+        }
     }
 
-    foreach ($requiredLine in @(
-        $expectedAddedLines[0],
-        $expectedAddedLines[$expectedAddedLines.Count - 1]
-    )) {
+    $normalizedSource = $Source.Replace("`r`n", "`n")
+    $validationBlock = $expectedAddedLines[1..14] -join "`n"
+    if ([regex]::Matches(
+        $normalizedSource,
+        [regex]::Escape($validationBlock)
+    ).Count -ne 1) {
+        throw 'production runner security validation block must appear exactly once'
+    }
+
+    foreach ($requiredLine in @($expectedAddedLines[0], $expectedAddedLines[15])) {
         $matchCount = [regex]::Matches($Source, [regex]::Escape($requiredLine)).Count
         if ($matchCount -ne 1) {
             throw 'production runner security export must appear exactly once'
@@ -754,35 +870,126 @@ $goFiles = @(
     'cmd/api/main.go',
     'cmd/api/main_source_contract_test.go',
     'cmd/mt5-phase3-harness/main.go',
+    'cmd/mt5-phase3-harness/main_test.go',
+    'cmd/mt5-phase3-harness/main_windows_test.go',
     'internal/config/config.go',
     'internal/config/config_test.go',
+    'internal/execution/client.go',
     'internal/execution/handler.go',
+    'internal/execution/managed_mt5_startup_test.go',
     'internal/execution/mt5_connector_client.go',
     'internal/execution/mt5_connector_handler.go',
     'internal/execution/mt5_connector_handler_test.go',
     'internal/execution/mt5_identity_key.go',
-    'internal/execution/mt5_identity_key_test.go'
+    'internal/execution/mt5_identity_key_test.go',
+    'internal/mt5credentials/credential.go',
+    'internal/mt5credentials/credential_test.go',
+    'internal/mt5credentials/store_other.go',
+    'internal/mt5credentials/store_other_test.go',
+    'internal/mt5credentials/store_windows.go',
+    'internal/mt5credentials/store_windows_test.go',
+    'internal/mt5credentials/wincred_windows.go',
+    'internal/mt5credentials/wincred_windows_test.go'
 )
 Invoke-NativeLayer 'go-format' 'gofmt.exe' (@('-l') + $goFiles) `
     (Join-Path $repoRoot 'backend') 120 -RequireEmptyOutput
 Invoke-NativeLayer 'go-vet' 'go.exe' @(
-    'vet', './cmd/api', './cmd/mt5-phase3-harness', './internal/config', './internal/execution'
-) (Join-Path $repoRoot 'backend') 900
+    'vet', '-p=1', './...'
+) (Join-Path $repoRoot 'backend') 1800
+Invoke-NativeLayer 'go-full-tests-shuffled' 'go.exe' @(
+    'test', '-p=1', '-count=1', '-shuffle=20260824', './...'
+) (Join-Path $repoRoot 'backend') 2400
 Invoke-NativeLayer 'go-tests' 'go.exe' @(
-    'test', '-count=1', './cmd/api', './cmd/mt5-phase3-harness', './internal/config', './internal/execution'
+    'test', '-p=1', '-count=1', './cmd/api', './cmd/mt5-phase3-harness', './internal/config', './internal/execution', './internal/mt5credentials'
 ) (Join-Path $repoRoot 'backend') 900
-$goCgoEnabled = (& go.exe env CGO_ENABLED).Trim()
-$goRaceCompiler = @('gcc.exe', 'clang.exe', 'cl.exe') | ForEach-Object {
-    Get-Command $_ -ErrorAction SilentlyContinue
-} | Select-Object -First 1
-if ($goCgoEnabled -eq '1' -and $null -ne $goRaceCompiler) {
-    Invoke-NativeLayer 'go-race' 'go.exe' @(
-        'test', '-count=1', '-race', './cmd/api', './internal/execution'
-    ) (Join-Path $repoRoot 'backend') 1200
-} else {
-    Add-AllowedUnverified 'go-race' `
-        'The approved SPEC requires race tests where supported; this Windows host has CGO disabled or no C compiler, so Go race instrumentation is unavailable.'
-}
+Invoke-NativeLayer 'go-credential-properties' 'go.exe' @(
+    'test', '-count=1', '-v', './internal/mt5credentials',
+    '-run', '^TestCredential(BlobSizeBoundaries|CodecPropertyRoundTripsTenThousandValidInputs|EncodingRejectsHostileAndMalformedValuesBeforePersistence)$'
+) (Join-Path $repoRoot 'backend') 300 `
+    -RequiredPattern 'PASS: TestCredentialCodecPropertyRoundTripsTenThousandValidInputs'
+Invoke-NativeLayer 'windows-credential-store-smoke' 'go.exe' @(
+    'test', '-count=2', '-v', './internal/mt5credentials',
+    '-run', '^TestWindowsCredentialStoreDisposable(RealLifecycle|ProbeLeavesNoSyntheticTargets)$'
+) (Join-Path $repoRoot 'backend') 300 `
+    -RequiredPattern 'PASS: TestWindowsCredentialStoreDisposableProbeLeavesNoSyntheticTargets'
+$linuxCredentialTest = Join-Path $artifactRoot 'mt5credentials-linux.test'
+Invoke-NativeLayer 'linux-mt5credentials' 'go.exe' @(
+    'test', '-c', '-o', $linuxCredentialTest, './internal/mt5credentials'
+) (Join-Path $repoRoot 'backend') 300 `
+    -EnvironmentVariables @{ GOOS = 'linux'; GOARCH = 'amd64'; CGO_ENABLED = '0' }
+Invoke-InProcessLayer 'linux-mt5credentials-artifact' {
+    if (-not (Test-Path -LiteralPath $linuxCredentialTest -PathType Leaf) -or
+        (Get-Item -LiteralPath $linuxCredentialTest).Length -eq 0) {
+        throw 'Linux MT5 credential-store compile produced no test artifact'
+    }
+    "LINUX_MT5CREDENTIALS_BYTES=$((Get-Item -LiteralPath $linuxCredentialTest).Length)"
+} 'Require a non-empty non-Windows credential-provider test binary'
+Invoke-NativeLayer 'unsupported-mt5credentials-runtime' 'go.exe' @(
+    'test', '-count=1', '-v', '-tags', 'mt5credentials_unsupported_test',
+    './internal/mt5credentials', '-run', '^TestUnsupportedPlatformCredentialStoreFailsClosed$'
+) (Join-Path $repoRoot 'backend') 300 `
+    -RequiredPattern 'PASS: TestUnsupportedPlatformCredentialStoreFailsClosed'
+Invoke-InProcessLayer 'go-race-toolchain-negative-control' {
+    $rejected = $false
+    try {
+        $null = Assert-GoRaceToolchain (Join-Path $artifactRoot 'missing-go-race-toolchain')
+    } catch {
+        if ($_.Exception.Message -cne 'Go race GCC is missing from the approved compiler root') {
+            throw
+        }
+        $rejected = $true
+    }
+    if (-not $rejected) {
+        throw 'Go race toolchain negative control unexpectedly passed'
+    }
+    'GO_RACE_TOOLCHAIN_NEGATIVE_CONTROL_OK'
+} 'Reject an absolute compiler root that does not contain the approved GCC executable'
+Invoke-InProcessLayer 'go-race-toolchain' {
+    $toolchain = Assert-GoRaceToolchain $goRaceCompilerRoot
+    "GO_RACE_GCC=$($toolchain.gcc)"
+    "GO_RACE_GXX=$($toolchain.gxx)"
+    "GO_RACE_GCC_VERSION=$($toolchain.gcc_version)"
+    "GO_RACE_TARGET=$($toolchain.target)"
+    "GO_RACE_SYNCHRONIZATION_RUNTIME=$($toolchain.synchronization_runtime)"
+    "GO_RACE_PACKAGE=$($toolchain.package)"
+} 'Attest the fixed MSYS2 UCRT64 compiler, target, runtime library, and package ownership'
+Invoke-InProcessLayer 'persistent-go-race-environment' {
+    if (-not (Test-Path -LiteralPath $toolchainPreflightPath -PathType Leaf)) {
+        throw "Revision 2 preflight snapshot is missing: $toolchainPreflightPath"
+    }
+    $preflight = [IO.File]::ReadAllText($toolchainPreflightPath, $utf8) | ConvertFrom-Json
+    foreach ($scope in @('User', 'Machine')) {
+        $target = [EnvironmentVariableTarget]::$scope
+        foreach ($name in @('CC', 'CXX', 'CGO_ENABLED', 'Path')) {
+            $key = "$scope.$name"
+            $property = $preflight.persistent_environment.PSObject.Properties[$key]
+            if ($null -eq $property) {
+                throw "Revision 2 preflight snapshot is missing persistent environment key $key"
+            }
+            $baseline = $property.Value
+            $current = [Environment]::GetEnvironmentVariable($name, $target)
+            $present = $null -ne $current
+            if ($present -ne [bool]$baseline.present -or
+                (Get-TextSha256 $current) -cne [string]$baseline.sha256) {
+                throw "Persistent environment changed after Revision 2 preflight: $key"
+            }
+            if ($name -ceq 'Path' -and $present -and
+                $current.IndexOf($goRaceCompilerRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                throw "Persistent PATH unexpectedly contains the process-local compiler root: $key"
+            }
+        }
+    }
+    'PERSISTENT_GO_RACE_ENVIRONMENT_UNCHANGED'
+} 'Compare User and Machine CC/CXX/CGO_ENABLED/PATH hashes with the pre-install snapshot'
+Invoke-NativeLayer 'go-race' 'go.exe' @(
+    'test', '-p=1', '-count=1', '-race', './internal/mt5credentials', './internal/execution'
+) (Join-Path $repoRoot 'backend') 1200 `
+    -EnvironmentVariables @{
+        CGO_ENABLED = '1'
+        CC = $goRaceGcc
+        CXX = $goRaceGxx
+        PATH = "$goRaceCompilerRoot;$env:PATH"
+    }
 Invoke-InProcessLayer 'go-changed-coverage' {
     $goRoot = Join-Path $repoRoot 'backend'
     $packages = [ordered]@{
@@ -790,33 +997,40 @@ Invoke-InProcessLayer 'go-changed-coverage' {
         phase3_harness = './cmd/mt5-phase3-harness'
         config = './internal/config'
         execution = './internal/execution'
+        credentials = './internal/mt5credentials'
     }
     $profiles = [Collections.Generic.List[string]]::new()
     foreach ($entry in $packages.GetEnumerator()) {
-        $binary = Join-Path $artifactRoot ("go-cover-$($entry.Key).test.exe")
         $profile = Join-Path $artifactRoot ("go-cover-$($entry.Key).out")
-        $build = Invoke-CapturedProcess 'go.exe' @(
-            'test', '-c', '-covermode=atomic', '-coverpkg=./...',
-            '-o', $binary, [string]$entry.Value
+        $run = Invoke-CapturedProcess 'go.exe' @(
+            'test', '-p=1', '-count=1', '-timeout=300s', '-covermode=atomic',
+            '-coverpkg', './...', '-coverprofile', $profile, [string]$entry.Value
         ) $goRoot 600
-        if ($build.ExitCode -ne 0) {
-            throw "Go coverage build failed for $($entry.Value): $($build.Output.Trim())"
-        }
-        if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
-            throw "Go coverage build did not produce the task artifact binary: $binary"
-        }
-        $run = Invoke-CapturedProcess $binary @(
-            '-test.count=1', '-test.timeout=300s', "-test.coverprofile=$profile"
-        ) $goRoot 360
         if ($run.ExitCode -ne 0) {
-            throw "Go coverage binary failed for $($entry.Value): $($run.Output.Trim())"
+            throw "Go coverage run failed for $($entry.Value): $($run.Output.Trim())"
         }
         if (-not (Test-Path -LiteralPath $profile -PathType Leaf) -or
             (Get-Item -LiteralPath $profile).Length -le 13) {
-            throw "Go coverage binary produced a missing or empty profile: $profile"
+            throw "Go coverage run produced a missing or empty profile: $profile"
         }
         $profiles.Add($profile)
     }
+
+    $unsupportedProfile = Join-Path $artifactRoot 'go-cover-credentials-unsupported.out'
+    $unsupportedRun = Invoke-CapturedProcess 'go.exe' @(
+        'test', '-p=1', '-count=1', '-timeout=300s',
+        '-tags', 'mt5credentials_unsupported_test', '-covermode=atomic',
+        '-coverpkg', './...', '-coverprofile', $unsupportedProfile,
+        './internal/mt5credentials'
+    ) $goRoot 600
+    if ($unsupportedRun.ExitCode -ne 0) {
+        throw "Go unsupported-platform coverage run failed: $($unsupportedRun.Output.Trim())"
+    }
+    if (-not (Test-Path -LiteralPath $unsupportedProfile -PathType Leaf) -or
+        (Get-Item -LiteralPath $unsupportedProfile).Length -le 13) {
+        throw "Go unsupported-platform coverage profile is missing or empty: $unsupportedProfile"
+    }
+    $profiles.Add($unsupportedProfile)
 
     $merged = [Collections.Generic.List[string]]::new()
     $merged.Add('mode: atomic')
@@ -831,9 +1045,9 @@ Invoke-InProcessLayer 'go-changed-coverage' {
     }
     if ($merged.Count -le 1) { throw 'Merged Go coverage profile contains zero records' }
     [IO.File]::WriteAllLines($goCoveragePath, $merged, $utf8)
-    "GO_COVERAGE_BINARIES=$($packages.Count)"
+    "GO_COVERAGE_RUNS=$($packages.Count + 1)"
     "GO_COVERAGE_RECORDS=$($merged.Count - 1)"
-} 'Compile each Go package to a task-artifact test binary, execute it, and merge atomic profiles'
+} 'Run each Go package through the Go toolchain and merge atomic coverage profiles'
 Invoke-NativeLayer 'go-changed-coverage-gate' 'python.exe' @(
     $coverageChecker,
     '--format', 'go',
@@ -1148,7 +1362,7 @@ Invoke-NativeLayer 'mutation-self-test' $windowsPowerShell @(
 Invoke-NativeLayer 'mutation-score' $windowsPowerShell @(
     '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
     '-File', '.\tools\verify-mt5-baremetal-managed-ea-mutants.ps1', '-Execute'
-) $repoRoot 1800 -RequiredPattern 'MUTATION_SCORE=8/8'
+) $repoRoot 1800 -RequiredPattern 'MUTATION_SCORE=13/13'
 
 Invoke-NativeLayer 'ea-metaeditor-compile' $windowsPowerShell @(
     '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
@@ -1171,30 +1385,38 @@ Invoke-NativeLayer 'npm-production-audit' 'cmd.exe' @(
 ) $frontendRoot 900
 
 Invoke-InProcessLayer 'dependency-delta-audit' {
-    $goOrManifestDelta = @(Invoke-GitLines @(
-        'diff', '--name-only', '--',
-        'backend/go.mod', 'backend/go.sum',
-        'frontend/package.json'
+    $goModDelta = @(Invoke-GitLines @(
+        'diff', '--unified=0', '--', 'backend/go.mod'
+    ) | Where-Object { $_ -match '^[+-](?![+-]{2})' })
+    if ($goModDelta.Count -ne 2 -or
+        $goModDelta -notcontains "-`tgolang.org/x/sys v0.46.0 // indirect" -or
+        $goModDelta -notcontains "+`tgolang.org/x/sys v0.46.0") {
+        throw 'go.mod contains a delta beyond promoting the pinned golang.org/x/sys v0.46.0 dependency to direct use'
+    }
+    $unexpectedManifestDelta = @(Invoke-GitLines @(
+        'diff', '--name-only', '--', 'backend/go.sum', 'frontend/package.json'
     ))
-    if ($goOrManifestDelta.Count -gt 0) {
-        throw "unexpected Go or Node manifest delta: $($goOrManifestDelta -join ', ')"
+    if ($unexpectedManifestDelta.Count -gt 0) {
+        throw "unexpected Go checksum or Node manifest delta: $($unexpectedManifestDelta -join ', ')"
     }
 
     $nodeLockChanged = @(Invoke-GitLines @(
         'diff', '--unified=0', '--', 'frontend/package-lock.json'
     ) | Where-Object { $_ -match '^[+-](?![+-]{2})' })
-    if ($nodeLockChanged.Count -ne 6 -or
-        @($nodeLockChanged | Where-Object {
-            $_ -notmatch '^[+-]\s+"(?:version|resolved|integrity)":'
-        }).Count -gt 0 -or
-        ($nodeLockChanged -join "`n") -notmatch '(?m)^-\s+"version": "3\.3\.16",$' -or
-        ($nodeLockChanged -join "`n") -notmatch '(?m)^\+\s+"version": "3\.3\.18",$' -or
-        ($nodeLockChanged -join "`n") -notmatch 'nanoid-3\.3\.16' -or
-        ($nodeLockChanged -join "`n") -notmatch 'nanoid-3\.3\.18' -or
-        @($nodeLockChanged | Where-Object {
-            $_ -match '^\+\s+"integrity": "sha512-[A-Za-z0-9+/]+=*",$'
-        }).Count -ne 1) {
-        throw 'package-lock contains a delta beyond the reviewed nanoid 3.3.16 -> 3.3.18 security update'
+    if ($nodeLockChanged.Count -gt 0) {
+        if ($nodeLockChanged.Count -ne 6 -or
+            @($nodeLockChanged | Where-Object {
+                $_ -notmatch '^[+-]\s+"(?:version|resolved|integrity)":'
+            }).Count -gt 0 -or
+            ($nodeLockChanged -join "`n") -notmatch '(?m)^-\s+"version": "3\.3\.16",$' -or
+            ($nodeLockChanged -join "`n") -notmatch '(?m)^\+\s+"version": "3\.3\.18",$' -or
+            ($nodeLockChanged -join "`n") -notmatch 'nanoid-3\.3\.16' -or
+            ($nodeLockChanged -join "`n") -notmatch 'nanoid-3\.3\.18' -or
+            @($nodeLockChanged | Where-Object {
+                $_ -match '^\+\s+"integrity": "sha512-[A-Za-z0-9+/]+=*",$'
+            }).Count -ne 1) {
+            throw 'package-lock contains a delta beyond the reviewed nanoid 3.3.16 -> 3.3.18 security update'
+        }
     }
 
     $lockAdded = @(Invoke-GitLines @(
@@ -1225,8 +1447,32 @@ Invoke-InProcessLayer 'dependency-delta-audit' {
     if (@($manifestAdded | Where-Object { $_ -cnotin $allowed }).Count -gt 0) {
         throw "Cargo manifests contain an unreviewed capability or dependency delta: $($manifestAdded -join ', ')"
     }
-    'DEPENDENCY_DELTA=existing-hmac-reviewed-windows-api-features-and-nanoid-3.3.18-security-lock-only'
+    'DEPENDENCY_DELTA=pinned-x-sys-direct-existing-hmac-reviewed-windows-api-features-and-nanoid-3.3.18-security-lock-only'
 } 'Review dependency manifests and lockfile additions against the approved no-new-package SPEC'
+
+Invoke-InProcessLayer 'vault-runtime-removal-audit' {
+    foreach ($relative in @(
+        '.env.example',
+        'backend/.env.example',
+        'backend/cmd/api/main.go',
+        'backend/cmd/mt5-phase3-harness/main.go',
+        'backend/internal/execution/mt5_connector_handler.go'
+    )) {
+        $text = [IO.File]::ReadAllText((Join-Path $repoRoot $relative), $utf8)
+        if ($text -match '(?i)internal/mt5vault|MT5_VAULT_|credential vault|Vault KV') {
+            throw "active runtime surface still references Vault: $relative"
+        }
+    }
+    foreach ($relative in @(
+        'backend/internal/mt5vault',
+        'tools/run-mt5-vault-disposable.ps1'
+    )) {
+        if (Test-Path -LiteralPath (Join-Path $repoRoot $relative)) {
+            throw "obsolete Vault runtime surface still exists: $relative"
+        }
+    }
+    'NO_VAULT_RUNTIME_DEPENDENCY=PASS'
+} 'Prove active runtime and environment templates have no Vault dependency'
 
 Invoke-NativeLayer 'backend-docs' $windowsPowerShell @(
     '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
@@ -1306,7 +1552,7 @@ Invoke-InProcessLayer 'capability-diff-audit' {
 } 'Audit added capabilities and the canonical production runner boundary'
 
 Add-AllowedUnverified 'R15-9-live-demo' `
-    'Separate execution-time confirmation, secure Vault, interactive worker identity, and three disposable demo accounts were not supplied; no broker or production action was attempted.'
+    'Separate execution-time confirmation, stable interactive Windows identities, and three disposable demo accounts were not supplied; no broker or production action was attempted.'
 
 $dirtyAfter = @(Invoke-GitLines @('status', '--short'))
 $failed = @($script:results | Where-Object { $_.status -eq 'FAIL' })

@@ -12,6 +12,9 @@ PROCESS = ROOT / "backend" / "execution" / "crates" / "mt5-vm-agent" / "src" / "
 GO_CONNECTOR = ROOT / "backend" / "internal" / "execution" / "mt5_connector_handler.go"
 GO_HANDLER = ROOT / "backend" / "internal" / "execution" / "handler.go"
 GO_PHASE3_HARNESS = ROOT / "backend" / "cmd" / "mt5-phase3-harness" / "main.go"
+GO_API = ROOT / "backend" / "cmd" / "api" / "main.go"
+GO_CREDENTIAL = ROOT / "backend" / "internal" / "mt5credentials" / "wincred_windows.go"
+GO_WINDOWS_STORE = ROOT / "backend" / "internal" / "mt5credentials" / "store_windows.go"
 PRODUCTION_RUNNER = ROOT / "run-backend-production.ps1"
 PRODUCTION_BUILD = ROOT / "build-production.ps1"
 BACKEND_DEPLOY = ROOT / "tools" / "deploy-backend.ps1"
@@ -57,14 +60,39 @@ class ManagedSafetySourceContracts(unittest.TestCase):
         self.assertIn("unapproved managed-worker lifecycle in production runner", verifier)
         self.assertIn("runner security wiring valid; worker lifecycle remains separate", verifier)
 
-    def test_environment_templates_expose_required_private_secret_file_settings(self) -> None:
+    def test_environment_templates_use_local_windows_credential_manager(self) -> None:
         backend = BACKEND_ENV_EXAMPLE.read_text(encoding="utf-8")
         root = ROOT_ENV_EXAMPLE.read_text(encoding="utf-8")
         for source in (backend, root):
             self.assertEqual(1, source.count("EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE="))
-            self.assertEqual(1, source.count("MT5_VAULT_ADDR="))
-            self.assertEqual(1, source.count("MT5_VAULT_API_TOKEN_FILE="))
-        self.assertIn("MT5_VAULT_NAMESPACE=", backend)
+            self.assertNotIn("MT5_VAULT_", source)
+            self.assertIn("Windows Credential Manager", source)
+
+    def test_managed_connector_requires_a_successful_credential_store_probe(self) -> None:
+        source = GO_HANDLER.read_text(encoding="utf-8")
+        probe = "storeErr = store.Probe(probeContext)"
+        reject = (
+            "if storeErr != nil {\n"
+            "\t\treturn errManagedMT5CredentialStoreUnavailable"
+        )
+        wire = "handler.WithMT5CredentialStore(store, identitySecret)"
+        enable = "capability.EnableMT5Connector()"
+        for value in (probe, reject, wire, enable):
+            self.assertEqual(1, source.count(value))
+        self.assertLess(source.index(probe), source.index(reject))
+        self.assertLess(source.index(reject), source.index(wire))
+        self.assertLess(source.index(wire), source.index(enable))
+
+    def test_windows_credential_store_uses_only_local_wincred_apis(self) -> None:
+        native = GO_CREDENTIAL.read_text(encoding="utf-8")
+        store = GO_WINDOWS_STORE.read_text(encoding="utf-8")
+        for api in ("CredWriteW", "CredReadW", "CredDeleteW", "CredEnumerateW"):
+            self.assertEqual(1, native.count(api))
+        self.assertIn('"MarketLens:MT5:"', store)
+        self.assertIn('"MarketLens:MT5:test:"', store)
+        self.assertFalse((ROOT / "backend" / "internal" / "mt5vault").exists())
+        for source in (GO_API, GO_PHASE3_HARNESS, GO_CONNECTOR):
+            self.assertNotIn("internal/mt5vault", source.read_text(encoding="utf-8"))
 
     def test_deploy_preflights_identity_key_before_artifact_or_migration_mutation(self) -> None:
         source = BACKEND_DEPLOY.read_text(encoding="utf-8")

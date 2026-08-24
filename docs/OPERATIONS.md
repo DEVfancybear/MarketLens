@@ -143,7 +143,7 @@ Go; it cannot authorize or submit orders.
 
 Live execution uses the Go BFF, loopback Rust gateway (`8790` EA, `8791` admin), and common MT5 EA.
 The managed path adds an explicitly installed bare-metal worker with bounded pre-provisioned slots,
-Vault credential grants, redirected-stdin login, and exact-PID named-pipe EA bootstrap. Account
+Windows Credential Manager-backed grants, redirected-stdin login, and exact-PID named-pipe EA bootstrap. Account
 connect never downloads or installs MT5/EA and never puts credentials in arguments or environment.
 
 Run normal production through `run-backend-production.ps1`. Install/start the managed worker only
@@ -166,8 +166,8 @@ to `http://localhost:8080` in development; set `NEXT_PUBLIC_API_BASE_URL` explic
 
 Use `backend/.env.example` and `backend/docs/CONFIGURATION.md` as the complete source-derived
 reference. Production must keep Rust and Python listeners on loopback, use independent admin and
-worker bootstrap secrets, and provide the MT5 identity HMAC key and Vault token through absolute
-ACL-protected files.
+worker bootstrap secrets, provide the MT5 identity HMAC key through an absolute ACL-protected file,
+and run Go under a stable dedicated Windows identity.
 
 ## Deployment
 
@@ -242,8 +242,9 @@ an old commit from before the monorepo split. Redeploy the latest `master` commi
 #### Managed MT5 frontend/API smoke test after push
 
 Deploy the backend commit before rebuilding the frontend. The managed connector is not a
-frontend-only feature: the Go registry returns `connectors.mt5Managed=true` only when its Vault,
-identity-key, admin gateway, and worker-enrollment prerequisites are configured.
+frontend-only feature: the Go registry returns `connectors.mt5Managed=true` only when its Windows
+credential-store probe, identity-key, admin gateway, and worker-enrollment prerequisites are
+configured.
 
 The production frontend build must contain:
 

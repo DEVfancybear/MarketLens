@@ -1,31 +1,29 @@
-# MT5 Windows VM Connector Phase 3
+# MT5 Windows Connector Phase 3
 
-- Date: 2026-08-13
-- Repository status: **IMPLEMENTED AND TESTED**
-- Production status: **DISABLED BY DEFAULT; ACTIVATION GATES REMAIN**
-- Scope: credential vault, authenticated account lifecycle API, one-time worker
-  grants, capability-driven browser UI, audit, abuse limits, and bilingual copy
+- Updated: 2026-08-24
+- Repository status: **IMPLEMENTED WITH WINDOWS CREDENTIAL MANAGER**
+- Production status: **ACTIVATION-GATED**
+- Scope: authenticated account lifecycle API, local credential custody, one-time worker grants,
+  capability-driven browser UI, audit, abuse limits, and bilingual copy
 
-Phase 3 makes the backend the only source of truth for the managed MT5
-connector. The browser has no connector feature flag, never stores a broker
-password, and renders the managed flow only when the authenticated
-`GET /api/v1/execution/accounts` response returns
-`connectors.mt5Managed=true`.
+Phase 3 makes the backend the only source of truth for the managed MT5 connector. The browser has
+no connector feature flag, never stores a broker password, and renders the managed flow only when
+authenticated `GET /api/v1/execution/accounts` returns `connectors.mt5Managed=true`.
 
 ## Delivered boundaries
 
-| Boundary | Phase 3 behavior |
+| Boundary | Current behavior |
 | --- | --- |
-| Browser | Sends a password once over the authenticated same-origin API; clears form state after submit/error/close |
-| Go BFF | Injects the signed-in owner, applies session and mutation limits, writes/reads/deletes Vault secrets, and returns no public secret reference |
+| Browser | Sends a password once over the authenticated API and clears form state after submit, error, or close |
+| Go BFF | Injects the signed-in owner, applies session/mutation limits, owns credential I/O, and returns no public secret reference |
+| Windows Credential Manager | Stores bounded generic records under the Go API identity with opaque `MarketLens:MT5:` targets |
 | Rust gateway | Owns account state, revisions, owner-scoped persistence, audit, worker grants, and lifecycle commands |
-| PostgreSQL | Stores only opaque `secret_ref` values and SHA-256 grant hashes; no login password or raw grant token |
-| Vault KV v2 | Stores credential material under a backend-owned path and permanently deletes all versions on rotation/removal |
-| Worker grant | Random, one-time, command/worker/session/lease-bound; Rust consumes the hash before Go reads Vault |
+| PostgreSQL | Stores opaque references and grant hashes, never login passwords or raw grant tokens |
+| Worker grant | Random, one-time, and command/worker/session/lease-bound; Rust consumes the hash before Go reads the record |
 
-The legacy EA connection path is unchanged. Removing Phase 3 Vault settings and
-restarting the Go API disables the managed capability without exposing a dead UI
-or changing existing EA accounts.
+Rust, PostgreSQL, the worker, command lines, and environment variables do not store a managed
+broker password. The worker receives it only through the existing private one-time response after
+Rust has consumed the exact grant.
 
 ## Account lifecycle
 
@@ -33,108 +31,90 @@ Authenticated public routes:
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| `POST` | `/api/v1/execution/connectors/mt5/accounts` | Reserve, vault, and activate a managed account |
+| `POST` | `/api/v1/execution/connectors/mt5/accounts` | Reserve, store, and activate a managed account |
 | `GET` | `/api/v1/execution/connectors/accounts/:accountId` | Return owner-scoped redacted connection status |
-| `POST` | `/api/v1/execution/connectors/accounts/:accountId/reconnect` | Reconnect with a stored secret or atomically rotate credentials |
-| `POST` | `/api/v1/execution/connectors/accounts/:accountId/disconnect` | Drain/revoke a terminal without closing broker positions |
-| `DELETE` | `/api/v1/execution/connectors/accounts/:accountId` | Drain, permanently delete secret versions, and finalize removal |
+| `GET` | `/api/v1/execution/connectors/accounts/:accountId/snapshot` | Return owner-scoped normalized account state |
+| `GET` | `/api/v1/execution/connectors/accounts/:accountId/history` | Return bounded owner-scoped order/deal history |
+| `POST` | `/api/v1/execution/connectors/accounts/:accountId/reconnect` | Reconnect or atomically rotate credentials |
+| `POST` | `/api/v1/execution/connectors/accounts/:accountId/disconnect` | Drain/revoke a terminal without closing positions |
+| `DELETE` | `/api/v1/execution/connectors/accounts/:accountId` | Drain, delete all exact credential records, and finalize removal |
 
 Private worker route:
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| `POST` | `/api/v1/execution-workers/mt5/credential-grants/consume` | Consume a one-time Rust grant, retrieve the exact Vault secret, and delete session-mode material before responding |
+| `POST` | `/api/v1/execution-workers/mt5/credential-grants/consume` | Consume a Rust grant, retrieve one exact record, and delete session-mode material before responding |
 
-Production ingress must not publish the private worker route to browsers. Every
-public mutation requires an active server session, owner identity comes only
-from that session, and optimistic `connectionRevision` checks reject stale tabs.
+Production ingress must not publish the worker route to browsers. Every public mutation requires
+an active server session, owner identity comes only from that session, and optimistic
+`connectionRevision` checks reject stale tabs.
 
-## Credential modes
+## Credential modes and compensation
 
-- `managed`: Vault retains the encrypted credential for unattended reconnect or
-  VM migration. Rotation activates the new reference before permanently deleting
-  the previous KV metadata and every old version.
-- `session`: the credential is permanently deleted before the first worker
-  consume response is returned. A lost runtime transitions to
-  `credentials_required` and the user must enter it again.
+- `managed`: Windows Credential Manager retains the record for unattended reconnect on the same
+  host and API identity. Rotation writes and activates a new random reference before deleting the
+  previous exact target.
+- `session`: Go deletes the record before returning the first worker consume response. A lost
+  runtime transitions to `credentials_required`, and the user must enter the credential again.
 
-Failed Vault writes compensate the Rust reservation. Failed activation deletes
-the new Vault secret and aborts the reservation. Removal is a two-step
-prepare/finalize operation: an active worker must acknowledge stop first, then
-the client repeats removal with the new revision so Go can delete Vault material
-before registry finalization.
+A failed store write compensates the Rust reservation. Failed activation deletes the new record
+only after reservation ownership is proven. Removal is prepare/finalize: worker state is fenced
+first, then Go deletes active and pending exact targets before Rust finalizes the registry entry.
+Not-found deletion is idempotent; every other store error fails closed.
 
-## Backend-only configuration
+## Local Windows credential store
 
-There is no `NEXT_PUBLIC_*` managed-connector flag. KV mount `secret` and prefix
-`marketlens/mt5` are backend contracts rather than deployment settings.
+The implementation uses `CredWriteW`, `CredReadW`, `CredDeleteW`, and a test-prefix-only
+`CredEnumerateW` cleanup. Records use generic type, machine persistence, a versioned binary blob no
+larger than 2,560 bytes, and empty username/comment/attributes. Target metadata contains no owner,
+login, broker server, label, email, or password.
 
-Required together to enable Phase 3:
+At startup, Go removes only structurally valid stale `MarketLens:MT5:test:*` canaries, creates a
+new random canary, proves exact write/read/delete/absence, and then enables the connector. A missing
+credential set, access denial, malformed record, changed identity, or unsupported operating system
+leaves the capability false with a sanitized diagnostic.
+
+## Backend configuration and recovery boundary
+
+There is no third-party credential-service URL, API token, namespace, or frontend flag. The only
+credential-adjacent backend setting is the independent identity key:
 
 ```dotenv
-MT5_VAULT_ADDR=https://vault.internal.example
-MT5_VAULT_API_TOKEN_FILE=C:\ProgramData\MarketLens\secrets\mt5-vault.token
+EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE=C:\ProgramData\MarketLens\secrets\mt5-identity-hmac.key
 ```
 
-`MT5_VAULT_NAMESPACE` is optional for namespaced Vault deployments. The token
-itself must never be placed in an environment variable or repository file. The
-token role should be limited to KV v2 read/create/update and permanent metadata
-delete under `secret/marketlens/mt5/*`. Go rereads the token file per request so
-operators can rotate it without putting token material in process arguments.
+Run Go under one stable, dedicated, least-privilege Windows identity with a loaded user profile and
+credential set. Credential Manager data is host/identity-bound: a PostgreSQL restore, host loss, or
+service-account change does not restore the records. Existing references then fail closed and each
+user reconnects. No plaintext export, backup endpoint, or automatic legacy-store import exists.
 
 ## Migration and activation
 
-1. Complete the unresolved Phase 1 signed-agent/two-account isolation gate and
-   the Phase 2 disposable-PostgreSQL restart/session-reassignment gate.
-2. Apply additive migration `0039_mt5_vm_credentials.up.sql` through the normal
-   production runner. Do not down-migrate while any managed account exists.
-3. Provision the narrow Vault policy, store its token in an ACL-restricted
-   absolute file, and set the two required backend values above.
-4. Keep `/api/v1/execution-workers/mt5/*` on private worker ingress only.
-5. Start the canonical backend runner, verify the managed capability is present,
-   then exercise one disposable demo through connect, Ready, reconnect, rotate,
-   disconnect, and remove.
-6. Inspect Vault metadata and PostgreSQL after removal. No credential version,
-   plaintext password, or raw grant token may remain.
+1. Apply additive migration `0039_mt5_vm_credentials.up.sql` through the canonical runner; no new
+   database migration is required for the credential-store replacement.
+2. Protect the identity HMAC key, pin the Go API identity, and keep all Rust/worker routes private.
+3. Run the Windows disposable create/read/delete/absence smoke twice under the actual API identity.
+4. Start the canonical backend runner and verify the authenticated account registry advertises the
+   connector only after the startup probe succeeds.
+5. Exercise a disposable Demo through connect, ready, reconnect/rotate, disconnect, and remove.
+6. Verify PostgreSQL contains only opaque references/hashes and no synthetic or account credential
+   target remains after its required cleanup.
 
-Operational activation must stop if Vault is unavailable, a stale owner/revision
-is accepted, a secret appears in logs/responses/database, or the worker grant can
-be replayed.
+Stop on identity drift, credential-store unavailability, stale owner/revision acceptance, replayed
+grant, cross-owner observation, secret exposure, or failed cleanup. Complete the R15-9 two-owner,
+three-Demo-account gate before any Live/funded activation. See
+[the bare-metal runbook](MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md).
 
-## Verification record
+## Verification
 
-Passed on 2026-08-13:
+Focused checks include Go provider/config/execution/API tests, a real disposable Windows lifecycle,
+10,000 codec properties, hostile inputs, changed-line coverage, five credential-store mutants,
+the existing eight managed-MT5 mutants, Rust/Python regressions, documentation checks, and
+frontend capability compatibility. The canonical rerunnable entry point is:
 
-- `go test ./internal/config ./internal/execution ./internal/mt5vault ./cmd/api`
-- `cargo test --manifest-path backend/execution/Cargo.toml -p execution-gateway`
-  — 67 passed, 0 failed
-- `npm run typecheck`
-- `npm run check:i18n` — 4 passed, 0 failed
-- `git diff --check`
+```powershell
+.\tools\verify-mt5-baremetal-managed-ea.ps1
+```
 
-Coverage includes authenticated owner injection, public reference/password
-redaction, Vault-write compensation, managed rotation, permanent deletion of
-active and pending credential versions, session deletion before worker response,
-grant hashing/redaction, request/Vault-payload memory clearing, migration
-plaintext guards, rate limits, and complete English/Vietnamese translation keys.
-
-The disposable Vault runner additionally passed a real loopback Vault 2.0.3 KV
-v2 put/get/rotate/permanent-delete cycle with an ACL-restricted token file and
-cleanup. The full authenticated public API/browser connect → ready → reconnect
-→ rotate → disconnect → remove exercise remains an activation gate; no
-production Vault or broker credential was used.
-
-ESLint could not load the repository configuration because the installed
-`eslint-config-next` package does not resolve the configured
-`eslint-config-next/core-web-vitals` ESM path. TypeScript and i18n checks pass;
-repair that pre-existing toolchain issue before using lint as an activation gate.
-`cargo clippy -D warnings` also reaches the gateway but currently fails on 11
-pre-existing warnings in `copier.rs` and `main.rs`; it reports no warning in the
-new Phase 3 module.
-
-## Remaining non-Phase-3 gates
-
-This document does not declare the no-install connector production-ready. The
-Phase 1 and Phase 2 operational evidence above remains mandatory, and Phase 4
-still owns normalized broker read synchronization. No live credential or
-production order test was performed as part of this repository implementation.
+Historical phase records that describe the former external credential service remain audit
+artifacts only. They are not current setup instructions.

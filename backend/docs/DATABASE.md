@@ -33,8 +33,8 @@ Never point development tests or manual down migrations at production.
 - Cross-user resources are not exposed by globally addressable IDs.
 - Refresh tokens, EA sessions, pairing tokens, worker sessions, grants, and recovery codes are
   stored as hashes or otherwise non-recoverable server representations.
-- Managed MT5 broker passwords live only in Vault KV v2. PostgreSQL stores opaque `secret_ref`
-  values and one-time grant hashes, never passwords.
+- Managed MT5 broker passwords live only in Windows Credential Manager under the API service
+  identity. PostgreSQL stores opaque `secret_ref` values and one-time grant hashes, never passwords.
 - Managed broker identity uses keyed 32-byte fingerprints and a safe masked suffix. Raw login and
   exact broker server are not persisted in the managed connection/account-state rows.
 - Monetary/quantity values crossing the execution boundary use decimal strings and PostgreSQL
@@ -104,7 +104,7 @@ unknown-outcome reconciliation prevent blind resubmission.
 - `execution_mt5_vm_workers`: private worker identity, protocol/runtime versions, bounded capacity,
   heartbeat, drain/state, hashed session, generation, and `bare_metal` substrate.
 - `execution_mt5_vm_accounts`: owner-scoped reservation/status/revision, worker/lease assignment,
-  persistence mode, opaque Vault reference, keyed identity/server fingerprints, safe masked suffix,
+  persistence mode, opaque credential reference, keyed identity/server fingerprints, safe masked suffix,
   and disconnect fencing.
 - `execution_mt5_vm_account_leases`: assignment lease generation and expiry.
 - `execution_mt5_vm_control_commands`: durable lifecycle command poll/redelivery/ack state.
@@ -166,7 +166,7 @@ identity. Conflict paths do not reveal the existing owner or raw identity.
 | `0036` | Versioned prop-risk profile catalog |
 | `0037` | Trade-password recovery codes |
 | `0038` | Managed MT5 worker/control-plane lifecycle |
-| `0039` | Vault secret references and credential grants |
+| `0039` | Opaque credential references and credential grants |
 | `0040` | Managed MT5 account/portfolio/instrument read sync |
 | `0041` | Managed MT5 orders/deals/history coverage sync |
 | `0042` | Bare-metal managed EA bootstrap, identity uniqueness, readiness, disconnect fencing |
@@ -176,8 +176,8 @@ identity. Conflict paths do not reveal the existing owner or raw identity.
 - Session expiry/revocation, pairing/grant expiry, worker leases, replay retention, alert history
   caps, and object-deletion work require scheduled cleanup/monitoring.
 - Audit records must remain useful without carrying raw credentials or reusable tokens.
-- Account deletion must fence execution/worker state and revoke grants before removing Vault values
-  and owner metadata; retries must converge after partial failure.
+- Account deletion must fence execution/worker state and revoke grants before removing exact Windows
+  credential records and owner metadata; retries must converge after partial failure.
 - Backups of PostgreSQL do not contain managed broker passwords, but they remain sensitive because
   they include user, trading, session-hash, and audit metadata.
 

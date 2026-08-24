@@ -503,6 +503,81 @@ $mutants = @(
             TimeoutSeconds = 60
             ExpectedFailurePattern = 'FAIL: test_unknown_delivery_outcome_is_not_expired_or_resent'
         }
+    },
+    [pscustomobject]@{
+        Id = 'M9_CORRUPT_CREDENTIAL_TARGET'
+        TargetPath = 'backend\internal\mt5credentials\store_windows.go'
+        Target = 'TargetName: credentialTargetPrefix + secretRef,'
+        Replacement = 'TargetName: credentialTargetPrefix + "mutant-" + secretRef,'
+        Checker = [pscustomobject]@{
+            Path = 'backend\internal\mt5credentials\store_windows_test.go'
+            Anchor = 'TestWindowsCredentialStoreRoundTripsAndKeepsMetadataOpaque'
+            File = 'go.exe'
+            Arguments = @('test', '-count=1', './internal/mt5credentials', '-run', '^TestWindowsCredentialStoreRoundTripsAndKeepsMetadataOpaque$')
+            WorkingDirectory = 'backend'
+            TimeoutSeconds = 120
+            ExpectedFailurePattern = 'FAIL: TestWindowsCredentialStoreRoundTripsAndKeepsMetadataOpaque'
+        }
+    },
+    [pscustomobject]@{
+        Id = 'M10_WEAKEN_CREDENTIAL_SIZE_BOUND'
+        TargetPath = 'backend\internal\mt5credentials\credential.go'
+        Target = 'return size > 0 && size <= maxCredentialBlobBytes'
+        Replacement = 'return size > 0 && size < maxCredentialBlobBytes'
+        Checker = [pscustomobject]@{
+            Path = 'backend\internal\mt5credentials\credential_test.go'
+            Anchor = 'TestCredentialBlobSizeBoundaries'
+            File = 'go.exe'
+            Arguments = @('test', '-count=1', './internal/mt5credentials', '-run', '^TestCredentialBlobSizeBoundaries$')
+            WorkingDirectory = 'backend'
+            TimeoutSeconds = 120
+            ExpectedFailurePattern = 'FAIL: TestCredentialBlobSizeBoundaries'
+        }
+    },
+    [pscustomobject]@{
+        Id = 'M11_REJECT_IDEMPOTENT_NOT_FOUND_DELETE'
+        TargetPath = 'backend\internal\mt5credentials\store_windows.go'
+        Target = 'return err == nil || errors.Is(err, errNativeNotFound)'
+        Replacement = 'return err == nil'
+        Checker = [pscustomobject]@{
+            Path = 'backend\internal\mt5credentials\store_windows_test.go'
+            Anchor = 'TestWindowsCredentialStoreRoundTripsAndKeepsMetadataOpaque'
+            File = 'go.exe'
+            Arguments = @('test', '-count=1', './internal/mt5credentials', '-run', '^TestWindowsCredentialStoreRoundTripsAndKeepsMetadataOpaque$')
+            WorkingDirectory = 'backend'
+            TimeoutSeconds = 120
+            ExpectedFailurePattern = 'FAIL: TestWindowsCredentialStoreRoundTripsAndKeepsMetadataOpaque'
+        }
+    },
+    [pscustomobject]@{
+        Id = 'M12_ENABLE_WITH_FAILED_CREDENTIAL_PROBE'
+        TargetPath = 'backend\internal\execution\handler.go'
+        Target = 'storeErr = store.Probe(probeContext)'
+        Replacement = 'storeErr = nil; _ = probeContext // mutant: skip credential-store probe'
+        Checker = [pscustomobject]@{
+            Path = 'backend\internal\execution\managed_mt5_startup_test.go'
+            Anchor = 'TestManagedMT5StartupEnablesOnlyAfterIdentityAndProbeSucceed'
+            File = 'go.exe'
+            Arguments = @('test', '-count=1', './internal/execution', '-run', '^TestManagedMT5StartupEnablesOnlyAfterIdentityAndProbeSucceed$')
+            WorkingDirectory = 'backend'
+            TimeoutSeconds = 180
+            ExpectedFailurePattern = 'FAIL: TestManagedMT5StartupEnablesOnlyAfterIdentityAndProbeSucceed'
+        }
+    },
+    [pscustomobject]@{
+        Id = 'M13_SKIP_CREDENTIAL_BUFFER_CLEAR'
+        TargetPath = 'backend\internal\mt5credentials\store_windows.go'
+        Target = 'defer clearCredentialBlob(blob)'
+        Replacement = 'defer func() {}()'
+        Checker = [pscustomobject]@{
+            Path = 'backend\internal\mt5credentials\store_windows_test.go'
+            Anchor = 'TestWindowsCredentialStoreClearsWriteBufferAndRejectsBeforeWinAPI'
+            File = 'go.exe'
+            Arguments = @('test', '-count=1', './internal/mt5credentials', '-run', '^TestWindowsCredentialStoreClearsWriteBufferAndRejectsBeforeWinAPI$')
+            WorkingDirectory = 'backend'
+            TimeoutSeconds = 120
+            ExpectedFailurePattern = 'FAIL: TestWindowsCredentialStoreClearsWriteBufferAndRejectsBeforeWinAPI'
+        }
     }
 )
 

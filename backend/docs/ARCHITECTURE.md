@@ -25,9 +25,10 @@ market data, and persistence so no browser or broker adapter can bypass server-s
    - Supervises bounded terminal/adapter slots and the managed common-EA bootstrap path.
    - Uses private, authenticated, replay-protected, generation/lease-fenced control sessions.
    - The bare-metal managed path is activation-gated by the operator runbook and Demo evidence.
-5. **Vault KV v2**
-   - Stores managed broker credentials behind opaque references.
-   - Go performs Vault I/O; Rust and PostgreSQL never receive or retain a broker password.
+5. **Windows Credential Manager**
+   - Stores generic managed broker credentials behind opaque random references under the Go API's
+     stable Windows identity.
+   - Go performs local WinCred I/O; Rust and PostgreSQL never receive or retain a broker password.
    - Workers consume one-time, worker/session/lease/command-bound credential grants.
 6. **PostgreSQL**
    - Durable source of truth for users, sessions, workspace state, replay, execution state, audit,
@@ -43,7 +44,7 @@ Browser
   -> public HTTPS
   -> Go API/BFF :8080
        -> PostgreSQL
-       -> Vault KV v2
+       -> Windows Credential Manager
        -> private MT5 stream localhost:8765
        -> Rust admin 127.0.0.1:8791
 
@@ -96,7 +97,7 @@ backend/
     journal/               journal and screenshot metadata
     layouts/               saved layouts
     mt5stream/             Go market-data consumer/cache/fan-out
-    mt5vault/              narrow Vault KV v2 client
+    mt5credentials/        bounded credential domain and Windows Credential Manager adapter
     pineruntime/           backend indicator/Pine runtime endpoints
     pinescripts/           private scripts and public indicator store
     replay/                deterministic replay sessions and actor engine
@@ -151,15 +152,15 @@ browser -> Go auth + active-session + rate limits
 ### Managed account connection
 
 ```text
-browser -> Go reserves owner-scoped account and writes credential to Vault
+browser -> Go reserves owner-scoped account and writes credential to Windows Credential Manager
         -> Rust places lifecycle work on a compatible private worker
         -> worker consumes a one-time credential grant
         -> isolated terminal login and exact-PID common-EA bootstrap
         -> snapshots/history synchronized to Rust/PostgreSQL
 ```
 
-Deletion and credential rotation are multi-step, fail-closed flows. Go finalizes Vault deletion only
-after Rust has fenced or removed the corresponding lifecycle state.
+Deletion and credential rotation are multi-step, fail-closed flows. Go finalizes credential-store
+deletion only after Rust has fenced or removed the corresponding lifecycle state.
 
 ## Adding a backend endpoint
 

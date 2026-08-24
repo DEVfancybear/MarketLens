@@ -43,6 +43,8 @@ See [frontend documentation](../frontend/docs/README.md) and
 - Multi-account MT5, FTMO/Exness broker-neutral routing, copy targets, durable commands/events, and
   risk gates are implemented. Production bare-metal activation remains gated by explicit worker
   install plus R15-9 disposable Demo evidence.
+- Managed broker credentials use Windows Credential Manager under the stable Go API identity;
+  PostgreSQL and Rust retain only opaque references and one-time grant state.
 - Native Binance domain values exist but the transport remains deliberately disabled until the
   security/reconciliation plan is completed.
 
@@ -66,7 +68,8 @@ one entrypoint with the other.
 
 ## External gates that remain
 
-- A production host, PostgreSQL, Cloudflare/public health, Vault, MT5 terminals, broker accounts,
+- A production host, PostgreSQL, Cloudflare/public health, a stable Windows API identity and
+  credential set, MT5 terminals, broker accounts,
   and EA allow-listing cannot be proven by repository-only tests.
 - R15-9 must use disposable Demo accounts before Live/funded onboarding.
 - Production deployment and smoke evidence must be recorded for the exact released commit.

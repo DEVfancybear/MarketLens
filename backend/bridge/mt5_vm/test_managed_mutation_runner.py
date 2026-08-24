@@ -47,7 +47,7 @@ class ManagedMutationRunnerTests(unittest.TestCase):
         self.assertIn("MUTATION_SELF_TEST_OK=2/2", completed.stdout)
         self.assertIn("BYTE_EXACT_RESTORE_OK", completed.stdout)
 
-    def test_runner_declares_every_required_r15_mutant(self) -> None:
+    def test_runner_declares_every_required_managed_mt5_mutant(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
 
         required = (
@@ -59,6 +59,11 @@ class ManagedMutationRunnerTests(unittest.TestCase):
             "M6_READY_BEFORE_FRESH_POLL",
             "M7_RELEASE_DIRTY_SLOT",
             "M8_RESEND_UNKNOWN_OUTCOME",
+            "M9_CORRUPT_CREDENTIAL_TARGET",
+            "M10_WEAKEN_CREDENTIAL_SIZE_BOUND",
+            "M11_REJECT_IDEMPOTENT_NOT_FOUND_DELETE",
+            "M12_ENABLE_WITH_FAILED_CREDENTIAL_PROBE",
+            "M13_SKIP_CREDENTIAL_BUFFER_CLEAR",
         )
         for mutant_id in required:
             self.assertEqual(1, source.count(f"Id = '{mutant_id}'"))

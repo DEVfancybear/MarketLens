@@ -20,12 +20,18 @@ class ManagedGauntletContractTests(unittest.TestCase):
         for required in (
             ".artifacts\\mt5-baremetal-managed-ea",
             "go-vet",
+            "go-full-tests-shuffled",
+            "-shuffle=20260824",
             "go-race",
+            "go-credential-properties",
+            "windows-credential-store-smoke",
+            "linux-mt5credentials",
+            "unsupported-mt5credentials-runtime",
+            "mt5credentials_unsupported_test",
             "changed-source-diffs",
             "go-changed-coverage-gate",
             "go-changed-coverage-negative-control",
-            "GO_COVERAGE_BINARIES",
-            "-test.coverprofile",
+            "GO_COVERAGE_RUNS",
             "rust-fmt",
             "rust-clippy",
             "rust-tests",
@@ -75,10 +81,22 @@ class ManagedGauntletContractTests(unittest.TestCase):
         for forbidden in ("SkipRust", "SkipTests", "SkipMigration"):
             self.assertNotIn(forbidden, source)
         self.assertNotIn("throw 'run-backend-production.ps1 was modified'", source)
+        self.assertNotIn("'-File', '.\\tools\\run-mt5-vault-disposable.ps1'", source)
+        self.assertIn("MUTATION_SCORE=13/13", source)
+        self.assertIn("./internal/mt5credentials", source)
+        self.assertIn("internal/mt5credentials/store_other_test.go", source)
+        self.assertIn("internal/mt5credentials/wincred_windows_test.go", source)
+        self.assertIn("cmd/mt5-phase3-harness/main_windows_test.go", source)
+        self.assertIn("internal/execution/managed_mt5_startup_test.go", source)
+        self.assertIn("'vet', '-p=1', './...'", source)
 
-        self.assertIn("'-o', $binary", source)
-        self.assertNotIn('"-o=$binary"', source)
+        self.assertIn("'-coverpkg', './...', '-coverprofile', $profile", source)
+        self.assertNotIn('go-cover-$($entry.Key).test.exe', source)
         self.assertIn("'.example', '.yml'", source)
+        self.assertIn("Join-Path $repoRoot 'backend\\execution\\target'", source)
+        self.assertIn("$AddedLines.Count -gt 0", source)
+        self.assertIn("$validationBlock", source)
+        self.assertIn("$expectedAddedLines[1..14]", source)
 
         # Smart App Control can quarantine a newly linked Rust test or Cargo
         # build-script briefly. The gate may retry only that exact OS 4551
@@ -117,6 +135,38 @@ class ManagedGauntletContractTests(unittest.TestCase):
             "'-p', 'mt5-vm-agent', '--all-targets', '--', '--test-threads=1'",
             rust_agent_block,
         )
+
+    def test_go_race_toolchain_is_absolute_process_local_and_fail_closed(self) -> None:
+        source = GATE.read_text(encoding="utf-8")
+
+        for required in (
+            "$goRaceCompilerRoot = 'C:\\msys64\\ucrt64\\bin'",
+            "$goRaceGcc = Join-Path $goRaceCompilerRoot 'gcc.exe'",
+            "$goRaceGxx = Join-Path $goRaceCompilerRoot 'g++.exe'",
+            "function Assert-GoRaceToolchain",
+            "go-race-toolchain-negative-control",
+            "GO_RACE_TOOLCHAIN_NEGATIVE_CONTROL_OK",
+            "go-race-toolchain",
+            "--print-file-name",
+            "libsynchronization.a",
+            "-dumpmachine",
+            "x86_64-w64-mingw32",
+            "persistent-go-race-environment",
+            "CC = $goRaceGcc",
+            "CXX = $goRaceGxx",
+            'PATH = "$goRaceCompilerRoot;$env:PATH"',
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, source)
+
+        race_block = source.split("Invoke-NativeLayer 'go-race'", 1)[1].split(
+            "Invoke-InProcessLayer 'go-changed-coverage'", 1
+        )[0]
+        self.assertIn("CGO_ENABLED = '1'", race_block)
+        self.assertIn("CC = $goRaceGcc", race_block)
+        self.assertIn("CXX = $goRaceGxx", race_block)
+        self.assertNotIn("[Environment]::SetEnvironmentVariable", source)
+        self.assertNotIn("go env -w", source)
 
         migration_source = MIGRATION_GATE.read_text(encoding="utf-8")
         self.assertIn(

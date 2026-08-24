@@ -1,7 +1,8 @@
 # Backend documentation
 
 This directory is the canonical reference for the MarketLens backend. It describes the current
-Go, Rust, PostgreSQL, Vault, Python MT5 market-data, common-EA, and managed-worker implementation.
+Go, Rust, PostgreSQL, Windows Credential Manager, Python MT5 market-data, common-EA, and
+managed-worker implementation.
 
 Current migration head: `0042`.
 

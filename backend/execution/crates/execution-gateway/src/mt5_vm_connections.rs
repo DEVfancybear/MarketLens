@@ -1852,7 +1852,7 @@ mod tests {
             }),
         )
         .await
-        .expect("an idempotent pending reservation never requests a second Vault write");
+        .expect("an idempotent pending reservation never requests a second credential write");
         assert!(retried.ready);
         assert_eq!(reserved.connection_revision, retried.connection_revision);
 
@@ -1922,7 +1922,7 @@ mod tests {
             }),
         )
         .await
-        .expect("claim an abandoned account identity with a fresh Vault reference");
+        .expect("claim an abandoned account identity with a fresh credential reference");
         assert!(!claimed.ready);
         assert_eq!(Some(active_secret_ref.clone()), claimed.secret_ref);
 
@@ -2126,7 +2126,7 @@ mod tests {
             }),
         )
         .await
-        .expect("reserve a credential that the BFF will compensate after a failed Vault write");
+        .expect("reserve a credential that the BFF will compensate after a failed store write");
         assert_eq!(
             Some(replacement_secret_ref.clone()),
             abandoned.previous_secret_ref
@@ -2246,7 +2246,7 @@ mod tests {
             Some(vec![0xab; 32])
         );
         assert!(valid_secret_ref("mt5-0123456789abcdef0123456789abcdef"));
-        assert!(!valid_secret_ref("vault/marketlens/account"));
+        assert!(!valid_secret_ref("credential/marketlens/account"));
         assert!(!valid_secret_ref("mt5-0123456789ABCDEF0123456789ABCDEF"));
         assert!(valid_suffix("5678"));
         assert!(valid_suffix("****"));

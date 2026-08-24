@@ -75,11 +75,15 @@ type Account struct {
 }
 
 // EnableMT5Connector turns on the additive Windows VM account projection only
-// after the Go API has a usable credential vault. Keeping this disabled by
+// after the Go API has a usable credential store. Keeping this disabled by
 // default prevents an unavailable Phase 3 slice from breaking the legacy EA
 // account registry.
 func (c *Client) EnableMT5Connector() {
 	c.mt5ConnectorEnabled = true
+}
+
+func (c *Client) mt5ConnectorIsEnabled() bool {
+	return c.mt5ConnectorEnabled
 }
 
 type PairingToken struct {

@@ -33,11 +33,6 @@ type Config struct {
 	ExecutionAdminURL               string
 	ExecutionAdminToken             string
 	ExecutionMT5IdentityHMACKeyFile string
-	MT5VaultAddress                 string
-	MT5VaultAPITokenFile            string
-	MT5VaultNamespace               string
-	MT5VaultMount                   string
-	MT5VaultPrefix                  string
 
 	AuthJWTSecret          string
 	PushWorkerSecret       string
@@ -104,16 +99,6 @@ func (c Config) ObjectStorageConfigured() bool {
 	return c.ObjectStorageBucket != "" && c.ObjectStorageAccessKey != "" && c.ObjectStorageSecretKey != ""
 }
 
-// MT5VaultConfigured reports whether the Phase 3 managed connector boundary is
-// fully configured. Partial configuration is rejected during validation.
-func (c Config) MT5VaultConfigured() bool {
-	return strings.TrimSpace(c.MT5VaultAddress) != "" &&
-		strings.TrimSpace(c.MT5VaultAPITokenFile) != "" &&
-		strings.TrimSpace(c.ExecutionMT5IdentityHMACKeyFile) != "" &&
-		strings.TrimSpace(c.MT5VaultMount) != "" &&
-		strings.TrimSpace(c.MT5VaultPrefix) != ""
-}
-
 // TradeRecoveryEmailConfigured reports whether the backend can deliver trade
 // password recovery codes. Authentication is optional for local SMTP relays,
 // but username/password must always be supplied as a pair.
@@ -136,6 +121,15 @@ func Load() (Config, error) {
 	// godotenv does not overwrite values already loaded from backend/.env.
 	_ = godotenv.Load("../.env.local")
 	_ = godotenv.Load("../.env")
+	for _, legacyName := range []string{
+		"MT5_VAULT_ADDR",
+		"MT5_VAULT_API_TOKEN_FILE",
+		"MT5_VAULT_NAMESPACE",
+	} {
+		if strings.TrimSpace(os.Getenv(legacyName)) != "" {
+			return Config{}, fmt.Errorf("%s is obsolete; remove it because managed MT5 uses Windows Credential Manager", legacyName)
+		}
+	}
 
 	env := getEnv("APP_ENV", "development")
 	authCookieSecure := getEnvBool("AUTH_COOKIE_SECURE", env != "development")
@@ -150,29 +144,23 @@ func Load() (Config, error) {
 		ExecutionAdminURL:               getEnv("EXECUTION_ADMIN_URL", "http://127.0.0.1:8791"),
 		ExecutionAdminToken:             os.Getenv("EXECUTION_ADMIN_TOKEN"),
 		ExecutionMT5IdentityHMACKeyFile: strings.TrimSpace(os.Getenv("EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE")),
-		MT5VaultAddress:                 strings.TrimSpace(os.Getenv("MT5_VAULT_ADDR")),
-		MT5VaultAPITokenFile:            strings.TrimSpace(os.Getenv("MT5_VAULT_API_TOKEN_FILE")),
-		MT5VaultNamespace:               strings.TrimSpace(os.Getenv("MT5_VAULT_NAMESPACE")),
-		// KV layout is a backend contract, not deployment/UI configuration.
-		MT5VaultMount:          "secret",
-		MT5VaultPrefix:         "marketlens/mt5",
-		AuthJWTSecret:          os.Getenv("AUTH_JWT_SECRET"),
-		PushWorkerSecret:       os.Getenv("PUSH_WORKER_SECRET"),
-		AlertEvaluatorEnabled:  alertEvaluatorEnabled,
-		AlertEvaluatorURL:      getEnv("ALERT_EVALUATOR_URL", defaultAlertEvaluatorURL(env, corsAllowedOrigins)),
-		AlertEvaluatorInterval: getEnvDuration("ALERT_EVALUATOR_INTERVAL", time.Minute),
-		AlertEvaluatorTimeout:  getEnvDuration("ALERT_EVALUATOR_TIMEOUT", 30*time.Second),
-		AuthAccessTTL:          getEnvDuration("AUTH_ACCESS_TTL", 15*time.Minute),
-		AuthRefreshTTL:         getEnvDuration("AUTH_REFRESH_TTL", 720*time.Hour),
-		TradeAuthorizationTTL:  getEnvDuration("TRADE_AUTHORIZATION_TTL", 45*time.Second),
-		TradeRecoverySMTPHost:  strings.TrimSpace(os.Getenv("TRADE_RECOVERY_SMTP_HOST")),
-		TradeRecoverySMTPPort:  getEnvInt("TRADE_RECOVERY_SMTP_PORT", 587),
-		TradeRecoverySMTPUser:  os.Getenv("TRADE_RECOVERY_SMTP_USERNAME"),
-		TradeRecoverySMTPPass:  os.Getenv("TRADE_RECOVERY_SMTP_PASSWORD"),
-		TradeRecoverySMTPMode:  strings.ToLower(strings.TrimSpace(getEnv("TRADE_RECOVERY_SMTP_MODE", "starttls"))),
-		TradeRecoveryEmailFrom: strings.TrimSpace(os.Getenv("TRADE_RECOVERY_EMAIL_FROM")),
-		FirebaseProjectID:      os.Getenv("FIREBASE_PROJECT_ID"),
-		FirebaseClientEmail:    os.Getenv("FIREBASE_CLIENT_EMAIL"),
+		AuthJWTSecret:                   os.Getenv("AUTH_JWT_SECRET"),
+		PushWorkerSecret:                os.Getenv("PUSH_WORKER_SECRET"),
+		AlertEvaluatorEnabled:           alertEvaluatorEnabled,
+		AlertEvaluatorURL:               getEnv("ALERT_EVALUATOR_URL", defaultAlertEvaluatorURL(env, corsAllowedOrigins)),
+		AlertEvaluatorInterval:          getEnvDuration("ALERT_EVALUATOR_INTERVAL", time.Minute),
+		AlertEvaluatorTimeout:           getEnvDuration("ALERT_EVALUATOR_TIMEOUT", 30*time.Second),
+		AuthAccessTTL:                   getEnvDuration("AUTH_ACCESS_TTL", 15*time.Minute),
+		AuthRefreshTTL:                  getEnvDuration("AUTH_REFRESH_TTL", 720*time.Hour),
+		TradeAuthorizationTTL:           getEnvDuration("TRADE_AUTHORIZATION_TTL", 45*time.Second),
+		TradeRecoverySMTPHost:           strings.TrimSpace(os.Getenv("TRADE_RECOVERY_SMTP_HOST")),
+		TradeRecoverySMTPPort:           getEnvInt("TRADE_RECOVERY_SMTP_PORT", 587),
+		TradeRecoverySMTPUser:           os.Getenv("TRADE_RECOVERY_SMTP_USERNAME"),
+		TradeRecoverySMTPPass:           os.Getenv("TRADE_RECOVERY_SMTP_PASSWORD"),
+		TradeRecoverySMTPMode:           strings.ToLower(strings.TrimSpace(getEnv("TRADE_RECOVERY_SMTP_MODE", "starttls"))),
+		TradeRecoveryEmailFrom:          strings.TrimSpace(os.Getenv("TRADE_RECOVERY_EMAIL_FROM")),
+		FirebaseProjectID:               os.Getenv("FIREBASE_PROJECT_ID"),
+		FirebaseClientEmail:             os.Getenv("FIREBASE_CLIENT_EMAIL"),
 		// The private key is stored \n-escaped (same as the frontend push key);
 		// restore the real newlines so it parses as PEM.
 		FirebasePrivateKey:        strings.ReplaceAll(os.Getenv("FIREBASE_PRIVATE_KEY"), `\n`, "\n"),
@@ -261,7 +249,7 @@ func (c Config) validate() error {
 			return fmt.Errorf("TRADE_AUTHORIZATION_TTL must be between 10s and 2m")
 		}
 	}
-	if err := validateMT5Vault(c); err != nil {
+	if err := validateMT5IdentityKey(c); err != nil {
 		return err
 	}
 	if err := c.validateTradeRecoveryEmail(); err != nil {
@@ -326,33 +314,9 @@ func (c Config) validate() error {
 	return nil
 }
 
-func validateMT5Vault(c Config) error {
-	addressSet := strings.TrimSpace(c.MT5VaultAddress) != ""
-	tokenFileSet := strings.TrimSpace(c.MT5VaultAPITokenFile) != ""
-	identityKeyFileSet := strings.TrimSpace(c.ExecutionMT5IdentityHMACKeyFile) != ""
-	if !addressSet && !tokenFileSet && !identityKeyFileSet {
-		if strings.TrimSpace(c.MT5VaultNamespace) != "" {
-			return fmt.Errorf("MT5_VAULT_NAMESPACE requires the MT5 credential vault settings")
-		}
-		return nil
-	}
-	if !addressSet || !tokenFileSet || !identityKeyFileSet {
-		return fmt.Errorf("MT5_VAULT_ADDR, MT5_VAULT_API_TOKEN_FILE and EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE must be configured together")
-	}
-	u, err := url.Parse(strings.TrimRight(strings.TrimSpace(c.MT5VaultAddress), "/"))
-	if err != nil || u.Hostname() == "" || u.User != nil || u.Path != "" ||
-		u.RawQuery != "" || u.Fragment != "" {
-		return fmt.Errorf("MT5_VAULT_ADDR must be an absolute origin")
-	}
-	ip := net.ParseIP(u.Hostname())
-	loopback := strings.EqualFold(u.Hostname(), "localhost") || (ip != nil && ip.IsLoopback())
-	if u.Scheme != "https" && !(u.Scheme == "http" && loopback) {
-		return fmt.Errorf("MT5_VAULT_ADDR must use HTTPS or loopback HTTP")
-	}
-	if !filepath.IsAbs(c.MT5VaultAPITokenFile) {
-		return fmt.Errorf("MT5_VAULT_API_TOKEN_FILE must be an absolute path")
-	}
-	if !filepath.IsAbs(c.ExecutionMT5IdentityHMACKeyFile) {
+func validateMT5IdentityKey(c Config) error {
+	identityKeyFile := strings.TrimSpace(c.ExecutionMT5IdentityHMACKeyFile)
+	if identityKeyFile != "" && !filepath.IsAbs(identityKeyFile) {
 		return fmt.Errorf("EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE must be an absolute path")
 	}
 	return nil

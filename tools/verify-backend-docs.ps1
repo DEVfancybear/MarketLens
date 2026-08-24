@@ -112,7 +112,7 @@ $requiredArchitectureFacts = @(
     'Rust execution gateway',
     'common MT5 EA',
     'MT5 Windows worker',
-    'Vault KV v2',
+    'Windows Credential Manager',
     '127.0.0.1:8790',
     '127.0.0.1:8791',
     'localhost:8765'
@@ -129,6 +129,7 @@ $forbiddenActivePatterns = [ordered]@{
     'removed MT5 verifier variables' = '(?i)\bMT5_VERIFY_[A-Z0-9_]+'
     'removed frontend bridge variable' = '(?i)\bNEXT_PUBLIC_MT5_BRIDGE_URL\b'
     'obsolete planned Phase 13 statement' = '(?i)Phase 13 resources remain planned'
+    'removed Vault runtime dependency' = '(?i)\b(?:MT5_VAULT_[A-Z0-9_]+|internal[/\\]mt5vault|Vault KV v2)\b'
 }
 foreach ($entry in $forbiddenActivePatterns.GetEnumerator()) {
     foreach ($path in Get-ChildItem -LiteralPath $backendDocs -Filter '*.md' -File) {

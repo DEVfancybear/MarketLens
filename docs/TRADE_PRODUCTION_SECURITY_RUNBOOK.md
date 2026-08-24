@@ -32,10 +32,12 @@ The selected managed deployment uses one bounded worker on the same
 operator-controlled Windows host. Follow
 [`MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md`](MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md).
 
-- Configure `MT5_VAULT_ADDR`, `MT5_VAULT_API_TOKEN_FILE`, and
-  `EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE` with protected absolute paths. Secret
-  file contents must be independent and must never enter Git, `.env`, command
-  arguments, logs, or evidence.
+- Configure `EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE` as a protected absolute path.
+  Its contents must be independent and must never enter Git, `.env`, command
+  arguments, logs, or evidence. Broker credentials are not environment settings.
+- Run Go under one stable, dedicated Windows identity with a loaded credential
+  set. Windows Credential Manager is identity/host-bound; startup must disable
+  the managed capability if its exact synthetic round-trip and cleanup fail.
 - The canonical backend runner exports only the identity-key file path to Rust.
   It validates that the file is absolute, present, non-linked, and bounded in
   size before starting services.
@@ -45,6 +47,10 @@ operator-controlled Windows host. Follow
 - Worker and credential service URLs may use HTTPS. Plain HTTP is accepted only
   for exact loopback IP addresses; hostname aliases and remote plain HTTP fail
   closed.
+- Code running as the Go API identity can read that identity's generic
+  credentials. Keep the identity least-privileged, pin host ACL/Application
+  Control, and treat loss of the host/profile as reconnect recovery rather than
+  adding a plaintext export or backup path.
 - Managed readiness requires a current worker lease, exact terminal identity,
   adapter synchronization, EA 1.26 session, and a successful EA poll. Partial
   readiness cannot route an order.

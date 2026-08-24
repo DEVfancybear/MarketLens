@@ -29,7 +29,7 @@ accounts share code, but live activation remains a separate production gate.
 ### Revision 15 bare-metal refresh — 23 August 2026
 
 - Authenticated Go connect/reconnect keeps owner identity server-derived and moves broker
-  credentials only through Vault-backed one-time grants.
+  credentials only through Windows Credential Manager-backed one-time grants.
 - The Rust worker supports the `bare_metal` substrate, bounded preattested slots, exact-PID
   terminal lifecycle, redirected-stdin login, named-pipe EA bootstrap, generation fencing,
   restart adoption/cleanup, and the existing durable EA execution engine.
@@ -39,7 +39,7 @@ accounts share code, but live activation remains a separate production gate.
 - CI/source builds now produce both Rust production binaries. Artifact deploy verifies and stages
   `mt5-vm-agent.exe`; worker installation/start remains a separate explicit action and is not added
   to `run-backend-production.ps1`.
-- No production migration, worker install, backend restart, Vault mutation, broker credential, or
+- No production migration, worker install, backend restart, credential-store mutation, broker credential, or
   demo/live order was used for the local implementation gate. R15-9 remains explicitly unverified.
 
 ### Local exit-gate refresh — 21 August 2026
@@ -62,7 +62,7 @@ accounts share code, but live activation remains a separate production gate.
   management service/module, no base VHDX or virtual switch was supplied, and guest provision,
   image self-test, worker health, and private registration boundaries intentionally fail closed.
 - The release `mt5-vm-agent.exe` remains unsigned, independent FTMO/retail observations are not
-  complete, and the full authenticated API/browser plus disposable Vault lifecycle remains open.
+  complete, and the full authenticated API/browser credential lifecycle remains open.
 - Therefore the local credential/IPC discriminator is closed, but the signed-agent, independent
   comparison, cross-fault/resource, VM publication, V6, and V7 gates remain open; Phase 5 is **not
   authorized**. See `MT5_VM_LOCAL_IMAGE_AUTOMATION.md` and
@@ -167,7 +167,7 @@ flowchart LR
     T1 --> B1["FTMO server"]
     T2 --> B2["Exness server"]
     T3 --> B3["Other MT5 broker"]
-    A1 --> V["Credential vault"]
+    A1 --> V["Windows credential store"]
     A2 --> V
 ```
 
@@ -183,7 +183,7 @@ flowchart LR
 | Python adapter | Single-threaded translation to the official `MetaTrader5` package |
 | MT5 terminal | Authenticated broker session and native execution result |
 | PostgreSQL | Durable non-secret state, leases, commands, outcomes and projections |
-| Vault/KMS | Broker credential encryption, access audit, rotation and deletion |
+| Windows Credential Manager | Host/identity-bound broker credential custody, rotation, and deletion |
 
 Neither the worker nor MT5 decides MarketLens ownership, trade authorization,
 prop-risk policy, copy allocation, or whether a durable command may be retried.
@@ -320,7 +320,7 @@ binary versions.
 3. Agent validates that the resolved path stays under that root and contains no
    reparse point before copy/cleanup operations.
 4. Agent creates a terminal instance from the approved base image.
-5. Vault releases the credential only to the authorized account runtime.
+5. Go releases the exact Windows credential record only after the authorized one-time grant.
 6. Python initializes the exact terminal path and calls `mt5.login` in memory.
 7. Adapter reads back `account_info` and terminal state.
 8. Requested login/server, observed mode, and trading permission are verified.
@@ -332,7 +332,7 @@ binary versions.
 
 Disconnect stops command delivery, drains the adapter, shuts down MT5, releases
 the lease, and retains the durable MarketLens ledger. Removal additionally
-deletes the vault secret and queues the isolated runtime directory for a
+deletes the exact credential record and queues the isolated runtime directory for a
 validated, non-link-following cleanup. A failed cleanup is quarantined for an
 operator; it is never retried with a broader path.
 
@@ -341,7 +341,7 @@ operator; it is never retried with a broader path.
 | Mode | Behavior |
 | --- | --- |
 | `session` | Credential exists only during provisioning/runtime; user must re-enter after unrecoverable host loss |
-| `managed` | Vault/KMS stores encrypted credential material for unattended restart and migration |
+| `managed` | Windows Credential Manager stores credential material for unattended restart on the same host and API identity |
 
 Phase 0 uses a same-user Windows DPAPI file outside Git only for disposable demo
 validation. Production managed mode requires:
@@ -427,7 +427,7 @@ Connect input:
 ```
 
 The response contains only a local account ID, connection status and revision.
-It never returns a worker ID, terminal path, vault reference, raw login,
+It never returns a worker ID, terminal path, credential reference, raw login,
 password, internal address, or native MT5 response.
 
 Existing account, order, lifecycle, copier, risk and audit APIs remain the
@@ -463,7 +463,7 @@ starting another terminal.
 | VM lost | Reassign managed accounts; session accounts become `credentials_required` |
 | Backend/event bus unavailable | Worker buffers only bounded non-command observations; mutations remain durable upstream |
 | Lost `order_send` response | Mark `outcome_unknown`; reconcile tickets/deals/positions before resolution |
-| Vault unavailable | No new runtime/restart; healthy existing sessions may continue under policy |
+| Windows credential set unavailable | Managed capability is disabled; no empty/default credential is returned |
 
 Recovery uses jittered backoff and circuit breakers per broker server. A restart
 storm must not launch many terminals or authentication attempts simultaneously.
@@ -480,12 +480,12 @@ unknown outcome count, snapshot freshness, event lag
 ```
 
 Logs are structured and redacted before emission. Never label metrics with raw
-login, password, order comment, customer name, vault reference, or unbounded
+login, password, order comment, customer name, credential reference, or unbounded
 broker payload. Every command transition and operator action enters the durable
 audit ledger.
 
 Runbooks must cover image rollout, worker drain, stuck terminal, account
-reassignment, vault outage, broker outage, unknown outcome, emergency execution
+reassignment, credential-store outage, broker outage, unknown outcome, emergency execution
 disable, and credential deletion.
 
 ### 13.1 Security and performance release gates
@@ -496,7 +496,7 @@ secret handling, auditability, or fail-closed behavior.
 
 Mandatory security gates for every phase:
 
-- no password, token, raw login, or vault reference in CLI arguments,
+- no password, token, raw login, or credential reference in CLI arguments,
   environment variables, URLs, logs, metrics, traces, crash dumps, or fixtures;
 - one restricted Windows process tree and data directory per account, with
   reparse-point checks and ACL verification before start and cleanup;
@@ -597,19 +597,19 @@ attempts. Signed-agent and live broker gates remain open. See
 Exit: stale agents cannot act after reassignment and all control-plane state
 survives backend restart.
 
-### Phase 3 — vault and authenticated connection API
+### Phase 3 — Windows credential store and authenticated connection API
 
-Implement session/managed credential modes, vault grants, account connection
+Implement session/managed credential modes, one-time grants, account connection
 state, same-origin public routes, owner scoping, rate limits, audit and UI.
 
-Current state (2026-08-13): repository implementation and tests are complete
-behind a backend capability that remains disabled unless the Vault address and
-token-file settings are both present. Migration `0039` stores only opaque secret
-references and one-time grant hashes. Go owns Vault I/O and authenticated public
+Current state (2026-08-24): repository implementation uses a local Windows
+Credential Manager adapter and advertises the backend capability only after the stable API identity
+passes an exact write/read/delete/absence probe. Migration `0039` stores only opaque secret
+references and one-time grant hashes. Go owns credential I/O and authenticated public
 routes; Rust owns revisions, lifecycle state, owner-scoped persistence, audit and
 worker/session/lease/command-bound grant consumption. The browser has no managed
 connector feature env and includes bilingual connect/reconnect/rotate/disconnect/
-remove UI. The disposable Vault KV lifecycle passes; the authenticated public
+remove UI. The disposable Windows credential lifecycle passes; the authenticated public
 API/browser lifecycle exercise remains open, as do the Phase 1 signed-agent and
 live broker gates. See `MT5_WINDOWS_VM_CONNECTOR_PHASE3.md` and the sanitized
 evidence record.
@@ -643,7 +643,7 @@ disconnect, reconnect and cold-cache history cases.
 
 Current authorization (2026-08-21): **BLOCKED — do not implement or run this phase.** V3 lacks a
 legitimately signed normal-path agent; V4/V7 lack usable two-account broker synchronization and
-independent views; V6 lacks the full authenticated API/browser Vault lifecycle.
+independent views; V6 lacks the full authenticated API/browser credential lifecycle.
 
 Map existing durable commands to `order_check`/`order_send`; implement market,
 pending, modify, cancel, SL/TP, partial close and full close. Preserve current
@@ -725,5 +725,5 @@ The Phase 0 harness contains no order operation and cannot place a trade.
 | Target topology | Multiple isolated terminal/adapter pairs per Windows VM |
 | VM worker language | Rust; Python is a per-terminal MT5 API shim only |
 | Initial probe | Read-only and credential-safe |
-| Production credential store | Vault/KMS; DPAPI is Phase 0 local validation only |
+| Production credential store | Windows Credential Manager under a stable dedicated Go API identity |
 | Live trading | Disabled until Phase 8/9 gates pass |
