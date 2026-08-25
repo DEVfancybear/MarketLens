@@ -20,12 +20,18 @@
 .PARAMETER KeepRunning
   Leave the services running after the probes so you can poke at them by hand.
 
+.PARAMETER RunFromSource
+  Start the Go API and Rust execution gateway through their installed
+  toolchains in locked, offline mode. The default remains the compiled
+  backend\bin artifact path.
+
 .EXAMPLE
   .\tools\verify-backend-local.ps1
 #>
 [CmdletBinding()]
 param(
     [switch]$KeepRunning,
+    [switch]$RunFromSource,
     [int]$ApiPort = 8080,
     [int]$ReadyTimeoutSeconds = 60
 )
@@ -36,18 +42,38 @@ Set-StrictMode -Version Latest
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $backendDir = Join-Path $repoRoot "backend"
 $binDir = Join-Path $backendDir "bin"
+$executionDir = Join-Path $backendDir "execution"
 $backendEnv = Join-Path $backendDir ".env"
 $logDir = Join-Path $repoRoot ".runtime-logs"
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$executionMode = if ($RunFromSource) { "current source (offline)" } else { "compiled artifacts" }
 
 Import-Module (Join-Path $PSScriptRoot "lib\MarketLensBackend.psm1") -Force
 
 if (-not (Test-Path -LiteralPath $backendEnv -PathType Leaf)) {
     throw "Missing backend\.env. Create it from backend\.env.example first."
 }
-foreach ($name in @("api.exe", "execution-gateway.exe")) {
-    if (-not (Test-Path -LiteralPath (Join-Path $binDir $name) -PathType Leaf)) {
-        throw "Missing backend\bin\$name. Deploy an artifact or build first."
+$cargoExe = $null
+$goExe = $null
+if ($RunFromSource) {
+    foreach ($path in @(
+        (Join-Path $executionDir "Cargo.toml"),
+        (Join-Path $executionDir "Cargo.lock"),
+        (Join-Path $backendDir "cmd\api\main.go")
+    )) {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "Missing current-source input: $path"
+        }
+    }
+    $cargoCommand = Get-Command cargo.exe -ErrorAction Stop
+    $goCommand = Get-Command go.exe -ErrorAction Stop
+    $cargoExe = $cargoCommand.Source
+    $goExe = $goCommand.Source
+} else {
+    foreach ($name in @("api.exe", "execution-gateway.exe")) {
+        if (-not (Test-Path -LiteralPath (Join-Path $binDir $name) -PathType Leaf)) {
+            throw "Missing backend\bin\$name. Deploy an artifact or build first."
+        }
     }
 }
 New-Item -ItemType Directory -Force $logDir | Out-Null
@@ -76,6 +102,12 @@ $env:EXECUTION_ADMIN_BIND = $adminBind
 $env:EXECUTION_EA_URL = "http://$gatewayBind"
 $env:EXECUTION_ADMIN_URL = $adminUrl
 $env:EXECUTION_DATABASE_MAX_CONNECTIONS = $maxConnections
+if ($RunFromSource) {
+    $env:CARGO_NET_OFFLINE = "true"
+    $env:CARGO_TARGET_DIR = Join-Path $executionDir "target\local-backend-postgresql-recovery"
+    $env:GOPROXY = "off"
+    $env:GOSUMDB = "off"
+}
 
 $gatewayPort = Get-BindPort -Bind $gatewayBind -Name "EXECUTION_GATEWAY_BIND"
 $adminPort = Get-BindPort -Bind $adminBind -Name "EXECUTION_ADMIN_BIND"
@@ -86,22 +118,44 @@ function Start-Service2 {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
         [Parameter(Mandatory = $true)][string]$Exe,
-        [Parameter(Mandatory = $true)][string]$WorkingDirectory
+        [Parameter(Mandatory = $true)][string]$WorkingDirectory,
+        [string]$Arguments,
+        [switch]$KillProcessTree
     )
     $out = Join-Path $logDir "$Name-$stamp.out.log"
     $err = Join-Path $logDir "$Name-$stamp.err.log"
     Write-Host "  starting $Name..." -ForegroundColor DarkCyan
-    $process = Start-Process -FilePath $Exe -WorkingDirectory $WorkingDirectory `
-        -RedirectStandardOutput $out -RedirectStandardError $err `
-        -WindowStyle Hidden -PassThru
-    $script:started += [pscustomobject]@{ Name = $Name; Process = $process; OutLog = $out; ErrLog = $err }
+    $startParams = @{
+        FilePath = $Exe
+        WorkingDirectory = $WorkingDirectory
+        RedirectStandardOutput = $out
+        RedirectStandardError = $err
+        WindowStyle = "Hidden"
+        PassThru = $true
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Arguments)) {
+        $startParams.ArgumentList = $Arguments
+    }
+    $process = Start-Process @startParams
+    $script:started += [pscustomobject]@{
+        Name = $Name
+        Process = $process
+        OutLog = $out
+        ErrLog = $err
+        KillProcessTree = [bool]$KillProcessTree
+    }
     return $process
 }
 
 function Stop-StartedServices {
-    foreach ($entry in $script:started) {
+    for ($index = $script:started.Count - 1; $index -ge 0; $index--) {
+        $entry = $script:started[$index]
         if (-not $entry.Process.HasExited) {
-            Stop-Process -Id $entry.Process.Id -Force -ErrorAction SilentlyContinue
+            if ($entry.KillProcessTree) {
+                $null = & taskkill.exe /PID $entry.Process.Id /T /F 2>&1
+            } else {
+                Stop-Process -Id $entry.Process.Id -Force -ErrorAction SilentlyContinue
+            }
             Wait-Process -Id $entry.Process.Id -Timeout 10 -ErrorAction SilentlyContinue
         }
     }
@@ -179,12 +233,27 @@ function Invoke-Probe {
 
 try {
     Write-Host ""
-    Write-Host "Starting compiled backend services" -ForegroundColor Cyan
-    $gateway = Start-Service2 -Name "execution-gateway" -Exe (Join-Path $binDir "execution-gateway.exe") -WorkingDirectory $backendDir
+    Write-Host "Starting backend services" -ForegroundColor Cyan
+    if ($RunFromSource) {
+        Write-Host "  execution mode: current source (offline)" -ForegroundColor Yellow
+        $gateway = Start-Service2 -Name "execution-gateway" -Exe $cargoExe `
+            -Arguments "run --locked --offline --release -p execution-gateway" `
+            -WorkingDirectory $executionDir -KillProcessTree
+    } else {
+        Write-Host "  execution mode: compiled artifacts" -ForegroundColor Yellow
+        $gateway = Start-Service2 -Name "execution-gateway" `
+            -Exe (Join-Path $binDir "execution-gateway.exe") -WorkingDirectory $backendDir
+    }
     $gatewayEntry = $script:started[-1]
     Wait-ForHttp -Uri "$($adminUrl.TrimEnd('/'))/health" -Process $gateway -LogPath $gatewayEntry.ErrLog -TimeoutSeconds $ReadyTimeoutSeconds
 
-    $api = Start-Service2 -Name "backend-api" -Exe (Join-Path $binDir "api.exe") -WorkingDirectory $backendDir
+    if ($RunFromSource) {
+        $api = Start-Service2 -Name "backend-api" -Exe $goExe `
+            -Arguments "run ./cmd/api" -WorkingDirectory $backendDir -KillProcessTree
+    } else {
+        $api = Start-Service2 -Name "backend-api" `
+            -Exe (Join-Path $binDir "api.exe") -WorkingDirectory $backendDir
+    }
     $apiEntry = $script:started[-1]
     Wait-ForHttp -Uri "http://127.0.0.1:$ApiPort/health" -Process $api -LogPath $apiEntry.ErrLog -TimeoutSeconds $ReadyTimeoutSeconds
 
@@ -252,6 +321,7 @@ try {
     }
 
     Write-Host "All $($probeResults.Count) API probes passed." -ForegroundColor Green
+    Write-Host "  execution mode    : $executionMode"
     Write-Host "  mode              : $mode"
     Write-Host "  execution-gateway PID $($gateway.Id)  ($gatewayBind EA / $adminBind admin)"
     Write-Host "  backend-api       PID $($api.Id)  (http://127.0.0.1:$ApiPort)"
@@ -266,7 +336,11 @@ try {
         Write-Host ""
         Write-Host "Leaving services running (-KeepRunning). Stop them with:" -ForegroundColor Yellow
         foreach ($entry in $script:started) {
-            Write-Host "  Stop-Process -Id $($entry.Process.Id)   # $($entry.Name)"
+            if ($entry.KillProcessTree) {
+                Write-Host "  taskkill.exe /PID $($entry.Process.Id) /T /F   # $($entry.Name)"
+            } else {
+                Write-Host "  Stop-Process -Id $($entry.Process.Id)   # $($entry.Name)"
+            }
         }
     } else {
         Stop-StartedServices
