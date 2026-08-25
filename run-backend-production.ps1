@@ -18,6 +18,7 @@ $apiPath = Join-Path $backendDir "bin\api.exe"
 $stagedApiPath = Join-Path $backendDir "bin\api.next.exe"
 $gatewayPath = Join-Path $backendDir "bin\execution-gateway.exe"
 $stagedGatewayPath = Join-Path $backendDir "bin\execution-gateway.next.exe"
+$managedWorkerAgentPath = Join-Path $backendDir "execution\target\release\mt5-vm-agent.exe"
 $backendEnv = Join-Path $backendDir ".env"
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $streamOut = Join-Path $runtimeLogs "mt5-stream-$stamp.out.log"
@@ -47,6 +48,45 @@ function Get-BackendEnvValue {
     }
   }
   return ""
+}
+
+function Resolve-ManagedWorkerReceiptFile {
+  param(
+    [AllowEmptyString()][string]$ReceiptPath,
+    [Parameter(Mandatory = $true)][bool]$ArtifactsBuilt
+  )
+
+  $installInstruction =
+    "Run the explicit managed-worker installer documented in docs\MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md, " +
+    "set EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE to its returned receipt_path, then rerun .\run-backend-production.ps1."
+  $receiptMissing = [string]::IsNullOrWhiteSpace($ReceiptPath)
+  if (-not $receiptMissing -and -not [IO.Path]::IsPathRooted($ReceiptPath)) {
+    throw "EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE must be an absolute path."
+  }
+
+  if (-not $receiptMissing) {
+    try {
+      $ReceiptPath = [IO.Path]::GetFullPath($ReceiptPath)
+      $receiptItem = Get-Item -LiteralPath $ReceiptPath -Force -ErrorAction Stop
+    } catch {
+      $receiptMissing = $true
+    }
+  }
+
+  if ($receiptMissing) {
+    if ($ArtifactsBuilt) {
+      throw "MANAGED_MT5_WORKER_INSTALL_REQUIRED_AFTER_BUILD: Backend artifacts were built and verified. $installInstruction"
+    }
+    throw "MANAGED_MT5_WORKER_RECEIPT_REQUIRED: A valid managed-worker receipt is required before runtime startup. $installInstruction"
+  }
+
+  if ($receiptItem -isnot [IO.FileInfo] -or
+      ($receiptItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+      $receiptItem.Length -lt 1 -or
+      $receiptItem.Length -gt 65536) {
+    throw "EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE must name a small non-link regular file."
+  }
+  return $ReceiptPath
 }
 
 function Stop-OwnedListener {
@@ -182,25 +222,6 @@ if (($executionMt5IdentityHmacKeyItem.Attributes -band [IO.FileAttributes]::Repa
     $executionMt5IdentityHmacKeyItem.Length -gt 4096) {
   throw "EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE must name a small non-link secret file."
 }
-if ([string]::IsNullOrWhiteSpace($executionMt5ManagedWorkerReceiptFile) -or
-    -not [IO.Path]::IsPathRooted($executionMt5ManagedWorkerReceiptFile)) {
-  throw "EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE must be an absolute path."
-}
-$executionMt5ManagedWorkerReceiptFile = [IO.Path]::GetFullPath($executionMt5ManagedWorkerReceiptFile)
-try {
-  $executionMt5ManagedWorkerReceiptItem = Get-Item `
-    -LiteralPath $executionMt5ManagedWorkerReceiptFile `
-    -Force `
-    -ErrorAction Stop
-} catch {
-  throw "EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE must name a readable regular file."
-}
-if ($executionMt5ManagedWorkerReceiptItem -isnot [IO.FileInfo] -or
-    ($executionMt5ManagedWorkerReceiptItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
-    $executionMt5ManagedWorkerReceiptItem.Length -lt 1 -or
-    $executionMt5ManagedWorkerReceiptItem.Length -gt 65536) {
-  throw "EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE must name a small non-link regular file."
-}
 $executionGatewayBind = Get-BackendEnvValue "EXECUTION_GATEWAY_BIND"
 if ([string]::IsNullOrWhiteSpace($executionGatewayBind)) {
   $executionGatewayBind = "127.0.0.1:8790"
@@ -235,7 +256,6 @@ $env:EXECUTION_ADMIN_BIND = $executionAdminBind
 $env:EXECUTION_EA_URL = "http://$executionGatewayBind"
 $env:EXECUTION_ADMIN_URL = $executionAdminUrl
 $env:EXECUTION_DATABASE_MAX_CONNECTIONS = $executionDatabaseConnections
-$env:EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE = $executionMt5ManagedWorkerReceiptFile
 
 if (-not $SkipPull) {
   Push-Location $repoRoot
@@ -256,6 +276,7 @@ if (-not $SkipPull) {
 }
 
 $replaceArtifacts = $false
+$managedWorkerArtifactsBuilt = $false
 if (-not $SkipBuild) {
   Write-Host "Building staged Go and Rust backend artifacts..." -ForegroundColor Cyan
   & $buildScript -BackendOnly -StageApi
@@ -265,11 +286,20 @@ if (-not $SkipBuild) {
   if (-not (Test-Path -LiteralPath $stagedGatewayPath -PathType Leaf)) {
     throw "Backend build did not produce backend\bin\execution-gateway.next.exe."
   }
+  if (-not (Test-Path -LiteralPath $managedWorkerAgentPath -PathType Leaf)) {
+    throw "Backend build did not produce backend\execution\target\release\mt5-vm-agent.exe."
+  }
   $replaceArtifacts = $true
+  $managedWorkerArtifactsBuilt = $true
 } elseif (-not (Test-Path -LiteralPath $apiPath -PathType Leaf) -or
         -not (Test-Path -LiteralPath $gatewayPath -PathType Leaf)) {
   throw "Production Go/Rust artifacts do not exist; rerun without -SkipBuild."
 }
+
+$executionMt5ManagedWorkerReceiptFile = Resolve-ManagedWorkerReceiptFile `
+  -ReceiptPath $executionMt5ManagedWorkerReceiptFile `
+  -ArtifactsBuilt $managedWorkerArtifactsBuilt
+$env:EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE = $executionMt5ManagedWorkerReceiptFile
 
 if (-not (Test-Path -LiteralPath $managedPython -PathType Leaf)) {
   throw "Managed MT5 market-data Python is missing; rerun without -SkipBuild."

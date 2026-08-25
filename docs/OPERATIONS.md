@@ -18,6 +18,12 @@ Security hardening and the production release checklist are documented in
 - The worker is installed separately. Use
   [`MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md`](MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md)
   for the dry run, exact hash/ACL install, receipt, Scheduled Task, and health contract.
+- On the first source installation, the canonical runner builds all three backend artifacts and
+  deliberately exits nonzero with `MANAGED_MT5_WORKER_INSTALL_REQUIRED_AFTER_BUILD` before
+  migrations or runtime startup. Run the explicit installer, set its returned `receipt_path` in
+  `EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE`, then rerun `run-backend-production.ps1`.
+- The documented artifact/deploy path does not build on the host. Without a valid receipt its
+  delegated runner exits with `MANAGED_MT5_WORKER_RECEIPT_REQUIRED` before migrations or restart.
 - Normal production startup validates `EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE`, leaves an
   already healthy installed worker untouched, or starts its exact attested Scheduled Task once and
   waits for a fresh matching registry heartbeat. It never installs a worker or launches the agent
@@ -158,6 +164,18 @@ Run normal production through `run-backend-production.ps1`. Install the managed 
 `EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE`. The backend runner deliberately does not own worker
 installation or direct agent/terminal startup; it only ensures the exact previously installed,
 attested Scheduled Task and matching Rust registry heartbeat are ready.
+
+On a first source installation, the initial runner pass is build-only by outcome: after verifying
+the API, gateway, and managed-worker artifacts it stops with
+`MANAGED_MT5_WORKER_INSTALL_REQUIRED_AFTER_BUILD`. Install the worker explicitly, put the returned
+`receipt_path` in the configured variable, then rerun the canonical runner. This intentional
+nonzero stop occurs before Python import, migrations, terminal startup, service replacement, or any
+production-ready banner.
+
+For a resource-bounded source-contract check that does not build or start production services, run
+`.\tools\verify-production-managed-worker-bootstrap.ps1`. Its report is intentionally limited to
+PowerShell parsing, focused readiness contracts, the receipt-ordering mutant, and static audits;
+it does not replace the production-host build or activation gates.
 
 ## Environment Variables
 

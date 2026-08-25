@@ -77,8 +77,26 @@ Deploy a CI-built artifact only through:
 Both production build paths supply `execution-gateway.exe` and `mt5-vm-agent.exe`. The deploy path
 verifies `SHA256SUMS`; it does not install the worker. A source build leaves the worker at
 `backend\execution\target\release\mt5-vm-agent.exe`; an artifact deploy stages it at
-`backend\bin\mt5-vm-agent.exe`. Before the first normal production start, complete the explicit
-worker installation below and set its returned receipt path in `backend\.env`.
+`backend\bin\mt5-vm-agent.exe`.
+
+For the first source installation, use this two-pass bootstrap sequence:
+
+1. Configure the other required protected settings, leave the absent receipt unset, and run
+   `.\run-backend-production.ps1`. It pulls and builds the API, gateway, and managed worker, verifies
+   the staged artifacts, then exits nonzero with
+   `MANAGED_MT5_WORKER_INSTALL_REQUIRED_AFTER_BUILD`. It does not migrate, stop services, or start
+   the Python bridge, terminal, gateway, worker, or API on that path.
+2. Complete the explicit worker installation below using the newly built
+   `backend\execution\target\release\mt5-vm-agent.exe`. The runner never invokes this installer.
+3. Put the installer's returned `receipt_path` in the configured environment variable, then rerun
+   `.\run-backend-production.ps1` with
+   `EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE` set to that absolute path.
+4. The second run validates the receipt before migrations or runtime replacement and continues
+   through the existing worker and public readiness gates.
+
+An artifact deploy also remains fail-closed: if its delegated `-SkipBuild` runner has no valid
+receipt, it exits with `MANAGED_MT5_WORKER_RECEIPT_REQUIRED` before migrations or runtime startup
+and does not claim that it built artifacts.
 
 ## Prepare the slot descriptor
 

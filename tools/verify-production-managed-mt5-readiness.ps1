@@ -63,6 +63,31 @@ function Assert-ReadinessEqual {
 
 function Assert-CanonicalRunnerContract {
   param([Parameter(Mandatory = $true)][string]$Source)
+  $build = $Source.IndexOf('& $buildScript -BackendOnly -StageApi', [StringComparison]::Ordinal)
+  $stagedGateway = $Source.IndexOf(
+    'Backend build did not produce backend\bin\execution-gateway.next.exe.',
+    [StringComparison]::Ordinal
+  )
+  $receiptGate = $Source.IndexOf(
+    '$executionMt5ManagedWorkerReceiptFile = Resolve-ManagedWorkerReceiptFile',
+    [StringComparison]::Ordinal
+  )
+  $receiptExport = $Source.IndexOf(
+    '$env:EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE = $executionMt5ManagedWorkerReceiptFile',
+    [StringComparison]::Ordinal
+  )
+  $managedPython = $Source.IndexOf(
+    'Managed MT5 market-data Python is missing',
+    [StringComparison]::Ordinal
+  )
+  $migrations = $Source.IndexOf(
+    'Applying forward-only database migrations',
+    [StringComparison]::Ordinal
+  )
+  $marketDataTerminal = $Source.IndexOf(
+    'Starting the configured MetaTrader 5 market-data terminal',
+    [StringComparison]::Ordinal
+  )
   $gateway = $Source.IndexOf('Starting production Rust execution gateway', [StringComparison]::Ordinal)
   $worker = $Source.IndexOf('Ensure-MT5BareMetalWorkerReady.ps1', [StringComparison]::Ordinal)
   $api = $Source.IndexOf('Starting production Go API', [StringComparison]::Ordinal)
@@ -72,8 +97,42 @@ function Assert-CanonicalRunnerContract {
   Assert-ReadinessTrue `
     ($gateway -ge 0 -and $worker -gt $gateway -and $api -gt $worker -and $ready -gt $api) `
     'runner readiness ordering invalid'
+  Assert-ReadinessTrue `
+    ($build -ge 0 -and $stagedGateway -gt $build -and $receiptGate -gt $stagedGateway -and
+      $receiptExport -gt $receiptGate -and $managedPython -gt $receiptExport -and
+      $migrations -gt $managedPython -and $marketDataTerminal -gt $migrations -and
+      $gateway -gt $marketDataTerminal) `
+    'runner build/receipt/runtime ordering invalid'
+  Assert-ReadinessTrue `
+    ($Source.Contains('MANAGED_MT5_WORKER_INSTALL_REQUIRED_AFTER_BUILD') -and
+      $Source.Contains('MANAGED_MT5_WORKER_RECEIPT_REQUIRED')) `
+    'runner bootstrap receipt failure codes missing'
+  Assert-ReadinessTrue (-not $Source.Contains('Install-MT5BareMetalWorker.ps1')) `
+    'runner invokes the managed worker installer'
+  Assert-ReadinessTrue (-not $Source.Contains('managed-worker-installation.json')) `
+    'runner synthesizes a managed worker receipt'
   Assert-ReadinessTrue (-not $Source.Contains('Start-Process -FilePath $agentPath')) `
     'runner launches managed agent directly'
+}
+
+function Get-ManagedWorkerReceiptResolverSource {
+  param([Parameter(Mandatory = $true)][string]$Source)
+
+  $tokens = $null
+  $errors = $null
+  $ast = [Management.Automation.Language.Parser]::ParseInput(
+    $Source,
+    [ref]$tokens,
+    [ref]$errors
+  )
+  Assert-ReadinessEqual $errors.Count 0 'runner source could not be parsed for receipt fixture'
+  $definition = $ast.Find({
+      param($node)
+      $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -ceq 'Resolve-ManagedWorkerReceiptFile'
+    }, $true)
+  Assert-ReadinessTrue ($null -ne $definition) 'runner receipt resolver function missing'
+  return $definition.Extent.Text
 }
 
 function Invoke-ReadinessTest {
@@ -599,6 +658,81 @@ Invoke-ReadinessTest 'canonical runner gates API and final banner on managed wor
   Assert-CanonicalRunnerContract -Source $source
 }
 
+Invoke-ReadinessTest 'canonical runner receipt resolver is strict and build-mode aware' {
+  $source = Get-Content -LiteralPath (Join-Path $repoRoot 'run-backend-production.ps1') -Raw
+  $resolverSource = Get-ManagedWorkerReceiptResolverSource -Source $source
+  . ([scriptblock]::Create($resolverSource))
+
+  $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("marketlens-receipt-resolver-" + [guid]::NewGuid())
+  New-Item -ItemType Directory -Path $tempRoot | Out-Null
+  try {
+    $validReceipt = Join-Path $tempRoot 'managed-worker-installation.json'
+    [IO.File]::WriteAllText($validReceipt, '{}', $utf8)
+    $resolved = Resolve-ManagedWorkerReceiptFile -ReceiptPath $validReceipt -ArtifactsBuilt $true
+    Assert-ReadinessEqual $resolved ([IO.Path]::GetFullPath($validReceipt)) `
+      'valid receipt was not normalized'
+
+    foreach ($case in @(
+        [pscustomobject]@{
+          name = 'missing after build'
+          path = Join-Path $tempRoot 'missing-after-build.json'
+          built = $true
+          expected = '^MANAGED_MT5_WORKER_INSTALL_REQUIRED_AFTER_BUILD:'
+          forbidden = @('missing-after-build.json')
+        },
+        [pscustomobject]@{
+          name = 'missing in artifact mode'
+          path = Join-Path $tempRoot 'missing-artifact-mode.json'
+          built = $false
+          expected = '^MANAGED_MT5_WORKER_RECEIPT_REQUIRED:'
+          forbidden = @('missing-artifact-mode.json', 'built and verified')
+        },
+        [pscustomobject]@{
+          name = 'relative path'
+          path = 'relative-receipt.json'
+          built = $true
+          expected = '^EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE must be an absolute path\.$'
+          forbidden = @()
+        }
+      )) {
+      $message = ''
+      try {
+        $null = Resolve-ManagedWorkerReceiptFile `
+          -ReceiptPath $case.path `
+          -ArtifactsBuilt $case.built
+      } catch {
+        $message = $_.Exception.Message
+      }
+      Assert-ReadinessTrue ($message -match $case.expected) `
+        "receipt case '$($case.name)' returned the wrong failure"
+      foreach ($forbidden in $case.forbidden) {
+        Assert-ReadinessTrue (-not $message.Contains($forbidden)) `
+          "receipt case '$($case.name)' leaked or misstated '$forbidden'"
+      }
+    }
+
+    $emptyReceipt = Join-Path $tempRoot 'empty.json'
+    [IO.File]::WriteAllBytes($emptyReceipt, [byte[]]@())
+    $largeReceipt = Join-Path $tempRoot 'large.json'
+    [IO.File]::WriteAllBytes($largeReceipt, (New-Object byte[] 65537))
+    foreach ($invalidReceipt in @($tempRoot, $emptyReceipt, $largeReceipt)) {
+      $message = ''
+      try {
+        $null = Resolve-ManagedWorkerReceiptFile -ReceiptPath $invalidReceipt -ArtifactsBuilt $true
+      } catch {
+        $message = $_.Exception.Message
+      }
+      Assert-ReadinessEqual $message `
+        'EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE must name a small non-link regular file.' `
+        'non-file, empty, or oversized receipt was not rejected'
+    }
+  } finally {
+    if (Test-Path -LiteralPath $tempRoot) {
+      Remove-Item -LiteralPath $tempRoot -Recurse -Force
+    }
+  }
+}
+
 Invoke-ReadinessTest 'operator configuration and docs describe the managed readiness contract' {
   $environment = Get-Content -LiteralPath (Join-Path $repoRoot 'backend\.env.example') -Raw
   $runbook = Get-Content -LiteralPath (Join-Path $repoRoot 'docs\MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md') -Raw
@@ -620,6 +754,14 @@ Invoke-ReadinessTest 'operator configuration and docs describe the managed readi
   Assert-ReadinessTrue `
     ($operations -match '(?i)validates.*receipt') `
     'operations guide does not document receipt validation'
+  foreach ($document in @($runbook, $operations)) {
+    Assert-ReadinessTrue `
+      ($document.Contains('MANAGED_MT5_WORKER_INSTALL_REQUIRED_AFTER_BUILD')) `
+      'operator documentation omits the first-build stop code'
+    Assert-ReadinessTrue `
+      ($document -match '(?i)receipt_path.*rerun|rerun.*receipt_path') `
+      'operator documentation omits the first-install rerun sequence'
+  }
 }
 
 if ($script:failures.Count -gt 0) {
@@ -1117,7 +1259,7 @@ Invoke-ReadinessNativeLayer -Name 'portable-fixture-execution' `
   -WorkingDirectory $repoRoot -TimeoutSeconds 60 `
   -RequiredPattern '"ready":true.*"task_started":false'
 
-Invoke-ReadinessInProcessLayer -Name 'mutation' -Command 'nine execution-proven scripted mutants' -Body {
+Invoke-ReadinessInProcessLayer -Name 'mutation' -Command 'ten execution-proven scripted mutants' -Body {
   $readinessArguments = @(
     '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-ReadinessTestsOnly'
   )
@@ -1169,6 +1311,12 @@ Invoke-ReadinessInProcessLayer -Name 'mutation' -Command 'nine execution-proven 
     -New "Start-Process -FilePath `$agentPath`r`nWrite-Host `"Starting production Go API...`" -ForegroundColor Cyan" `
     -TestFile $windowsPowerShell -TestArguments $readinessArguments `
     -TestWorkingDirectory $repoRoot -ExpectedFailurePattern 'READINESS_TESTS_FAILED='
+  Invoke-ReadinessMutant -Name 'receipt-gate-before-build' `
+    -RelativePath 'run-backend-production.ps1' `
+    -Old '$replaceArtifacts = $false' `
+    -New "`$executionMt5ManagedWorkerReceiptFile = Resolve-ManagedWorkerReceiptFile -ReceiptPath `$executionMt5ManagedWorkerReceiptFile -ArtifactsBuilt `$false`r`n`$replaceArtifacts = `$false" `
+    -TestFile $windowsPowerShell -TestArguments $readinessArguments `
+    -TestWorkingDirectory $repoRoot -ExpectedFailurePattern 'READINESS_TESTS_FAILED='
   Invoke-ReadinessMutant -Name 'production-store-fail-open' `
     -RelativePath 'backend/internal/execution/handler.go' `
     -Old 'required := capability.mt5ConnectorIsEnabled() || managedMT5RequiredInProduction()' `
@@ -1176,8 +1324,8 @@ Invoke-ReadinessInProcessLayer -Name 'mutation' -Command 'nine execution-proven 
     -TestFile 'go.exe' `
     -TestArguments @('test', '-count=1', './internal/execution', '-run', 'TestProductionManagedMT5') `
     -TestWorkingDirectory (Join-Path $repoRoot 'backend') -ExpectedFailurePattern 'FAIL'
-  if ($script:mutantsKilled -ne 9) { throw "mutation score mismatch: $script:mutantsKilled/9" }
-  'MUTATION_SCORE=9/9'
+  if ($script:mutantsKilled -ne 10) { throw "mutation score mismatch: $script:mutantsKilled/10" }
+  'MUTATION_SCORE=10/10'
 }
 
 $frontendRoot = Join-Path $repoRoot 'frontend'
@@ -1331,7 +1479,7 @@ $summary = [pscustomobject][ordered]@{
   readiness_tests = $script:passes
   property_cases = $script:propertyCases
   mutants_killed = $script:mutantsKilled
-  mutants_total = 9
+  mutants_total = 10
   failed_layers = @($failedLayers | ForEach-Object { $_.name })
   declared_unverified = @(
     'real production Scheduled Task, worker heartbeat, and terminal execution',
@@ -1348,6 +1496,6 @@ $summary = [pscustomobject][ordered]@{
 
 Write-Host "PRODUCTION_MANAGED_MT5_READINESS_STATUS=$($summary.status)"
 Write-Host "FAILED_LAYERS=$($failedLayers.Count)"
-Write-Host "READINESS_TESTS=$script:passes PROPERTY_CASES=$script:propertyCases MUTANTS=$script:mutantsKilled/9"
+Write-Host "READINESS_TESTS=$script:passes PROPERTY_CASES=$script:propertyCases MUTANTS=$script:mutantsKilled/10"
 Write-Host "SUMMARY=$summaryPath"
 if ($failedLayers.Count -gt 0) { exit 1 }
