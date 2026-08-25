@@ -119,7 +119,7 @@ func newHandlerWithCredentialStoreFactory(
 	if !ok {
 		return handler
 	}
-	required := capability.mt5ConnectorIsEnabled()
+	required := capability.mt5ConnectorIsEnabled() || managedMT5RequiredInProduction()
 	storeErr := handler.enableManagedMT5CredentialStore(capability, storeFactory)
 	if storeErr != nil {
 		if required {
@@ -134,6 +134,11 @@ func newHandlerWithCredentialStoreFactory(
 	}
 	log.Info().Msg("MT5 managed connector API enabled")
 	return handler
+}
+
+func managedMT5RequiredInProduction() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("APP_ENV")), "production") &&
+		strings.TrimSpace(os.Getenv("EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE")) != ""
 }
 
 func (handler *Handler) enableManagedMT5CredentialStore(

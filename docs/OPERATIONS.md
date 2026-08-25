@@ -15,10 +15,15 @@ Security hardening and the production release checklist are documented in
 - Deploy the CI-built backend artifact with `.\tools\deploy-backend.ps1`.
 - Both paths now provide `execution-gateway.exe` and `mt5-vm-agent.exe`; the
   artifact path verifies both through `SHA256SUMS`.
-- The worker is installed and started separately. Use
+- The worker is installed separately. Use
   [`MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md`](MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md)
-  for the dry run, exact hash/ACL install, Scheduled Task start, and health check.
-- Never add worker lifecycle to the canonical backend runner. Never use recovery
+  for the dry run, exact hash/ACL install, receipt, Scheduled Task, and health contract.
+- Normal production startup validates `EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE`, leaves an
+  already healthy installed worker untouched, or starts its exact attested Scheduled Task once and
+  waits for a fresh matching registry heartbeat. It never installs a worker or launches the agent
+  or an account terminal directly.
+- Never add worker installation, artifact provisioning, or per-account terminal lifecycle to the
+  canonical backend runner. Never use recovery
   switches for a normal source build, and never perform a production migration,
   worker install/start, or broker connection without the corresponding operator
   authorization.
@@ -92,8 +97,10 @@ On the Windows production host, **build backend production** and **run backend**
 .\run-backend-production.ps1
 ```
 
-It pulls, provisions the MT5 runtime, builds a staged backend binary, migrates, safely restarts
-ports `8765`/`8080`, and requires local plus public health checks. Use it when CI is unavailable,
+It pulls, provisions the MT5 runtime, builds a staged backend binary, migrates, safely restarts the
+Rust gateway, validates the previously installed managed-worker receipt and heartbeat, starts the
+attested Scheduled Task once only when needed, starts ports `8765`/`8080`, and requires local plus
+public health checks. Use it when CI is unavailable,
 for a local hotfix, or to provision the MT5 Python environment the artifact cannot ship. It needs
 Go and Rust on the host. Commands below are development or manual-recovery commands.
 
@@ -146,9 +153,11 @@ The managed path adds an explicitly installed bare-metal worker with bounded pre
 Windows Credential Manager-backed grants, redirected-stdin login, and exact-PID named-pipe EA bootstrap. Account
 connect never downloads or installs MT5/EA and never puts credentials in arguments or environment.
 
-Run normal production through `run-backend-production.ps1`. Install/start the managed worker only
-through `MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md`; the backend runner deliberately does not own worker
-installation or startup.
+Run normal production through `run-backend-production.ps1`. Install the managed worker only through
+`MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md`, then configure the returned
+`EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE`. The backend runner deliberately does not own worker
+installation or direct agent/terminal startup; it only ensures the exact previously installed,
+attested Scheduled Task and matching Rust registry heartbeat are ready.
 
 ## Environment Variables
 
@@ -167,7 +176,8 @@ to `http://localhost:8080` in development; set `NEXT_PUBLIC_API_BASE_URL` explic
 Use `backend/.env.example` and `backend/docs/CONFIGURATION.md` as the complete source-derived
 reference. Production must keep Rust and Python listeners on loopback, use independent admin and
 worker bootstrap secrets, provide the MT5 identity HMAC key through an absolute ACL-protected file,
-and run Go under a stable dedicated Windows identity.
+provide the absolute protected installed-worker receipt path through
+`EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE`, and run Go under a stable dedicated Windows identity.
 
 ## Deployment
 

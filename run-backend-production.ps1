@@ -153,6 +153,7 @@ $databaseUrl = Get-BackendEnvValue "DATABASE_URL"
 $executionAdminToken = Get-BackendEnvValue "EXECUTION_ADMIN_TOKEN"
 $executionMt5VmBootstrapToken = Get-BackendEnvValue "EXECUTION_MT5_VM_BOOTSTRAP_TOKEN"
 $executionMt5IdentityHmacKeyFile = Get-BackendEnvValue "EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE"
+$executionMt5ManagedWorkerReceiptFile = Get-BackendEnvValue "EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE"
 if ([string]::IsNullOrWhiteSpace($databaseUrl)) {
   throw "DATABASE_URL is required by both the API and durable Rust execution gateway."
 }
@@ -180,6 +181,25 @@ if (($executionMt5IdentityHmacKeyItem.Attributes -band [IO.FileAttributes]::Repa
     $executionMt5IdentityHmacKeyItem.Length -lt 32 -or
     $executionMt5IdentityHmacKeyItem.Length -gt 4096) {
   throw "EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE must name a small non-link secret file."
+}
+if ([string]::IsNullOrWhiteSpace($executionMt5ManagedWorkerReceiptFile) -or
+    -not [IO.Path]::IsPathRooted($executionMt5ManagedWorkerReceiptFile)) {
+  throw "EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE must be an absolute path."
+}
+$executionMt5ManagedWorkerReceiptFile = [IO.Path]::GetFullPath($executionMt5ManagedWorkerReceiptFile)
+try {
+  $executionMt5ManagedWorkerReceiptItem = Get-Item `
+    -LiteralPath $executionMt5ManagedWorkerReceiptFile `
+    -Force `
+    -ErrorAction Stop
+} catch {
+  throw "EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE must name a readable regular file."
+}
+if ($executionMt5ManagedWorkerReceiptItem -isnot [IO.FileInfo] -or
+    ($executionMt5ManagedWorkerReceiptItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+    $executionMt5ManagedWorkerReceiptItem.Length -lt 1 -or
+    $executionMt5ManagedWorkerReceiptItem.Length -gt 65536) {
+  throw "EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE must name a small non-link regular file."
 }
 $executionGatewayBind = Get-BackendEnvValue "EXECUTION_GATEWAY_BIND"
 if ([string]::IsNullOrWhiteSpace($executionGatewayBind)) {
@@ -215,6 +235,7 @@ $env:EXECUTION_ADMIN_BIND = $executionAdminBind
 $env:EXECUTION_EA_URL = "http://$executionGatewayBind"
 $env:EXECUTION_ADMIN_URL = $executionAdminUrl
 $env:EXECUTION_DATABASE_MAX_CONNECTIONS = $executionDatabaseConnections
+$env:EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE = $executionMt5ManagedWorkerReceiptFile
 
 if (-not $SkipPull) {
   Push-Location $repoRoot
@@ -350,6 +371,20 @@ $gatewayHealth = Wait-ForJsonEndpoint -Uri "$($executionAdminUrl.TrimEnd('/'))/h
   $response.ok -eq $true -and $response.service -eq "execution-gateway"
 }
 
+$managedWorkerReadinessHelper = Join-Path $repoRoot "tools\mt5-baremetal\Ensure-MT5BareMetalWorkerReady.ps1"
+if (-not (Test-Path -LiteralPath $managedWorkerReadinessHelper -PathType Leaf)) {
+  throw "Managed MT5 worker readiness helper is missing."
+}
+Write-Host "Ensuring managed MT5 worker infrastructure is ready..." -ForegroundColor Cyan
+. $managedWorkerReadinessHelper
+$managedWorkerReadiness = Invoke-MT5BareMetalWorkerReadiness `
+  -ReceiptPath $executionMt5ManagedWorkerReceiptFile `
+  -AdminUrl $executionAdminUrl `
+  -TimeoutSeconds 90
+if ($null -eq $managedWorkerReadiness -or -not [bool]$managedWorkerReadiness.ready) {
+  throw "MANAGED_MT5_WORKER_READY_INVALID"
+}
+
 Write-Host "Starting production Go API..." -ForegroundColor Cyan
 $env:APP_ENV = "production"
 $apiProcess = Start-Process -FilePath $apiPath `
@@ -400,6 +435,7 @@ Write-Host "Commit: $commit"
 Write-Host "API PID: $($apiProcess.Id) | http://localhost:8080"
 Write-Host "Execution PID: $($gatewayProcess.Id) | EA $executionGatewayBind | admin $executionAdminBind"
 Write-Host "Execution accounts connected: $($gatewayHealth.connectedAccounts)"
+Write-Host "Managed MT5 worker: $($managedWorkerReadiness.worker_id) | capacity=$($managedWorkerReadiness.capacity) | activeLeases=$($managedWorkerReadiness.active_leases) | taskStarted=$($managedWorkerReadiness.task_started)"
 Write-Host "MT5 stream PID: $($streamProcess.Id) | ws://localhost:8765"
 Write-Host "MT5 symbols connected: $($symbols.connected)"
 Write-Host "Market-data account: $($accountProbe.login) | $($accountProbe.server) | tradeAllowed=$($accountProbe.tradeAllowed)"

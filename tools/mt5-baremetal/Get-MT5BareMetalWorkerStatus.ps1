@@ -92,24 +92,40 @@ function Get-MT5BareMetalWorkerStatusCore {
     [pscustomobject]@{ path = $LauncherPath; hash = $null; code = 'BAREMETAL_STATUS_LAUNCHER_INVALID' },
     [pscustomobject]@{ path = $PowerShellPath; hash = $null; code = 'BAREMETAL_STATUS_POWERSHELL_INVALID' }
   )) {
-    $full = [IO.Path]::GetFullPath([string]$entry.path)
-    if (-not (Test-Path -LiteralPath $full -PathType Leaf) -or
-        ((Get-Item -LiteralPath $full -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-      throw [string]$entry.code
-    }
-    if ($null -ne $entry.hash) {
-      $actual = (Get-FileHash -LiteralPath $full -Algorithm SHA256).Hash
-      if (-not [string]::Equals(
-          $actual,
-          [string]$entry.hash,
-          [StringComparison]::OrdinalIgnoreCase
-        )) {
-        throw [string]$entry.code
+    $failureCode = [string]$entry.code
+    try {
+      if (-not [IO.Path]::IsPathRooted([string]$entry.path)) {
+        throw $failureCode
       }
+      $full = [IO.Path]::GetFullPath([string]$entry.path)
+      if (-not (Test-Path -LiteralPath $full -PathType Leaf)) {
+        throw $failureCode
+      }
+      $cursor = Get-Item -LiteralPath $full -Force -ErrorAction Stop
+      while ($null -ne $cursor) {
+        if (($cursor.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+          throw $failureCode
+        }
+        $cursor = if ($cursor -is [IO.FileInfo]) { $cursor.Directory } else { $cursor.Parent }
+      }
+      if ($null -ne $entry.hash) {
+        $actual = (Get-FileHash -LiteralPath $full -Algorithm SHA256).Hash
+        if (-not [string]::Equals(
+            $actual,
+            [string]$entry.hash,
+            [StringComparison]::OrdinalIgnoreCase
+          )) {
+          throw $failureCode
+        }
+      }
+    } catch {
+      throw $failureCode
     }
   }
   $config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
   if ($config.worker_substrate -cne 'bare_metal' -or
+      $config.process.worker_id -isnot [string] -or
+      [string]$config.process.worker_id -cnotmatch '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$' -or
       $config.process.terminal_slots.Count -lt 1 -or
       $config.process.terminal_slots.Count -gt 4 -or
       -not [string]::Equals(
@@ -136,6 +152,7 @@ function Get-MT5BareMetalWorkerStatusCore {
     status = if ($healthy) { 'HEALTHY' } else { 'DEGRADED' }
     task_state = [string]$task.State
     last_task_result = $lastTaskResult
+    worker_id = [string]$config.process.worker_id
     slot_count = @($config.process.terminal_slots).Count
   }
 }

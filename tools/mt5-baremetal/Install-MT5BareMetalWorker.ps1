@@ -986,6 +986,27 @@ function Install-MT5BareMetalWorkerCore {
   }
   $written = Write-MT5BareMetalConfigBoundary -WorkerRoot $root -Config $config `
     -AgentSourcePath $agent.path -ExpectedAgentSha256 $agent.sha256
+  $receiptPath = Assert-MT5BareMetalAbsolutePath `
+    -Path (Join-Path $root 'managed-worker-installation.json') `
+    -AllowMissingLeaf
+  $receipt = [ordered]@{
+    schema_version = 1
+    worker_id = $WorkerId
+    task_name = $TaskName
+    worker_identity = $WorkerIdentity
+    slot_count = $slots.Count
+    config_path = $written.config_path
+    config_sha256 = $written.config_sha256
+    launcher_path = $written.launcher_path
+    agent_path = $written.agent_path
+    agent_sha256 = $written.agent_sha256
+    powershell_path = $powershell.path
+  }
+  [IO.File]::WriteAllText(
+    $receiptPath,
+    ($receipt | ConvertTo-Json -Depth 4 -Compress),
+    (New-Object Text.UTF8Encoding($false))
+  )
   Protect-MT5BareMetalRootBoundary -Path $root -WorkerSid $workerSid
   Protect-MT5BareMetalRootBoundary -Path $data -WorkerSid $workerSid
   Register-MT5BareMetalTaskBoundary -TaskName $TaskName -WorkerIdentity $WorkerIdentity `
@@ -999,7 +1020,7 @@ function Install-MT5BareMetalWorkerCore {
     launcher_path = $written.launcher_path
     agent_path = $written.agent_path; agent_sha256 = $written.agent_sha256
     powershell_path = $powershell.path; worker_identity = $WorkerIdentity
-    task_name = $TaskName
+    task_name = $TaskName; receipt_path = $receiptPath
   }
 }
 

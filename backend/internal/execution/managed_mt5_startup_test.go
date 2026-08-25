@@ -153,6 +153,67 @@ func TestRequiredManagedMT5StartupPanicsWithSanitizedError(t *testing.T) {
 	)
 }
 
+func TestProductionManagedMT5StartupFailurePanicsWithoutPriorEnablement(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	setStartupIdentityKey(t)
+	client := newStartupExecutionClient(t)
+	defer func() {
+		value := recover()
+		message, ok := value.(string)
+		if !ok || message != "required MT5 credential store unavailable" || strings.Contains(message, "native detail") {
+			t.Fatalf("unsafe production-store panic=%v", value)
+		}
+	}()
+	newHandlerWithCredentialStoreFactory(
+		client,
+		startupMiddleware,
+		startupMiddleware,
+		func() (mt5credentials.Store, error) { return nil, errors.New("native detail") },
+	)
+}
+
+func TestProductionManagedMT5InvalidIdentityPanicsWithSanitizedError(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	t.Setenv(
+		"EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE",
+		filepath.Join(t.TempDir(), "missing-identity-key"),
+	)
+	client := newStartupExecutionClient(t)
+	defer assertSanitizedRequiredStorePanic(t)
+	newHandlerWithCredentialStoreFactory(
+		client,
+		startupMiddleware,
+		startupMiddleware,
+		func() (mt5credentials.Store, error) {
+			t.Fatal("store factory must not run after an invalid identity key")
+			return nil, nil
+		},
+	)
+}
+
+func TestProductionManagedMT5ProbeFailurePanicsWithSanitizedError(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	setStartupIdentityKey(t)
+	client := newStartupExecutionClient(t)
+	store := &startupCredentialStoreFake{probeErr: errors.New("native probe detail")}
+	defer assertSanitizedRequiredStorePanic(t)
+	newHandlerWithCredentialStoreFactory(
+		client,
+		startupMiddleware,
+		startupMiddleware,
+		func() (mt5credentials.Store, error) { return store, nil },
+	)
+}
+
+func assertSanitizedRequiredStorePanic(t *testing.T) {
+	t.Helper()
+	value := recover()
+	message, ok := value.(string)
+	if !ok || message != "required MT5 credential store unavailable" || strings.Contains(message, "native") {
+		t.Fatalf("unsafe production-store panic=%v", value)
+	}
+}
+
 func TestManagedMT5StartupRejectsGatewayWithoutConnectorContract(t *testing.T) {
 	setStartupIdentityKey(t)
 	gateway := &startupCapabilityOnlyGateway{fakeGateway: &fakeGateway{}}

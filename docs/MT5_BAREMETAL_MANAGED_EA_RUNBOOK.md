@@ -14,7 +14,10 @@ The R15-9 three-demo-account gate must pass before any Live/funded activation.
   owns a distinct preinstalled, attested terminal slot and writable runtime root.
 - A separate stable, dedicated Windows identity runs the Go API. Its user profile and credential
   set must load on every restart because managed broker credentials are bound to that identity.
-- `run-backend-production.ps1` never starts the worker. Backend and worker lifecycle are separate.
+- `run-backend-production.ps1` never installs a worker or launches `mt5-vm-agent.exe` or an account
+  terminal directly. After the Rust gateway is healthy, it validates the previously installed
+  worker receipt and Scheduled Task. It leaves a healthy task untouched and starts the attested
+  Scheduled Task once when it is stopped, then requires a fresh matching registry heartbeat.
 
 ## Required protected files
 
@@ -24,12 +27,15 @@ identities that consume them. Do not print their contents or put them in command
 1. A 32-byte-or-longer identity HMAC key file, distinct from every other token.
 2. A 32-byte-or-longer worker bootstrap-token file, matching
    `EXECUTION_MT5_VM_BOOTSTRAP_TOKEN` in `backend/.env`.
+3. The non-secret `managed-worker-installation.json` receipt produced by the one-time worker
+   installer. Keep it under the protected worker root; do not hand-author or relocate it.
 
 Set the absolute paths in `backend/.env`:
 
 ```dotenv
 EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE=C:\ProgramData\MarketLens\secrets\mt5-identity-hmac.key
 EXECUTION_MT5_VM_BOOTSTRAP_TOKEN=<independent random value matching the protected bootstrap file>
+EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE=C:\MarketLens\worker\managed-worker-installation.json
 ```
 
 The canonical runner and deploy preflight reject a missing, relative, linked, too-small, or
@@ -69,9 +75,10 @@ Deploy a CI-built artifact only through:
 ```
 
 Both production build paths supply `execution-gateway.exe` and `mt5-vm-agent.exe`. The deploy path
-verifies `SHA256SUMS`; it does not install or start the worker. A source build leaves the worker at
+verifies `SHA256SUMS`; it does not install the worker. A source build leaves the worker at
 `backend\execution\target\release\mt5-vm-agent.exe`; an artifact deploy stages it at
-`backend\bin\mt5-vm-agent.exe`.
+`backend\bin\mt5-vm-agent.exe`. Before the first normal production start, complete the explicit
+worker installation below and set its returned receipt path in `backend\.env`.
 
 ## Prepare the slot descriptor
 
@@ -138,7 +145,7 @@ $installArgs = @{
 $install = .\tools\mt5-baremetal\Install-MT5BareMetalWorker.ps1 `
   @installArgs -Execute | ConvertFrom-Json
 
-Start-ScheduledTask -TaskName $install.task_name
+$install.receipt_path
 
 .\tools\mt5-baremetal\Get-MT5BareMetalWorkerStatus.ps1 `
   -TaskName $install.task_name `
@@ -152,9 +159,13 @@ Start-ScheduledTask -TaskName $install.task_name
 ```
 
 The installer copies the pinned agent into `WorkerRoot`, writes a non-secret config, replaces and
-verifies root ACLs, and registers the exact action/identity/logon trigger. `HEALTHY` accepts both
-Task Scheduler result `0` and `0x41301` while the long-running action is still executing. Any other
-result is `DEGRADED`.
+verifies root ACLs, registers the exact action/identity/logon trigger, and writes the protected
+non-secret receipt. Put the returned `receipt_path` in
+`EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE`. A normal `run-backend-production.ps1` execution then
+validates the receipt, paths, hashes, identity, task action, slot count, registry capacity, leases,
+and heartbeat. It starts the attested Scheduled Task once only when stopped; it never restarts a
+healthy worker. `HEALTHY` accepts both Task Scheduler result `0` and `0x41301` while the long-running
+action is still executing. Any other result is `DEGRADED`.
 
 ## Activation gates
 

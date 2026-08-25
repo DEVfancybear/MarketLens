@@ -521,28 +521,30 @@ function ExecutionAccountRail() {
               ? t("execution.add.managedDescription")
               : t("execution.add.eaDescription")}
           </span>
-          {connectorCapabilities.mt5Managed && (
-            <button
-              type="button"
-              onClick={() => {
-                setShowSetup(false);
-                setShowManagedConnect(true);
-              }}
-              className="mt-2 flex w-full items-start gap-2 rounded-xl border border-bull/30 bg-bull/5 p-2.5 text-left transition-colors hover:border-bull/50 hover:bg-bull/10 focus-ring"
-            >
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-bull/10 text-bull">
-                <Server size={16} aria-hidden="true" />
+          <button
+            type="button"
+            data-managed-mt5-entry="desktop"
+            disabled={!connectorCapabilities.mt5Managed}
+            onClick={() => {
+              setShowSetup(false);
+              setShowManagedConnect(true);
+            }}
+            className="mt-2 flex w-full items-start gap-2 rounded-xl border border-bull/30 bg-bull/5 p-2.5 text-left transition-colors hover:border-bull/50 hover:bg-bull/10 focus-ring disabled:cursor-not-allowed disabled:border-terminal-border disabled:bg-terminal-hover/40 disabled:opacity-70"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-bull/10 text-bull">
+              <Server size={16} aria-hidden="true" />
+            </span>
+            <span>
+              <strong className="block text-[11px] text-ink">
+                {t("execution.add.backend.title")}
+              </strong>
+              <span className="mt-0.5 block text-[9px] leading-4 text-ink-muted">
+                {connectorCapabilities.mt5Managed
+                  ? t("execution.add.backend.description")
+                  : t("execution.add.backend.unavailable")}
               </span>
-              <span>
-                <strong className="block text-[11px] text-ink">
-                  {t("execution.add.backend.title")}
-                </strong>
-                <span className="mt-0.5 block text-[9px] leading-4 text-ink-muted">
-                  {t("execution.add.backend.description")}
-                </span>
-              </span>
-            </button>
-          )}
+            </span>
+          </button>
           {connectorCapabilities.mt5Managed && (
             <span className="mt-3 block font-semibold text-ink">
               {t("execution.add.eaAlternative")}

@@ -138,12 +138,16 @@ export function MobileTradeScreen() {
     <div className="mobile-execution-bar"><ExecutionModeSwitch />{executionMode === "mt5" && <ExecutionConnectionStatus />}</div>
     <div className="mobile-kpi-row mobile-kpi-row--trade"><div><small>Open positions</small><strong>{openCount}</strong></div><div><small>Open P/L</small><strong className={pnl >= 0 ? "text-bull" : "text-bear"}>{fmtMoney(pnl)}</strong></div><div><small>Return</small><strong className={returnPct >= 0 ? "text-bull" : "text-bear"}>{returnPct >= 0 ? "+" : ""}{returnPct.toFixed(2)}%</strong></div></div>
     <div className="mobile-trade-account-actions">
-      {connectorCapabilities.mt5Managed && (
-        <button type="button" onClick={() => setShowManagedConnect(true)}>
-          <ServerCog size={17} />
-          {t("execution.add.mobileManaged")}
-        </button>
-      )}
+      <button
+        type="button"
+        data-managed-mt5-entry="mobile"
+        disabled={!connectorCapabilities.mt5Managed}
+        title={connectorCapabilities.mt5Managed ? undefined : t("execution.add.backend.unavailable")}
+        onClick={() => setShowManagedConnect(true)}
+      >
+        <ServerCog size={17} />
+        {t("execution.add.mobileManaged")}
+      </button>
       <button type="button" onClick={() => setShowEaGuide(true)}>
         <BookOpen size={17} />
         {t("execution.add.mobileEa")}
