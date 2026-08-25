@@ -5,10 +5,84 @@ import unittest
 ROOT = Path(__file__).resolve().parents[3]
 GATE = ROOT / "tools" / "verify-mt5-baremetal-managed-ea.ps1"
 MIGRATION_GATE = ROOT / "tools" / "verify-migration-0042-disposable.ps1"
+CREDENTIAL_WRAPPER = ROOT / "tools" / "run-mt5-credential-store-gauntlet.ps1"
 GITIGNORE = ROOT / ".gitignore"
 
 
 class ManagedGauntletContractTests(unittest.TestCase):
+    def test_revision_9_wrapper_uses_dpapi_path_then_preflight_then_one_gauntlet(self) -> None:
+        self.assertTrue(
+            CREDENTIAL_WRAPPER.is_file(),
+            f"missing secure credential wrapper: {CREDENTIAL_WRAPPER}",
+        )
+        source = CREDENTIAL_WRAPPER.read_text(encoding="utf-8")
+        for required in (
+            "[switch]$SelfTest",
+            "CREDENTIAL_WRAPPER_SELF_TEST_OK",
+            "Invoke-CredentialWrapperSelfTest",
+            "Assert-CredentialFileSecurity",
+            "Assert-ExpectedFailure",
+            "[Environment]::UserInteractive",
+            "MT5_R9_POSTGRES_CREDENTIAL_FILE is already active",
+            "MarketLens-MT5-R9-Postgres-Credential",
+            "Get-Credential",
+            "Export-Clixml",
+            "SetAccessRuleProtection($true, $false)",
+            "SetOwner($currentUserSid)",
+            "AreAccessRulesProtected",
+            "GetOwner([Security.Principal.SecurityIdentifier])",
+            "S-1-5-18",
+            '<SS N="Password">',
+            "MT5_R9_POSTGRES_CREDENTIAL_FILE",
+            ".artifacts\\mt5-windows-credential-store\\revision-9",
+            "credential-preflight",
+            "-UseExistingLoopbackService",
+            "verify-mt5-baremetal-managed-ea.ps1",
+            "CREDENTIAL_FILE_ABSENT=PASS",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, source)
+
+        self.assertLess(
+            source.index("credential-preflight"),
+            source.index("verify-mt5-baremetal-managed-ea.ps1"),
+        )
+        self.assertEqual(source.count("verify-mt5-baremetal-managed-ea.ps1"), 1)
+        for forbidden in ("-Password", "Read-Host", "cmdkey", "backend/.env", "DATABASE_URL"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
+
+    def test_revision_8_uses_one_immutable_committed_task_baseline(self) -> None:
+        source = GATE.read_text(encoding="utf-8")
+
+        for required in (
+            "$taskBaseRef = 'b0cabaf67b247412dbd5e02a01c61e75ce54349e'",
+            "$taskImplementationCommit = 'f1a26cf304aaf48b0d64ff0f5a8a68f601abc28c'",
+            "function Assert-TaskBaseRef",
+            "task-base-negative-control",
+            "TASK_BASE_NEGATIVE_CONTROL_OK",
+            "TASK_BASE_REF=$taskBaseRef",
+            "(@('diff', '--no-ext-diff', '--unified=0', $taskBaseRef, '--')",
+            "@('diff', '--check', $taskBaseRef, '--')",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, source)
+
+        self.assertNotIn(
+            "@('diff', '--name-only', '--diff-filter=ACMRTUXB', 'HEAD', '--', '.')",
+            source,
+        )
+        self.assertNotIn(
+            "@('-c', 'core.safecrlf=false', 'diff', '--no-ext-diff', '--unified=0', 'HEAD', '--')",
+            source,
+        )
+
+    def test_revision_8_database_layers_use_the_explicit_service_sandbox(self) -> None:
+        source = GATE.read_text(encoding="utf-8")
+        self.assertGreaterEqual(source.count("'-UseExistingLoopbackService'"), 3)
+        self.assertIn("mt5-migration-gate", source)
+        self.assertIn("postgres-0042-service-sandbox-absence", source)
+
     def test_llvm_profiles_cannot_leak_into_the_source_tree(self) -> None:
         patterns = GITIGNORE.read_text(encoding="utf-8").splitlines()
         self.assertIn("*.profraw", patterns)

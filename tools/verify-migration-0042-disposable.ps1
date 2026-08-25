@@ -17,7 +17,8 @@
 param(
     [string]$PostgresBin = 'C:\Program Files\PostgreSQL\17\bin',
     [switch]$NegativeControl,
-    [switch]$RunRustManagedTests
+    [switch]$RunRustManagedTests,
+    [switch]$UseExistingLoopbackService
 )
 
 $ErrorActionPreference = 'Stop'
@@ -201,6 +202,130 @@ function Invoke-NativeCaptureWithApplicationControlRetry(
     return $result
 }
 
+function Get-Revision8ServiceSandbox {
+    # Revision 9 contract markers: credential-*.clixml and [Uri]::EscapeDataString.
+    $service = Get-CimInstance Win32_Service -Filter "Name='postgresql-x64-17'"
+    if ($null -eq $service -or $service.Name -cne 'postgresql-x64-17' -or
+        $service.State -cne 'Running' -or [int]$service.ProcessId -le 0) {
+        throw 'The exact PostgreSQL 17 service is not already running'
+    }
+    $expectedDataRoot = [IO.Path]::GetFullPath('C:\Program Files\PostgreSQL\17\data')
+    $expectedPgCtl = [IO.Path]::GetFullPath('C:\Program Files\PostgreSQL\17\bin\pg_ctl.exe')
+    if ([string]$service.PathName -notmatch [regex]::Escape('"' + $expectedPgCtl + '"') -or
+        [string]$service.PathName -notmatch [regex]::Escape('-D "' + $expectedDataRoot + '"')) {
+        throw 'The running PostgreSQL service path or data root is not the approved installation'
+    }
+    $configuration = Join-Path $expectedDataRoot 'postgresql.conf'
+    if (-not (Test-Path -LiteralPath $configuration -PathType Leaf)) {
+        throw 'The PostgreSQL service configuration is missing'
+    }
+    $activeLines = @(Get-Content -LiteralPath $configuration | Where-Object {
+        $_ -notmatch '^\s*#' -and $_ -notmatch '^\s*$'
+    })
+    if (@($activeLines | Where-Object { $_ -match '^\s*port\s*=\s*5432(?:\s|$)' }).Count -ne 1) {
+        throw 'The running PostgreSQL service is not configured on exact port 5432'
+    }
+
+    $credentialFile = [Environment]::GetEnvironmentVariable('MT5_R9_POSTGRES_CREDENTIAL_FILE', 'Process')
+    if (-not [string]::IsNullOrWhiteSpace($credentialFile)) {
+        Assert-Revision9CredentialFile $credentialFile
+        Assert-Revision9CredentialAcl $credentialFile
+        $credential = Import-Clixml -LiteralPath $credentialFile
+        if ($credential -isnot [PSCredential] -or $credential.UserName -cne 'postgres' -or
+            $null -eq $credential.Password -or $credential.Password.Length -eq 0) {
+            throw 'Revision 9 credential file is not a postgres PSCredential'
+        }
+        $bstr = [IntPtr]::Zero
+        try {
+            $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($credential.Password)
+            $password = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+            $escapedPassword = [Uri]::EscapeDataString($password)
+            $builder = [UriBuilder]::new('postgresql', '127.0.0.1', 5432, 'postgres')
+            $builder.UserName = 'postgres'
+            $builder.Password = $escapedPassword
+            return [pscustomobject]@{ ServiceProcessId = [int]$service.ProcessId; ServiceStartName = [string]$service.StartName; AdminUrl = $builder.Uri.AbsoluteUri }
+        } finally {
+            if ($bstr -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+            $password = $null
+        }
+    }
+    throw 'Revision 9 requires MT5_R9_POSTGRES_CREDENTIAL_FILE; backend/.env fallback is forbidden'
+}
+
+function Invoke-Revision8ServiceSandbox([pscustomobject]$Sandbox) {
+    $names = @(
+        'MT5_R8_POSTGRES_ADMIN_URL', 'MT5_R8_RUN_TOKEN', 'MT5_R8_EXECUTE',
+        'MT5_R8_REPO_ROOT', 'MT5_R8_JSON_OUTPUT', 'MT5_R8_NEGATIVE_CONTROL',
+        'MT5_R8_RUN_RUST'
+    )
+    $prior = @{}
+    foreach ($name in $names) {
+        $prior[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+    }
+    $runToken = [guid]::NewGuid().ToString('N')
+    $goReportPath = Join-Path $artifactRoot ('service-' + $runId + '.json')
+    try {
+        $env:MT5_R8_POSTGRES_ADMIN_URL = $Sandbox.AdminUrl
+        $env:MT5_R8_RUN_TOKEN = $runToken
+        $env:MT5_R8_EXECUTE = '1'
+        $env:MT5_R8_REPO_ROOT = $repoRoot
+        $env:MT5_R8_JSON_OUTPUT = $goReportPath
+        $env:MT5_R8_NEGATIVE_CONTROL = if ($NegativeControl) { '1' } else { '0' }
+        $env:MT5_R8_RUN_RUST = if ($RunRustManagedTests) { '1' } else { '0' }
+        $arguments = @(
+            'test', '-count=1', '-v', './cmd/mt5-migration-gate',
+            '-run', '^TestRevision8ServiceGate$'
+        )
+        Push-Location $backendRoot
+        try {
+            $result = Invoke-NativeCaptureWithApplicationControlRetry 'go' $arguments `
+                'revision-8-postgres-service-sandbox' -AllowFailure
+        } finally {
+            Pop-Location
+        }
+    } finally {
+        foreach ($name in $names) {
+            if ($null -eq $prior[$name]) {
+                Remove-Item ("Env:" + $name) -ErrorAction SilentlyContinue
+            } else {
+                Set-Item ("Env:" + $name) ([string]$prior[$name])
+            }
+        }
+    }
+    if (-not (Test-Path -LiteralPath $goReportPath -PathType Leaf)) {
+        throw 'The service-sandbox helper produced no sanitized report'
+    }
+    $report = [IO.File]::ReadAllText($goReportPath) | ConvertFrom-Json
+    if (-not [bool]$report.database_created -or -not [bool]$report.database_removed -or
+        [string]::IsNullOrWhiteSpace([string]$report.database_name_sha256)) {
+        throw 'The service-sandbox helper did not prove exact database creation and cleanup'
+    }
+    $joined = $result.Output -join "`n"
+    if ($NegativeControl) {
+        if ($result.ExitCode -eq 0 -or $joined -notmatch 'KNOWN_BAD_0042_CHECKER_INPUT' -or
+            [string]$report.status -cne 'FAIL') {
+            throw 'The service-sandbox negative control failed for an unexpected reason'
+        }
+        Write-Host 'SERVICE_SANDBOX_DATABASE_ABSENT=PASS'
+        throw 'KNOWN_BAD_0042_CHECKER_INPUT'
+    }
+    if ($result.ExitCode -ne 0 -or [string]$report.status -cne 'PASS' -or
+        $joined -notmatch 'SERVICE_SANDBOX_DATABASE_ABSENT=PASS') {
+        throw 'The PostgreSQL service sandbox failed; see its sanitized report and captured log'
+    }
+    if ($RunRustManagedTests -and $joined -notmatch 'RUST_MANAGED_DATABASE_TESTS=PASS') {
+        throw 'The PostgreSQL service sandbox did not prove the ignored Rust database tests'
+    }
+    $serviceAfter = Get-CimInstance Win32_Service -Filter "Name='postgresql-x64-17'"
+    if ($null -eq $serviceAfter -or $serviceAfter.State -cne 'Running' -or
+        [int]$serviceAfter.ProcessId -ne [int]$Sandbox.ServiceProcessId) {
+        throw 'The PostgreSQL service lifecycle changed during the sandbox gate'
+    }
+    $script:serviceSandboxDatabaseAbsent = $true
+    Write-Host 'SERVICE_SANDBOX_DATABASE_ABSENT=PASS'
+    if ($RunRustManagedTests) { Write-Host 'RUST_MANAGED_DATABASE_TESTS=PASS' }
+}
+
 function Invoke-Migration([string[]]$Arguments, [string]$Label) {
     $result = Invoke-NativeCaptureWithApplicationControlRetry 'go' `
         (@('run', './cmd/migrate') + $Arguments) $Label
@@ -291,6 +416,48 @@ $started = $false
 $failure = $null
 $startedAt = [DateTime]::UtcNow
 $priorDatabaseUrl = [Environment]::GetEnvironmentVariable('DATABASE_URL', 'Process')
+$script:serviceSandboxDatabaseAbsent = $false
+
+function Assert-Revision9CredentialFile([string]$Path) {
+    $root = [IO.Path]::GetFullPath((Join-Path $repoRoot '.artifacts\mt5-windows-credential-store\revision-9'))
+    $full = [IO.Path]::GetFullPath($Path)
+    if (-not $full.StartsWith($root + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or
+        [IO.Path]::GetFileName($full) -notmatch '^credential-[0-9a-f]{32}\.clixml$' -or
+        -not (Test-Path -LiteralPath $full -PathType Leaf)) { throw 'Revision 9 credential file path is outside the approved artifact root' }
+    $item = Get-Item -LiteralPath $full -Force
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Revision 9 credential file must not be a reparse point' }
+    $acl = Get-Acl -LiteralPath $full
+    if (-not $acl.AreAccessRulesProtected) { throw 'Revision 9 credential ACL must be protected' }
+    $owner = $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
+    $currentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    if ($owner -ne $currentSid) { throw 'Revision 9 credential owner must be the current user' }
+    $rules = @($acl.Access)
+    if ($rules.Count -ne 2) { throw 'Revision 9 credential ACL must contain only current user and SYSTEM' }
+    foreach ($rule in $rules) {
+        if ($rule.AccessControlType -ne 'Allow' -or $rule.IsInherited -or
+            $rule.FileSystemRights -notmatch 'FullControl') { throw 'Revision 9 credential ACL rule is not exact' }
+    }
+    if (@($rules | Where-Object { $_.IdentityReference.Value -notin @($currentSid, 'S-1-5-18') }).Count -ne 0) { throw 'Revision 9 credential ACL contains an unexpected identity' }
+}
+
+function Assert-Revision9CredentialAcl([string]$Path) {
+    # DPAPI CLIXML contains a SecureString marker (<SS N="Password">), never plaintext.
+    $acl = Get-Acl -LiteralPath $Path
+    if (-not $acl.AreAccessRulesProtected) { throw 'Revision 9 credential ACL must be protected' }
+    $owner = $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
+    $currentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    if ($owner -ne $currentSid) { throw 'Revision 9 credential owner must be current user' }
+    $rules = @($acl.Access)
+    if ($rules.Count -ne 2) { throw 'Revision 9 credential ACL must contain current user and SYSTEM only' }
+    foreach ($rule in $rules) {
+        if ($rule.AccessControlType -ne 'Allow' -or $rule.IsInherited -or $rule.FileSystemRights -notmatch 'FullControl') {
+            throw 'Revision 9 credential ACL rule is not exact'
+        }
+    }
+    if (@($rules | Where-Object { $_.IdentityReference.Value -notin @($currentSid, 'S-1-5-18') }).Count -ne 0) {
+        throw 'Revision 9 credential ACL contains an unexpected identity'
+    }
+}
 
 try {
     if (Test-Path -LiteralPath $artifactRoot) {
@@ -304,116 +471,122 @@ try {
     }
     $null = New-Item -ItemType Directory -Path $runRoot
     $null = New-Item -ItemType Directory -Path $logRoot
-    $null = New-Item -ItemType Directory -Path $dataRoot
     Assert-NotReparsePoint $runRoot
-    Assert-NotReparsePoint $dataRoot
+    if ($UseExistingLoopbackService) {
+        $sandbox = Get-Revision8ServiceSandbox
+        Invoke-Revision8ServiceSandbox $sandbox
+    } else {
+        Write-Host 'LEGACY_DISPOSABLE_CLUSTER'
+        $null = New-Item -ItemType Directory -Path $dataRoot
+        Assert-NotReparsePoint $dataRoot
 
-    $script:initdb = Get-RequiredExecutable 'initdb.exe'
-    $script:pgCtl = Get-RequiredExecutable 'pg_ctl.exe'
-    $script:pgIsReady = Get-RequiredExecutable 'pg_isready.exe'
-    $script:postgres = Get-RequiredExecutable 'postgres.exe'
-    $script:psql = Get-RequiredExecutable 'psql.exe'
+        $script:initdb = Get-RequiredExecutable 'initdb.exe'
+        $script:pgCtl = Get-RequiredExecutable 'pg_ctl.exe'
+        $script:pgIsReady = Get-RequiredExecutable 'pg_isready.exe'
+        $script:postgres = Get-RequiredExecutable 'postgres.exe'
+        $script:psql = Get-RequiredExecutable 'psql.exe'
 
-    $version = Invoke-NativeCapture $script:postgres @('--version') 'postgres-version'
-    if (($version.Output -join "`n") -notmatch 'PostgreSQL\) 17\.') {
-        throw 'The disposable migration gate requires PostgreSQL major version 17.'
-    }
-
-    $init = Invoke-NativeCapture $script:initdb @(
-        '-D', $dataRoot, '-U', $databaseUser,
-        '--auth=trust', '--auth-host=trust', '--auth-local=trust',
-        '--no-locale', '--encoding=UTF8'
-    ) 'initdb'
-    if ($init.ExitCode -ne 0) { throw 'initdb failed unexpectedly' }
-
-    $script:postgresPort = New-LoopbackPort
-    $postgresLog = Join-Path $logRoot 'postgres.log'
-    $startOptions = "-h 127.0.0.1 -p $($script:postgresPort)"
-    $startAttempted = $true
-    $start = Invoke-NativeCapture $script:pgCtl @(
-        '-D', $dataRoot, '-l', $postgresLog, '-o', $startOptions, '-w', 'start'
-    ) 'pg-ctl-start'
-    if ($start.ExitCode -ne 0) { throw 'PostgreSQL failed to start' }
-    $started = $true
-
-    $ready = Invoke-NativeCapture $script:pgIsReady @(
-        '-h', '127.0.0.1', '-p', ([string]$script:postgresPort),
-        '-U', $databaseUser, '-d', $databaseName
-    ) 'pg-isready'
-    if ($ready.ExitCode -ne 0) { throw 'PostgreSQL did not become ready' }
-
-    # This process-local value is always constructed here; no caller-provided or
-    # production database URL is accepted by this gate.
-    $env:DATABASE_URL = "postgresql://$databaseUser@127.0.0.1:$($script:postgresPort)/${databaseName}?sslmode=disable"
-    Push-Location $backendRoot
-    try {
-        Invoke-Migration @('up', '41') 'migrate-up-41'
-        Assert-MigrationVersion 41 $false 'after-up-41'
-        Invoke-SqlFile 'seed_pre_up.sql' 'seed-pre-0042'
-
-        Invoke-Migration @('up', '1') 'migrate-up-0042-first'
-        Assert-MigrationVersion 42 $false 'after-first-up-0042'
-        Invoke-SqlFile 'assert_up.sql' 'assert-first-up-0042'
-
-        if ($NegativeControl) {
-            Invoke-SqlCommand "DO `$negative_control`$ BEGIN RAISE EXCEPTION 'KNOWN_BAD_0042_CHECKER_INPUT'; END `$negative_control`$;" 'negative-control-must-fail'
-            throw 'Negative control unexpectedly passed; the SQL checker is fail-open.'
+        $version = Invoke-NativeCapture $script:postgres @('--version') 'postgres-version'
+        if (($version.Output -join "`n") -notmatch 'PostgreSQL\) 17\.') {
+            throw 'The disposable migration gate requires PostgreSQL major version 17.'
         }
 
-        Invoke-Migration @('down', '1') 'migrate-down-0042'
-        Assert-MigrationVersion 41 $false 'after-down-0042'
-        Invoke-SqlFile 'assert_down.sql' 'assert-down-0042'
+        $init = Invoke-NativeCapture $script:initdb @(
+            '-D', $dataRoot, '-U', $databaseUser,
+            '--auth=trust', '--auth-host=trust', '--auth-local=trust',
+            '--no-locale', '--encoding=UTF8'
+        ) 'initdb'
+        if ($init.ExitCode -ne 0) { throw 'initdb failed unexpectedly' }
 
-        Invoke-Migration @('up', '1') 'migrate-up-0042-second'
-        Assert-MigrationVersion 42 $false 'after-second-up-0042'
-        Invoke-SqlFile 'assert_up.sql' 'assert-second-up-0042'
-        Invoke-SqlFile 'assert_runtime_invariants.sql' 'assert-runtime-invariants'
+        $script:postgresPort = New-LoopbackPort
+        $postgresLog = Join-Path $logRoot 'postgres.log'
+        $startOptions = "-h 127.0.0.1 -p $($script:postgresPort)"
+        $startAttempted = $true
+        $start = Invoke-NativeCapture $script:pgCtl @(
+            '-D', $dataRoot, '-l', $postgresLog, '-o', $startOptions, '-w', 'start'
+        ) 'pg-ctl-start'
+        if ($start.ExitCode -ne 0) { throw 'PostgreSQL failed to start' }
+        $started = $true
 
-        # Rehearse a forward-only recovery from a dirty migration. The
-        # obstruction exists only in this disposable cluster.
-        Invoke-Migration @('down', '1') 'migrate-down-before-obstruction'
-        Assert-MigrationVersion 41 $false 'before-obstruction'
-        Invoke-SqlCommand 'ALTER TABLE execution_mt5_vm_workers ADD COLUMN worker_substrate integer' 'create-disposable-obstruction'
-        Invoke-MigrationExpectedFailure @('up', '1') 'migrate-up-0042-obstructed'
-        Assert-MigrationVersion 42 $true 'after-obstructed-up'
-        Invoke-SqlCommand 'ALTER TABLE execution_mt5_vm_workers DROP COLUMN worker_substrate' 'remove-disposable-obstruction'
-        Invoke-Migration @('force', '41') 'force-disposable-version-41'
-        Assert-MigrationVersion 41 $false 'after-force-41'
-        Invoke-Migration @('up', '1') 'migrate-up-0042-recovered'
-        Assert-MigrationVersion 42 $false 'after-recovered-up-0042'
-        Invoke-SqlFile 'assert_up.sql' 'assert-recovered-up-0042'
+        $ready = Invoke-NativeCapture $script:pgIsReady @(
+            '-h', '127.0.0.1', '-p', ([string]$script:postgresPort),
+            '-U', $databaseUser, '-d', $databaseName
+        ) 'pg-isready'
+        if ($ready.ExitCode -ne 0) { throw 'PostgreSQL did not become ready' }
 
-        if ($RunRustManagedTests) {
-            $priorRustDatabaseUrl = [Environment]::GetEnvironmentVariable(
-                'MT5_MANAGED_TEST_DATABASE_URL',
-                'Process'
-            )
-            $env:MT5_MANAGED_TEST_DATABASE_URL = $env:DATABASE_URL
-            Push-Location (Join-Path $backendRoot 'execution')
-            try {
-                $rust = Invoke-NativeCaptureWithApplicationControlRetry 'cargo.exe' @(
-                    'test', '--locked',
-                    '-p', 'execution-gateway', '-p', 'mt5-vm-agent',
-                    '--bin', 'execution-gateway',
-                    'managed_database', '--', '--ignored', '--test-threads=1'
-                ) 'rust-managed-database-tests'
-                $rustOutput = $rust.Output -join "`n"
-                if ($rust.ExitCode -ne 0 -or
-                    $rustOutput -notmatch 'test result: ok\. [1-9][0-9]* passed; 0 failed;') {
-                    throw 'Ignored Rust managed-database tests did not execute and pass'
-                }
-                Write-Host 'RUST_MANAGED_DATABASE_TESTS=PASS'
-            } finally {
-                Pop-Location
-                if ($null -eq $priorRustDatabaseUrl) {
-                    Remove-Item Env:MT5_MANAGED_TEST_DATABASE_URL -ErrorAction SilentlyContinue
-                } else {
-                    $env:MT5_MANAGED_TEST_DATABASE_URL = $priorRustDatabaseUrl
+        # This process-local value is always constructed here; no caller-provided or
+        # production database URL is accepted by the legacy gate.
+        $env:DATABASE_URL = "postgresql://$databaseUser@127.0.0.1:$($script:postgresPort)/${databaseName}?sslmode=disable"
+        Push-Location $backendRoot
+        try {
+            Invoke-Migration @('up', '41') 'migrate-up-41'
+            Assert-MigrationVersion 41 $false 'after-up-41'
+            Invoke-SqlFile 'seed_pre_up.sql' 'seed-pre-0042'
+
+            Invoke-Migration @('up', '1') 'migrate-up-0042-first'
+            Assert-MigrationVersion 42 $false 'after-first-up-0042'
+            Invoke-SqlFile 'assert_up.sql' 'assert-first-up-0042'
+
+            if ($NegativeControl) {
+                Invoke-SqlCommand "DO `$negative_control`$ BEGIN RAISE EXCEPTION 'KNOWN_BAD_0042_CHECKER_INPUT'; END `$negative_control`$;" 'negative-control-must-fail'
+                throw 'Negative control unexpectedly passed; the SQL checker is fail-open.'
+            }
+
+            Invoke-Migration @('down', '1') 'migrate-down-0042'
+            Assert-MigrationVersion 41 $false 'after-down-0042'
+            Invoke-SqlFile 'assert_down.sql' 'assert-down-0042'
+
+            Invoke-Migration @('up', '1') 'migrate-up-0042-second'
+            Assert-MigrationVersion 42 $false 'after-second-up-0042'
+            Invoke-SqlFile 'assert_up.sql' 'assert-second-up-0042'
+            Invoke-SqlFile 'assert_runtime_invariants.sql' 'assert-runtime-invariants'
+
+            # Rehearse a forward-only recovery from a dirty migration. The
+            # obstruction exists only in this disposable cluster.
+            Invoke-Migration @('down', '1') 'migrate-down-before-obstruction'
+            Assert-MigrationVersion 41 $false 'before-obstruction'
+            Invoke-SqlCommand 'ALTER TABLE execution_mt5_vm_workers ADD COLUMN worker_substrate integer' 'create-disposable-obstruction'
+            Invoke-MigrationExpectedFailure @('up', '1') 'migrate-up-0042-obstructed'
+            Assert-MigrationVersion 42 $true 'after-obstructed-up'
+            Invoke-SqlCommand 'ALTER TABLE execution_mt5_vm_workers DROP COLUMN worker_substrate' 'remove-disposable-obstruction'
+            Invoke-Migration @('force', '41') 'force-disposable-version-41'
+            Assert-MigrationVersion 41 $false 'after-force-41'
+            Invoke-Migration @('up', '1') 'migrate-up-0042-recovered'
+            Assert-MigrationVersion 42 $false 'after-recovered-up-0042'
+            Invoke-SqlFile 'assert_up.sql' 'assert-recovered-up-0042'
+
+            if ($RunRustManagedTests) {
+                $priorRustDatabaseUrl = [Environment]::GetEnvironmentVariable(
+                    'MT5_MANAGED_TEST_DATABASE_URL',
+                    'Process'
+                )
+                $env:MT5_MANAGED_TEST_DATABASE_URL = $env:DATABASE_URL
+                Push-Location (Join-Path $backendRoot 'execution')
+                try {
+                    $rust = Invoke-NativeCaptureWithApplicationControlRetry 'cargo.exe' @(
+                        'test', '--locked',
+                        '-p', 'execution-gateway', '-p', 'mt5-vm-agent',
+                        '--bin', 'execution-gateway',
+                        'managed_database', '--', '--ignored', '--test-threads=1'
+                    ) 'rust-managed-database-tests'
+                    $rustOutput = $rust.Output -join "`n"
+                    if ($rust.ExitCode -ne 0 -or
+                        $rustOutput -notmatch 'test result: ok\. [1-9][0-9]* passed; 0 failed;') {
+                        throw 'Ignored Rust managed-database tests did not execute and pass'
+                    }
+                    Write-Host 'RUST_MANAGED_DATABASE_TESTS=PASS'
+                } finally {
+                    Pop-Location
+                    if ($null -eq $priorRustDatabaseUrl) {
+                        Remove-Item Env:MT5_MANAGED_TEST_DATABASE_URL -ErrorAction SilentlyContinue
+                    } else {
+                        $env:MT5_MANAGED_TEST_DATABASE_URL = $priorRustDatabaseUrl
+                    }
                 }
             }
+        } finally {
+            Pop-Location
         }
-    } finally {
-        Pop-Location
     }
 } catch {
     $failure = $_
@@ -450,6 +623,7 @@ try {
         gate = 'migration-0042-disposable'
         status = $status
         negative_control = [bool]$NegativeControl
+        service_sandbox = [bool]$UseExistingLoopbackService
         postgres_major = 17
         started_at_utc = $startedAt.ToString('o')
         completed_at_utc = [DateTime]::UtcNow.ToString('o')
@@ -463,5 +637,9 @@ if ($null -ne $failure) {
     exit 1
 }
 
+if ($UseExistingLoopbackService -and -not $script:serviceSandboxDatabaseAbsent) {
+    Write-Error 'The service-sandbox database absence postcondition was not recorded'
+    exit 1
+}
 Write-Host 'PASS migration 0042 disposable PostgreSQL up/down/up, recovery, and behavior gate.' -ForegroundColor Green
 exit 0

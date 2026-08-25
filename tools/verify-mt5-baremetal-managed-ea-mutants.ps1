@@ -468,7 +468,11 @@ $mutants = @(
             Path = 'backend\migrations\testdata\0042\assert_runtime_invariants.sql'
             Anchor = 'managed account became READY without a fresh successful EA poll'
             File = 'powershell.exe'
-            Arguments = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', '.\tools\verify-migration-0042-disposable.ps1')
+            Arguments = @(
+                '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+                '-File', '.\tools\verify-migration-0042-disposable.ps1',
+                '-UseExistingLoopbackService'
+            )
             WorkingDirectory = '.'
             TimeoutSeconds = 300
             ExpectedFailurePattern = 'managed account became READY without a fresh successful EA poll'

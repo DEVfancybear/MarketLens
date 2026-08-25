@@ -36,6 +36,8 @@ $goRaceGcc = Join-Path $goRaceCompilerRoot 'gcc.exe'
 $goRaceGxx = Join-Path $goRaceCompilerRoot 'g++.exe'
 $toolchainRevision2Root = Join-Path $repoRoot '.artifacts\mt5-windows-credential-store\toolchain-revision-2'
 $toolchainPreflightPath = Join-Path $toolchainRevision2Root 'preflight.json'
+$taskBaseRef = 'b0cabaf67b247412dbd5e02a01c61e75ce54349e'
+$taskImplementationCommit = 'f1a26cf304aaf48b0d64ff0f5a8a68f601abc28c'
 $startedAt = [DateTime]::UtcNow
 $script:sequence = 0
 $script:results = [Collections.Generic.List[object]]::new()
@@ -508,7 +510,9 @@ function Add-AllowedUnverified([string]$Name, [string]$Reason) {
 }
 
 function Get-AddedTaskText {
-    $trackedDiff = @(Invoke-GitLines @('diff', '--no-ext-diff', '--unified=0', '--', '.'))
+    $trackedDiff = @(Invoke-GitLines @(
+        'diff', '--no-ext-diff', '--unified=0', $taskBaseRef, '--', '.'
+    ))
     $added = @($trackedDiff | Where-Object {
         $_.StartsWith('+', [StringComparison]::Ordinal) -and
         -not $_.StartsWith('+++', [StringComparison]::Ordinal)
@@ -532,7 +536,11 @@ function Get-AddedTaskText {
 function Remove-ApprovedCredentialPlaceholders([string]$Text) {
     $approved = @(
         ('postgres://' + 'user' + ':' + 'pass' + '@localhost:5432/marketlens?sslmode=disable'),
-        ('postgres://' + 'user' + ':' + 'pass' + '@localhost:5432/smc?sslmode=disable')
+        ('postgres://' + 'user' + ':' + 'pass' + '@localhost:5432/smc?sslmode=disable'),
+        ('postgres://' + 'postgres' + ':' + 'Abcdefghijklmnopqrstuvwx12345678' +
+            '@127.0.0.1:55432/smc'),
+        ('postgres://' + 'app_role' + ':' + 'Abcdefghijklmnopqrstuvwx12345678' +
+            '@127.0.0.1:5432/smc')
     )
     foreach ($placeholder in $approved) {
         $Text = $Text.Replace($placeholder, 'postgres://placeholder@localhost')
@@ -579,7 +587,7 @@ function Get-ProductionCapabilityText {
         'frontend/src/services/api/resources/executionApi.ts'
     )
     $trackedDiff = @(Invoke-GitLines `
-        (@('diff', '--no-ext-diff', '--unified=0', '--') + $trackedPaths))
+        (@('diff', '--no-ext-diff', '--unified=0', $taskBaseRef, '--') + $trackedPaths))
     $added = @($trackedDiff | Where-Object {
         $_.StartsWith('+', [StringComparison]::Ordinal) -and
         -not $_.StartsWith('+++', [StringComparison]::Ordinal)
@@ -654,9 +662,52 @@ function Assert-ProductionRunnerDeltaPolicy(
     }
 }
 
+function Assert-TaskBaseRef([string]$Candidate) {
+    if ($Candidate -cne $taskBaseRef) {
+        throw 'task base candidate is not the frozen approved base'
+    }
+    $object = Invoke-CapturedProcess 'git.exe' @(
+        'cat-file', '-e', ($Candidate + '^{commit}')
+    ) $repoRoot 60
+    if ($object.ExitCode -ne 0) {
+        throw 'frozen task base is missing or is not a commit'
+    }
+    $ancestor = Invoke-CapturedProcess 'git.exe' @(
+        'merge-base', '--is-ancestor', $Candidate, 'HEAD'
+    ) $repoRoot 60
+    if ($ancestor.ExitCode -ne 0) {
+        throw 'frozen task base is not an ancestor of HEAD'
+    }
+    $implementation = Invoke-CapturedProcess 'git.exe' @(
+        'merge-base', '--is-ancestor', $taskImplementationCommit, 'HEAD'
+    ) $repoRoot 60
+    if ($implementation.ExitCode -ne 0) {
+        throw 'approved implementation commit is not present in HEAD'
+    }
+    $paths = @(Invoke-GitLines @(
+        'diff', '--name-only', $Candidate, $taskImplementationCommit, '--'
+    ))
+    foreach ($required in @(
+        'backend/internal/mt5credentials/credential.go',
+        'backend/internal/execution/handler.go',
+        'backend/execution/crates/execution-gateway/src/mt5_vm_control.rs'
+    )) {
+        if ($paths -notcontains $required) {
+            throw "approved implementation range is missing required path: $required"
+        }
+    }
+    return [pscustomobject]@{
+        base = $Candidate
+        implementation = $taskImplementationCommit
+        implementation_path_count = $paths.Count
+    }
+}
+
 function Get-ChangedCoverageSources([ValidateSet('go', 'rust')][string]$Language) {
     $paths = @(
-        Invoke-GitLines @('diff', '--name-only', '--diff-filter=ACMRTUXB', 'HEAD', '--', '.')
+        Invoke-GitLines @(
+            'diff', '--name-only', '--diff-filter=ACMRTUXB', $taskBaseRef, '--', '.'
+        )
     )
     $paths += @(Invoke-GitLines @('ls-files', '--others', '--exclude-standard'))
     $normalized = @($paths | ForEach-Object { $_.Replace('\', '/') } | Sort-Object -Unique)
@@ -689,7 +740,7 @@ function Write-ChangedSourceDiff([string[]]$Paths, [string]$Destination) {
     $builder = [Text.StringBuilder]::new()
     if ($tracked.Count -gt 0) {
         $captured = Invoke-CapturedProcess 'git.exe' `
-            (@('-c', 'core.safecrlf=false', 'diff', '--no-ext-diff', '--unified=0', 'HEAD', '--') +
+            (@('-c', 'core.safecrlf=false', 'diff', '--no-ext-diff', '--unified=0', $taskBaseRef, '--') +
                 $tracked) $repoRoot 120
         if ($captured.ExitCode -ne 0) {
             throw "git diff failed while preparing changed-line coverage: $($captured.Stderr.Trim())"
@@ -722,7 +773,7 @@ function Write-ChangedSourceDiff([string[]]$Paths, [string]$Destination) {
 
 function Write-TaskSourceState {
     $paths = @(Invoke-GitLines @(
-        'diff', '--name-only', '--diff-filter=ACMRTUXBD', 'HEAD', '--', '.'
+        'diff', '--name-only', '--diff-filter=ACMRTUXBD', $taskBaseRef, '--', '.'
     ))
     $paths += @(Invoke-GitLines @('ls-files', '--others', '--exclude-standard'))
     $paths = @($paths | ForEach-Object { $_.Replace('\', '/') } |
@@ -775,6 +826,8 @@ function Write-TaskSourceState {
     $state = [pscustomobject][ordered]@{
         schema_version = 1
         head = $head
+        task_base_ref = $taskBaseRef
+        implementation_commit = $taskImplementationCommit
         generated_at_utc = [DateTime]::UtcNow.ToString('o')
         task_tree_sha256 = $aggregate
         file_count = $records.Count
@@ -792,6 +845,27 @@ New-ReportRoot
 
 $head = (@(Invoke-GitLines @('rev-parse', 'HEAD'))[0]).Trim()
 $dirtyBefore = @(Invoke-GitLines @('status', '--short'))
+
+Invoke-InProcessLayer 'task-base-negative-control' {
+    $rejected = $false
+    try {
+        $null = Assert-TaskBaseRef $taskImplementationCommit
+    } catch {
+        if ($_.Exception.Message -cne 'task base candidate is not the frozen approved base') {
+            throw
+        }
+        $rejected = $true
+    }
+    if (-not $rejected) { throw 'task base negative control unexpectedly passed' }
+    'TASK_BASE_NEGATIVE_CONTROL_OK'
+} 'Reject a caller-selected committed baseline that would erase the implementation delta'
+
+Invoke-InProcessLayer 'task-base' {
+    $attestation = Assert-TaskBaseRef $taskBaseRef
+    "TASK_BASE_REF=$taskBaseRef"
+    "TASK_IMPLEMENTATION_COMMIT=$($attestation.implementation)"
+    "TASK_IMPLEMENTATION_PATHS=$($attestation.implementation_path_count)"
+} 'Attest the immutable approved task base, ancestry, implementation commit, and required paths'
 
 Invoke-InProcessLayer 'source-state' {
     $script:sourceState = Write-TaskSourceState
@@ -869,6 +943,8 @@ Invoke-NativeLayer 'deploy-backend-self-test' 'powershell.exe' @(
 $goFiles = @(
     'cmd/api/main.go',
     'cmd/api/main_source_contract_test.go',
+    'cmd/mt5-migration-gate/main.go',
+    'cmd/mt5-migration-gate/main_test.go',
     'cmd/mt5-phase3-harness/main.go',
     'cmd/mt5-phase3-harness/main_test.go',
     'cmd/mt5-phase3-harness/main_windows_test.go',
@@ -900,7 +976,7 @@ Invoke-NativeLayer 'go-full-tests-shuffled' 'go.exe' @(
     'test', '-p=1', '-count=1', '-shuffle=20260824', './...'
 ) (Join-Path $repoRoot 'backend') 2400
 Invoke-NativeLayer 'go-tests' 'go.exe' @(
-    'test', '-p=1', '-count=1', './cmd/api', './cmd/mt5-phase3-harness', './internal/config', './internal/execution', './internal/mt5credentials'
+    'test', '-p=1', '-count=1', './cmd/api', './cmd/mt5-migration-gate', './cmd/mt5-phase3-harness', './internal/config', './internal/execution', './internal/mt5credentials'
 ) (Join-Path $repoRoot 'backend') 900
 Invoke-NativeLayer 'go-credential-properties' 'go.exe' @(
     'test', '-count=1', '-v', './internal/mt5credentials',
@@ -994,6 +1070,7 @@ Invoke-InProcessLayer 'go-changed-coverage' {
     $goRoot = Join-Path $repoRoot 'backend'
     $packages = [ordered]@{
         api = './cmd/api'
+        migration_gate = './cmd/mt5-migration-gate'
         phase3_harness = './cmd/mt5-phase3-harness'
         config = './internal/config'
         execution = './internal/execution'
@@ -1246,7 +1323,8 @@ Invoke-NativeLayer 'rust-coverage-tests' 'cargo.exe' @(
 
 Invoke-NativeLayer 'rust-database-integration' 'powershell.exe' @(
     '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-    '-File', '.\tools\verify-migration-0042-disposable.ps1', '-RunRustManagedTests'
+    '-File', '.\tools\verify-migration-0042-disposable.ps1',
+    '-UseExistingLoopbackService', '-RunRustManagedTests'
 ) $repoRoot 1800 -RequiredPattern 'RUST_MANAGED_DATABASE_TESTS=PASS' `
     -EnvironmentVariables $rustCoverageTestEnvironment
 
@@ -1348,11 +1426,13 @@ Invoke-NativeLayer 'python-vm-regression' 'python.exe' @(
 $windowsPowerShell = 'powershell.exe'
 Invoke-NativeLayer 'postgres-0042-positive' $windowsPowerShell @(
     '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-    '-File', '.\tools\verify-migration-0042-disposable.ps1'
+    '-File', '.\tools\verify-migration-0042-disposable.ps1',
+    '-UseExistingLoopbackService'
 ) $repoRoot 900 -RequiredPattern 'PASS migration 0042 disposable PostgreSQL'
 Invoke-ExpectedFailureLayer 'postgres-0042-negative-control' $windowsPowerShell @(
     '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-    '-File', '.\tools\verify-migration-0042-disposable.ps1', '-NegativeControl'
+    '-File', '.\tools\verify-migration-0042-disposable.ps1',
+    '-UseExistingLoopbackService', '-NegativeControl'
 ) $repoRoot 'KNOWN_BAD_0042_CHECKER_INPUT' 900
 
 Invoke-NativeLayer 'mutation-self-test' $windowsPowerShell @(
@@ -1363,6 +1443,26 @@ Invoke-NativeLayer 'mutation-score' $windowsPowerShell @(
     '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
     '-File', '.\tools\verify-mt5-baremetal-managed-ea-mutants.ps1', '-Execute'
 ) $repoRoot 1800 -RequiredPattern 'MUTATION_SCORE=13/13'
+
+Invoke-InProcessLayer 'postgres-0042-service-sandbox-absence' {
+    $serviceReports = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot '.artifacts\migration-0042') `
+        -Filter 'service-*.json' -File | Where-Object {
+            $_.LastWriteTimeUtc -ge $startedAt.AddSeconds(-1)
+        })
+    if ($serviceReports.Count -lt 4) {
+        throw "Expected at least four fresh service-sandbox reports, got $($serviceReports.Count)"
+    }
+    foreach ($path in $serviceReports.FullName) {
+        $serviceReport = [IO.File]::ReadAllText($path, $utf8) | ConvertFrom-Json
+        if (-not [bool]$serviceReport.database_created -or
+            -not [bool]$serviceReport.database_removed -or
+            [string]::IsNullOrWhiteSpace([string]$serviceReport.database_name_sha256)) {
+            throw "Service-sandbox absence report failed closed: $path"
+        }
+    }
+    "SERVICE_SANDBOX_REPORTS=$($serviceReports.Count)"
+    'SERVICE_SANDBOX_DATABASE_ABSENT=PASS'
+} 'Attest every fresh mt5-migration-gate database was created and removed exactly'
 
 Invoke-NativeLayer 'ea-metaeditor-compile' $windowsPowerShell @(
     '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
@@ -1386,7 +1486,7 @@ Invoke-NativeLayer 'npm-production-audit' 'cmd.exe' @(
 
 Invoke-InProcessLayer 'dependency-delta-audit' {
     $goModDelta = @(Invoke-GitLines @(
-        'diff', '--unified=0', '--', 'backend/go.mod'
+        'diff', '--unified=0', $taskBaseRef, '--', 'backend/go.mod'
     ) | Where-Object { $_ -match '^[+-](?![+-]{2})' })
     if ($goModDelta.Count -ne 2 -or
         $goModDelta -notcontains "-`tgolang.org/x/sys v0.46.0 // indirect" -or
@@ -1394,14 +1494,14 @@ Invoke-InProcessLayer 'dependency-delta-audit' {
         throw 'go.mod contains a delta beyond promoting the pinned golang.org/x/sys v0.46.0 dependency to direct use'
     }
     $unexpectedManifestDelta = @(Invoke-GitLines @(
-        'diff', '--name-only', '--', 'backend/go.sum', 'frontend/package.json'
+        'diff', '--name-only', $taskBaseRef, '--', 'backend/go.sum', 'frontend/package.json'
     ))
     if ($unexpectedManifestDelta.Count -gt 0) {
         throw "unexpected Go checksum or Node manifest delta: $($unexpectedManifestDelta -join ', ')"
     }
 
     $nodeLockChanged = @(Invoke-GitLines @(
-        'diff', '--unified=0', '--', 'frontend/package-lock.json'
+        'diff', '--unified=0', $taskBaseRef, '--', 'frontend/package-lock.json'
     ) | Where-Object { $_ -match '^[+-](?![+-]{2})' })
     if ($nodeLockChanged.Count -gt 0) {
         if ($nodeLockChanged.Count -ne 6 -or
@@ -1420,7 +1520,7 @@ Invoke-InProcessLayer 'dependency-delta-audit' {
     }
 
     $lockAdded = @(Invoke-GitLines @(
-        'diff', '--unified=0', '--', 'backend/execution/Cargo.lock'
+        'diff', '--unified=0', $taskBaseRef, '--', 'backend/execution/Cargo.lock'
     ) |
         Where-Object { $_ -match '^\+(?!\+\+)' } |
         ForEach-Object { $_.Substring(1).Trim() } |
@@ -1430,7 +1530,7 @@ Invoke-InProcessLayer 'dependency-delta-audit' {
     }
 
     $manifestAdded = @(Invoke-GitLines @(
-        'diff', '--unified=0', '--',
+        'diff', '--unified=0', $taskBaseRef, '--',
         'backend/execution/Cargo.toml',
         'backend/execution/crates/execution-gateway/Cargo.toml'
     ) |
@@ -1479,7 +1579,7 @@ Invoke-NativeLayer 'backend-docs' $windowsPowerShell @(
     '-File', '.\tools\verify-backend-docs.ps1', '-DocsOnly'
 ) $repoRoot 300 -RequiredPattern 'Backend documentation gauntlet PASSED:'
 
-Invoke-NativeLayer 'diff-whitespace' 'git.exe' @('diff', '--check') $repoRoot 120
+Invoke-NativeLayer 'diff-whitespace' 'git.exe' @('diff', '--check', $taskBaseRef, '--') $repoRoot 120
 Invoke-InProcessLayer 'secret-diff-scan' {
     $placeholderControl = 'postgres://' + 'user' + ':' + 'pass' +
         '@localhost:5432/marketlens?sslmode=disable'
@@ -1511,7 +1611,7 @@ Invoke-InProcessLayer 'capability-diff-audit' {
         $utf8
     )
     $runnerDiff = @(Invoke-GitLines @(
-        'diff', '--no-ext-diff', '--unified=0', '--', 'run-backend-production.ps1'
+        'diff', '--no-ext-diff', '--unified=0', $taskBaseRef, '--', 'run-backend-production.ps1'
     ))
     $runnerAddedLines = @($runnerDiff | Where-Object {
         $_.StartsWith('+', [StringComparison]::Ordinal) -and

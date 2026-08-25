@@ -8,6 +8,71 @@ SQL_ROOT = Path(__file__).resolve().parent / "testdata" / "0042"
 
 
 class Migration0042DisposableGateContractTests(unittest.TestCase):
+    def test_revision_9_imports_only_the_dpapi_credential_file_and_zeros_plaintext(self) -> None:
+        source = GATE.read_text(encoding="utf-8")
+        service_prelude = source.split("function Get-Revision8ServiceSandbox", 1)[1].split(
+            "function Invoke-Revision8ServiceSandbox", 1
+        )[0]
+        for required in (
+            "MT5_R9_POSTGRES_CREDENTIAL_FILE",
+            "Import-Clixml",
+            "Assert-Revision9CredentialFile",
+            "Assert-Revision9CredentialAcl",
+            "SecureStringToBSTR",
+            "ZeroFreeBSTR",
+            "$escapedPassword = [Uri]::EscapeDataString($password)",
+            "credential-*.clixml",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, service_prelude)
+        for forbidden in (
+            "backendRoot",
+            "environmentPath",
+            "databaseLines",
+            "sourceUri",
+            "DATABASE_URL",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, service_prelude)
+
+        validator = source.split("function Assert-Revision9CredentialFile", 1)[1].split(
+            "try {", 1
+        )[0]
+        for required in (
+            "^credential-[0-9a-f]{32}\\.clixml$",
+            "AreAccessRulesProtected",
+            "GetOwner([Security.Principal.SecurityIdentifier])",
+            "S-1-5-18",
+            "AccessControlType",
+            "FileSystemRights",
+            "IsInherited",
+            '<SS N="Password">',
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, validator)
+
+    def test_revision_8_service_sandbox_never_launches_postgres_clients(self) -> None:
+        source = GATE.read_text(encoding="utf-8")
+        self.assertIn("[switch]$UseExistingLoopbackService", source)
+        self.assertIn("postgresql-x64-17", source)
+        self.assertIn("MT5_R8_POSTGRES_ADMIN_URL", source)
+        self.assertIn("MT5_R8_RUN_TOKEN", source)
+        self.assertIn("./cmd/mt5-migration-gate", source)
+        self.assertIn("SERVICE_SANDBOX_DATABASE_ABSENT=PASS", source)
+
+        service_block = source.split("if ($UseExistingLoopbackService)", 1)[1].split(
+            "LEGACY_DISPOSABLE_CLUSTER", 1
+        )[0]
+        for forbidden in (
+            "postgres.exe",
+            "initdb.exe",
+            "pg_ctl.exe",
+            "pg_isready.exe",
+            "psql.exe",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, service_block)
+
     def test_gate_is_loopback_only_local_and_fail_closed(self) -> None:
         self.assertTrue(GATE.is_file(), f"missing disposable migration gate: {GATE}")
         source = GATE.read_text(encoding="utf-8")
