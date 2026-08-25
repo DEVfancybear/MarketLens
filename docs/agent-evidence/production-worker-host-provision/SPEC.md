@@ -478,7 +478,74 @@ canonical-runner gate; it was not claimed as pass. The v3 approval token is unch
 
 ### v3 approval record
 
+The user approved this revision exactly with:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v3
+```
+
+No v3 implementation, Git mutation, terminal interruption, protected-file creation, worker
+installation, migration, or production run occurred before that approval.
+
+## Revision v4 — Windows trade-test runner and test-only Ky ESM bridge (approval required)
+
+### Discovery after v3 approval
+
+V3 removed the TypeScript `TS5095` configuration error, but the required exact command
+`npm run test:trade` exposed two further current-source failures on this Windows host:
+
+1. `node --test .test-build/tests/trade/*.test.js` passes the wildcard literally, so Node reports
+   that no matching path exists. Running the compiled test directory directly discovers the tests.
+2. The CommonJS test output then fails in five tests because Ky v2 is ESM-only and cannot be loaded
+   with `require()`. Compiling the entire suite as native ESM is not a safe local fix: the repository
+   uses extensionless relative imports, which Node ESM rejects without rewriting application/test
+   imports.
+
+Both failures were observed before any v4 implementation. The production Next.js build and runtime
+module graph are not implicated.
+
+### v4 scope and behavior
+
+Revision v4 keeps Tier 3 and every v3 invariant. It adds exactly these tracked paths to the v3
+allow-list:
+
+- `frontend/package.json`; and
+- `frontend/tests/shims/ky.ts`.
+
+The already-approved `frontend/tsconfig.test.json` may additionally map only the test compiler's
+`ky` import to that shim. The shim must present the subset of Ky's callable/create/HTTP verb/body
+shortcut and `HTTPError` contract used by `frontend/src/services/api/client.ts`, backed by native
+`fetch`; it must not be imported by the production Next.js compiler or alter application source.
+No dependency install, lockfile change, application/runtime source edit, test assertion edit, or
+network service is authorized.
+
+`frontend/package.json` may replace only the Windows-incompatible trade-test wildcard with Node's
+directory test discovery. All other scripts and dependencies stay byte-for-byte unchanged.
+
+### v4 RED → GREEN and negative controls
+
+Given the exact wildcard and Ky ESM failures above, when the test-only bridge and directory runner
+are applied, then `npm run test:trade` passes all compiled trade tests on Windows, `npm run
+typecheck`, `npm run lint`, and `npm run build` remain green, and the production build never resolves
+`ky` to the shim. A throwaway negative control that removes the test-only Ky path mapping must
+reproduce the ESM failure before the bridge is trusted. The final v3 gauntlet manifest and canonical
+runner remain unchanged except that the source allow-list includes these two v4 paths.
+
+### v4 must NOT
+
+- Must not change `frontend/src/**`, existing test assertions, dependencies, or lockfiles.
+- Must not use an ESM-wide import rewriter, experimental Node resolver, or production alias.
+- Must not proceed to the live host-mutation layer until this revision is approved and the frontend
+  layer is GREEN.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v4
+```
+
+### v4 approval record
+
 The user approved this exact revision verbatim as
-`APPROVE SPEC REVISION: production-worker-host-provision v3`. No v3 implementation, Git mutation,
-terminal interruption, protected-file creation, worker installation, migration, or production run
-occurred before that approval.
+`APPROVE SPEC REVISION: production-worker-host-provision v4`. No v4 implementation occurred before
+that approval.
