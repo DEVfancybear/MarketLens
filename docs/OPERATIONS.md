@@ -15,21 +15,23 @@ Security hardening and the production release checklist are documented in
 - Deploy the CI-built backend artifact with `.\tools\deploy-backend.ps1`.
 - Both paths now provide `execution-gateway.exe` and `mt5-vm-agent.exe`; the
   artifact path verifies both through `SHA256SUMS`.
-- The worker is installed separately. Use
+- Worker installation remains owned by the dedicated installer; the normal source runner delegates
+  to it only for a missing receipt on a prepared host. Use
   [`MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md`](MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md)
   for the dry run, exact hash/ACL install, receipt, Scheduled Task, and health contract.
-- On the first source installation, the canonical runner builds all three backend artifacts and
-  deliberately exits nonzero with `MANAGED_MT5_WORKER_INSTALL_REQUIRED_AFTER_BUILD` before
-  migrations or runtime startup. Run the explicit installer, set its returned `receipt_path` in
-  `EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE`, then rerun `run-backend-production.ps1`.
+- On a prepared host, the first source installation is one canonical-runner invocation. After
+  building all three backend artifacts, it consumes the protected managed-worker install input,
+  installs or adopts the worker, validates and atomically persists `receipt_path`, then continues
+  migrations, restart, and readiness gates without a manual installer command or rerun.
 - The documented artifact/deploy path does not build on the host. Without a valid receipt its
   delegated runner exits with `MANAGED_MT5_WORKER_RECEIPT_REQUIRED` before migrations or restart.
 - Normal production startup validates `EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE`, leaves an
   already healthy installed worker untouched, or starts its exact attested Scheduled Task once and
-  waits for a fresh matching registry heartbeat. It never installs a worker or launches the agent
-  or an account terminal directly.
-- Never add worker installation, artifact provisioning, or per-account terminal lifecycle to the
-  canonical backend runner. Never use recovery
+  waits for a fresh matching registry heartbeat. It never launches the agent or an account terminal
+  directly.
+- Never reimplement worker installation, artifact provisioning, or per-account terminal lifecycle
+  inside the canonical backend runner; keep installation in the attested helper/installer boundary.
+  Never use recovery
   switches for a normal source build, and never perform a production migration,
   worker install/start, or broker connection without the corresponding operator
   authorization.
@@ -159,18 +161,19 @@ The managed path adds an explicitly installed bare-metal worker with bounded pre
 Windows Credential Manager-backed grants, redirected-stdin login, and exact-PID named-pipe EA bootstrap. Account
 connect never downloads or installs MT5/EA and never puts credentials in arguments or environment.
 
-Run normal production through `run-backend-production.ps1`. Install the managed worker only through
-`MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md`, then configure the returned
-`EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE`. The backend runner deliberately does not own worker
-installation or direct agent/terminal startup; it only ensures the exact previously installed,
-attested Scheduled Task and matching Rust registry heartbeat are ready.
+Run normal production through `run-backend-production.ps1`. On first source installation it invokes
+the existing managed-worker installer through the fail-closed auto-install helper, using the
+protected prepared-host input selected by `EXECUTION_MT5_MANAGED_WORKER_INSTALL_INPUT_FILE` and
+documented in `MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md`. The helper
+validates and persists `EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE`; the runner still never creates
+identities, secrets, terminal slots, or broker credentials and never launches the agent or account
+terminal directly.
 
-On a first source installation, the initial runner pass is build-only by outcome: after verifying
-the API, gateway, and managed-worker artifacts it stops with
-`MANAGED_MT5_WORKER_INSTALL_REQUIRED_AFTER_BUILD`. Install the worker explicitly, put the returned
-`receipt_path` in the configured variable, then rerun the canonical runner. This intentional
-nonzero stop occurs before Python import, migrations, terminal startup, service replacement, or any
-production-ready banner.
+On a prepared first source installation, the runner verifies the API, gateway, and managed-worker
+artifacts before auto-install. It dry-runs and executes the installer, validates the returned
+receipt, writes only the receipt setting in `.env`, and continues the same invocation. Missing or
+invalid protected input, installer failure, receipt mismatch, or persistence failure stops before
+Python import, migrations, terminal startup, service replacement, or any production-ready banner.
 
 For a resource-bounded source-contract check that does not build or start production services, run
 `.\tools\verify-production-managed-worker-bootstrap.ps1`. Its report is intentionally limited to

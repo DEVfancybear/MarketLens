@@ -104,7 +104,7 @@ function Assert-CanonicalRunnerContract {
       $gateway -gt $marketDataTerminal) `
     'runner build/receipt/runtime ordering invalid'
   Assert-ReadinessTrue `
-    ($Source.Contains('MANAGED_MT5_WORKER_INSTALL_REQUIRED_AFTER_BUILD') -and
+    ($Source.Contains('MANAGED_MT5_WORKER_AUTOINSTALL_RESULT_INVALID') -and
       $Source.Contains('MANAGED_MT5_WORKER_RECEIPT_REQUIRED')) `
     'runner bootstrap receipt failure codes missing'
   Assert-ReadinessTrue (-not $Source.Contains('Install-MT5BareMetalWorker.ps1')) `
@@ -677,7 +677,7 @@ Invoke-ReadinessTest 'canonical runner receipt resolver is strict and build-mode
           name = 'missing after build'
           path = Join-Path $tempRoot 'missing-after-build.json'
           built = $true
-          expected = '^MANAGED_MT5_WORKER_INSTALL_REQUIRED_AFTER_BUILD:'
+          expected = '^MANAGED_MT5_WORKER_AUTOINSTALL_RESULT_INVALID:'
           forbidden = @('missing-after-build.json')
         },
         [pscustomobject]@{
@@ -745,7 +745,7 @@ Invoke-ReadinessTest 'operator configuration and docs describe the managed readi
       ($document.Contains('EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE')) `
       'operator documentation omits the receipt setting'
     Assert-ReadinessTrue `
-      ($document -match '(?i)previously installed|installed worker') `
+      ($document -match '(?i)prepared.*host|attested installer|installed worker') `
       'operator documentation does not preserve the explicit install boundary'
   }
   Assert-ReadinessTrue `
@@ -756,11 +756,12 @@ Invoke-ReadinessTest 'operator configuration and docs describe the managed readi
     'operations guide does not document receipt validation'
   foreach ($document in @($runbook, $operations)) {
     Assert-ReadinessTrue `
-      ($document.Contains('MANAGED_MT5_WORKER_INSTALL_REQUIRED_AFTER_BUILD')) `
-      'operator documentation omits the first-build stop code'
+      ($document.Contains('EXECUTION_MT5_MANAGED_WORKER_INSTALL_INPUT_FILE') -or
+        $document.Contains('managed-worker-install-input.json')) `
+      'operator documentation omits the protected install-input contract'
     Assert-ReadinessTrue `
-      ($document -match '(?i)receipt_path.*rerun|rerun.*receipt_path') `
-      'operator documentation omits the first-install rerun sequence'
+      ($document -match '(?i)same invocation|single canonical-runner invocation') `
+      'operator documentation omits the one-command first-install sequence'
   }
 }
 

@@ -19,6 +19,7 @@ $stagedApiPath = Join-Path $backendDir "bin\api.next.exe"
 $gatewayPath = Join-Path $backendDir "bin\execution-gateway.exe"
 $stagedGatewayPath = Join-Path $backendDir "bin\execution-gateway.next.exe"
 $managedWorkerAgentPath = Join-Path $backendDir "execution\target\release\mt5-vm-agent.exe"
+$managedWorkerAutoInstallPath = Join-Path $repoRoot "tools\Install-ProductionManagedWorker.ps1"
 $backendEnv = Join-Path $backendDir ".env"
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $streamOut = Join-Path $runtimeLogs "mt5-stream-$stamp.out.log"
@@ -57,8 +58,8 @@ function Resolve-ManagedWorkerReceiptFile {
   )
 
   $installInstruction =
-    "Run the explicit managed-worker installer documented in docs\MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md, " +
-    "set EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE to its returned receipt_path, then rerun .\run-backend-production.ps1."
+    "Provide a valid receipt or prepare the protected managed-worker install input documented in " +
+    "docs\MT5_BAREMETAL_MANAGED_EA_RUNBOOK.md."
   $receiptMissing = [string]::IsNullOrWhiteSpace($ReceiptPath)
   if (-not $receiptMissing -and -not [IO.Path]::IsPathRooted($ReceiptPath)) {
     throw "EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE must be an absolute path."
@@ -75,7 +76,7 @@ function Resolve-ManagedWorkerReceiptFile {
 
   if ($receiptMissing) {
     if ($ArtifactsBuilt) {
-      throw "MANAGED_MT5_WORKER_INSTALL_REQUIRED_AFTER_BUILD: Backend artifacts were built and verified. $installInstruction"
+      throw "MANAGED_MT5_WORKER_AUTOINSTALL_RESULT_INVALID: Backend artifacts were built and verified but automatic installation did not return a valid receipt. $installInstruction"
     }
     throw "MANAGED_MT5_WORKER_RECEIPT_REQUIRED: A valid managed-worker receipt is required before runtime startup. $installInstruction"
   }
@@ -194,6 +195,7 @@ $executionAdminToken = Get-BackendEnvValue "EXECUTION_ADMIN_TOKEN"
 $executionMt5VmBootstrapToken = Get-BackendEnvValue "EXECUTION_MT5_VM_BOOTSTRAP_TOKEN"
 $executionMt5IdentityHmacKeyFile = Get-BackendEnvValue "EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE"
 $executionMt5ManagedWorkerReceiptFile = Get-BackendEnvValue "EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE"
+$executionMt5ManagedWorkerInstallInputFile = Get-BackendEnvValue "EXECUTION_MT5_MANAGED_WORKER_INSTALL_INPUT_FILE"
 if ([string]::IsNullOrWhiteSpace($databaseUrl)) {
   throw "DATABASE_URL is required by both the API and durable Rust execution gateway."
 }
@@ -294,6 +296,47 @@ if (-not $SkipBuild) {
 } elseif (-not (Test-Path -LiteralPath $apiPath -PathType Leaf) -or
         -not (Test-Path -LiteralPath $gatewayPath -PathType Leaf)) {
   throw "Production Go/Rust artifacts do not exist; rerun without -SkipBuild."
+}
+
+$managedWorkerAutoInstallStatus = "existing-receipt"
+if ([string]::IsNullOrWhiteSpace($executionMt5ManagedWorkerReceiptFile)) {
+  if ($SkipBuild) {
+    throw "MANAGED_MT5_WORKER_RECEIPT_REQUIRED: A valid managed-worker receipt is required before runtime startup. Automatic worker installation is disabled in -SkipBuild mode."
+  }
+  if (-not $managedWorkerArtifactsBuilt) {
+    throw "MANAGED_MT5_WORKER_AUTOINSTALL_ARTIFACTS_REQUIRED"
+  }
+  if (-not (Test-Path -LiteralPath $managedWorkerAutoInstallPath -PathType Leaf)) {
+    throw "MANAGED_MT5_WORKER_AUTOINSTALL_HELPER_MISSING"
+  }
+  if ([string]::IsNullOrWhiteSpace($executionMt5ManagedWorkerInstallInputFile)) {
+    $executionMt5ManagedWorkerInstallInputFile = "C:\ProgramData\MarketLens\managed-worker-install-input.json"
+  }
+  Write-Host "Installing or adopting the prepared managed MT5 worker..." -ForegroundColor Cyan
+  try {
+    $autoInstallJson = @(& $managedWorkerAutoInstallPath `
+      -InstallInputPath $executionMt5ManagedWorkerInstallInputFile `
+      -BackendEnvPath $backendEnv `
+      -RepoRoot $repoRoot `
+      -AgentPath $managedWorkerAgentPath `
+      -GatewayUrl $executionAdminUrl `
+      -CredentialApiUrl "http://127.0.0.1:8080" `
+      -Execute)
+    $autoInstall = ($autoInstallJson -join "`n") | ConvertFrom-Json -ErrorAction Stop
+  } catch {
+    $failureCode = [string]$_.Exception.Message
+    if ($failureCode -notmatch '^(?:MANAGED_MT5_WORKER_AUTOINSTALL_|BAREMETAL_)[A-Z0-9_]+$') {
+      $failureCode = "MANAGED_MT5_WORKER_AUTOINSTALL_FAILED"
+    }
+    throw $failureCode
+  }
+  if ([string]$autoInstall.status -notin @("INSTALLED", "ADOPTED") -or
+      [string]::IsNullOrWhiteSpace([string]$autoInstall.receipt_path)) {
+    throw "MANAGED_MT5_WORKER_AUTOINSTALL_RESULT_INVALID"
+  }
+  $managedWorkerAutoInstallStatus = [string]$autoInstall.status
+  $executionMt5ManagedWorkerReceiptFile = [string]$autoInstall.receipt_path
+  Write-Host "Managed MT5 worker $($managedWorkerAutoInstallStatus.ToLowerInvariant()); continuing the same production run." -ForegroundColor Green
 }
 
 $executionMt5ManagedWorkerReceiptFile = Resolve-ManagedWorkerReceiptFile `

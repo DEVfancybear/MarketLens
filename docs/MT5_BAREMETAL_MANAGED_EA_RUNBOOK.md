@@ -14,10 +14,11 @@ The R15-9 three-demo-account gate must pass before any Live/funded activation.
   owns a distinct preinstalled, attested terminal slot and writable runtime root.
 - A separate stable, dedicated Windows identity runs the Go API. Its user profile and credential
   set must load on every restart because managed broker credentials are bound to that identity.
-- `run-backend-production.ps1` never installs a worker or launches `mt5-vm-agent.exe` or an account
-  terminal directly. After the Rust gateway is healthy, it validates the previously installed
-  worker receipt and Scheduled Task. It leaves a healthy task untouched and starts the attested
-  Scheduled Task once when it is stopped, then requires a fresh matching registry heartbeat.
+- On a prepared first source build, `run-backend-production.ps1` delegates installation to the
+  existing attested installer; it never invents identity/slot input or launches `mt5-vm-agent.exe`
+  or an account terminal directly. After the Rust gateway is healthy, it validates the worker
+  receipt and Scheduled Task. It leaves a healthy task untouched and starts the attested Scheduled
+  Task once when stopped, then requires a fresh matching registry heartbeat.
 
 ## Required protected files
 
@@ -79,24 +80,21 @@ verifies `SHA256SUMS`; it does not install the worker. A source build leaves the
 `backend\execution\target\release\mt5-vm-agent.exe`; an artifact deploy stages it at
 `backend\bin\mt5-vm-agent.exe`.
 
-For the first source installation, use this two-pass bootstrap sequence:
+For a prepared host, the first source installation is a single canonical-runner invocation:
 
-1. Configure the other required protected settings, leave the absent receipt unset, and run
-   `.\run-backend-production.ps1`. It pulls and builds the API, gateway, and managed worker, verifies
-   the staged artifacts, then exits nonzero with
-   `MANAGED_MT5_WORKER_INSTALL_REQUIRED_AFTER_BUILD`. It does not migrate, stop services, or start
-   the Python bridge, terminal, gateway, worker, or API on that path.
-2. Complete the explicit worker installation below using the newly built
-   `backend\execution\target\release\mt5-vm-agent.exe`. The runner never invokes this installer.
-3. Put the installer's returned `receipt_path` in the configured environment variable, then rerun
-   `.\run-backend-production.ps1` with
-   `EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE` set to that absolute path.
-4. The second run validates the receipt before migrations or runtime replacement and continues
-   through the existing worker and public readiness gates.
+1. Provision the dedicated Windows identity, protected bootstrap-token file, and exact terminal-slot
+   attestations once. Store only their non-secret paths and hashes in the protected install-input
+   file described below.
+2. Leave `EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE` empty and run
+   `.\run-backend-production.ps1` normally. It builds and verifies the API, gateway, and worker,
+   dry-runs and executes the existing installer, validates its receipt, atomically persists
+   `receipt_path` to `backend\.env`, and continues migrations, restart, and readiness gates in the
+   same invocation.
+3. Later runs see the validated receipt and do not reinstall or rewrite the worker.
 
 An artifact deploy also remains fail-closed: if its delegated `-SkipBuild` runner has no valid
 receipt, it exits with `MANAGED_MT5_WORKER_RECEIPT_REQUIRED` before migrations or runtime startup
-and does not claim that it built artifacts.
+and never auto-installs or rewrites `.env`.
 
 ## Prepare the slot descriptor
 
@@ -131,8 +129,55 @@ Do not reuse a terminal path, state root, runtime root, profile, pipe name, or s
 
 ## Dry-run, install, start, and check health
 
-Populate the non-secret paths and hashes locally. The same argument map is used for dry-run and
-execution; only the explicit `-Execute` switch mutates the host.
+The normal source-build runner consumes a protected JSON input at
+`C:\ProgramData\MarketLens\managed-worker-install-input.json`. Override that location only with an
+absolute protected `EXECUTION_MT5_MANAGED_WORKER_INSTALL_INPUT_FILE`. The input contains no password
+or token value; `bootstrap_token_file` is a path to the already protected secret file.
+
+Provision the JSON with schema version 1, the worker identity/root fields, and the exact `$slots`
+described above. The remaining artifact paths and hashes are derived from the checked-out build and
+cannot be overridden by this input. Replace every angle-bracket placeholder before saving; the
+installer intentionally rejects an incomplete template:
+
+```json
+{
+  "schema_version": 1,
+  "worker_root": "C:\\MarketLens\\worker",
+  "data_root": "D:\\MarketLens\\runtime",
+  "worker_identity": "HOST\\MarketLensWorker",
+  "task_name": "MarketLens MT5 Worker",
+  "worker_id": "marketlens-baremetal-01",
+  "bootstrap_token_file": "C:\\ProgramData\\MarketLens\\secrets\\worker-bootstrap.token",
+  "terminal_slots": [
+    {
+      "slot_id": "slot-01",
+      "terminal_path": "C:\\Program Files\\MetaTrader 5 Slot 01\\terminal64.exe",
+      "terminal_state_root": "C:\\ProgramData\\MetaQuotes\\Terminal\\<exact-instance-id>",
+      "terminal_sha256": "<terminal SHA-256>",
+      "servers_sha256": "<servers.dat SHA-256>",
+      "terminal_license_sha256": "<terminal license SHA-256>",
+      "ea_path": "C:\\ProgramData\\MetaQuotes\\Terminal\\<exact-instance-id>\\MQL5\\Experts\\MarketLensExecutionEA.ex5",
+      "ea_sha256": "<published EA SHA-256>",
+      "ea_bootstrap_pipe": "marketlens-slot-01",
+      "ea_profile": "MarketLens-slot-01",
+      "ea_gateway_origin": "http://127.0.0.1:8790",
+      "ea_chart_template_path": "C:\\MarketLens\\slot-inputs\\slot-01\\chart01.chr",
+      "ea_chart_template_sha256": "<chart template SHA-256>",
+      "ea_webrequest_settings_source_path": "C:\\MarketLens\\slot-inputs\\slot-01\\experts.ini",
+      "ea_webrequest_settings_sha256": "<WebRequest settings SHA-256>",
+      "ea_topology_attestation_source_path": "C:\\MarketLens\\slot-inputs\\slot-01\\webrequest-attestation.json",
+      "ea_topology_attestation_sha256": "<topology attestation SHA-256>"
+    }
+  ]
+}
+```
+
+The input file must have protected inheritance and grant access only to the provisioning identity,
+SYSTEM, and Administrators. Duplicate or unknown JSON fields fail closed. After that one-time host
+provisioning, run only `.\run-backend-production.ps1`; do not copy `receipt_path` or rerun manually.
+
+The explicit commands below remain available for audited recovery and installer development. The
+same argument map is used for dry-run and execution; only `-Execute` mutates the host.
 
 ```powershell
 $installArgs = @{
@@ -178,12 +223,11 @@ $install.receipt_path
 
 The installer copies the pinned agent into `WorkerRoot`, writes a non-secret config, replaces and
 verifies root ACLs, registers the exact action/identity/logon trigger, and writes the protected
-non-secret receipt. Put the returned `receipt_path` in
-`EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE`. A normal `run-backend-production.ps1` execution then
-validates the receipt, paths, hashes, identity, task action, slot count, registry capacity, leases,
-and heartbeat. It starts the attested Scheduled Task once only when stopped; it never restarts a
-healthy worker. `HEALTHY` accepts both Task Scheduler result `0` and `0x41301` while the long-running
-action is still executing. Any other result is `DEGRADED`.
+non-secret receipt. The normal runner validates and persists that receipt automatically, then checks
+paths, hashes, identity, task action, slot count, registry capacity, leases, and heartbeat. It starts the attested Scheduled Task
+once only when stopped; it never restarts a healthy worker. `HEALTHY`
+accepts both Task Scheduler result `0` and `0x41301` while the long-running action is still executing.
+Any other result is `DEGRADED`.
 
 ## Activation gates
 
