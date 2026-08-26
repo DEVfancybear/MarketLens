@@ -1804,3 +1804,85 @@ APPROVE SPEC REVISION: production-worker-host-provision v22
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v22`. No v22 implementation occurred
 before that approval.
+
+## Revision v23 - dispatch the exact character stream through MT5's UI queue (approval required)
+
+### Discovery during approved v22 execution
+
+V22 RED was observed as two failures because the exact character-stream and editor boundary did
+not exist. GREEN then passed 40/40 focused tests. A mutant dropping the first origin character was
+killed by the frozen event-order assertion, which observed `t` where the exact first character
+`h` was required. The helper was restored byte-for-byte to SHA-256
+`1326D58DA94C1541C8C2505CB69C55D6ED8220CC6E34DAF8B2ABFF1E5D3E71EB`, and the targeted test
+returned GREEN.
+
+The exact selected-host transaction nevertheless failed closed with
+`PROVISIONING_WEBREQUEST_ALLOWLIST_PENDING_FAILED` and completed the existing snapshot rollback.
+An always-Cancel, shape-only trace then repeated the v22 path without printing list contents. The
+editor's bounded readback had already matched the exact origin, but after the synchronous
+`WM_CHAR(Return)` closed the editor the pending state was checkbox `1` with two empty rows of
+lengths `[0, 0]`, zero exact rows, and `desired=false`. No OK, persisted desired setting, live
+receipt, protected host input, worker mutation, or production runner followed.
+
+This proves that calling the editor window procedure synchronously can update its displayed text
+but still bypasses the target thread's queued UI dispatch path that maintains MT5's private Add URL
+model. V18 already demonstrated and bounded `PostMessageW` for the exact mouse gesture; v23 narrows
+an additional use of that existing primitive to the already pinned editor and character stream.
+
+### v23 exact queued editor boundary
+
+Revision v23 remains Tier 3 and changes only v22's delivery mechanism after the same exact ID
+`32954`, class, visibility, enabled, terminal, signer, PID, geometry, and state checks pass:
+
+1. clear only the verified editor with the existing bounded `WM_SETTEXT` empty string;
+2. derive and validate only the exact ordered UTF-16 code units of
+   `http://127.0.0.1:8790` using v22's frozen pure contract;
+3. queue exactly one `WM_CHAR=0x0102` per code unit, in order, with zero `lParam`, to that same
+   editor handle through the existing private `PostMessageW` boundary, and require every queue call
+   to return success;
+4. poll only bounded `WM_GETTEXTLENGTH`/`WM_GETTEXT` on that same handle for at most the existing
+   25-by-100ms wait and require ordinal equality with the exact origin before commit; and
+5. queue exactly one final `WM_CHAR` carriage return `0x0D` to the same handle, then require the
+   editor to disappear within the existing bounded wait before rereading pending state.
+
+Queue success alone is never configuration evidence. The existing immediate pending reread must
+still contain exactly one non-empty ordinal-equal origin and at most one blank placeholder before
+OK; the reopened persisted reread, idempotency transaction, and nonce-bound live WebRequest receipt
+remain mandatory. A failed character queue, readback timeout/mismatch, Return queue, disappearance,
+pending/persisted reread, or rollback fails closed with the existing pinned editor/state/rollback
+errors. The mouse-only queue failure remains separately pinned.
+
+No synchronous production `WM_CHAR`, `WM_KEYDOWN`, `WM_KEYUP`, additional character, alternate
+handle, retry with changed input, arbitrary queued message, keyboard-layout inference, SendInput,
+SendKeys, Clipboard, cursor movement, focus/foreground mutation, window-title lookup, direct desired
+list insertion, or fallback is authorized. The v22 bounded readback, v20 identity, v19 icon
+geometry, v18 exact mouse queue, snapshot/rollback, exact origin and terminal boundary, verifier
+layers, Git operations, and canonical no-switch production command remain unchanged. No tracked
+path or dependency is added.
+
+### v23 RED -> GREEN additions
+
+Before changing production delivery, add and observe RED mocked-boundary contracts proving the
+exact same-handle order: clear, every queued origin `WM_CHAR`, bounded exact readback, one queued
+Return, and no synchronous or post-commit key message. A false queue result at any character or
+Return must abort without success; a readback that never becomes exact must exhaust only the
+bounded wait and abort before Return. Keep assertions frozen through GREEN. Kill and restore a
+mutant that drops or changes one queued origin character.
+
+Run the selected-host path first as an always-Cancel pending-only trace. Only if it rereads the
+exact desired pending shape may the no-argument transaction click OK. Then require its persisted
+result, rerun it for `UNCHANGED`, and immediately run the live nonce-bound WebRequest probe. Only
+after a GREEN checkpoint, clean local-master fast-forward, and one fresh all-pass execution of the
+complete 13-layer verifier may EVIDENCE claim production success.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v23
+```
+
+### v23 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v23`. No v23 implementation occurred
+before that approval.
