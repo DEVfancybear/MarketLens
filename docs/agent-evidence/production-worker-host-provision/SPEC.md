@@ -549,3 +549,45 @@ APPROVE SPEC REVISION: production-worker-host-provision v4
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v4`. No v4 implementation occurred before
 that approval.
+
+## Revision v5 — restore the lockfile-pinned frontend dependency tree (approval required)
+
+### Discovery after v4 implementation
+
+The v4 implementation made `npm run test:trade` pass 84/84 tests; `npm run typecheck` also passed
+and `npm run lint` emitted no findings. The required production build then failed before compiling
+application code because `frontend/node_modules/@tailwindcss/postcss` is absent. The dependency is
+already declared as exact version `4.3.3` in `frontend/package.json` and resolved in the existing
+`frontend/package-lock.json`; this is an incomplete ignored dependency tree, not a requested source
+or dependency-set change.
+
+### v5 setup authorization and acceptance criteria
+
+From `frontend/`, run exactly:
+
+```powershell
+npm ci --ignore-scripts --no-audit --no-fund
+```
+
+This revision authorizes npm to remove and recreate only the ignored `frontend/node_modules/`
+directory from the existing lockfile and to download the packages/checksums named by that lockfile.
+Lifecycle scripts remain disabled. It authorizes no global install, dependency/version addition,
+package or lockfile edit, cache deletion, or other filesystem mutation.
+
+Afterward, `npm ls @tailwindcss/postcss --depth=0`, `npm run test:trade`, `npm run typecheck`, `npm
+run lint`, and `npm run build` must pass. `git status` must show no package-lock or unexpected
+tracked delta. If `npm ci` changes a tracked file, fails integrity validation, requires a lifecycle
+script, or reveals a different missing dependency not present in the lockfile, stop and revise the
+SPEC rather than weakening the gauntlet.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v5
+```
+
+### v5 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v5`. No v5 dependency restoration occurred
+before that approval.
