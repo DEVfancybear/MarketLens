@@ -2333,3 +2333,104 @@ APPROVE SPEC REVISION: production-worker-host-provision v28
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v28`. No v28 implementation or host
 mutation occurred before that approval.
+
+## Revision v29 - guarded physical mouse activation for the MT5 URL editor (approval required)
+
+### Discovery during approved v28 execution
+
+V28 RED was committed before implementation. GREEN then passed the PowerShell parser, all 68
+focused terminal, probe, and managed-worker tests, and four persisted mutation controls. The
+mutants that permitted a wildcard listen address, accepted the wrong connect port, created the
+proxy before pending preflight, and deleted a pre-existing mapping during rollback were all killed;
+the original allowlist source was restored to its exact SHA-256 after every mutant.
+
+The first selected-host v28 run stopped with
+`PROVISIONING_WEBREQUEST_ALLOWLIST_PENDING_FAILED` before portproxy creation, UI confirmation, or
+probe execution. A fresh post-failure inspection found an empty IPv4 portproxy table, no port-80
+listener, no selected terminal process, and a clean source tree. A separate always-Cancel trace
+then observed the exact state transition:
+
+```text
+prior:   enabled=0 items=[""]
+pending: enabled=1 items=["", ""]
+```
+
+Thus MT5 accepted the checkbox transition and created an additional placeholder, but did not commit
+the URL text to its private options model. This repeats the v21-v25 result across synchronous
+`WM_CHAR`, queued `WM_CHAR`, Unicode `SendInput`, and fixed virtual-key `SendInput`; changing the
+origin from `http://127.0.0.1:8790` to the documented standard-port
+`http://127.0.0.1` did not change that behavior. The v28 topology remains valid, but the editor
+activation boundary does not.
+
+An always-Cancel Windows UI Automation discovery found zero descendant automation elements, so the
+dialog exposes no usable Value, Invoke, or SelectionItem pattern. Native enumeration still found
+the exact signed-terminal controls: enabled WebRequest checkbox `10322`, disabled
+`SysListView32` URL list `10191` before checkbox activation, OK `1`, Cancel `2`, and the Expert
+Advisors tab `12320`. The only editor path not yet exercised by the agent is a real guarded mouse
+activation. The current four posted mouse messages can create the edit window without reproducing
+the input/capture state MT5 uses to update its private model.
+
+### v29 exact guarded activation boundary
+
+Revision v29 remains Tier 3 and supersedes only the URL-list activation gesture. The v28 no-port
+origin, exact loopback portproxy topology, always-Cancel preflight, transaction order, rollback,
+probe, managed worker, verifier, and canonical production requirements remain unchanged.
+
+After enabling the WebRequest checkbox and before typing any character, the UI helper must:
+
+1. derive the exact first-item icon/label point from the existing bounded list rectangle and hit
+   test, convert that client point to one screen point, and require it to remain within both the
+   list client rectangle and the virtual-screen bounds;
+2. capture the current cursor position for restoration, require the options dialog to be the exact
+   foreground window owned by the selected terminal PID, and require the screen point to resolve
+   to the exact list handle through `WindowFromPoint`;
+3. move the cursor only to that exact validated point using one `SendInput` absolute-move record,
+   then recheck foreground window, selected PID, point-to-list hit, checkbox state, and list enabled
+   state before emitting any button record;
+4. submit exactly two left-button clicks as four `SendInput` records in the order down, up, down,
+   up, require the native return count to equal the full plan length, and wait only the existing
+   bounded interval for exactly one visible enabled `Edit` control `32954` owned by the same PID;
+5. restore the captured cursor position in `finally` whether activation, typing, Return, pending
+   reread, or later transaction work succeeds or fails; restoration failure is a hard
+   `PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED`, never a silent pass; and
+6. continue with the already approved physical virtual-key character plan, exact pre-Return
+   readback, isolated Return plan, editor disappearance, exact pending reread, and always-Cancel
+   preflight.
+
+The helper may add only the Win32 boundaries required for cursor position, client-to-screen,
+virtual-screen bounds, `WindowFromPoint`, foreground/PID revalidation, and `SendInput` mouse
+records. It may not use SendKeys, Clipboard, `mouse_event`, arbitrary coordinates, relative mouse
+movement, wheel/right/middle buttons, drag, more than two clicks, window-title matching, process
+termination, `BlockInput`, hooks, background services, downloads, or a retry with altered text.
+The move/click plan is allowed only inside the signed selected-terminal transaction and never as a
+general-purpose exported automation command. A residual operating-system race remains between the
+last guard and `SendInput`; EVIDENCE must disclose it.
+
+### v29 RED -> GREEN and gauntlet additions
+
+Before implementation, add and observe RED tests proving exact absolute move and double-click
+plans, exact point conversion and hit validation, foreground/PID/list/checkbox guards both before
+movement and immediately before button input, full native return counts, single-editor discovery,
+and cursor restoration on every injected failure boundary. Freeze those assertions through GREEN.
+Add a known-bad control whose point resolves to another handle and an injected cursor-restore
+failure whose exact authoritative code is pinned. Kill and restore at least four plausible mutants:
+drop the post-move hit guard, permit a partial double-click count, accept the wrong editor PID, and
+skip cursor restoration after successful activation. Persist these checks in the existing single
+13-layer verifier; add no dependency or download.
+
+Run one selected-host always-Cancel trace first. It must show pending enabled, exactly one
+ordinal-equal `http://127.0.0.1` row, at most one blank placeholder, and exact persisted restoration
+after Cancel; otherwise no portproxy or OK action is permitted. Only after that passes, run the full
+selected-host driver twice and complete every unchanged v28 production gate.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v29
+```
+
+### v29 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v29`. No v29 implementation or host
+mutation occurred before that approval.
