@@ -312,6 +312,8 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             "CN=MetaQuotes Ltd., O=MetaQuotes Ltd., S=Lemesos, C=CY", source
         )
         self.assertIn("$expectedOrigin = 'http://127.0.0.1'", source)
+        self.assertIn("[switch]$PendingOnlyTrace", source)
+        self.assertIn("PRODUCTION_WEBREQUEST_ALLOWLIST_PENDING_ONLY=PASS", source)
         self.assertNotIn("$expectedOrigin = 'http://127.0.0.1:8790'", source)
         self.assertIn("Invoke-MT5WebRequestProbe.ps1", source)
         for required in (
