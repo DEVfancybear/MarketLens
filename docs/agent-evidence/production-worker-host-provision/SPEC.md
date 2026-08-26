@@ -1513,3 +1513,77 @@ APPROVE SPEC REVISION: production-worker-host-provision v18
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v18`. No v18 implementation occurred
 before that approval.
+
+## Revision v19 - activate the verified Add URL icon rectangle (approval required)
+
+### Discovery during approved v18 execution
+
+V18 RED was observed as two failures: the `PostMessageW`/queue boundary did not exist and the
+four-position abort test could not resolve it. GREEN then passed 34/34 focused tests. A mutant that
+swallowed one queue failure was killed because the mocked sequence continued to all four calls
+instead of stopping at the failed position; the helper was restored to SHA-256
+`138F09473E0BDDAC1E2B96A893A1C02D02E56F96DD19BC02CA71B1A8CA3BC896` and the targeted test returned
+GREEN.
+
+The selected-host transaction no longer timed out but failed closed with
+`PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID` and restored the exact unchecked,
+one-placeholder-row state. A Cancel-only diagnostic showed that the queued gesture selected and
+focused item 0 (`selected_count=1`, `selected_index=0`, `focused_index=0`) but created no editor.
+No desired state was confirmed and no live receipt, protected host input, worker mutation, or
+production runner followed.
+
+Current MetaQuotes documentation renders the final list item as a green plus followed by
+`add new URL like 'https://www.mql5.com'`; current MetaQuotes-hosted setup guidance instructs users
+to double-click that green plus. A read-only, Cancel-only `LVM_GETITEMRECT`/`LVM_HITTEST` diagnostic
+on the exact selected terminal proved that v16-v18 targeted the entire item bounds midpoint
+`(268,10)`, while item 0's standard `LVIR_ICON` rectangle is `(left=4, top=0, right=22, bottom=20)`
+with midpoint `(13,10)`, hit item 0, and flags `0xE`. The existing bounds midpoint therefore selects
+the row but is not the documented Add URL activation target.
+
+### v19 bounded icon-geometry correction
+
+Revision v19 remains Tier 3 and changes only the rectangle kind used before the already-approved
+v18 exact queued sequence. The native geometry boundary must:
+
+1. request item 0's `LVIR_ICON=1` rectangle with bounded `LVM_GETITEMRECT`;
+2. reject empty, negative, overflowing, or out-of-client icon rectangles;
+3. compute only that icon rectangle's midpoint;
+4. prove bounded `LVM_HITTEST` maps the midpoint back to item 0 and includes
+   `LVHT_ONITEMICON=0x0002`; and
+5. pass that one packed point unchanged to all four v18 `PostMessageW` queue calls.
+
+No bounds/label/select-bounds fallback, alternate point, retry, coordinate literal, screen
+coordinate, cursor movement, global input, focus/foreground API, arbitrary message, or other row is
+authorized. If icon geometry, icon hit, any queue call, editor discovery, text/Return commit,
+pending reread, persisted reread, or rollback fails, retain the existing pinned fail-closed path.
+
+All v18 sequence ordering, flags, queue failure behavior, exact same list handle, exactly one visible
+enabled Edit ID `10325`, exact origin/terminal/signer/PID boundary, snapshot/rollback rules,
+idempotency run, live receipt, verifier layers, Git operations, and canonical production command
+remain unchanged. No tracked path or dependency is added.
+
+### v19 RED -> GREEN additions
+
+Before changing geometry, add and observe RED source/pure contracts for `LVIR_ICON=1`, passing the
+icon rectangle kind into the native `LVM_GETITEMRECT` request, and requiring
+`LVHT_ONITEMICON=0x0002`. The pure geometry contract must reject a bounds-style rectangle request,
+a hit lacking the icon bit, a wrong row, and an invalid icon rectangle while accepting the exact
+general form of a valid item-0 icon rectangle. Keep assertions frozen through GREEN. Kill and
+restore a mutant that changes `LVIR_ICON` to `LVIR_BOUNDS` or accepts a hit without the icon bit.
+
+Then rerun all focused tests, the exact selected-host transaction, a second idempotency transaction,
+and the live nonce-bound WebRequest probe. Only after a GREEN checkpoint, clean local-master
+fast-forward, and one fresh all-pass execution of the complete 13-layer verifier may EVIDENCE claim
+production success.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v19
+```
+
+### v19 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v19`. No v19 implementation occurred
+before that approval.
