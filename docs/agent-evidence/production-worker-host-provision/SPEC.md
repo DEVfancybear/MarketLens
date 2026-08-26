@@ -759,3 +759,69 @@ APPROVE SPEC REVISION: production-worker-host-provision v8
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v8`. No v8 mutation-substitute
 implementation occurred before that approval.
+
+## Revision v9 - serialize process-global APPDATA test fixtures (approval required)
+
+### Discovery during the v8 fresh gauntlet
+
+The v8 fresh run passed tool contracts, the complete Go quality layer, the persisted Go mutant,
+and both Python suites (145 managed tests plus 5 EA tests). `cargo fmt`, `cargo check`, and
+`cargo clippy` also passed. The workspace Rust test then failed in exactly three
+`mt5-vm-agent` tests with `REQUIRED_ARTIFACT_MISSING`; 46 tests passed and 1 credentialed live test
+remained intentionally ignored. The gauntlet stopped before frontend, documentation, PostgreSQL,
+MT5 WebRequest, host provisioning, the production runner, or health checks.
+
+All three failing tests pass when run individually. The complete `mt5-vm-agent` library suite
+passes 49/49 active tests with `--test-threads=1`. Current source shows why: each affected fixture
+changes the process-global `APPDATA` variable to a different temporary tree, while Rust's default
+test runner executes those fixtures concurrently. A competing fixture can therefore make another
+test validate its terminal state under the wrong APPDATA tree. This is test-fixture interference,
+not a missing repository or production artifact.
+
+### v9 scope and behavior
+
+Revision v9 keeps Tier 3 and every v3-v8 production/security invariant. It authorizes changes only
+to `backend/execution/crates/mt5-vm-agent/src/process.rs`, confined to its `#[cfg(test)]` module:
+
+1. Add one test-only static mutex protecting every read/write/restore transaction involving the
+   process-global `APPDATA` variable.
+2. Make `AppDataGuard` own the corresponding mutex guard for its full lifetime, remember the prior
+   value, and restore that exact prior value before releasing the mutex.
+3. Make `valid_process_config_fixture` acquire the guard before changing `APPDATA` or deriving the
+   terminal state path.
+4. Update the existing guard test so it verifies both the temporary absent state and exact
+   restoration through the same serialized guard API.
+
+Poisoned-lock recovery must remain deterministic and test-only; it may recover the mutex guard but
+must not skip restoration. No production item, API, runtime synchronization, dependency, Cargo
+manifest/lockfile, assertion expectation, fixture artifact requirement, verifier command, or
+ignored-test status may change. In particular, the gauntlet must retain Rust's normal parallel test
+execution; adding `--test-threads=1`, retrying failures, or weakening `REQUIRED_ARTIFACT_MISSING`
+checks is forbidden.
+
+### v9 RED -> GREEN and acceptance
+
+The retained RED evidence is the v8 fresh run described above, plus the three individual GREEN
+controls and the serialized-suite GREEN diagnostic that isolate the race. After implementation:
+
+- the three formerly failing focused tests pass;
+- `cargo test -p mt5-vm-agent --lib` passes with the default parallel runner, and must be repeated
+  at least three consecutive times to exercise the former interference window;
+- `cargo fmt --all -- --check`, `cargo check --workspace --locked`, and
+  `cargo clippy --workspace --all-targets --locked -- -D warnings` pass;
+- Git reports no tracked change outside this revision's one Rust test-module path and the already
+  approved SPEC/EVIDENCE/verifier allow-list; and
+- after committing and fast-forwarding the task branch into local `master`, one new complete
+  gauntlet run restarts from layer one. Only that run may supply final production evidence.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v9
+```
+
+### v9 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v9`. No v9 implementation occurred before
+that approval.
