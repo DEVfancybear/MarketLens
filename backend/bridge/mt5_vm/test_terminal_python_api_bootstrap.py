@@ -422,6 +422,40 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             check=False,
             timeout=30,
         )
+        wrong_hit = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(ALLOWLIST),
+                "-ContractTestsOnly",
+                "-MouseHitControl",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+        cursor_restore = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(ALLOWLIST),
+                "-ContractTestsOnly",
+                "-CursorRestoreControl",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
         self.assertEqual(0, positive.returncode, positive.stderr)
         self.assertIn("PRODUCTION_WEBREQUEST_ALLOWLIST_CONTRACTS=PASS", positive.stdout)
         self.assertIn(
@@ -450,6 +484,16 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
         self.assertIn(
             "PROVISIONING_WEBREQUEST_PORT80_OCCUPIED",
             occupied.stdout + occupied.stderr,
+        )
+        self.assertNotEqual(0, wrong_hit.returncode)
+        self.assertIn(
+            "PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID",
+            wrong_hit.stdout + wrong_hit.stderr,
+        )
+        self.assertNotEqual(0, cursor_restore.returncode)
+        self.assertIn(
+            "PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED",
+            cursor_restore.stdout + cursor_restore.stderr,
         )
 
     def test_webrequest_allowlist_transaction_applies_once_and_is_idempotent(self) -> None:
