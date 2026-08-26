@@ -1369,3 +1369,70 @@ APPROVE SPEC REVISION: production-worker-host-provision v16
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v16`. No v16 implementation occurred
 before that approval.
+
+## Revision v17 - send the complete control-local double-click sequence (approval required)
+
+### Discovery during approved v16 execution
+
+V16 source/geometry contracts were observed RED, then passed 31/31 focused tests. A mutant that
+accepted the wrong hit row was killed with `PROVISIONING_WEBREQUEST_ALLOWLIST_HIT_INVALID`, and the
+helper was restored to SHA-256
+`6AF7C3F7F79A66CBDB27773EB4CCE9AA941E0849B5AB96695D54666372255DDF` before live execution.
+
+On the exact signed terminal, `LVM_GETITEMRECT` and `LVM_HITTEST` succeeded for item 0, the checkbox
+was enabled only in the pending dialog, and the single authorized `WM_LBUTTONDBLCLK` was delivered
+to the exact list handle. MT5 did not reveal Edit control `10325`, so the transaction failed with
+`PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID`. The dialog was cancelled, the exact unchecked
+one-blank-row snapshot was restored and verified, and the owned terminal was closed. No OK with a
+desired URL, live probe, attestation, protected host input, worker mutation, or production runner
+followed.
+
+The control-local double-click message alone lacks the preceding button state that Windows sends
+during a real double click. MT5's private handler requires the first click to select/focus the blank
+row before it treats the second click as activation.
+
+### v17 bounded exception
+
+Revision v17 remains Tier 3 and changes only the v16 activation delivery after the same exact
+rectangle/hit-test defenses pass. Replace the single message with exactly this four-message
+sequence to the same `SysListView32` handle and same computed control-client point:
+
+1. `WM_LBUTTONDOWN` with `MK_LBUTTON`;
+2. `WM_LBUTTONUP` with no button flags;
+3. `WM_LBUTTONDBLCLK` with `MK_LBUTTON`;
+4. `WM_LBUTTONUP` with no button flags.
+
+Every message must use the existing bounded timeout wrapper. No delay-dependent coordinate
+recalculation, second row, retry at another point, global input API, cursor movement, absolute
+screen coordinate, `SetFocus`, `SetForegroundWindow`, `SendInput`, SendKeys, Clipboard, or window
+title is authorized. After the sequence, exactly one same-dialog Edit ID `10325` must become visible
+and enabled; otherwise cancel and retain the v16 failure behavior.
+
+No path, dependency, URL, terminal, signer/PID boundary, state precondition, text/Return action,
+snapshot/rollback rule, live probe, gauntlet layer, Git operation, or production command changes.
+
+### v17 RED -> GREEN additions
+
+Add and observe RED constants/source contracts for `WM_LBUTTONDOWN=0x0201` and
+`WM_LBUTTONUP=0x0202`, and a pure sequence contract that requires exactly four ordered messages,
+the verified packed point on all four, and only the two specified `MK_LBUTTON` flags. Reject a
+missing/reordered/extra message, changed point, or wrong flag with
+`PROVISIONING_WEBREQUEST_ALLOWLIST_SEQUENCE_INVALID`. Keep assertions frozen through GREEN and kill
+a mutant that swaps or drops one sequence element.
+
+Then run the selected-host transaction. It may persist only after pending reread is exact; rerun it
+for idempotency and immediately run the live nonce-bound WebRequest probe. Only after the GREEN
+checkpoint, clean local-master fast-forward, and a fresh all-pass 13-layer gauntlet may EVIDENCE
+claim production success.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v17
+```
+
+### v17 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v17`. No v17 implementation occurred
+before that approval.
