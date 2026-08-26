@@ -1074,3 +1074,67 @@ APPROVE SPEC REVISION: production-worker-host-provision v13
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v13`. No v13 implementation occurred
 before that approval.
+
+## Revision v14 - complete the PowerShell 5.1 crypto path before implementation (approval required)
+
+### Additional discovery after v13 approval and before RED
+
+The mandatory exact-source read performed after committing the approved v13 SPEC found one more
+.NET-newer static API later in the same live probe path:
+`System.Security.Cryptography.SHA256.HashData`. Read-only reflection on the production host confirms
+that CLR `4.0.30319.42000` does not expose `SHA256.HashData`, but does expose `SHA256.Create`,
+instance `ComputeHash`, and `BitConverter.ToString`.
+
+No v13 test or implementation edit has occurred. Proceeding with v13 alone would knowingly move the
+failure from nonce creation to proof construction after a successful terminal probe, so v14 extends
+the compatibility correction before implementation rather than manufacturing another expected
+failed production gauntlet.
+
+### v14 scope, controls, and acceptance
+
+Revision v14 remains Tier 3, retains every v3-v13 invariant and all v13 nonce requirements, and
+keeps the same authorized paths:
+
+- `backend/bridge/mt5_vm/test_production_webrequest_probe.py`;
+- `tools/mt5-baremetal/Invoke-MT5WebRequestProbe.ps1`;
+- this SPEC and the final EVIDENCE record.
+
+In addition to the approved v13 nonce generator, add one PowerShell-5.1-compatible SHA-256 helper
+that accepts bytes, creates a `SHA256` instance, computes the digest through instance `ComputeHash`,
+disposes the instance in `finally`, and returns `BitConverter.ToString` with only hyphens removed
+and invariant lowercase. Replace only the proof's inline `SHA256.HashData` expression with that
+helper. The nonce value itself must remain absent from output and persisted proof; only its SHA-256
+digest is recorded.
+
+RED must require the combined marker `PRODUCTION_POWERSHELL51_CRYPTO_CONTRACTS=PASS` and the
+compatible source capabilities before either implementation exists. GREEN contract-only execution
+must retain the v13 real 16-byte nonce generation and invalid-shape controls, and must verify the
+SHA-256 helper against the exact standard `abc` digest
+`ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad`. The Python source contract
+must require `RandomNumberGenerator.Create`/`GetBytes`, `SHA256.Create`/`ComputeHash`,
+`BitConverter.ToString`, and disposal, while forbidding all three unavailable calls:
+`RandomNumberGenerator.Fill`, `Convert.ToHexString`, and `SHA256.HashData`.
+
+The v13 nonce-shape negatives remain: short, uppercase, and non-hex values must fail with
+`PROVISIONING_PROBE_NONCE_INVALID`. A one-off mutant that changes the compatible hash result or
+nonce-shape defense must be killed by the frozen contracts and restored byte-for-byte before the
+GREEN checkpoint.
+
+No cryptographic algorithm, nonce length/entropy, receipt/proof schema, MQL5 source, URL, signer,
+terminal/state-root boundary, host input, secret, ACL, installer, database check, source-diff gate,
+production command, layer order, or health/postcondition may change. No dependency, download,
+ambient configuration mutation, push, or out-of-scope terminal action is authorized. Tools,
+generated files, checkpoint/fast-forward cadence, and the required fresh 13-layer gauntlet remain
+exactly as v13 states.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v14
+```
+
+### v14 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v14`. No v14 implementation occurred
+before that approval.
