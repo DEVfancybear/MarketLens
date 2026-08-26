@@ -1499,11 +1499,13 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
 
     def test_webrequest_physical_mouse_activation_rechecks_guard_and_counts(self) -> None:
         expected = {
-            "success": {"guards": 2, "sends": 2, "ok": True},
+            "success": {"guards": 3, "sends": 3, "ok": True},
             "guard1": {"guards": 1, "sends": 0, "ok": False},
             "partial_move": {"guards": 1, "sends": 1, "ok": False},
             "guard2": {"guards": 2, "sends": 1, "ok": False},
-            "partial_clicks": {"guards": 2, "sends": 2, "ok": False},
+            "partial_first_click": {"guards": 2, "sends": 2, "ok": False},
+            "guard3": {"guards": 3, "sends": 2, "ok": False},
+            "partial_second_click": {"guards": 3, "sends": 3, "ok": False},
         }
         for mode, expected_result in expected.items():
             with self.subTest(mode=mode):
@@ -1523,13 +1525,17 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
                     "[int]$ProcessId,[int]$ScreenX,[int]$ScreenY);"
                     "$script:events+=,'guard';$guards=@($script:events|Where-Object{$_ -ceq 'guard'}).Count;"
                     "if($script:mode -ceq 'guard1' -and $guards -eq 1){return $false};"
-                    "if($script:mode -ceq 'guard2' -and $guards -eq 2){return $false};$true};"
+                    "if($script:mode -ceq 'guard2' -and $guards -eq 2){return $false};"
+                    "if($script:mode -ceq 'guard3' -and $guards -eq 3){return $false};$true};"
                     "function Invoke-MT5VmNativeMouseInputBoundary {param([object[]]$Plan);"
                     "$script:events+=,('send:'+$Plan.Count);"
                     "$sends=@($script:events|Where-Object{$_ -like 'send:*'}).Count;"
                     "if($script:mode -ceq 'partial_move' -and $sends -eq 1){return 0};"
-                    "if($script:mode -ceq 'partial_clicks' -and $sends -eq 2){return 3};"
+                    "if($script:mode -ceq 'partial_first_click' -and $sends -eq 2){return 1};"
+                    "if($script:mode -ceq 'partial_second_click' -and $sends -eq 3){return 1};"
                     "$Plan.Count};"
+                    "function Start-Sleep {param([int]$Milliseconds);"
+                    "$script:events+=,('sleep:'+$Milliseconds)};"
                     "try{try{$value=[bool](Invoke-MT5VmGuardedPhysicalMouseActivationBoundary "
                     "-OptionsHandle ([IntPtr]41) -ListHandle ([IntPtr]42) "
                     "-CheckboxHandle ([IntPtr]43) -ProcessId 700 -ClientX 13 -ClientY 10);"
@@ -1551,7 +1557,17 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
                 self.assertEqual(expected_result["sends"], observed["sends"])
                 if expected_result["ok"]:
                     self.assertEqual(
-                        ["point", "screen", "guard", "send:1", "guard", "send:4"],
+                        [
+                            "point",
+                            "screen",
+                            "guard",
+                            "send:1",
+                            "guard",
+                            "send:2",
+                            "sleep:150",
+                            "guard",
+                            "send:2",
+                        ],
                         observed["events"],
                     )
                     self.assertEqual("", observed["error"])
