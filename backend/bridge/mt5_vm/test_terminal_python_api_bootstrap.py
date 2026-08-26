@@ -346,7 +346,6 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             "SendKeys",
             "Clipboard",
             "Set-Clipboard",
-            "SetCursorPos",
             "mouse_event",
             "WindowTitle",
             "Stop-Process",
@@ -558,14 +557,24 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
         geometry_end = source.index("function Assert-MT5VmMouseActivationSequence")
         geometry_source = source[geometry_start:geometry_end]
         self.assertNotIn("sendinput", geometry_source.casefold())
-        for forbidden in (
-            "mouse_event",
-            "SetCursorPos",
+        for required in (
             "GetCursorPos",
-            "ScreenToClient",
+            "SetCursorPos",
             "ClientToScreen",
+            "WindowFromPoint",
+            "GetSystemMetrics",
+            "SendMouseInput",
+            "Invoke-MT5VmGuardedPhysicalMouseActivationBoundary",
+            "Invoke-MT5VmPhysicalMouseActivationTransactionCore",
         ):
-            self.assertNotIn(forbidden.casefold(), source.casefold(), forbidden)
+            self.assertIn(required, source, required)
+        self.assertNotIn("mouse_event", source.casefold())
+        apply_start = source.index("function Invoke-MT5VmWebRequestEditorApplyBoundary")
+        apply_end = source.index("function Read-MT5VmWebRequestStateBoundary")
+        apply_source = source[apply_start:apply_end]
+        self.assertIn("Invoke-MT5VmPhysicalMouseActivationTransactionCore", apply_source)
+        self.assertIn("Invoke-MT5VmGuardedPhysicalMouseActivationBoundary", apply_source)
+        self.assertNotIn("Invoke-MT5VmMouseActivationSequenceBoundary", apply_source)
 
         body = (
             "$c=Get-MT5VmTerminalUiConstants;"
@@ -666,20 +675,30 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             "$c=Get-MT5VmTerminalUiConstants;"
             "$ok=Assert-MT5VmWebRequestEditorCandidate "
             "-ExpectedControlId $c.WebRequestAddEditor -ObservedControlId 32954 "
-            "-CandidateCount 1 -WindowClass 'Edit' -Visible $true -Enabled $true;"
+            "-CandidateCount 1 -WindowClass 'Edit' -Visible $true -Enabled $true "
+            "-ExpectedProcessId 700 -ObservedProcessId 700;"
             "$cases=@("
             "@{ExpectedControlId=$c.WebRequestAddEditor;ObservedControlId=10325;"
-            "CandidateCount=1;WindowClass='Edit';Visible=$true;Enabled=$true},"
+            "CandidateCount=1;WindowClass='Edit';Visible=$true;Enabled=$true;"
+            "ExpectedProcessId=700;ObservedProcessId=700},"
             "@{ExpectedControlId=$c.WebRequestAddEditor;ObservedControlId=32954;"
-            "CandidateCount=0;WindowClass='';Visible=$false;Enabled=$false},"
+            "CandidateCount=0;WindowClass='';Visible=$false;Enabled=$false;"
+            "ExpectedProcessId=700;ObservedProcessId=700},"
             "@{ExpectedControlId=$c.WebRequestAddEditor;ObservedControlId=32954;"
-            "CandidateCount=2;WindowClass='Edit';Visible=$true;Enabled=$true},"
+            "CandidateCount=2;WindowClass='Edit';Visible=$true;Enabled=$true;"
+            "ExpectedProcessId=700;ObservedProcessId=700},"
             "@{ExpectedControlId=$c.WebRequestAddEditor;ObservedControlId=32954;"
-            "CandidateCount=1;WindowClass='Static';Visible=$true;Enabled=$true},"
+            "CandidateCount=1;WindowClass='Static';Visible=$true;Enabled=$true;"
+            "ExpectedProcessId=700;ObservedProcessId=700},"
             "@{ExpectedControlId=$c.WebRequestAddEditor;ObservedControlId=32954;"
-            "CandidateCount=1;WindowClass='Edit';Visible=$false;Enabled=$true},"
+            "CandidateCount=1;WindowClass='Edit';Visible=$false;Enabled=$true;"
+            "ExpectedProcessId=700;ObservedProcessId=700},"
             "@{ExpectedControlId=$c.WebRequestAddEditor;ObservedControlId=32954;"
-            "CandidateCount=1;WindowClass='Edit';Visible=$true;Enabled=$false});"
+            "CandidateCount=1;WindowClass='Edit';Visible=$true;Enabled=$false;"
+            "ExpectedProcessId=700;ObservedProcessId=700},"
+            "@{ExpectedControlId=$c.WebRequestAddEditor;ObservedControlId=32954;"
+            "CandidateCount=1;WindowClass='Edit';Visible=$true;Enabled=$true;"
+            "ExpectedProcessId=700;ObservedProcessId=701});"
             "$errors=@();foreach($case in $cases){try{"
             "Assert-MT5VmWebRequestEditorCandidate @case|Out-Null;"
             "$errors+=,'FAILED_OPEN'}catch{$errors+=,$_.Exception.Message}};"
@@ -694,7 +713,7 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             {"legacy": 10325, "add_editor": 32954}, observed["constants"]
         )
         self.assertTrue(observed["ok"])
-        self.assertEqual(6, len(observed["errors"]))
+        self.assertEqual(7, len(observed["errors"]))
         for error in observed["errors"]:
             self.assertIn("PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID", error)
 
@@ -1364,6 +1383,177 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             "PROVISIONING_WEBREQUEST_ALLOWLIST_SEQUENCE_QUEUE_FAILED",
             observed["caught"],
         )
+
+    def test_webrequest_physical_mouse_plans_are_exact_and_fail_closed(self) -> None:
+        body = (
+            "$c=Get-MT5VmTerminalUiConstants;"
+            "$move=@(New-MT5VmAbsoluteMouseMoveInputPlan -ScreenX 100 -ScreenY 50 "
+            "-VirtualLeft 0 -VirtualTop 0 -VirtualWidth 1920 -VirtualHeight 1080);"
+            "$clicks=@(New-MT5VmExactDoubleClickInputPlan);"
+            "$badMoves=@("
+            "@{ScreenX=-1;ScreenY=50;VirtualLeft=0;VirtualTop=0;VirtualWidth=1920;VirtualHeight=1080},"
+            "@{ScreenX=1920;ScreenY=50;VirtualLeft=0;VirtualTop=0;VirtualWidth=1920;VirtualHeight=1080},"
+            "@{ScreenX=100;ScreenY=50;VirtualLeft=0;VirtualTop=0;VirtualWidth=1;VirtualHeight=1080});"
+            "$moveErrors=@();foreach($case in $badMoves){try{"
+            "New-MT5VmAbsoluteMouseMoveInputPlan @case|Out-Null;"
+            "$moveErrors+=,'FAILED_OPEN'}catch{$moveErrors+=,$_.Exception.Message}};"
+            "$missing=@($clicks[0..2]);$reordered=@($clicks.Clone());"
+            "$swap=$reordered[0];$reordered[0]=$reordered[1];$reordered[1]=$swap;"
+            "$extra=@($clicks+[pscustomobject]@{Dx=0;Dy=0;MouseData=0;Flags=4});"
+            "$clickErrors=@();foreach($candidate in @($missing,$reordered,$extra,@())){try{"
+            "Assert-MT5VmExactDoubleClickInputPlan -Plan @($candidate)|Out-Null;"
+            "$clickErrors+=,'FAILED_OPEN'}catch{$clickErrors+=,$_.Exception.Message}};"
+            "$records={param($items)@($items|ForEach-Object{[pscustomobject]@{"
+            "dx=[int]$_.Dx;dy=[int]$_.Dy;data=[int]$_.MouseData;flags=[long]$_.Flags}})};"
+            "[pscustomobject]@{constants=[pscustomobject]@{move=$c.MouseEventMove;"
+            "left_down=$c.MouseEventLeftDown;left_up=$c.MouseEventLeftUp;"
+            "absolute=$c.MouseEventAbsolute;virtual_desk=$c.MouseEventVirtualDesk};"
+            "move=(& $records $move);clicks=(& $records $clicks);"
+            "move_errors=$moveErrors;click_errors=$clickErrors}|"
+            "ConvertTo-Json -Compress -Depth 6"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertEqual(
+            {
+                "move": 0x0001,
+                "left_down": 0x0002,
+                "left_up": 0x0004,
+                "absolute": 0x8000,
+                "virtual_desk": 0x4000,
+            },
+            observed["constants"],
+        )
+        self.assertEqual(
+            [
+                {
+                    "dx": round(100 * 65535 / 1919),
+                    "dy": round(50 * 65535 / 1079),
+                    "data": 0,
+                    "flags": 0xC001,
+                }
+            ],
+            observed["move"],
+        )
+        self.assertEqual(
+            [
+                {"dx": 0, "dy": 0, "data": 0, "flags": 0x0002},
+                {"dx": 0, "dy": 0, "data": 0, "flags": 0x0004},
+                {"dx": 0, "dy": 0, "data": 0, "flags": 0x0002},
+                {"dx": 0, "dy": 0, "data": 0, "flags": 0x0004},
+            ],
+            observed["clicks"],
+        )
+        self.assertEqual(3, len(observed["move_errors"]))
+        self.assertEqual(4, len(observed["click_errors"]))
+        for error in observed["move_errors"] + observed["click_errors"]:
+            self.assertIn("PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID", error)
+
+    def test_webrequest_physical_mouse_activation_rechecks_guard_and_counts(self) -> None:
+        expected = {
+            "success": {"guards": 2, "sends": 2, "ok": True},
+            "guard1": {"guards": 1, "sends": 0, "ok": False},
+            "partial_move": {"guards": 1, "sends": 1, "ok": False},
+            "guard2": {"guards": 2, "sends": 1, "ok": False},
+            "partial_clicks": {"guards": 2, "sends": 2, "ok": False},
+        }
+        for mode, expected_result in expected.items():
+            with self.subTest(mode=mode):
+                body = (
+                    f"$script:mode='{mode}';$script:events=@();"
+                    "$pointOriginal=(Get-Command Convert-MT5VmClientPointToScreenBoundary).ScriptBlock;"
+                    "$screenOriginal=(Get-Command Get-MT5VmVirtualScreenBoundary).ScriptBlock;"
+                    "$guardOriginal=(Get-Command Test-MT5VmPhysicalMouseActivationGuardBoundary).ScriptBlock;"
+                    "$sendOriginal=(Get-Command Invoke-MT5VmNativeMouseInputBoundary).ScriptBlock;"
+                    "function Convert-MT5VmClientPointToScreenBoundary {"
+                    "param([IntPtr]$ListHandle,[int]$ClientX,[int]$ClientY);"
+                    "$script:events+=,'point';[pscustomobject]@{x=113;y=210}};"
+                    "function Get-MT5VmVirtualScreenBoundary {$script:events+=,'screen';"
+                    "[pscustomobject]@{left=0;top=0;width=1920;height=1080}};"
+                    "function Test-MT5VmPhysicalMouseActivationGuardBoundary {"
+                    "param([IntPtr]$OptionsHandle,[IntPtr]$ListHandle,[IntPtr]$CheckboxHandle,"
+                    "[int]$ProcessId,[int]$ScreenX,[int]$ScreenY);"
+                    "$script:events+=,'guard';$guards=@($script:events|Where-Object{$_ -ceq 'guard'}).Count;"
+                    "if($script:mode -ceq 'guard1' -and $guards -eq 1){return $false};"
+                    "if($script:mode -ceq 'guard2' -and $guards -eq 2){return $false};$true};"
+                    "function Invoke-MT5VmNativeMouseInputBoundary {param([object[]]$Plan);"
+                    "$script:events+=,('send:'+$Plan.Count);"
+                    "$sends=@($script:events|Where-Object{$_ -like 'send:*'}).Count;"
+                    "if($script:mode -ceq 'partial_move' -and $sends -eq 1){return 0};"
+                    "if($script:mode -ceq 'partial_clicks' -and $sends -eq 2){return 3};"
+                    "$Plan.Count};"
+                    "try{try{$value=[bool](Invoke-MT5VmGuardedPhysicalMouseActivationBoundary "
+                    "-OptionsHandle ([IntPtr]41) -ListHandle ([IntPtr]42) "
+                    "-CheckboxHandle ([IntPtr]43) -ProcessId 700 -ClientX 13 -ClientY 10);"
+                    "$errorCode=''}catch{$value=$false;$errorCode=$_.Exception.Message}}finally{"
+                    "Set-Item Function:Convert-MT5VmClientPointToScreenBoundary -Value $pointOriginal;"
+                    "Set-Item Function:Get-MT5VmVirtualScreenBoundary -Value $screenOriginal;"
+                    "Set-Item Function:Test-MT5VmPhysicalMouseActivationGuardBoundary -Value $guardOriginal;"
+                    "Set-Item Function:Invoke-MT5VmNativeMouseInputBoundary -Value $sendOriginal};"
+                    "[pscustomobject]@{ok=$value;error=$errorCode;events=$script:events;"
+                    "guards=@($script:events|Where-Object{$_ -ceq 'guard'}).Count;"
+                    "sends=@($script:events|Where-Object{$_ -like 'send:*'}).Count}|"
+                    "ConvertTo-Json -Compress -Depth 5"
+                )
+                completed = self._run_module(body)
+                self.assertEqual(0, completed.returncode, completed.stderr)
+                observed = json.loads(completed.stdout)
+                self.assertEqual(expected_result["ok"], observed["ok"])
+                self.assertEqual(expected_result["guards"], observed["guards"])
+                self.assertEqual(expected_result["sends"], observed["sends"])
+                if expected_result["ok"]:
+                    self.assertEqual(
+                        ["point", "screen", "guard", "send:1", "guard", "send:4"],
+                        observed["events"],
+                    )
+                    self.assertEqual("", observed["error"])
+                else:
+                    self.assertIn(
+                        "PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID",
+                        observed["error"],
+                    )
+
+    def test_webrequest_physical_mouse_transaction_always_restores_cursor(self) -> None:
+        expected = {
+            "success": ("PASS", ["capture", "activate", "continue", "restore"]),
+            "activation": (
+                "INJECTED_ACTIVATION_FAILURE",
+                ["capture", "activate", "restore"],
+            ),
+            "continuation": (
+                "INJECTED_CONTINUATION_FAILURE",
+                ["capture", "activate", "continue", "restore"],
+            ),
+            "restore": (
+                "PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED",
+                ["capture", "activate", "continue", "restore"],
+            ),
+        }
+        for mode, (expected_result, expected_events) in expected.items():
+            with self.subTest(mode=mode):
+                body = (
+                    f"$script:mode='{mode}';$script:events=@();"
+                    "$capture={$script:events+=,'capture';[pscustomobject]@{x=7;y=9}};"
+                    "$activate={$script:events+=,'activate';if($script:mode -ceq 'activation'){"
+                    "throw 'INJECTED_ACTIVATION_FAILURE'}};"
+                    "$continue={$script:events+=,'continue';if($script:mode -ceq 'continuation'){"
+                    "throw 'INJECTED_CONTINUATION_FAILURE'};'PASS'};"
+                    "$restore={param($cursor)$script:events+=,'restore';"
+                    "if($cursor.x -ne 7 -or $cursor.y -ne 9){throw 'WRONG_CURSOR'};"
+                    "return ($script:mode -cne 'restore')};"
+                    "try{$value=Invoke-MT5VmPhysicalMouseActivationTransactionCore "
+                    "-CaptureCursorAction $capture -ActivationAction $activate "
+                    "-ContinuationAction $continue -RestoreCursorAction $restore;"
+                    "$result=[string]$value}catch{$result=$_.Exception.Message};"
+                    "[pscustomobject]@{result=$result;events=$script:events}|"
+                    "ConvertTo-Json -Compress -Depth 5"
+                )
+                completed = self._run_module(body)
+                self.assertEqual(0, completed.returncode, completed.stderr)
+                observed = json.loads(completed.stdout)
+                self.assertEqual(expected_result, observed["result"])
+                self.assertEqual(expected_events, observed["events"])
 
     def test_webrequest_queue_sequence_aborts_at_each_failed_position(self) -> None:
         body = (
