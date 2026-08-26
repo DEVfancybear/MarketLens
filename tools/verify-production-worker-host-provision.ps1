@@ -542,11 +542,27 @@ try {
   }
 
   Invoke-GauntletLayer 'python-managed-suites' {
-    Invoke-InDirectory $repoRoot {
-      & python.exe -m unittest discover -v -s backend/bridge/mt5_vm -p 'test_*.py'
-      Assert-NativeSuccess 'PROVISIONING_PYTHON_MANAGED_TESTS_FAILED'
-      & python.exe -m unittest discover -v -s backend/bridge/mt5_ea -p 'test_*.py'
-      Assert-NativeSuccess 'PROVISIONING_PYTHON_EA_TESTS_FAILED'
+    $savedPythonUtf8 = [Environment]::GetEnvironmentVariable('PYTHONUTF8', 'Process')
+    try {
+      [Environment]::SetEnvironmentVariable('PYTHONUTF8', '1', 'Process')
+      $managedModules = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'backend\bridge\mt5_vm') `
+        -File -Filter 'test_*.py' | Sort-Object -Property Name | ForEach-Object {
+          'backend.bridge.mt5_vm.' + $_.BaseName
+        })
+      $eaModules = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'backend\bridge\mt5_ea') `
+        -File -Filter 'test_*.py' | Sort-Object -Property Name | ForEach-Object {
+          'backend.bridge.mt5_ea.' + $_.BaseName
+        })
+      Assert-Gate ($managedModules.Count -gt 0) 'PROVISIONING_PYTHON_MANAGED_DISCOVERY_EMPTY'
+      Assert-Gate ($eaModules.Count -gt 0) 'PROVISIONING_PYTHON_EA_DISCOVERY_EMPTY'
+      Invoke-InDirectory $repoRoot {
+        & python.exe -m unittest -v @managedModules
+        Assert-NativeSuccess 'PROVISIONING_PYTHON_MANAGED_TESTS_FAILED'
+        & python.exe -m unittest -v @eaModules
+        Assert-NativeSuccess 'PROVISIONING_PYTHON_EA_TESTS_FAILED'
+      }
+    } finally {
+      [Environment]::SetEnvironmentVariable('PYTHONUTF8', $savedPythonUtf8, 'Process')
     }
   }
 
