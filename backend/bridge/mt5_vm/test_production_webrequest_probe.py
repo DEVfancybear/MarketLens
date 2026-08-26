@@ -71,6 +71,26 @@ class ProductionWebRequestProbeTests(unittest.TestCase):
         self.assertNotIn("SendKeys", source)
         self.assertNotIn("Clipboard", source)
 
+    def test_driver_crypto_is_compatible_with_windows_powershell_51(self) -> None:
+        source = DRIVER.read_text(encoding="utf-8")
+
+        for required in (
+            "[Security.Cryptography.RandomNumberGenerator]::Create()",
+            ".GetBytes(",
+            "[Security.Cryptography.SHA256]::Create()",
+            ".ComputeHash(",
+            "[BitConverter]::ToString(",
+            ".Dispose()",
+            "PROVISIONING_PROBE_NONCE_INVALID",
+        ):
+            self.assertIn(required, source)
+        for unavailable in (
+            "[Security.Cryptography.RandomNumberGenerator]::Fill(",
+            "[Convert]::ToHexString(",
+            "[Security.Cryptography.SHA256]::HashData(",
+        ):
+            self.assertNotIn(unavailable, source)
+
     def test_driver_parser_and_contract_controls(self) -> None:
         parsed = subprocess.run(
             [
@@ -97,6 +117,7 @@ class ProductionWebRequestProbeTests(unittest.TestCase):
         self.assertEqual(0, accepted.returncode, accepted.stderr)
         self.assertIn("PRODUCTION_WEBREQUEST_PROBE_CONTRACTS=PASS", accepted.stdout)
         self.assertIn("PRODUCTION_METAEDITOR_COMPILE_CONTRACTS=PASS", accepted.stdout)
+        self.assertIn("PRODUCTION_POWERSHELL51_CRYPTO_CONTRACTS=PASS", accepted.stdout)
         self.assertNotEqual(0, rejected.returncode)
         self.assertIn("PROVISIONING_PROBE_RECEIPT_INVALID", rejected.stderr)
 

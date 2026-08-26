@@ -62,6 +62,51 @@ function Assert-ProbeCompileFixtureRejected {
   throw 'PROVISIONING_PROBE_COMPILE_CONTROL_FAILED_OPEN'
 }
 
+function Convert-BytesToLowerHex {
+  param([Parameter(Mandatory = $true)][byte[]]$Bytes)
+  return ([BitConverter]::ToString($Bytes) -replace '-', '').ToLowerInvariant()
+}
+
+function Assert-ProbeNonceShape {
+  param([Parameter(Mandatory = $true)][string]$Nonce)
+  Assert-ProbeTrue ($Nonce -cmatch '^[0-9a-f]{32}$') 'PROVISIONING_PROBE_NONCE_INVALID'
+}
+
+function Assert-ProbeNonceFixtureRejected {
+  param([Parameter(Mandatory = $true)][string]$Nonce)
+  try {
+    Assert-ProbeNonceShape -Nonce $Nonce
+  } catch {
+    if ($_.Exception.Message -ceq 'PROVISIONING_PROBE_NONCE_INVALID') { return }
+    throw
+  }
+  throw 'PROVISIONING_PROBE_NONCE_CONTROL_FAILED_OPEN'
+}
+
+function New-CryptographicProbeNonce {
+  $nonceBytes = New-Object byte[] 16
+  $random = [Security.Cryptography.RandomNumberGenerator]::Create()
+  try {
+    $random.GetBytes($nonceBytes)
+  } finally {
+    $random.Dispose()
+  }
+  $nonce = Convert-BytesToLowerHex -Bytes $nonceBytes
+  Assert-ProbeNonceShape -Nonce $nonce
+  return $nonce
+}
+
+function Get-Sha256Hex {
+  param([Parameter(Mandatory = $true)][byte[]]$Bytes)
+  $sha256 = [Security.Cryptography.SHA256]::Create()
+  try {
+    $digest = $sha256.ComputeHash($Bytes)
+  } finally {
+    $sha256.Dispose()
+  }
+  return Convert-BytesToLowerHex -Bytes $digest
+}
+
 function Assert-ProbeReceipt {
   param(
     [Parameter(Mandatory = $true)][psobject]$Receipt,
@@ -130,6 +175,16 @@ function Invoke-ProbeContractTests {
     -CompileText 'Result: 1 errors, 0 warnings'
   Assert-ProbeCompileFixtureRejected -ExitCode 1 -BinaryExists $true `
     -CompileText "$cleanCompileLog`r`n$cleanCompileLog"
+  $generatedNonce = New-CryptographicProbeNonce
+  Assert-ProbeNonceShape -Nonce $generatedNonce
+  Assert-ProbeNonceFixtureRejected -Nonce 'abc'
+  Assert-ProbeNonceFixtureRejected -Nonce ('A' * 32)
+  Assert-ProbeNonceFixtureRejected -Nonce ('g' * 32)
+  $abcDigest = Get-Sha256Hex -Bytes ([Text.Encoding]::UTF8.GetBytes('abc'))
+  Assert-ProbeTrue (
+    $abcDigest -ceq 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+  ) 'PROVISIONING_PROBE_SHA256_INVALID'
+  Write-Output 'PRODUCTION_POWERSHELL51_CRYPTO_CONTRACTS=PASS'
   Write-Output 'PRODUCTION_METAEDITOR_COMPILE_CONTRACTS=PASS'
   Write-Output 'PRODUCTION_WEBREQUEST_PROBE_CONTRACTS=PASS'
 }
@@ -351,9 +406,7 @@ Assert-ProbeCompileResult -ExitCode $compile.ExitCode `
   -BinaryExists (Test-Path -LiteralPath $installedBinary -PathType Leaf) `
   -CompileText ([string]$compileText)
 
-$nonceBytes = New-Object byte[] 16
-[Security.Cryptography.RandomNumberGenerator]::Fill($nonceBytes)
-$nonce = [Convert]::ToHexString($nonceBytes).ToLowerInvariant()
+$nonce = New-CryptographicProbeNonce
 $requestedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 $marketLensCommon = Join-Path $commonFilesRoot 'MarketLens'
 $null = [IO.Directory]::CreateDirectory($marketLensCommon)
@@ -418,9 +471,7 @@ $proof = [ordered]@{
   gateway_sha256 = $gateway.binary_sha256
   requested_at_unix = $requestedAt
   observed_at_unix = [long]$receipt.observedAtUnix
-  nonce_sha256 = ([BitConverter]::ToString(
-      [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($nonce))
-    ) -replace '-', '').ToLowerInvariant()
+  nonce_sha256 = Get-Sha256Hex -Bytes ([Text.Encoding]::UTF8.GetBytes($nonce))
   receipt_sha256 = (Get-FileHash -LiteralPath $receiptPath -Algorithm SHA256).Hash.ToLowerInvariant()
   chart_sha256 = $inputs.chart_sha256
   settings_sha256 = $inputs.settings_sha256
