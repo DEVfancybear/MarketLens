@@ -2056,3 +2056,32 @@ APPROVE SPEC REVISION: production-worker-host-provision v25
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v25`. No v25 implementation occurred
 before that approval.
+
+## Revision v26 - correct the frozen v25 character-plan count (approval required)
+
+During approved v25 GREEN, three of four new focused tests passed. The orchestration-order test
+failed because its newly frozen event label expected `send:48`, while the pure mapping assertion in
+the same test correctly enumerated 46 character records. The pinned origin
+`http://127.0.0.1:8790` has 21 UTF-16/ASCII characters and two colons. A normal character produces
+two records; each colon produces four instead of two. The exact approved mapping therefore yields
+`21 * 2 + 2 * 2 = 46` records.
+
+The two assertions are mutually inconsistent: adding two input records would violate v25's exact
+per-character mapping and the pure expected-record list. Revision v26 changes only the erroneous
+orchestration event assertion from `send:48` to `send:46`. It does not change implementation,
+origin, key mapping, modifiers, guards, batching, readback, rollback, live checks, files,
+dependencies, Git operations, verifier layers, or the canonical production command. After the
+one-line assertion correction, rerun all v25 focused tests before continuing GREEN, mutations, and
+live pending-only execution.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v26
+```
+
+### v26 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v26`. No v26 assertion correction occurred
+before that approval.
