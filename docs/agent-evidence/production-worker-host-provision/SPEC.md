@@ -648,3 +648,55 @@ APPROVE SPEC REVISION: production-worker-host-provision v6
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v6`. No v6 implementation occurred before
 that approval.
+
+## Revision v7 — normalize the final two Go formatting drifts (approval required)
+
+### Discovery after v6 GREEN
+
+The complete v6 frontend acceptance set is GREEN: compiler inventory matched the lockfile,
+`test:build` passed, the trade suite passed 84/84, and typecheck, lint, and production build exited
+zero. The v3 `gofmt -l backend/.` gate was then rerun after CRLF normalization and now reports
+exactly two genuine formatting drifts that predate this task:
+
+- `backend/internal/httpserver/server.go` — gofmt moves the third-party zerolog import after the
+  local MarketLens import block; and
+- `backend/internal/simtrading/model_test.go` — gofmt expands seven one-line `if`/test-failure
+  statements to canonical multiline formatting.
+
+Both changes were inspected and then reverted pending approval. The formatter again reports exactly
+those two paths, so the v3 requirement that `gofmt -l` be empty cannot be met within the currently
+approved tracked-path allow-list.
+
+### v7 scope, controls, and acceptance
+
+Revision v7 keeps Tier 3 and every v3-v6 invariant. It adds exactly the two paths above to the
+tracked-source allow-list and authorizes `gofmt -w` on those files only. It also authorizes adding
+those two literal paths to the existing `Assert-ApprovedSourceState` allow-list in
+`tools/verify-production-worker-host-provision.ps1`; no other checker behavior may change.
+
+No executable statement, assertion text, test input, dependency, API, runtime behavior, or other
+tracked path may change. The accepted diff is limited to gofmt's import grouping and line wrapping
+described above.
+
+After formatting:
+
+- `gofmt -l backend/.` emits no paths;
+- `git diff --check` passes and the two newly authorized diffs contain no token/text changes beyond
+  whitespace and import position;
+- `go test ./internal/httpserver ./internal/simtrading -count=1` passes;
+- the complete Go quality layer (`go vet`, shuffled tests, regular tests, and race tests) remains
+  required by the final fresh gauntlet; and
+- every source-diff, no-secret, production-runner, database, worker, and health invariant remains
+  unchanged.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v7
+```
+
+### v7 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v7`. No v7 formatting or checker
+allow-list implementation occurred before that approval.
