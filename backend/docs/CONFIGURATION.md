@@ -51,6 +51,8 @@ Firebase values are present; `AUTH_JWT_SECRET` is then mandatory even in develop
 | `EXECUTION_ADMIN_TOKEN` | empty | Independent unpredictable 32+ character admin secret; required in production |
 | `EXECUTION_MT5_VM_BOOTSTRAP_TOKEN` | empty | Independent private-worker enrollment secret; absence disables new enrollment |
 | `EXECUTION_MT5_IDENTITY_HMAC_KEY_FILE` | empty | Absolute file containing tenant-bound MT5 identity key material |
+| `EXECUTION_MT5_MANAGED_WORKER_INSTALL_INPUT_FILE` | `C:\ProgramData\MarketLens\managed-worker-install-input.json` | Absolute ACL-protected, non-secret one-time host install descriptor used when no installation receipt exists during a source build |
+| `EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE` | empty | Absolute ACL-protected installer-owned receipt; source builds create and validate it, while artifact deploys require it to exist already |
 | `EXECUTION_DATABASE_MAX_CONNECTIONS` | `10` | Rust PostgreSQL pool bound |
 | `RUST_LOG` | `execution_gateway=info` | Rust tracing filter |
 | `TRADE_AUTHORIZATION_TTL` | `45s` | Operation-bound capability lifetime; allowed 10 seconds to 2 minutes |

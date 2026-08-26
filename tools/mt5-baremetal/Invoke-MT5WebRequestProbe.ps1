@@ -1,0 +1,388 @@
+[CmdletBinding()]
+param(
+  [switch]$ContractTestsOnly,
+  [switch]$KnownBadControl
+)
+
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+
+$repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
+$terminalPath = 'C:\Program Files\MetaTrader 5\terminal64.exe'
+$stateRoot = 'C:\Users\Duong\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075'
+$metaEditorPath = 'C:\Program Files\MetaTrader 5\metaeditor64.exe'
+$gatewayPath = Join-Path $repoRoot 'backend\bin\execution-gateway.exe'
+$gatewayHealthUrl = 'http://127.0.0.1:8790/health'
+$gatewayOrigin = 'http://127.0.0.1:8790'
+$expectedPublisher = 'CN=MetaQuotes Ltd., O=MetaQuotes Ltd., S=Lemesos, C=CY'
+$probeSource = Join-Path $PSScriptRoot 'MarketLensWebRequestProbe.mq5'
+$reportRoot = Join-Path $repoRoot '.artifacts\production-worker-host-provision'
+$slotInputRoot = 'C:\ProgramData\MarketLens\slot-inputs\slot-01'
+$commonFilesRoot = Join-Path $env:APPDATA 'MetaQuotes\Terminal\Common\Files'
+
+function Assert-ProbeTrue {
+  param(
+    [Parameter(Mandatory = $true)][bool]$Condition,
+    [Parameter(Mandatory = $true)][string]$Code
+  )
+  if (-not $Condition) { throw $Code }
+}
+
+function Assert-ProbeReceipt {
+  param(
+    [Parameter(Mandatory = $true)][psobject]$Receipt,
+    [Parameter(Mandatory = $true)][string]$ExpectedNonce,
+    [Parameter(Mandatory = $true)][long]$ExpectedRequestedAtUnix,
+    [Parameter(Mandatory = $true)][long]$MaximumObservedAtUnix
+  )
+  $required = @(
+    'schemaVersion', 'nonce', 'url', 'httpStatus', 'mt5Error', 'terminalBuild',
+    'requestedAtUnix', 'observedAtUnix', 'responseOk', 'responseService',
+    'responseProtocol', 'probeSucceeded'
+  )
+  $observed = @($Receipt.PSObject.Properties.Name)
+  $shapeIsExact = $observed.Count -eq $required.Count -and
+    @($required | Where-Object { $observed -cnotcontains $_ }).Count -eq 0
+  Assert-ProbeTrue $shapeIsExact 'PROVISIONING_PROBE_RECEIPT_INVALID'
+  Assert-ProbeTrue ([int]$Receipt.schemaVersion -eq 1) 'PROVISIONING_PROBE_RECEIPT_INVALID'
+  Assert-ProbeTrue ([string]$Receipt.nonce -ceq $ExpectedNonce) 'PROVISIONING_PROBE_RECEIPT_INVALID'
+  Assert-ProbeTrue ([string]$Receipt.url -ceq $gatewayHealthUrl) 'PROVISIONING_PROBE_RECEIPT_INVALID'
+  Assert-ProbeTrue ([int]$Receipt.httpStatus -eq 200) 'PROVISIONING_PROBE_RECEIPT_INVALID'
+  Assert-ProbeTrue ([int]$Receipt.mt5Error -eq 0) 'PROVISIONING_PROBE_RECEIPT_INVALID'
+  Assert-ProbeTrue ([int]$Receipt.terminalBuild -gt 0) 'PROVISIONING_PROBE_RECEIPT_INVALID'
+  Assert-ProbeTrue ([long]$Receipt.requestedAtUnix -eq $ExpectedRequestedAtUnix) `
+    'PROVISIONING_PROBE_RECEIPT_INVALID'
+  Assert-ProbeTrue (
+    [long]$Receipt.observedAtUnix -ge $ExpectedRequestedAtUnix -and
+    [long]$Receipt.observedAtUnix -le $MaximumObservedAtUnix
+  ) 'PROVISIONING_PROBE_RECEIPT_INVALID'
+  foreach ($property in @('responseOk', 'responseService', 'responseProtocol', 'probeSucceeded')) {
+    Assert-ProbeTrue ($Receipt.$property -is [bool] -and [bool]$Receipt.$property) `
+      'PROVISIONING_PROBE_RECEIPT_INVALID'
+  }
+}
+
+function Invoke-ProbeContractTests {
+  $requestedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+  $nonce = '0123456789abcdef0123456789abcdef'
+  $valid = [pscustomobject][ordered]@{
+    schemaVersion = 1
+    nonce = $nonce
+    url = $gatewayHealthUrl
+    httpStatus = 200
+    mt5Error = 0
+    terminalBuild = 1
+    requestedAtUnix = $requestedAt
+    observedAtUnix = $requestedAt
+    responseOk = $true
+    responseService = $true
+    responseProtocol = $true
+    probeSucceeded = $true
+  }
+  if ($KnownBadControl) {
+    Assert-ProbeReceipt -Receipt $valid -ExpectedNonce ('f' * 32) `
+      -ExpectedRequestedAtUnix $requestedAt -MaximumObservedAtUnix ($requestedAt + 1)
+    throw 'PROVISIONING_KNOWN_BAD_CONTROL_FAILED_OPEN'
+  }
+  Assert-ProbeReceipt -Receipt $valid -ExpectedNonce $nonce `
+    -ExpectedRequestedAtUnix $requestedAt -MaximumObservedAtUnix ($requestedAt + 1)
+  Write-Output 'PRODUCTION_WEBREQUEST_PROBE_CONTRACTS=PASS'
+}
+
+if ($ContractTestsOnly) {
+  Invoke-ProbeContractTests
+  exit 0
+}
+
+function Assert-NoReparseComponent {
+  param([Parameter(Mandatory = $true)][string]$Path)
+  $cursor = Get-Item -LiteralPath ([IO.Path]::GetFullPath($Path)) -Force -ErrorAction Stop
+  while ($null -ne $cursor) {
+    if (($cursor.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+      throw 'PROVISIONING_REPARSE_PATH_REJECTED'
+    }
+    $cursor = if ($cursor -is [IO.FileInfo]) { $cursor.Directory } else { $cursor.Parent }
+  }
+}
+
+function Assert-SignedSelectedTerminal {
+  foreach ($path in @($terminalPath, $metaEditorPath)) {
+    Assert-ProbeTrue (Test-Path -LiteralPath $path -PathType Leaf) `
+      'PROVISIONING_SELECTED_TERMINAL_MISSING'
+    Assert-NoReparseComponent -Path $path
+    $signature = Get-AuthenticodeSignature -FilePath $path
+    Assert-ProbeTrue ($signature.Status -eq [Management.Automation.SignatureStatus]::Valid) `
+      'PROVISIONING_TERMINAL_SIGNATURE_INVALID'
+    Assert-ProbeTrue ($null -ne $signature.SignerCertificate) `
+      'PROVISIONING_TERMINAL_SIGNATURE_INVALID'
+    Assert-ProbeTrue (
+      [string]::Equals(
+        [string]$signature.SignerCertificate.Subject,
+        $expectedPublisher,
+        [StringComparison]::Ordinal
+      )
+    ) 'PROVISIONING_TERMINAL_SIGNER_MISMATCH'
+  }
+  Assert-ProbeTrue (Test-Path -LiteralPath $stateRoot -PathType Container) `
+    'PROVISIONING_SELECTED_STATE_ROOT_MISSING'
+  Assert-NoReparseComponent -Path $stateRoot
+  $origin = (Get-Content -LiteralPath (Join-Path $stateRoot 'origin.txt') -Raw).Trim().TrimEnd('\')
+  Assert-ProbeTrue (
+    [string]::Equals(
+      $origin,
+      (Split-Path -Parent $terminalPath).TrimEnd('\'),
+      [StringComparison]::OrdinalIgnoreCase
+    )
+  ) 'PROVISIONING_TERMINAL_STATE_ORIGIN_MISMATCH'
+}
+
+function Assert-ExactGatewayHealth {
+  Assert-ProbeTrue (Test-Path -LiteralPath $gatewayPath -PathType Leaf) `
+    'PROVISIONING_GATEWAY_BINARY_MISSING'
+  Assert-NoReparseComponent -Path $gatewayPath
+  $listeners = @(
+    Get-NetTCPConnection -State Listen -LocalPort 8790 -ErrorAction Stop |
+      Where-Object { $_.LocalAddress -ceq '127.0.0.1' }
+  )
+  Assert-ProbeTrue ($listeners.Count -eq 1) 'PROVISIONING_GATEWAY_LISTENER_MISMATCH'
+  $owner = Get-Process -Id $listeners[0].OwningProcess -ErrorAction Stop
+  Assert-ProbeTrue (
+    [string]::Equals(
+      [IO.Path]::GetFullPath($owner.Path),
+      [IO.Path]::GetFullPath($gatewayPath),
+      [StringComparison]::OrdinalIgnoreCase
+    )
+  ) 'PROVISIONING_GATEWAY_LISTENER_MISMATCH'
+
+  $response = Invoke-WebRequest -UseBasicParsing -Uri $gatewayHealthUrl -TimeoutSec 5
+  Assert-ProbeTrue ([int]$response.StatusCode -eq 200) 'PROVISIONING_GATEWAY_HEALTH_MISMATCH'
+  try {
+    $health = $response.Content | ConvertFrom-Json -ErrorAction Stop
+  } catch {
+    throw 'PROVISIONING_GATEWAY_HEALTH_MISMATCH'
+  }
+  $properties = @($health.PSObject.Properties.Name)
+  $required = @('ok', 'service', 'protocolVersion', 'connectedAccounts')
+  Assert-ProbeTrue (
+    $properties.Count -eq $required.Count -and
+    @($required | Where-Object { $properties -cnotcontains $_ }).Count -eq 0
+  ) 'PROVISIONING_GATEWAY_HEALTH_MISMATCH'
+  Assert-ProbeTrue (
+    $health.ok -is [bool] -and [bool]$health.ok -and
+    [string]$health.service -ceq 'execution-gateway' -and
+    [int]$health.protocolVersion -eq 1 -and
+    [int]$health.connectedAccounts -ge 0
+  ) 'PROVISIONING_GATEWAY_HEALTH_MISMATCH'
+  [pscustomobject][ordered]@{
+    pid = $owner.Id
+    binary_sha256 = (Get-FileHash -LiteralPath $gatewayPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  }
+}
+
+function Stop-ExactSelectedTerminal {
+  $matches = @(
+    Get-CimInstance Win32_Process -Filter "Name = 'terminal64.exe'" |
+      Where-Object {
+        $_.ExecutablePath -and [string]::Equals(
+          [IO.Path]::GetFullPath($_.ExecutablePath),
+          [IO.Path]::GetFullPath($terminalPath),
+          [StringComparison]::OrdinalIgnoreCase
+        )
+      }
+  )
+  Assert-ProbeTrue ($matches.Count -le 1) 'PROVISIONING_SELECTED_TERMINAL_PROCESS_AMBIGUOUS'
+  if ($matches.Count -eq 0) { return }
+  $process = Get-Process -Id $matches[0].ProcessId -ErrorAction Stop
+  $null = $process.CloseMainWindow()
+  if (-not $process.WaitForExit(15000)) {
+    Stop-Process -Id $process.Id -Force -ErrorAction Stop
+    $process.WaitForExit(5000)
+  }
+  Assert-ProbeTrue ($process.HasExited) 'PROVISIONING_SELECTED_TERMINAL_STOP_FAILED'
+}
+
+function Write-Utf8NoBomFile {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$Contents
+  )
+  $parent = Split-Path -Parent $Path
+  $null = [IO.Directory]::CreateDirectory($parent)
+  $temporary = Join-Path $parent ('.marketlens-' + [guid]::NewGuid().ToString('N') + '.tmp')
+  try {
+    [IO.File]::WriteAllText($temporary, $Contents, (New-Object Text.UTF8Encoding($false)))
+    Move-Item -LiteralPath $temporary -Destination $Path -Force
+  } finally {
+    if (Test-Path -LiteralPath $temporary) {
+      Remove-Item -LiteralPath $temporary -Force
+    }
+  }
+}
+
+function Protect-ProbeOutputFile {
+  param([Parameter(Mandatory = $true)][string]$Path)
+  $currentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User
+  $systemSid = New-Object Security.Principal.SecurityIdentifier('S-1-5-18')
+  $administratorsSid = New-Object Security.Principal.SecurityIdentifier('S-1-5-32-544')
+  $acl = New-Object Security.AccessControl.FileSecurity
+  $acl.SetAccessRuleProtection($true, $false)
+  foreach ($sid in @($currentSid, $systemSid, $administratorsSid)) {
+    $rule = New-Object Security.AccessControl.FileSystemAccessRule(
+      $sid,
+      [Security.AccessControl.FileSystemRights]::FullControl,
+      [Security.AccessControl.AccessControlType]::Allow
+    )
+    $null = $acl.AddAccessRule($rule)
+  }
+  Set-Acl -LiteralPath $Path -AclObject $acl
+}
+
+function Write-ProvenTopologyInputs {
+  $chartPath = Join-Path $slotInputRoot 'chart01.chr'
+  $settingsPath = Join-Path $slotInputRoot 'experts.ini'
+  $attestationPath = Join-Path $slotInputRoot 'webrequest-attestation.json'
+  $chart = @"
+<chart>
+<expert>
+path=Experts\MarketLensExecutionEA.ex5
+<inputs>
+GatewayUrl=$gatewayOrigin
+PairingToken=
+BootstrapPipe=marketlens-slot-01
+</inputs>
+</expert>
+</chart>
+"@
+  $settings = "[Experts]`r`nAllowWebRequest=1`r`nWebRequestUrl=$gatewayOrigin`r`n"
+  Write-Utf8NoBomFile -Path $chartPath -Contents $chart
+  Write-Utf8NoBomFile -Path $settingsPath -Contents $settings
+  $settingsHash = (Get-FileHash -LiteralPath $settingsPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  $attestation = [ordered]@{
+    schemaVersion = 1
+    settingsFileName = 'experts.ini'
+    settingsSha256 = $settingsHash
+    allowedOrigins = @($gatewayOrigin)
+    probeSucceeded = $true
+  }
+  Write-Utf8NoBomFile -Path $attestationPath `
+    -Contents ($attestation | ConvertTo-Json -Compress -Depth 3)
+  foreach ($path in @($chartPath, $settingsPath, $attestationPath)) {
+    Protect-ProbeOutputFile -Path $path
+  }
+  [pscustomobject][ordered]@{
+    chart_path = $chartPath
+    chart_sha256 = (Get-FileHash -LiteralPath $chartPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    settings_path = $settingsPath
+    settings_sha256 = $settingsHash
+    attestation_path = $attestationPath
+    attestation_sha256 = (Get-FileHash -LiteralPath $attestationPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  }
+}
+
+Assert-SignedSelectedTerminal
+$gateway = Assert-ExactGatewayHealth
+Assert-ProbeTrue (Test-Path -LiteralPath $probeSource -PathType Leaf) 'PROVISIONING_PROBE_SOURCE_MISSING'
+$sourceText = Get-Content -LiteralPath $probeSource -Raw
+foreach ($forbidden in @('OrderSend(', 'OrderCheck(', 'CTrade', 'AccountInfo', 'PositionSelect', 'HistoryDeal')) {
+  Assert-ProbeTrue ($sourceText.IndexOf($forbidden, [StringComparison]::OrdinalIgnoreCase) -lt 0) `
+    'PROVISIONING_PROBE_SOURCE_CAN_TRADE'
+}
+
+$null = [IO.Directory]::CreateDirectory($reportRoot)
+$scriptDirectory = Join-Path $stateRoot 'MQL5\Scripts'
+$null = [IO.Directory]::CreateDirectory($scriptDirectory)
+$installedSource = Join-Path $scriptDirectory 'MarketLensWebRequestProbe.mq5'
+$installedBinary = Join-Path $scriptDirectory 'MarketLensWebRequestProbe.ex5'
+$compileLog = Join-Path $reportRoot 'webrequest-probe-metaeditor.log'
+Copy-Item -LiteralPath $probeSource -Destination $installedSource -Force
+if (Test-Path -LiteralPath $installedBinary) {
+  Remove-Item -LiteralPath $installedBinary -Force
+}
+$compile = Start-Process -FilePath $metaEditorPath `
+  -ArgumentList "/compile:`"$installedSource`"", "/log:`"$compileLog`"" `
+  -WindowStyle Hidden -Wait -PassThru
+$compileText = Get-Content -LiteralPath $compileLog -Raw -ErrorAction SilentlyContinue
+Assert-ProbeTrue (
+  $compile.ExitCode -eq 0 -and
+  (Test-Path -LiteralPath $installedBinary -PathType Leaf) -and
+  $compileText -match 'Result:\s+0 errors'
+) 'PROVISIONING_PROBE_COMPILE_FAILED'
+
+$nonceBytes = New-Object byte[] 16
+[Security.Cryptography.RandomNumberGenerator]::Fill($nonceBytes)
+$nonce = [Convert]::ToHexString($nonceBytes).ToLowerInvariant()
+$requestedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+$marketLensCommon = Join-Path $commonFilesRoot 'MarketLens'
+$null = [IO.Directory]::CreateDirectory($marketLensCommon)
+$requestPath = Join-Path $marketLensCommon 'webrequest-probe-request.txt'
+$receiptPath = Join-Path $marketLensCommon ("webrequest-probe-$nonce.json")
+$request = "schemaVersion=1`r`nnonce=$nonce`r`nurl=$gatewayHealthUrl`r`nrequestedAtUnix=$requestedAt`r`n"
+Write-Utf8NoBomFile -Path $requestPath -Contents $request
+if (Test-Path -LiteralPath $receiptPath) {
+  Remove-Item -LiteralPath $receiptPath -Force
+}
+
+$startupConfig = Join-Path $reportRoot 'webrequest-probe-startup.ini'
+$startup = @"
+[Experts]
+AllowLiveTrading=0
+AllowDllImport=0
+Enabled=1
+Account=0
+Profile=0
+
+[StartUp]
+Script=MarketLensWebRequestProbe
+Symbol=EURUSD
+Period=M1
+ShutdownTerminal=1
+"@
+Write-Utf8NoBomFile -Path $startupConfig -Contents $startup
+
+Stop-ExactSelectedTerminal
+$terminal = Start-Process -FilePath $terminalPath `
+  -ArgumentList "/config:`"$startupConfig`"" -WindowStyle Hidden -PassThru
+$deadline = [DateTime]::UtcNow.AddSeconds(60)
+while (-not (Test-Path -LiteralPath $receiptPath -PathType Leaf) -and
+       [DateTime]::UtcNow -lt $deadline) {
+  Start-Sleep -Milliseconds 250
+}
+if (-not (Test-Path -LiteralPath $receiptPath -PathType Leaf)) {
+  if (-not $terminal.HasExited) { Stop-ExactSelectedTerminal }
+  throw 'PROVISIONING_PROBE_RECEIPT_TIMEOUT'
+}
+try {
+  $receipt = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json -ErrorAction Stop
+} catch {
+  throw 'PROVISIONING_PROBE_RECEIPT_INVALID'
+}
+if ([int]$receipt.httpStatus -eq -1 -and [int]$receipt.mt5Error -eq 4014) {
+  throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_REQUIRED'
+}
+$maximumObservedAt = [DateTimeOffset]::UtcNow.AddSeconds(5).ToUnixTimeSeconds()
+Assert-ProbeReceipt -Receipt $receipt -ExpectedNonce $nonce `
+  -ExpectedRequestedAtUnix $requestedAt -MaximumObservedAtUnix $maximumObservedAt
+$inputs = Write-ProvenTopologyInputs
+
+$proof = [ordered]@{
+  schema_version = 1
+  status = 'PASS'
+  probe_url = $gatewayHealthUrl
+  terminal_path = $terminalPath
+  terminal_sha256 = (Get-FileHash -LiteralPath $terminalPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  terminal_build = [int]$receipt.terminalBuild
+  gateway_path = $gatewayPath
+  gateway_sha256 = $gateway.binary_sha256
+  requested_at_unix = $requestedAt
+  observed_at_unix = [long]$receipt.observedAtUnix
+  nonce_sha256 = ([BitConverter]::ToString(
+      [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($nonce))
+    ) -replace '-', '').ToLowerInvariant()
+  receipt_sha256 = (Get-FileHash -LiteralPath $receiptPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  chart_sha256 = $inputs.chart_sha256
+  settings_sha256 = $inputs.settings_sha256
+  attestation_sha256 = $inputs.attestation_sha256
+}
+$proofPath = Join-Path $reportRoot 'webrequest-proof.json'
+Write-Utf8NoBomFile -Path $proofPath -Contents ($proof | ConvertTo-Json -Compress -Depth 4)
+Write-Output "PRODUCTION_WEBREQUEST_PROBE=PASS proof=$proofPath"

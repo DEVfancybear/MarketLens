@@ -1,0 +1,616 @@
+[CmdletBinding()]
+param(
+  [switch]$ContractTestsOnly,
+  [switch]$KnownBadControl
+)
+
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+
+$repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+$backendRoot = Join-Path $repoRoot 'backend'
+$frontendRoot = Join-Path $repoRoot 'frontend'
+$executionRoot = Join-Path $backendRoot 'execution'
+$reportRoot = Join-Path $repoRoot '.artifacts\production-worker-host-provision'
+$reportPath = Join-Path $reportRoot 'gauntlet-report.json'
+$probeDriver = Join-Path $repoRoot 'tools\mt5-baremetal\Invoke-MT5WebRequestProbe.ps1'
+$backendEnvPath = Join-Path $backendRoot '.env'
+$installInputPath = 'C:\ProgramData\MarketLens\managed-worker-install-input.json'
+$bootstrapTokenPath = 'C:\ProgramData\MarketLens\secrets\worker-bootstrap.token'
+$workerRoot = 'C:\MarketLens\worker'
+$workerDataRoot = 'C:\MarketLens\runtime'
+$selectedIdentity = 'DESKTOP-MDC339G\Duong'
+$selectedTerminal = 'C:\Program Files\MetaTrader 5\terminal64.exe'
+$selectedStateRoot = 'C:\Users\Duong\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075'
+$slotInputRoot = 'C:\ProgramData\MarketLens\slot-inputs\slot-01'
+$expectedOrigin = 'http://127.0.0.1:8790'
+$taskName = 'MarketLens MT5 Worker'
+$workerId = 'marketlens-baremetal-01'
+$baselineCommit = '097bcf7f523b1327b2c970036d24d1542740fd8b'
+$script:layerResults = [Collections.Generic.List[object]]::new()
+
+$expectedLayers = @(
+  'tool-contracts',
+  'go-quality',
+  'go-migration-gate-coverage',
+  'python-managed-suites',
+  'rust-quality',
+  'frontend-quality',
+  'backend-docs',
+  'managed-worker-contracts',
+  'postgresql-preflight',
+  'live-webrequest-and-host-inputs',
+  'source-diff-secret-audit',
+  'canonical-production-runner',
+  'production-postconditions'
+)
+
+function Assert-Gate {
+  param(
+    [Parameter(Mandatory = $true)][bool]$Condition,
+    [Parameter(Mandatory = $true)][string]$Code
+  )
+  if (-not $Condition) { throw $Code }
+}
+
+function Write-GauntletReport {
+  param([Parameter(Mandatory = $true)][string]$Status)
+  $null = [IO.Directory]::CreateDirectory($reportRoot)
+  $payload = [ordered]@{
+    schema_version = 1
+    gate = 'production-worker-host-provision'
+    status = $Status
+    expected_layers = $expectedLayers
+    observed_layers = @($script:layerResults)
+    completed_at_utc = [DateTime]::UtcNow.ToString('o')
+  }
+  [IO.File]::WriteAllText(
+    $reportPath,
+    ($payload | ConvertTo-Json -Depth 8 -Compress),
+    (New-Object Text.UTF8Encoding($false))
+  )
+}
+
+function Invoke-GauntletLayer {
+  param(
+    [Parameter(Mandatory = $true)][string]$Name,
+    [Parameter(Mandatory = $true)][scriptblock]$Action
+  )
+  Assert-Gate ($expectedLayers -ccontains $Name) 'PROVISIONING_UNEXPECTED_LAYER'
+  Assert-Gate (@($script:layerResults | Where-Object { $_.name -ceq $Name }).Count -eq 0) `
+    'PROVISIONING_DUPLICATE_LAYER'
+  Write-Host "`n[$Name]" -ForegroundColor Cyan
+  try {
+    & $Action
+    $script:layerResults.Add([pscustomobject][ordered]@{ name = $Name; status = 'PASS' })
+  } catch {
+    $code = [string]$_.Exception.Message
+    if ($code -notmatch '^[A-Z][A-Z0-9_.:-]+$') { $code = 'PROVISIONING_LAYER_FAILED' }
+    $script:layerResults.Add([pscustomobject][ordered]@{ name = $Name; status = 'FAIL'; code = $code })
+    Write-GauntletReport -Status 'FAIL'
+    throw $code
+  }
+}
+
+function Assert-NativeSuccess {
+  param([Parameter(Mandatory = $true)][string]$Code)
+  Assert-Gate ($LASTEXITCODE -eq 0) $Code
+}
+
+function Invoke-InDirectory {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][scriptblock]$Action
+  )
+  Push-Location $Path
+  try { & $Action } finally { Pop-Location }
+}
+
+function Assert-PowerShellParses {
+  param([Parameter(Mandatory = $true)][string]$Path)
+  $tokens = $null
+  $errors = $null
+  $null = [Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$errors)
+  Assert-Gate ($errors.Count -eq 0) 'PROVISIONING_POWERSHELL_PARSE_FAILED'
+}
+
+function Assert-SelectedTerminalBoundary {
+  param([Parameter(Mandatory = $true)][string]$Path)
+  $full = [IO.Path]::GetFullPath($Path)
+  Assert-Gate (
+    [string]::Equals($full, $selectedTerminal, [StringComparison]::OrdinalIgnoreCase)
+  ) 'PROVISIONING_SELECTED_TERMINAL_INVALID'
+}
+
+function Invoke-ContractTests {
+  Assert-Gate ($expectedLayers.Count -eq 13) 'PROVISIONING_LAYER_MANIFEST_INVALID'
+  Assert-SelectedTerminalBoundary -Path $selectedTerminal
+  Assert-PowerShellParses -Path $PSCommandPath
+  Assert-PowerShellParses -Path $probeDriver
+  if ($KnownBadControl) {
+    Assert-SelectedTerminalBoundary -Path 'C:\Program Files\FTMO Global Markets MT5 Terminal\terminal64.exe'
+    throw 'PROVISIONING_KNOWN_BAD_CONTROL_FAILED_OPEN'
+  }
+  Write-Output 'PRODUCTION_WORKER_HOST_PROVISION_CONTRACTS=PASS'
+}
+
+if ($ContractTestsOnly) {
+  Invoke-ContractTests
+  exit 0
+}
+
+function Protect-ExactFileAcl {
+  param([Parameter(Mandatory = $true)][string]$Path)
+  $acl = New-Object Security.AccessControl.FileSecurity
+  $acl.SetAccessRuleProtection($true, $false)
+  $sids = @(
+    [Security.Principal.WindowsIdentity]::GetCurrent().User,
+    (New-Object Security.Principal.SecurityIdentifier('S-1-5-18')),
+    (New-Object Security.Principal.SecurityIdentifier('S-1-5-32-544'))
+  )
+  foreach ($sid in $sids) {
+    $rule = New-Object Security.AccessControl.FileSystemAccessRule(
+      $sid,
+      [Security.AccessControl.FileSystemRights]::FullControl,
+      [Security.AccessControl.AccessControlType]::Allow
+    )
+    $null = $acl.AddAccessRule($rule)
+  }
+  Set-Acl -LiteralPath $Path -AclObject $acl
+  $verified = Get-Acl -LiteralPath $Path
+  Assert-Gate $verified.AreAccessRulesProtected 'PROVISIONING_PROTECTED_ACL_INVALID'
+  $allowed = @($sids | ForEach-Object { $_.Value })
+  foreach ($rule in @($verified.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]))) {
+    Assert-Gate (
+      -not $rule.IsInherited -and
+      $rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
+      $allowed -contains $rule.IdentityReference.Value
+    ) 'PROVISIONING_PROTECTED_ACL_INVALID'
+  }
+}
+
+function Write-Utf8NoBomAtomic {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$Contents,
+    [switch]$PreserveAcl
+  )
+  $directory = Split-Path -Parent $Path
+  $null = [IO.Directory]::CreateDirectory($directory)
+  $existingAcl = if ($PreserveAcl -and (Test-Path -LiteralPath $Path)) { Get-Acl -LiteralPath $Path } else { $null }
+  $temporary = Join-Path $directory ('.marketlens-' + [guid]::NewGuid().ToString('N') + '.tmp')
+  try {
+    [IO.File]::WriteAllText($temporary, $Contents, (New-Object Text.UTF8Encoding($false)))
+    if ($null -ne $existingAcl) { Set-Acl -LiteralPath $temporary -AclObject $existingAcl }
+    Move-Item -LiteralPath $temporary -Destination $Path -Force
+  } finally {
+    if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force }
+  }
+}
+
+function Read-DotEnv {
+  param([Parameter(Mandatory = $true)][string]$Path)
+  Assert-Gate (Test-Path -LiteralPath $Path -PathType Leaf) 'PROVISIONING_BACKEND_ENV_MISSING'
+  $text = [IO.File]::ReadAllText($Path, (New-Object Text.UTF8Encoding($false, $true)))
+  $values = @{}
+  foreach ($line in ($text -split "`r?`n")) {
+    if ($line -match '^\s*(?:#|$)') { continue }
+    if ($line -notmatch '^([A-Za-z_][A-Za-z0-9_]*)=(.*)$') { continue }
+    $key = $matches[1]
+    Assert-Gate (-not $values.ContainsKey($key)) 'PROVISIONING_BACKEND_ENV_DUPLICATE'
+    $values[$key] = $matches[2].Trim()
+  }
+  [pscustomobject]@{ text = $text; values = $values }
+}
+
+function Set-DotEnvValues {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][hashtable]$Assignments
+  )
+  $parsed = Read-DotEnv -Path $Path
+  $text = $parsed.text
+  $newline = if ($text.Contains("`r`n")) { "`r`n" } else { "`n" }
+  foreach ($entry in $Assignments.GetEnumerator()) {
+    Assert-Gate ([string]$entry.Value -notmatch '[\r\n\0#]') 'PROVISIONING_BACKEND_ENV_VALUE_INVALID'
+    $pattern = '(?m)^' + [regex]::Escape([string]$entry.Key) + '=.*$'
+    $replacement = [string]$entry.Key + '=' + [string]$entry.Value
+    if ([regex]::IsMatch($text, $pattern)) {
+      $text = [regex]::Replace($text, $pattern, $replacement)
+    } else {
+      if ($text.Length -gt 0 -and -not $text.EndsWith("`n")) { $text += $newline }
+      $text += $replacement + $newline
+    }
+  }
+  Write-Utf8NoBomAtomic -Path $Path -Contents $text -PreserveAcl
+}
+
+function New-RandomSecret {
+  $bytes = New-Object byte[] 48
+  $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+  try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+  [Convert]::ToBase64String($bytes)
+}
+
+function Test-FixedTimeEqual {
+  param([string]$Left, [string]$Right)
+  $leftBytes = [Text.Encoding]::UTF8.GetBytes($Left)
+  $rightBytes = [Text.Encoding]::UTF8.GetBytes($Right)
+  if ($leftBytes.Length -ne $rightBytes.Length) { return $false }
+  $difference = 0
+  for ($index = 0; $index -lt $leftBytes.Length; $index++) {
+    $difference = $difference -bor ($leftBytes[$index] -bxor $rightBytes[$index])
+  }
+  return $difference -eq 0
+}
+
+function Prepare-BootstrapSecret {
+  $parsed = Read-DotEnv -Path $backendEnvPath
+  $adminToken = [string]$parsed.values['EXECUTION_ADMIN_TOKEN']
+  Assert-Gate ($adminToken.Length -ge 32) 'PROVISIONING_ADMIN_TOKEN_INVALID'
+  $configured = [string]$parsed.values['EXECUTION_MT5_VM_BOOTSTRAP_TOKEN']
+  $fileSecret = if (Test-Path -LiteralPath $bootstrapTokenPath -PathType Leaf) {
+    [IO.File]::ReadAllText($bootstrapTokenPath).Trim()
+  } else { '' }
+  $secret = if (-not [string]::IsNullOrWhiteSpace($configured)) {
+    $configured
+  } elseif (-not [string]::IsNullOrWhiteSpace($fileSecret)) {
+    $fileSecret
+  } else {
+    New-RandomSecret
+  }
+  Assert-Gate ($secret.Length -ge 32 -and -not (Test-FixedTimeEqual $secret $adminToken)) `
+    'PROVISIONING_BOOTSTRAP_TOKEN_INVALID'
+  if (-not [string]::IsNullOrWhiteSpace($fileSecret)) {
+    Assert-Gate (Test-FixedTimeEqual $secret $fileSecret) 'PROVISIONING_BOOTSTRAP_TOKEN_MISMATCH'
+  } else {
+    Write-Utf8NoBomAtomic -Path $bootstrapTokenPath -Contents $secret
+  }
+  Protect-ExactFileAcl -Path $bootstrapTokenPath
+  Set-DotEnvValues -Path $backendEnvPath -Assignments @{
+    EXECUTION_MT5_VM_BOOTSTRAP_TOKEN = $secret
+    EXECUTION_MT5_MANAGED_WORKER_INSTALL_INPUT_FILE = $installInputPath
+  }
+  $verified = Read-DotEnv -Path $backendEnvPath
+  Assert-Gate (Test-FixedTimeEqual ([string]$verified.values['EXECUTION_MT5_VM_BOOTSTRAP_TOKEN']) $secret) `
+    'PROVISIONING_BOOTSTRAP_TOKEN_MISMATCH'
+  return $secret
+}
+
+function Prepare-ManagedWorkerInstallInput {
+  $chartPath = Join-Path $slotInputRoot 'chart01.chr'
+  $settingsPath = Join-Path $slotInputRoot 'experts.ini'
+  $attestationPath = Join-Path $slotInputRoot 'webrequest-attestation.json'
+  foreach ($path in @($chartPath, $settingsPath, $attestationPath)) {
+    Assert-Gate (Test-Path -LiteralPath $path -PathType Leaf) 'PROVISIONING_WEBREQUEST_EVIDENCE_MISSING'
+  }
+  $terminalLicense = Join-Path (Split-Path -Parent $selectedTerminal) 'Config\terminal.lic'
+  $servers = Join-Path $selectedStateRoot 'Config\servers.dat'
+  $releaseBinary = Join-Path $repoRoot 'frontend\public\downloads\MarketLensExecutionEA.ex5'
+  foreach ($path in @($selectedTerminal, $terminalLicense, $servers, $releaseBinary)) {
+    Assert-Gate (Test-Path -LiteralPath $path -PathType Leaf) 'PROVISIONING_REQUIRED_ARTIFACT_MISSING'
+  }
+  $slot = [ordered]@{
+    slot_id = 'slot-01'
+    terminal_path = $selectedTerminal
+    terminal_state_root = $selectedStateRoot
+    terminal_sha256 = (Get-FileHash -LiteralPath $selectedTerminal -Algorithm SHA256).Hash.ToLowerInvariant()
+    servers_sha256 = (Get-FileHash -LiteralPath $servers -Algorithm SHA256).Hash.ToLowerInvariant()
+    terminal_license_sha256 = (Get-FileHash -LiteralPath $terminalLicense -Algorithm SHA256).Hash.ToLowerInvariant()
+    ea_path = (Join-Path $selectedStateRoot 'MQL5\Experts\MarketLensExecutionEA.ex5')
+    ea_sha256 = (Get-FileHash -LiteralPath $releaseBinary -Algorithm SHA256).Hash.ToLowerInvariant()
+    ea_bootstrap_pipe = 'marketlens-slot-01'
+    ea_profile = 'MarketLens-slot-01'
+    ea_gateway_origin = $expectedOrigin
+    ea_chart_template_path = $chartPath
+    ea_chart_template_sha256 = (Get-FileHash -LiteralPath $chartPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    ea_webrequest_settings_source_path = $settingsPath
+    ea_webrequest_settings_sha256 = (Get-FileHash -LiteralPath $settingsPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    ea_topology_attestation_source_path = $attestationPath
+    ea_topology_attestation_sha256 = (Get-FileHash -LiteralPath $attestationPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  }
+  $inputObject = [ordered]@{
+    schema_version = 1
+    worker_root = $workerRoot
+    data_root = $workerDataRoot
+    worker_identity = $selectedIdentity
+    task_name = $taskName
+    worker_id = $workerId
+    bootstrap_token_file = $bootstrapTokenPath
+    terminal_slots = @($slot)
+    probe_symbol = 'EURUSD'
+    sync_symbols = @('EURUSD')
+  }
+  Write-Utf8NoBomAtomic -Path $installInputPath `
+    -Contents ($inputObject | ConvertTo-Json -Depth 8 -Compress)
+  Protect-ExactFileAcl -Path $installInputPath
+  return $inputObject
+}
+
+function Get-DatabaseEnvironment {
+  $parsed = Read-DotEnv -Path $backendEnvPath
+  $raw = [string]$parsed.values['DATABASE_URL']
+  try { $uri = [Uri]$raw } catch { throw 'PROVISIONING_DATABASE_URL_INVALID' }
+  Assert-Gate ($uri.Scheme -in @('postgres', 'postgresql')) 'PROVISIONING_DATABASE_URL_INVALID'
+  $credentials = $uri.UserInfo.Split(':', 2)
+  Assert-Gate ($credentials.Count -eq 2) 'PROVISIONING_DATABASE_URL_INVALID'
+  @{
+    PGHOST = $uri.Host
+    PGPORT = [string]$uri.Port
+    PGDATABASE = $uri.AbsolutePath.TrimStart('/')
+    PGUSER = [Uri]::UnescapeDataString($credentials[0])
+    PGPASSWORD = [Uri]::UnescapeDataString($credentials[1])
+  }
+}
+
+function Assert-PostgreSqlProductionState {
+  $service = Get-Service -Name 'postgresql-x64-16' -ErrorAction Stop
+  Assert-Gate ($service.Status -eq [ServiceProcess.ServiceControllerStatus]::Running) `
+    'PROVISIONING_POSTGRESQL16_NOT_RUNNING'
+  $psql = Get-Command psql.exe -ErrorAction SilentlyContinue
+  if (-not $psql) { $psql = Get-Command psql -ErrorAction SilentlyContinue }
+  Assert-Gate ($null -ne $psql) 'PROVISIONING_PSQL_MISSING'
+  $databaseEnvironment = Get-DatabaseEnvironment
+  $saved = @{}
+  foreach ($entry in $databaseEnvironment.GetEnumerator()) {
+    $saved[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key, 'Process')
+    [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, 'Process')
+  }
+  try {
+    $version = @(& $psql.Source -X -q -t -A -c 'SHOW server_version_num;') -join ''
+    Assert-NativeSuccess 'PROVISIONING_POSTGRESQL_QUERY_FAILED'
+    $migration = @(& $psql.Source -X -q -t -A -c 'SELECT version::text || '':'' || dirty::text FROM schema_migrations;') -join ''
+    Assert-NativeSuccess 'PROVISIONING_POSTGRESQL_QUERY_FAILED'
+  } finally {
+    foreach ($entry in $saved.GetEnumerator()) {
+      [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, 'Process')
+    }
+  }
+  Assert-Gate ([int]$version -ge 160000 -and [int]$version -lt 170000) `
+    'PROVISIONING_POSTGRESQL_MAJOR_INVALID'
+  Assert-Gate ($migration.Trim() -ceq '42:false') 'PROVISIONING_MIGRATION_STATE_INVALID'
+}
+
+function Assert-ProductionHealth {
+  $api = Invoke-RestMethod -Uri 'http://127.0.0.1:8080/health' -TimeoutSec 10
+  $ready = Invoke-RestMethod -Uri 'http://127.0.0.1:8080/health/ready' -TimeoutSec 10
+  $relay = Invoke-RestMethod -Uri 'http://127.0.0.1:8080/execution-ea/health' -TimeoutSec 10
+  $gateway = Invoke-RestMethod -Uri 'http://127.0.0.1:8791/health' -TimeoutSec 10
+  Assert-Gate (
+    [string]$api.status -ceq 'ok' -and
+    $ready.ready -is [bool] -and [bool]$ready.ready -and [string]$ready.database -ceq 'up' -and
+    $relay.ok -is [bool] -and [bool]$relay.ok -and [string]$relay.service -ceq 'execution-ea-relay' -and
+    $gateway.ok -is [bool] -and [bool]$gateway.ok -and [string]$gateway.service -ceq 'execution-gateway'
+  ) 'PROVISIONING_LOCAL_HEALTH_INVALID'
+  $publicReady = Invoke-RestMethod -Uri 'https://api.tradingterminal.io.vn/health/ready' -TimeoutSec 30
+  $publicRelay = Invoke-RestMethod -Uri 'https://api.tradingterminal.io.vn/execution-ea/health' -TimeoutSec 30
+  Assert-Gate (
+    $publicReady.ready -is [bool] -and [bool]$publicReady.ready -and
+    [string]$publicReady.database -ceq 'up' -and
+    $publicRelay.ok -is [bool] -and [bool]$publicRelay.ok -and
+    [string]$publicRelay.service -ceq 'execution-ea-relay'
+  ) 'PROVISIONING_PUBLIC_HEALTH_INVALID'
+}
+
+function Assert-ApprovedSourceState {
+  $allowed = @(
+    '.gitignore',
+    'backend/bridge/mt5_vm/test_baremetal_worker_install.py',
+    'backend/bridge/mt5_vm/test_production_webrequest_probe.py',
+    'backend/cmd/mt5-migration-gate/main_test.go',
+    'backend/docs/CONFIGURATION.md',
+    'backend/internal/httpserver/server.go',
+    'backend/internal/simtrading/model_test.go',
+    'docs/agent-evidence/production-worker-host-provision/EVIDENCE.md',
+    'docs/agent-evidence/production-worker-host-provision/SPEC.md',
+    'frontend/package.json',
+    'frontend/tsconfig.test.json',
+    'tools/mt5-baremetal/Invoke-MT5WebRequestProbe.ps1',
+    'tools/mt5-baremetal/MarketLensWebRequestProbe.mq5',
+    'tools/verify-production-worker-host-provision.ps1'
+  )
+  $changed = @(& git -C $repoRoot diff --name-only "$baselineCommit..HEAD")
+  Assert-NativeSuccess 'PROVISIONING_GIT_DIFF_FAILED'
+  foreach ($path in $changed) {
+    Assert-Gate ($allowed -ccontains $path.Replace('\', '/')) 'PROVISIONING_UNAPPROVED_TRACKED_PATH'
+  }
+  $dirty = @(& git -C $repoRoot status --porcelain=v1 --untracked-files=all)
+  Assert-NativeSuccess 'PROVISIONING_GIT_STATUS_FAILED'
+  Assert-Gate ($dirty.Count -eq 0) 'PROVISIONING_WORKTREE_NOT_CLEAN'
+  $diffCheck = @(& git -C $repoRoot diff --check "$baselineCommit..HEAD")
+  Assert-NativeSuccess 'PROVISIONING_DIFF_CHECK_FAILED'
+  Assert-Gate ($diffCheck.Count -eq 0) 'PROVISIONING_DIFF_CHECK_FAILED'
+  $probeSourceText = Get-Content -LiteralPath (Join-Path $repoRoot 'tools\mt5-baremetal\MarketLensWebRequestProbe.mq5') -Raw
+  Assert-Gate ($probeSourceText -notmatch '(?i)OrderSend\(|AccountInfo|PositionSelect|HistoryDeal') `
+    'PROVISIONING_PROBE_SOURCE_CAN_TRADE'
+}
+
+try {
+  if (Test-Path -LiteralPath $reportRoot) {
+    $resolvedReport = [IO.Path]::GetFullPath($reportRoot)
+    $requiredPrefix = [IO.Path]::GetFullPath((Join-Path $repoRoot '.artifacts')) + [IO.Path]::DirectorySeparatorChar
+    Assert-Gate ($resolvedReport.StartsWith($requiredPrefix, [StringComparison]::OrdinalIgnoreCase)) `
+      'PROVISIONING_REPORT_ROOT_INVALID'
+    Remove-Item -LiteralPath $reportRoot -Recurse -Force
+  }
+  $null = [IO.Directory]::CreateDirectory($reportRoot)
+
+  Invoke-GauntletLayer 'tool-contracts' {
+    Assert-PowerShellParses -Path $PSCommandPath
+    Assert-PowerShellParses -Path $probeDriver
+    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $PSCommandPath -ContractTestsOnly
+    Assert-NativeSuccess 'PROVISIONING_CONTRACT_POSITIVE_FAILED'
+    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $PSCommandPath -ContractTestsOnly -KnownBadControl 2>$null
+    Assert-Gate ($LASTEXITCODE -ne 0) 'PROVISIONING_CONTRACT_NEGATIVE_FAILED_OPEN'
+    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $probeDriver -ContractTestsOnly
+    Assert-NativeSuccess 'PROVISIONING_PROBE_CONTRACT_POSITIVE_FAILED'
+    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $probeDriver -ContractTestsOnly -KnownBadControl 2>$null
+    Assert-Gate ($LASTEXITCODE -ne 0) 'PROVISIONING_PROBE_CONTRACT_NEGATIVE_FAILED_OPEN'
+  }
+
+  Invoke-GauntletLayer 'go-quality' {
+    $unformatted = @(& gofmt.exe -l (Join-Path $backendRoot '.'))
+    Assert-NativeSuccess 'PROVISIONING_GOFMT_FAILED'
+    Assert-Gate ($unformatted.Count -eq 0) 'PROVISIONING_GOFMT_DIRTY'
+    Invoke-InDirectory $backendRoot {
+      & go vet ./...
+      Assert-NativeSuccess 'PROVISIONING_GO_VET_FAILED'
+      & go test ./... -shuffle=on -count=1
+      Assert-NativeSuccess 'PROVISIONING_GO_SHUFFLED_TESTS_FAILED'
+      & go test ./... -count=1
+      Assert-NativeSuccess 'PROVISIONING_GO_TESTS_FAILED'
+      & go test -race ./... -count=1
+      Assert-NativeSuccess 'PROVISIONING_GO_RACE_FAILED'
+    }
+  }
+
+  Invoke-GauntletLayer 'go-migration-gate-coverage' {
+    Invoke-InDirectory $backendRoot {
+      $coverage = Join-Path $reportRoot 'mt5-migration-gate.coverage.out'
+      & go test ./cmd/mt5-migration-gate -run '^TestProductionCommandMainIsInert$' `
+        -count=1 -coverprofile=$coverage
+      Assert-NativeSuccess 'PROVISIONING_GO_FOCUSED_COVERAGE_FAILED'
+      $coverageText = Get-Content -LiteralPath $coverage -Raw
+      Assert-Gate ($coverageText -match 'cmd/mt5-migration-gate/main.go:6.13,6.14 1 1') `
+        'PROVISIONING_GO_MAIN_NOT_COVERED'
+    }
+  }
+
+  Invoke-GauntletLayer 'python-managed-suites' {
+    Invoke-InDirectory $repoRoot {
+      & python.exe -m unittest discover -v -s backend/bridge/mt5_vm -p 'test_*.py'
+      Assert-NativeSuccess 'PROVISIONING_PYTHON_MANAGED_TESTS_FAILED'
+      & python.exe -m unittest discover -v -s backend/bridge/mt5_ea -p 'test_*.py'
+      Assert-NativeSuccess 'PROVISIONING_PYTHON_EA_TESTS_FAILED'
+    }
+  }
+
+  Invoke-GauntletLayer 'rust-quality' {
+    Invoke-InDirectory $executionRoot {
+      & cargo fmt --all -- --check
+      Assert-NativeSuccess 'PROVISIONING_RUST_FMT_FAILED'
+      & cargo check --workspace --locked
+      Assert-NativeSuccess 'PROVISIONING_RUST_CHECK_FAILED'
+      & cargo clippy --workspace --all-targets --locked -- -D warnings
+      Assert-NativeSuccess 'PROVISIONING_RUST_CLIPPY_FAILED'
+      & cargo test --workspace --locked
+      Assert-NativeSuccess 'PROVISIONING_RUST_TESTS_FAILED'
+      & cargo test -p mt5-vm-agent --locked
+      Assert-NativeSuccess 'PROVISIONING_RUST_AGENT_TESTS_FAILED'
+    }
+  }
+
+  Invoke-GauntletLayer 'frontend-quality' {
+    Invoke-InDirectory $frontendRoot {
+      & npm.cmd run typecheck
+      Assert-NativeSuccess 'PROVISIONING_FRONTEND_TYPECHECK_FAILED'
+      & npm.cmd run lint
+      Assert-NativeSuccess 'PROVISIONING_FRONTEND_LINT_FAILED'
+      & npm.cmd run test:trade
+      Assert-NativeSuccess 'PROVISIONING_FRONTEND_TRADE_TESTS_FAILED'
+      & npm.cmd run build
+      Assert-NativeSuccess 'PROVISIONING_FRONTEND_BUILD_FAILED'
+    }
+  }
+
+  Invoke-GauntletLayer 'backend-docs' {
+    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+      -File (Join-Path $repoRoot 'tools\verify-backend-docs.ps1')
+    Assert-NativeSuccess 'PROVISIONING_BACKEND_DOCS_FAILED'
+  }
+
+  Invoke-GauntletLayer 'managed-worker-contracts' {
+    Invoke-InDirectory $repoRoot {
+      & python.exe -m unittest -v `
+        backend.bridge.mt5_vm.test_baremetal_worker_install `
+        backend.bridge.mt5_vm.test_production_webrequest_probe
+      Assert-NativeSuccess 'PROVISIONING_WORKER_CONTRACTS_FAILED'
+    }
+    foreach ($path in @(
+      (Join-Path $repoRoot 'tools\Install-ProductionManagedWorker.ps1'),
+      (Join-Path $repoRoot 'tools\mt5-baremetal\Install-MT5BareMetalWorker.ps1'),
+      (Join-Path $repoRoot 'tools\mt5-baremetal\Ensure-MT5BareMetalWorkerReady.ps1')
+    )) { Assert-PowerShellParses -Path $path }
+  }
+
+  Invoke-GauntletLayer 'postgresql-preflight' {
+    Assert-PostgreSqlProductionState
+  }
+
+  Invoke-GauntletLayer 'live-webrequest-and-host-inputs' {
+    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $probeDriver
+    Assert-NativeSuccess 'PROVISIONING_LIVE_WEBREQUEST_PROBE_FAILED'
+    $secret = Prepare-BootstrapSecret
+    Assert-Gate ($secret.Length -ge 32) 'PROVISIONING_BOOTSTRAP_TOKEN_INVALID'
+    $null = Prepare-ManagedWorkerInstallInput
+    $agentPath = Join-Path $executionRoot 'target\release\mt5-vm-agent.exe'
+    Assert-Gate (Test-Path -LiteralPath $agentPath -PathType Leaf) `
+      'PROVISIONING_MANAGED_WORKER_AGENT_MISSING'
+    $dryRunOutput = @(& (Join-Path $repoRoot 'tools\Install-ProductionManagedWorker.ps1') `
+      -InstallInputPath $installInputPath -BackendEnvPath $backendEnvPath `
+      -RepoRoot $repoRoot -AgentPath $agentPath `
+      -GatewayUrl 'http://127.0.0.1:8791' -CredentialApiUrl 'http://127.0.0.1:8080')
+    Assert-NativeSuccess 'PROVISIONING_MANAGED_WORKER_DRY_RUN_FAILED'
+    $dryRun = ($dryRunOutput -join "`n") | ConvertFrom-Json -ErrorAction Stop
+    Assert-Gate ([string]$dryRun.status -ceq 'DRY_RUN' -and -not [bool]$dryRun.installed) `
+      'PROVISIONING_MANAGED_WORKER_DRY_RUN_INVALID'
+  }
+
+  Invoke-GauntletLayer 'source-diff-secret-audit' {
+    Assert-ApprovedSourceState
+    $parsed = Read-DotEnv -Path $backendEnvPath
+    $bootstrap = [string]$parsed.values['EXECUTION_MT5_VM_BOOTSTRAP_TOKEN']
+    $tracked = @(& git -C $repoRoot ls-files)
+    Assert-NativeSuccess 'PROVISIONING_GIT_LS_FILES_FAILED'
+    foreach ($relative in $tracked) {
+      $path = Join-Path $repoRoot $relative
+      if (Test-Path -LiteralPath $path -PathType Leaf) {
+        $bytes = [IO.File]::ReadAllBytes($path)
+        if ($bytes.Length -le 5242880) {
+          $text = [Text.Encoding]::UTF8.GetString($bytes)
+          Assert-Gate (-not $text.Contains($bootstrap)) 'PROVISIONING_SECRET_IN_TRACKED_SOURCE'
+        }
+      }
+    }
+  }
+
+  Invoke-GauntletLayer 'canonical-production-runner' {
+    & (Join-Path $repoRoot 'run-backend-production.ps1')
+    Assert-NativeSuccess 'PROVISIONING_CANONICAL_RUNNER_FAILED'
+  }
+
+  Invoke-GauntletLayer 'production-postconditions' {
+    Assert-PostgreSqlProductionState
+    Assert-ProductionHealth
+    $parsed = Read-DotEnv -Path $backendEnvPath
+    $receiptPath = [string]$parsed.values['EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE']
+    Assert-Gate (
+      [IO.Path]::IsPathRooted($receiptPath) -and
+      (Test-Path -LiteralPath $receiptPath -PathType Leaf)
+    ) 'PROVISIONING_MANAGED_WORKER_RECEIPT_MISSING'
+    . (Join-Path $repoRoot 'tools\mt5-baremetal\Ensure-MT5BareMetalWorkerReady.ps1')
+    $readiness = Invoke-MT5BareMetalWorkerReadiness `
+      -ReceiptPath $receiptPath -AdminUrl 'http://127.0.0.1:8791' -TimeoutSeconds 30
+    Assert-Gate (
+      $readiness.ready -is [bool] -and [bool]$readiness.ready -and
+      [string]$readiness.worker_id -ceq $workerId -and [int]$readiness.capacity -ge 1
+    ) 'PROVISIONING_MANAGED_WORKER_NOT_READY'
+    $dirty = @(& git -C $repoRoot status --porcelain=v1 --untracked-files=all)
+    Assert-NativeSuccess 'PROVISIONING_GIT_STATUS_FAILED'
+    Assert-Gate ($dirty.Count -eq 0) 'PROVISIONING_POST_RUN_WORKTREE_DIRTY'
+    Assert-Gate (@($script:layerResults).Count -eq ($expectedLayers.Count - 1)) `
+      'PROVISIONING_LAYER_MANIFEST_INCOMPLETE'
+  }
+
+  Assert-Gate ($script:layerResults.Count -eq $expectedLayers.Count) `
+    'PROVISIONING_LAYER_MANIFEST_INCOMPLETE'
+  for ($index = 0; $index -lt $expectedLayers.Count; $index++) {
+    Assert-Gate ([string]$script:layerResults[$index].name -ceq $expectedLayers[$index]) `
+      'PROVISIONING_LAYER_MANIFEST_ORDER_INVALID'
+  }
+  Write-GauntletReport -Status 'PASS'
+  Write-Host "`nPRODUCTION_WORKER_HOST_PROVISION=PASS report=$reportPath" -ForegroundColor Green
+} catch {
+  if (-not (Test-Path -LiteralPath $reportPath)) { Write-GauntletReport -Status 'FAIL' }
+  throw
+}

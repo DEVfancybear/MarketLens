@@ -9,7 +9,6 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/gofiber/fiber/v3/middleware/requestid"
-	"github.com/rs/zerolog/log"
 	"github.com/marketlens/backend/internal/alerts"
 	"github.com/marketlens/backend/internal/auth"
 	"github.com/marketlens/backend/internal/config"
@@ -31,6 +30,7 @@ import (
 	"github.com/marketlens/backend/internal/tradeauth"
 	"github.com/marketlens/backend/internal/watchlists"
 	"github.com/marketlens/backend/internal/workspace"
+	"github.com/rs/zerolog/log"
 )
 
 type Server struct {

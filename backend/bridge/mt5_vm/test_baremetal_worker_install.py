@@ -219,6 +219,7 @@ class BareMetalWorkerInstallTests(unittest.TestCase):
             "$AgentSourcePath,$ExpectedAgentSha256);"
             "if (-not $AgentSourcePath -or $ExpectedAgentSha256 -ne ('e'*64)) {"
             "throw 'TEST_AGENT_NOT_INSTALLED'};"
+            "$null=[IO.Directory]::CreateDirectory($WorkerRoot);"
             "$script:writes++;$script:config=$Config;[pscustomobject]@{"
             "config_path='C:\\MarketLens\\Worker\\managed-worker.json';"
             "launcher_path='C:\\MarketLens\\Worker\\Start-MT5BareMetalWorker.ps1';"
@@ -243,7 +244,7 @@ class BareMetalWorkerInstallTests(unittest.TestCase):
             "ea_webrequest_settings_sha256=('4'*64);"
             "ea_topology_attestation_source_path='C:\\Release\\webrequest-attestation.json';"
             "ea_topology_attestation_sha256=('5'*64)};"
-            "$args=@{WorkerRoot='C:\\MarketLens\\Worker';DataRoot='C:\\MarketLens\\Runtime';"
+            "$args=@{WorkerRoot=$env:MT5_TEST_WORKER_ROOT;DataRoot=$env:MT5_TEST_DATA_ROOT;"
             "WorkerIdentity='HOST\\MarketLensWorker';TaskName='MarketLens MT5 Worker';"
             "AgentPath='C:\\MarketLens\\bin\\mt5-vm-agent.exe';AgentSha256=('e'*64);"
             "PythonPath='C:\\MarketLens\\Python\\python.exe';PythonSha256=('f'*64);"
@@ -261,7 +262,15 @@ class BareMetalWorkerInstallTests(unittest.TestCase):
             "topologyCalls=$script:topologyCalls;"
             "config=$script:config;taskArgs=$script:taskArgs}|ConvertTo-Json -Compress -Depth 12"
         )
-        completed = self.run_powershell(command)
+        with tempfile.TemporaryDirectory() as raw_root:
+            test_root = Path(raw_root)
+            completed = self.run_powershell(
+                command,
+                extra_env={
+                    "MT5_TEST_WORKER_ROOT": str(test_root / "worker"),
+                    "MT5_TEST_DATA_ROOT": str(test_root / "runtime"),
+                },
+            )
 
         self.assertEqual(0, completed.returncode, completed.stderr)
         observed = json.loads(completed.stdout)
@@ -718,6 +727,7 @@ class BareMetalWorkerInstallTests(unittest.TestCase):
                         "worker_substrate": "bare_metal",
                         "bootstrap_token_file": r"C:\protected\bootstrap.token",
                         "process": {
+                            "worker_id": "marketlens-baremetal-01",
                             "terminal_slots": [{"slot_id": "slot-01"}],
                             "artifact_pins": {"agent_sha256": agent_sha},
                         },

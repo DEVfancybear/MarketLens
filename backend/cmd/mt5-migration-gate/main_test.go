@@ -59,6 +59,10 @@ type report struct {
 	SanitizedError     string `json:"sanitized_error,omitempty"`
 }
 
+func TestProductionCommandMainIsInert(t *testing.T) {
+	main()
+}
+
 func realMain(arguments []string) int {
 	flags := flag.NewFlagSet("mt5-migration-gate", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)

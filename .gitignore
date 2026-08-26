@@ -39,6 +39,9 @@ next-env.d.ts
 # Debug logs
 npm-debug.log*
 .runtime-logs/
+.artifacts/migration-0042/
+.artifacts/mt5-baremetal-managed-ea/
+.artifacts/production-worker-host-provision/
 
 # Go
 backend/vendor/
