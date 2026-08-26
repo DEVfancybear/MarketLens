@@ -419,6 +419,7 @@ function Assert-ApprovedSourceState {
     'backend/bridge/mt5_vm/test_production_webrequest_probe.py',
     'backend/cmd/mt5-migration-gate/main_test.go',
     'backend/docs/CONFIGURATION.md',
+    'backend/execution/crates/mt5-vm-agent/src/process.rs',
     'backend/internal/httpserver/server.go',
     'backend/internal/simtrading/model_test.go',
     'docs/agent-evidence/production-worker-host-provision/EVIDENCE.md',
