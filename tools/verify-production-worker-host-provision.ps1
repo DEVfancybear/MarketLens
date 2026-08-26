@@ -97,6 +97,26 @@ function Assert-NativeSuccess {
   Assert-Gate ($LASTEXITCODE -eq 0) $Code
 }
 
+function Assert-PowerShellKnownBad {
+  param(
+    [Parameter(Mandatory = $true)][string[]]$Arguments,
+    [Parameter(Mandatory = $true)][string]$ExpectedCode,
+    [Parameter(Mandatory = $true)][string]$FailedOpenCode,
+    [Parameter(Mandatory = $true)][string]$WrongReasonCode
+  )
+  $savedErrorActionPreference = $ErrorActionPreference
+  $exitCode = 0
+  try {
+    $ErrorActionPreference = 'Continue'
+    $output = @(& powershell.exe @Arguments 2>&1)
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $savedErrorActionPreference
+  }
+  Assert-Gate ($exitCode -ne 0) $FailedOpenCode
+  Assert-Gate (($output -join "`n").Contains($ExpectedCode)) $WrongReasonCode
+}
+
 function Invoke-InDirectory {
   param(
     [Parameter(Mandatory = $true)][string]$Path,
@@ -440,12 +460,18 @@ try {
     Assert-PowerShellParses -Path $probeDriver
     & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $PSCommandPath -ContractTestsOnly
     Assert-NativeSuccess 'PROVISIONING_CONTRACT_POSITIVE_FAILED'
-    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $PSCommandPath -ContractTestsOnly -KnownBadControl 2>$null
-    Assert-Gate ($LASTEXITCODE -ne 0) 'PROVISIONING_CONTRACT_NEGATIVE_FAILED_OPEN'
+    Assert-PowerShellKnownBad `
+      -Arguments @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-ContractTestsOnly', '-KnownBadControl') `
+      -ExpectedCode 'PROVISIONING_SELECTED_TERMINAL_INVALID' `
+      -FailedOpenCode 'PROVISIONING_CONTRACT_NEGATIVE_FAILED_OPEN' `
+      -WrongReasonCode 'PROVISIONING_CONTRACT_NEGATIVE_WRONG_REASON'
     & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $probeDriver -ContractTestsOnly
     Assert-NativeSuccess 'PROVISIONING_PROBE_CONTRACT_POSITIVE_FAILED'
-    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $probeDriver -ContractTestsOnly -KnownBadControl 2>$null
-    Assert-Gate ($LASTEXITCODE -ne 0) 'PROVISIONING_PROBE_CONTRACT_NEGATIVE_FAILED_OPEN'
+    Assert-PowerShellKnownBad `
+      -Arguments @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $probeDriver, '-ContractTestsOnly', '-KnownBadControl') `
+      -ExpectedCode 'PROVISIONING_PROBE_RECEIPT_INVALID' `
+      -FailedOpenCode 'PROVISIONING_PROBE_CONTRACT_NEGATIVE_FAILED_OPEN' `
+      -WrongReasonCode 'PROVISIONING_PROBE_CONTRACT_NEGATIVE_WRONG_REASON'
   }
 
   Invoke-GauntletLayer 'go-quality' {
