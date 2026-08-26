@@ -1587,3 +1587,70 @@ APPROVE SPEC REVISION: production-worker-host-provision v19
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v19`. No v19 implementation occurred
 before that approval.
+
+## Revision v20 - bind the live Add URL editor control ID (approval required)
+
+### Discovery during approved v19 execution
+
+V19 RED was observed because the icon rectangle and hit contracts did not exist. GREEN passed
+35/35 focused tests. A mutant changing `LVIR_ICON=1` to `LVIR_BOUNDS=0` was killed by the frozen
+constant/geometry assertion; the helper was restored to SHA-256
+`8954110FD7285CFEC658D3A2BA534C331F0CB2DD261891B89FAB7EA742CC4D36` and the targeted test returned
+GREEN.
+
+The selected-host transaction targeted the verified item-0 icon midpoint but still failed closed
+with `PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID`; its exact snapshot rollback completed and
+no desired state was confirmed. A Cancel-only GUI-thread diagnostic then proved the Options dialog
+was active and foreground and that the double-click had moved keyboard focus to an `Edit` control
+ID `32954`. A second Cancel-only descendant query repeated the observation: exactly one ID `32954`
+control existed under the same Options dialog, class `Edit`, visible and enabled, while the
+previously assumed ID `10325` had zero matches. The editor therefore opened successfully; the
+postcondition rejected the correct live control because its pinned ID was wrong.
+
+No text was written during either diagnostic. No OK, live receipt, protected host input, worker
+mutation, or production runner followed.
+
+### v20 exact editor identity correction
+
+Revision v20 remains Tier 3 and changes only the editor control identity used after all approved
+v19 icon geometry and v18 queue checks pass. Add a production Add URL editor constant with exact
+value `32954`; `Get-MT5VmWebRequestEditorBoundary` must require exactly one same-dialog descendant
+with that ID, exact class `Edit`, visible, and enabled. Zero, duplicate, wrong-ID (including legacy
+`10325`), wrong-class, hidden, or disabled candidates fail with the existing exact code
+`PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID` before any text write.
+
+The older `WebRequestEditor=10325` constant may remain only as frozen regression history for the
+v16 contract; production discovery and writing must not use it. No fallback IDs, focused-control
+trust without descendant verification, title/text lookup, arbitrary Edit control, or retry against
+another editor is authorized.
+
+All icon rectangle/client/hit checks, exact four queued messages, same list handle and point,
+`WM_SETTEXT` exact origin, Return commit, pending and reopened persisted rereads, exact rollback,
+terminal/signer/PID boundary, idempotency run, live receipt, verifier layers, Git operations, and
+canonical production command remain unchanged. No tracked path or dependency is added.
+
+### v20 RED -> GREEN additions
+
+Before changing the resolver, add and observe RED constants/source and pure-candidate contracts for
+the exact Add URL editor ID `32954`. The pure contract must accept one ID `32954`, class `Edit`,
+visible and enabled candidate and reject legacy ID `10325`, zero/duplicate counts, wrong class,
+hidden, and disabled candidates with the pinned editor-invalid error. Keep all assertions frozen
+through GREEN. Kill and restore a mutant changing the production ID back to `10325` or accepting
+the legacy ID.
+
+Then rerun all focused tests, the exact selected-host transaction, a second idempotency transaction,
+and the live nonce-bound WebRequest probe. Only after a GREEN checkpoint, clean local-master
+fast-forward, and one fresh all-pass execution of the complete 13-layer verifier may EVIDENCE claim
+production success.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v20
+```
+
+### v20 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v20`. No v20 implementation occurred
+before that approval.
