@@ -1436,3 +1436,80 @@ APPROVE SPEC REVISION: production-worker-host-provision v17
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v17`. No v17 implementation occurred
 before that approval.
+
+## Revision v18 - queue the exact control-local mouse sequence (approval required)
+
+### Discovery during approved v17 execution
+
+V17 source and pure sequence contracts passed 32/32 focused tests after the exact four-message
+implementation. A mutant that swapped the first expected sequence element was killed with
+`PROVISIONING_WEBREQUEST_ALLOWLIST_SEQUENCE_INVALID` and the helper was restored before live
+execution.
+
+The exact signed-terminal transaction then failed closed with
+`PROVISIONING_WEBREQUEST_ALLOWLIST_SEQUENCE_INVALID` and restored the unchecked, one-blank-row
+snapshot. A no-output diagnostic retained message results in memory until after cancellation and
+rollback. It showed `WM_LBUTTONDOWN` itself returned Win32 `ERROR_TIMEOUT` (`1460`) after 2004 ms;
+the following three messages therefore could not be delivered by the synchronous
+`SendMessageTimeoutW` wrapper. No desired state was confirmed, no live receipt or protected host
+input ran, and no production runner followed.
+
+This is a synchronization deadlock at the interaction boundary: MT5's mouse-down handler waits for
+the rest of the mouse gesture while the external synchronous sender waits for that handler to
+return. Adding sleep before or after the synchronous call cannot make the corresponding mouse-up
+enter the target thread.
+
+### v18 bounded queue exception
+
+Revision v18 remains Tier 3 and changes only delivery of v17's already-approved exact four-message
+sequence after the same checkbox, PID, control ID, rectangle, and hit-test defenses pass. It
+authorizes a `PostMessageW` boundary that queues, in order, to the same verified
+`SysListView32` handle and same packed control-client point:
+
+1. `WM_LBUTTONDOWN` with `MK_LBUTTON`;
+2. `WM_LBUTTONUP` with no button flags;
+3. `WM_LBUTTONDBLCLK` with `MK_LBUTTON`; and
+4. `WM_LBUTTONUP` with no button flags.
+
+Every queue call must return success. Any false return fails with the exact code
+`PROVISIONING_WEBREQUEST_ALLOWLIST_SEQUENCE_QUEUE_FAILED`; the dialog is cancelled and the exact
+snapshot rollback remains mandatory. The queue is nonblocking but the operation remains bounded:
+after all four calls succeed, exactly one visible and enabled same-dialog Edit ID `10325` must
+appear within the existing bounded editor wait, and the existing pending reread, OK, reopened
+persisted reread, idempotency run, and nonce-bound live receipt remain required.
+
+The exception does not authorize another handle, another row or point, retries at alternate
+coordinates, arbitrary messages, global input, cursor movement, focus/foreground APIs, SendInput,
+SendKeys, Clipboard, window-title lookup, or removal of any state, rollback, signer, PID, terminal,
+or origin check. `PostMessageW` may be used only by this private exact-sequence boundary; all other
+control reads, text writes, Return commit, dialog confirmation, and dialog cancellation retain
+their existing bounded synchronous wrappers. Timing sleeps are not evidence of success and must
+not replace the exact editor and state rereads.
+
+No tracked path, dependency, URL, terminal, public API, host input, worker mutation, gauntlet
+layer, Git operation, or production command changes.
+
+### v18 RED -> GREEN additions
+
+Before adding the queue implementation, add and observe RED contracts requiring the private
+`PostMessageW` boundary, exactly four successful queue calls, and the pinned queue-failure code.
+Use a mocked native boundary only at the Win32 edge to prove a false result on any one of the four
+positions aborts and never reports success; retain v17's frozen pure ordering/flag/point assertions.
+Kill and restore a mutant that ignores one failed queue result.
+
+Then rerun all focused tests, the exact selected-host transaction, a second idempotency transaction,
+and the live nonce-bound WebRequest probe. Only after a GREEN checkpoint, clean local-master
+fast-forward, and one fresh all-pass execution of the complete 13-layer verifier may EVIDENCE claim
+production success.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v18
+```
+
+### v18 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v18`. No v18 implementation occurred
+before that approval.
