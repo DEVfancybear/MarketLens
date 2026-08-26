@@ -1287,3 +1287,85 @@ APPROVE SPEC REVISION: production-worker-host-provision v15
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v15`. No v15 implementation occurred
 before that approval.
+
+## Revision v16 - activate MT5's private URL editor through a bounded list hit (approval required)
+
+### Discovery during approved v15 implementation
+
+V15 RED was observed as five new failures with all 25 retained tests passing. GREEN contracts then
+passed 30/30 tests; the exact-origin comparator mutant was killed and restored to its prior SHA-256.
+The first selected-host transaction opened the exact signed terminal and snapshotted the unchecked,
+one-blank-row state. Direct `LVM_DELETEALLITEMS`/`LVM_INSERTITEMW` changed the Windows list view but
+not MT5's private dialog model, so the mandatory pending reread failed with
+`PROVISIONING_WEBREQUEST_ALLOWLIST_PENDING_FAILED`. The exact snapshot rollback succeeded; no
+rollback-failed code, confirmation attestation, host input, worker mutation, or production runner
+followed.
+
+A second pending-only discovery tried standard `LVM_EDITLABELW`; the list does not expose the
+`LVS_EDITLABELS` behavior and returned no Edit handle (`EDIT_LABEL_NOT_AVAILABLE`). Its `finally`
+block cancelled the dialog and closed the owned terminal. Existing control discovery shows MT5
+instead owns a hidden Edit control ID `10325`; MT5 reveals that private editor only when its blank
+list row receives the dialog's normal double-click action.
+
+This means v15's prohibition on every coordinate/mouse message also prohibits the remaining
+agent-owned path. Revision v16 narrows one exception rather than silently weakening that boundary.
+
+### v16 bounded exception and unchanged scope
+
+Revision v16 remains Tier 3, retains all v15 paths, dependencies, failure codes, rollback rules,
+tests, mutation requirement, gauntlet, and exact terminal/origin boundary. It authorizes only this
+additional control-local activation sequence inside `Mt5VmTerminalUi.ps1`:
+
+1. require the WebRequest checkbox and the unique visible `SysListView32` ID `10191` already bound
+   to the exact selected terminal PID;
+2. require the pre-mutation state to be either the exact desired state or unchecked with exactly
+   one empty item; any unexpected non-empty item fails without mutation;
+3. query item 0's client rectangle using bounded `LVM_GETITEMRECT` and compute its midpoint inside
+   that list control only;
+4. prove that point resolves back to item 0 with bounded `LVM_HITTEST` and item/label hit flags;
+5. send one `WM_LBUTTONDBLCLK` message to that exact list handle using only the verified
+   control-client point;
+6. require exactly one visible, enabled `Edit` control ID `10325` under the same Options dialog;
+7. set only `http://127.0.0.1:8790` with bounded `WM_SETTEXT`, then commit only to that edit handle
+   with bounded `WM_KEYDOWN`/`WM_KEYUP` for `VK_RETURN`; and
+8. reread the pending checkbox/list state before any OK, then retain v15's persisted reread, live
+   WebRequest probe, and rollback requirements.
+
+The exception does **not** authorize `SendInput`, `mouse_event`, `SetCursorPos`, global cursor
+movement, absolute screen coordinates, coordinate literals, window-title lookup, focus stealing,
+arbitrary list rows, right-click, drag, menu traversal, SendKeys, or Clipboard. The user's physical
+cursor is not moved. If item-rectangle retrieval, hit testing, editor visibility/class/ID, text set,
+Return commit, or pending reread is ambiguous or fails, the dialog is cancelled and no OK is sent.
+
+No new tracked path or dependency is added. The v15 direct replace primitive may remain only for
+exact snapshot rollback if its result is verified pending and persisted; it may not be treated as a
+successful desired-state apply after the observed failure. If exact rollback cannot be verified,
+`PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED` remains authoritative.
+
+### v16 RED -> GREEN additions
+
+Before adding the activation implementation, add and observe RED source/contract expectations for
+the exact constants and defenses: `LVM_GETITEMRECT`, `LVM_HITTEST`, `WM_LBUTTONDBLCLK`, editor ID
+`10325`, one verified row, one editor, and forbidden global input APIs. A pure hit-test contract
+must accept a rectangle midpoint that maps to item 0 and reject wrong row, outside point, missing
+label/item flags, empty/negative rectangles, and duplicate editor controls with pinned allowlist
+errors. Keep assertions frozen through GREEN.
+
+Run the pending-only selected-host transaction first. It may click OK only after the exact desired
+state is reread from the live dialog. Reopen and verify persisted state, rerun the no-argument
+entrypoint for idempotency, then run the existing nonce-bound MT5 WebRequest probe. Kill and restore
+a mutant that bypasses the row/hit-test equality defense. After the GREEN checkpoint and local
+master fast-forward, restart the complete 13-layer gauntlet from layer one; only all-layer success
+permits the production claim.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v16
+```
+
+### v16 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v16`. No v16 implementation occurred
+before that approval.
