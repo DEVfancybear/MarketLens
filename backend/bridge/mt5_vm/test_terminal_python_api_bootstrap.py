@@ -1629,7 +1629,10 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             "permit-partial-double-click-count",
             "accept-wrong-editor-pid",
             "skip-cursor-restoration",
-            "PRODUCTION_WEBREQUEST_MOUSE_MUTATION=4/4",
+            "combine-click-batches",
+            "remove-paced-click-delay",
+            "drop-mid-click-guard",
+            "PRODUCTION_WEBREQUEST_MOUSE_MUTATION=7/7",
             "PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID",
             "PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED",
         ):
