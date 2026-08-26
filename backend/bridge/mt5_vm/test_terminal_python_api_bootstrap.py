@@ -19,6 +19,7 @@ ALLOWLIST = (
     / "mt5-baremetal"
     / "Set-MT5WebRequestAllowlist.ps1"
 )
+HOST_VERIFIER = BRIDGE.parents[2] / "tools" / "verify-production-worker-host-provision.ps1"
 
 
 @unittest.skipUnless(sys.platform == "win32", "MT5 terminal UI contracts are Windows-only")
@@ -1598,6 +1599,23 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
                 observed = json.loads(completed.stdout)
                 self.assertEqual(expected_result, observed["result"])
                 self.assertEqual(expected_events, observed["events"])
+
+    def test_webrequest_physical_mouse_gauntlet_persists_controls_and_mutants(self) -> None:
+        self.assertTrue(HOST_VERIFIER.exists(), "production host verifier is missing")
+        source = HOST_VERIFIER.read_text(encoding="utf-8")
+        for required in (
+            "-MouseHitControl",
+            "-CursorRestoreControl",
+            "Invoke-MouseMutationTests",
+            "drop-post-move-hit-guard",
+            "permit-partial-double-click-count",
+            "accept-wrong-editor-pid",
+            "skip-cursor-restoration",
+            "PRODUCTION_WEBREQUEST_MOUSE_MUTATION=4/4",
+            "PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID",
+            "PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED",
+        ):
+            self.assertIn(required, source, required)
 
     def test_webrequest_queue_sequence_aborts_at_each_failed_position(self) -> None:
         body = (
