@@ -13,6 +13,12 @@ BRIDGE = Path(__file__).resolve().parent
 UI_HELPER = BRIDGE / "Mt5VmTerminalUi.ps1"
 BOOTSTRAP = BRIDGE / "Invoke-MT5VmTerminalPythonApiBootstrap.ps1"
 ENROLL = BRIDGE.parents[2] / "tools" / "mt5-vm-image" / "Enroll-MT5VmServerCatalog.ps1"
+ALLOWLIST = (
+    BRIDGE.parents[2]
+    / "tools"
+    / "mt5-baremetal"
+    / "Set-MT5WebRequestAllowlist.ps1"
+)
 
 
 @unittest.skipUnless(sys.platform == "win32", "MT5 terminal UI contracts are Windows-only")
@@ -106,6 +112,36 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             "param([IntPtr]$OptionsHandle);$script:confirmCalls+=1;"
             "if(-not $script:dropCommit){$script:persisted=$script:pending};"
             "$script:pending=$null};"
+            "function Cancel-MT5VmOptionsDialogBoundary {"
+            "param([IntPtr]$OptionsHandle);$script:cancelCalls+=1;"
+            "$script:pending=$null};"
+        )
+
+    @staticmethod
+    def _webrequest_ui_boundaries(*, mismatch_apply: bool = False) -> str:
+        mismatch = "$true" if mismatch_apply else "$false"
+        return (
+            "$script:persisted=[ordered]@{Enabled=0;Items=@('')};"
+            "$script:pending=$null;$script:mismatchApply="
+            + mismatch
+            + ";$script:confirmCalls=0;$script:cancelCalls=0;"
+            "$script:openCalls=0;$script:writeCalls=0;"
+            "function Open-MT5VmOptionsDialogBoundary {"
+            "param([int]$ProcessId);$script:openCalls+=1;[IntPtr]42};"
+            "function Read-MT5VmWebRequestStateBoundary {"
+            "param([IntPtr]$OptionsHandle);"
+            "if($null -ne $script:pending){return [pscustomobject]$script:pending};"
+            "return [pscustomobject]$script:persisted};"
+            "function Write-MT5VmWebRequestStateBoundary {"
+            "param([IntPtr]$OptionsHandle,[object]$State);$script:writeCalls+=1;"
+            "$script:pending=[ordered]@{Enabled=[int]$State.Enabled;"
+            "Items=@($State.Items)}};"
+            "function Confirm-MT5VmOptionsDialogBoundary {"
+            "param([IntPtr]$OptionsHandle);$script:confirmCalls+=1;"
+            "if($script:mismatchApply -and $script:confirmCalls -eq 1){"
+            "$script:persisted=[ordered]@{Enabled=1;"
+            "Items=@('http://127.0.0.1:9999')}}else{"
+            "$script:persisted=$script:pending};$script:pending=$null};"
             "function Cancel-MT5VmOptionsDialogBoundary {"
             "param([IntPtr]$OptionsHandle);$script:cancelCalls+=1;"
             "$script:pending=$null};"
@@ -260,6 +296,1084 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
         self.assertEqual(desired, observed["persisted"])
         self.assertEqual(1, observed["confirms"])
         self.assertGreaterEqual(observed["cancels"], 1)
+
+    def test_webrequest_allowlist_entrypoint_is_exact_and_forbids_unsafe_ui(self) -> None:
+        self.assertTrue(ALLOWLIST.exists(), "production allowlist entrypoint is missing")
+        source = ALLOWLIST.read_text(encoding="utf-8")
+        combined = source + UI_HELPER.read_text(encoding="utf-8")
+        self.assertIn(r"C:\Program Files\MetaTrader 5\terminal64.exe", source)
+        self.assertIn(
+            r"C:\Users\Duong\AppData\Roaming\MetaQuotes\Terminal"
+            r"\D0E8209F77C8CF37AD8BF550E51FF075",
+            source,
+        )
+        self.assertIn(
+            "CN=MetaQuotes Ltd., O=MetaQuotes Ltd., S=Lemesos, C=CY", source
+        )
+        self.assertIn("http://127.0.0.1:8790", source)
+        self.assertIn(r"config\common.ini", source)
+        self.assertIn("origin.txt", source)
+        self.assertIn("Invoke-MT5WebRequestProbe.ps1", source)
+        for required in (
+            "Read-ProductionWebRequestCommonIni",
+            "Convert-ProductionWebRequestCommonIni",
+            "Invoke-ProductionWebRequestCommonIniTransaction",
+            "Assert-ProductionSelectedTerminalAndProfile",
+            "Assert-ProductionSelectedTerminalAbsent",
+            "[IO.File]::Replace",
+        ):
+            self.assertIn(required, source, required)
+        self.assertNotIn("$TerminalPath", source)
+        self.assertNotIn("$Origin", source)
+        self.assertNotIn("$uiHelper", source)
+        self.assertNotIn("Set-MT5VmTerminalWebRequestAllowlist", source)
+        self.assertNotIn("Resolve-MT5VmTerminalProcess", source)
+        for forbidden in (
+            "SendKeys",
+            "Clipboard",
+            "Set-Clipboard",
+            "SetCursorPos",
+            "mouse_event",
+            "WindowTitle",
+            "Stop-Process",
+            "taskkill",
+            "OrderSend(",
+            "AccountInfo",
+        ):
+            self.assertNotIn(forbidden.casefold(), combined.casefold(), forbidden)
+
+        positive = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(ALLOWLIST),
+                "-ContractTestsOnly",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+        negative = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(ALLOWLIST),
+                "-ContractTestsOnly",
+                "-KnownBadControl",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+        unreadable = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(ALLOWLIST),
+                "-ContractTestsOnly",
+                "-UnreadableInputControl",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+        self.assertEqual(0, positive.returncode, positive.stderr)
+        self.assertIn("PRODUCTION_WEBREQUEST_ALLOWLIST_CONTRACTS=PASS", positive.stdout)
+        self.assertIn(
+            "PRODUCTION_WEBREQUEST_ALLOWLIST_CONFIG_CONTRACTS=PASS",
+            positive.stdout,
+        )
+        self.assertIn(
+            "PRODUCTION_WEBREQUEST_ALLOWLIST_ROLLBACK_CONTRACTS=PASS",
+            positive.stdout,
+        )
+        self.assertIn(
+            "PRODUCTION_WEBREQUEST_ALLOWLIST_RECOVERY_CONTRACTS=PASS",
+            positive.stdout,
+        )
+        self.assertNotIn("SuperSecretSentinel-v27", positive.stdout + positive.stderr)
+        self.assertNotEqual(0, negative.returncode)
+        self.assertIn(
+            "PROVISIONING_WEBREQUEST_ALLOWLIST_SCHEMA_INVALID",
+            negative.stdout + negative.stderr,
+        )
+        self.assertNotEqual(0, unreadable.returncode)
+        self.assertIn(
+            "PROVISIONING_WEBREQUEST_ALLOWLIST_CONFIG_UNREADABLE",
+            unreadable.stdout + unreadable.stderr,
+        )
+
+    def test_webrequest_allowlist_transaction_applies_once_and_is_idempotent(self) -> None:
+        body = (
+            self._webrequest_ui_boundaries()
+            + "$first=Set-MT5VmTerminalWebRequestAllowlist -ProcessId 701 "
+            "-Origin 'http://127.0.0.1:8790';"
+            "$second=Set-MT5VmTerminalWebRequestAllowlist -ProcessId 701 "
+            "-Origin 'http://127.0.0.1:8790';"
+            "$nonempty=@($script:persisted.Items|Where-Object{$_ -ne ''});"
+            "[pscustomobject]@{first=$first;second=$second;enabled=$script:persisted.Enabled;"
+            "nonempty_count=$nonempty.Count;exact=($nonempty[0] -ceq "
+            "'http://127.0.0.1:8790');confirms=$script:confirmCalls;"
+            "writes=$script:writeCalls;opens=$script:openCalls;cancels=$script:cancelCalls}|"
+            "ConvertTo-Json -Compress -Depth 5"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertEqual(1, observed["enabled"])
+        self.assertEqual(1, observed["nonempty_count"])
+        self.assertTrue(observed["exact"])
+        self.assertEqual(1, observed["confirms"])
+        self.assertEqual(1, observed["writes"])
+        self.assertEqual(3, observed["opens"])
+        self.assertGreaterEqual(observed["cancels"], 2)
+        self.assertEqual("APPLIED", observed["first"]["status"])
+        self.assertEqual("UNCHANGED", observed["second"]["status"])
+        for result in (observed["first"], observed["second"]):
+            self.assertNotIn("Items", result)
+            self.assertNotIn("Origin", result)
+
+    def test_webrequest_allowlist_mismatch_restores_snapshot_before_rethrow(self) -> None:
+        body = (
+            self._webrequest_ui_boundaries(mismatch_apply=True)
+            + "try{Set-MT5VmTerminalWebRequestAllowlist -ProcessId 701 "
+            "-Origin 'http://127.0.0.1:8790'|Out-Null;exit 9}catch{"
+            "[pscustomobject]@{caught=$_.Exception.Message;enabled=$script:persisted.Enabled;"
+            "items=@($script:persisted.Items);confirms=$script:confirmCalls;"
+            "writes=$script:writeCalls;cancels=$script:cancelCalls}|"
+            "ConvertTo-Json -Compress -Depth 4;exit 0}"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertIn("PROVISIONING_WEBREQUEST_ALLOWLIST_PERSIST_FAILED", observed["caught"])
+        self.assertEqual(0, observed["enabled"])
+        self.assertEqual([""], observed["items"])
+        self.assertEqual(2, observed["confirms"])
+        self.assertEqual(2, observed["writes"])
+        self.assertGreaterEqual(observed["cancels"], 2)
+
+    def test_webrequest_allowlist_rollback_failure_is_authoritative(self) -> None:
+        body = (
+            self._webrequest_ui_boundaries(mismatch_apply=True)
+            + "function Write-MT5VmWebRequestStateBoundary {"
+            "param([IntPtr]$OptionsHandle,[object]$State);$script:writeCalls+=1;"
+            "$script:pending=[ordered]@{Enabled=1;Items=@('http://127.0.0.1:9999')}};"
+            "try{Set-MT5VmTerminalWebRequestAllowlist -ProcessId 701 "
+            "-Origin 'http://127.0.0.1:8790'|Out-Null;exit 9}catch{"
+            "[pscustomobject]@{caught=$_.Exception.Message;confirms=$script:confirmCalls;"
+            "writes=$script:writeCalls}|ConvertTo-Json -Compress;exit 0}"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertIn(
+            "PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED", observed["caught"]
+        )
+        self.assertGreaterEqual(observed["writes"], 2)
+
+    def test_webrequest_state_rejects_hostile_counts_lengths_and_duplicates(self) -> None:
+        body = (
+            "$errors=@();"
+            "$cases=@("
+            "[pscustomobject]@{Enabled=1;Items=@(1..65|ForEach-Object{'x'+$_})},"
+            "[pscustomobject]@{Enabled=1;Items=@(('x').PadRight(2049,'x'))},"
+            "[pscustomobject]@{Enabled=1;Items=@('http://127.0.0.1:8790',"
+            "'http://127.0.0.1:8790')});"
+            "foreach($state in $cases){try{"
+            "Assert-MT5VmDesiredWebRequestState -State $state "
+            "-ExpectedOrigin 'http://127.0.0.1:8790';$errors+=,'FAILED_OPEN'"
+            "}catch{$errors+=,$_.Exception.Message}};"
+            "$errors|ConvertTo-Json -Compress"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertEqual(3, len(observed))
+        for error in observed:
+            self.assertIn("PROVISIONING_WEBREQUEST_ALLOWLIST_STATE_INVALID", error)
+
+    def test_webrequest_activation_geometry_is_exact_and_fail_closed(self) -> None:
+        source = UI_HELPER.read_text(encoding="utf-8")
+        for required in (
+            "LvmGetItemRect",
+            "LvmHitTest",
+            "WmLButtonDoubleClick",
+            "WebRequestEditor",
+            "Get-MT5VmWebRequestEditorBoundary",
+            "PROVISIONING_WEBREQUEST_ALLOWLIST_HIT_INVALID",
+        ):
+            self.assertIn(required, source)
+        geometry_start = source.index("function Get-MT5VmListActivationGeometryBoundary")
+        geometry_end = source.index("function Assert-MT5VmMouseActivationSequence")
+        geometry_source = source[geometry_start:geometry_end]
+        self.assertNotIn("sendinput", geometry_source.casefold())
+        for forbidden in (
+            "mouse_event",
+            "SetCursorPos",
+            "GetCursorPos",
+            "ScreenToClient",
+            "ClientToScreen",
+        ):
+            self.assertNotIn(forbidden.casefold(), source.casefold(), forbidden)
+
+        body = (
+            "$c=Get-MT5VmTerminalUiConstants;"
+            "$ok=Assert-MT5VmListActivationGeometry -Left 0 -Top 0 -Right 100 "
+            "-Bottom 20 -HitX 50 -HitY 10 -HitIndex 0 -HitFlags $c.LvhtOnItemLabel;"
+            "$cases=@("
+            "@{Left=0;Top=0;Right=100;Bottom=20;HitX=50;HitY=10;HitIndex=1;"
+            "HitFlags=$c.LvhtOnItemLabel},"
+            "@{Left=0;Top=0;Right=100;Bottom=20;HitX=101;HitY=10;HitIndex=0;"
+            "HitFlags=$c.LvhtOnItemLabel},"
+            "@{Left=0;Top=0;Right=100;Bottom=20;HitX=50;HitY=10;HitIndex=0;"
+            "HitFlags=0},"
+            "@{Left=0;Top=0;Right=0;Bottom=20;HitX=0;HitY=10;HitIndex=0;"
+            "HitFlags=$c.LvhtOnItemLabel},"
+            "@{Left=-1;Top=0;Right=100;Bottom=20;HitX=49;HitY=10;HitIndex=0;"
+            "HitFlags=$c.LvhtOnItemLabel});"
+            "$errors=@();foreach($case in $cases){try{"
+            "Assert-MT5VmListActivationGeometry @case|Out-Null;$errors+=,'FAILED_OPEN'"
+            "}catch{$errors+=,$_.Exception.Message}};"
+            "[pscustomobject]@{constants=[pscustomobject]@{rect=$c.LvmGetItemRect;"
+            "hit=$c.LvmHitTest;double_click=$c.WmLButtonDoubleClick;"
+            "editor=$c.WebRequestEditor};ok=$ok;errors=$errors}|"
+            "ConvertTo-Json -Compress -Depth 5"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertEqual(
+            {"rect": 0x100E, "hit": 0x1012, "double_click": 0x0203, "editor": 10325},
+            observed["constants"],
+        )
+        self.assertEqual({"x": 50, "y": 10}, observed["ok"])
+        self.assertEqual(5, len(observed["errors"]))
+        for error in observed["errors"]:
+            self.assertIn("PROVISIONING_WEBREQUEST_ALLOWLIST_HIT_INVALID", error)
+
+    def test_webrequest_icon_geometry_requires_icon_rectangle_and_hit(self) -> None:
+        source = UI_HELPER.read_text(encoding="utf-8")
+        for required in (
+            "LvirIcon",
+            "LvhtOnItemIcon",
+            "GetClientRect",
+            "Assert-MT5VmIconActivationGeometry",
+            "rectangle.left = rectangleKind",
+        ):
+            self.assertIn(required, source)
+
+        body = (
+            "$c=Get-MT5VmTerminalUiConstants;"
+            "$ok=Assert-MT5VmIconActivationGeometry -RectangleKind $c.LvirIcon "
+            "-ClientWidth 536 -ClientHeight 120 -Left 4 -Top 0 -Right 22 "
+            "-Bottom 20 -HitX 13 -HitY 10 -HitIndex 0 "
+            "-HitFlags $c.LvhtOnItemIcon;"
+            "$cases=@("
+            "@{RectangleKind=0;ClientWidth=536;ClientHeight=120;"
+            "Left=4;Top=0;Right=22;Bottom=20;HitX=13;HitY=10;HitIndex=0;"
+            "HitFlags=$c.LvhtOnItemIcon},"
+            "@{RectangleKind=$c.LvirIcon;ClientWidth=536;ClientHeight=120;"
+            "Left=4;Top=0;Right=22;Bottom=20;HitX=13;HitY=10;HitIndex=0;"
+            "HitFlags=$c.LvhtOnItemLabel},"
+            "@{RectangleKind=$c.LvirIcon;ClientWidth=536;ClientHeight=120;"
+            "Left=4;Top=0;Right=22;Bottom=20;HitX=13;HitY=10;HitIndex=1;"
+            "HitFlags=$c.LvhtOnItemIcon},"
+            "@{RectangleKind=$c.LvirIcon;ClientWidth=536;ClientHeight=120;"
+            "Left=4;Top=0;Right=4;Bottom=20;HitX=4;HitY=10;HitIndex=0;"
+            "HitFlags=$c.LvhtOnItemIcon},"
+            "@{RectangleKind=$c.LvirIcon;ClientWidth=21;ClientHeight=120;"
+            "Left=4;Top=0;Right=22;Bottom=20;HitX=13;HitY=10;HitIndex=0;"
+            "HitFlags=$c.LvhtOnItemIcon});"
+            "$errors=@();foreach($case in $cases){try{"
+            "Assert-MT5VmIconActivationGeometry @case|Out-Null;"
+            "$errors+=,'FAILED_OPEN'}catch{$errors+=,$_.Exception.Message}};"
+            "[pscustomobject]@{constants=[pscustomobject]@{"
+            "icon_rect=$c.LvirIcon;icon_hit=$c.LvhtOnItemIcon};"
+            "ok=$ok;errors=$errors}|ConvertTo-Json -Compress -Depth 5"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertEqual(
+            {"icon_rect": 1, "icon_hit": 0x0002}, observed["constants"]
+        )
+        self.assertEqual({"x": 13, "y": 10}, observed["ok"])
+        self.assertEqual(5, len(observed["errors"]))
+        for error in observed["errors"]:
+            self.assertIn("PROVISIONING_WEBREQUEST_ALLOWLIST_HIT_INVALID", error)
+
+    def test_webrequest_add_editor_identity_is_exact_and_fail_closed(self) -> None:
+        source = UI_HELPER.read_text(encoding="utf-8")
+        for required in (
+            "WebRequestAddEditor",
+            "Assert-MT5VmWebRequestEditorCandidate",
+            "$constants.WebRequestAddEditor",
+        ):
+            self.assertIn(required, source)
+
+        body = (
+            "$c=Get-MT5VmTerminalUiConstants;"
+            "$ok=Assert-MT5VmWebRequestEditorCandidate "
+            "-ExpectedControlId $c.WebRequestAddEditor -ObservedControlId 32954 "
+            "-CandidateCount 1 -WindowClass 'Edit' -Visible $true -Enabled $true;"
+            "$cases=@("
+            "@{ExpectedControlId=$c.WebRequestAddEditor;ObservedControlId=10325;"
+            "CandidateCount=1;WindowClass='Edit';Visible=$true;Enabled=$true},"
+            "@{ExpectedControlId=$c.WebRequestAddEditor;ObservedControlId=32954;"
+            "CandidateCount=0;WindowClass='';Visible=$false;Enabled=$false},"
+            "@{ExpectedControlId=$c.WebRequestAddEditor;ObservedControlId=32954;"
+            "CandidateCount=2;WindowClass='Edit';Visible=$true;Enabled=$true},"
+            "@{ExpectedControlId=$c.WebRequestAddEditor;ObservedControlId=32954;"
+            "CandidateCount=1;WindowClass='Static';Visible=$true;Enabled=$true},"
+            "@{ExpectedControlId=$c.WebRequestAddEditor;ObservedControlId=32954;"
+            "CandidateCount=1;WindowClass='Edit';Visible=$false;Enabled=$true},"
+            "@{ExpectedControlId=$c.WebRequestAddEditor;ObservedControlId=32954;"
+            "CandidateCount=1;WindowClass='Edit';Visible=$true;Enabled=$false});"
+            "$errors=@();foreach($case in $cases){try{"
+            "Assert-MT5VmWebRequestEditorCandidate @case|Out-Null;"
+            "$errors+=,'FAILED_OPEN'}catch{$errors+=,$_.Exception.Message}};"
+            "[pscustomobject]@{constants=[pscustomobject]@{"
+            "legacy=$c.WebRequestEditor;add_editor=$c.WebRequestAddEditor};"
+            "ok=$ok;errors=$errors}|ConvertTo-Json -Compress -Depth 5"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertEqual(
+            {"legacy": 10325, "add_editor": 32954}, observed["constants"]
+        )
+        self.assertTrue(observed["ok"])
+        self.assertEqual(6, len(observed["errors"]))
+        for error in observed["errors"]:
+            self.assertIn("PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID", error)
+
+    def test_webrequest_editor_commit_sequence_requires_return_character(self) -> None:
+        source = UI_HELPER.read_text(encoding="utf-8")
+        for required in (
+            "WmChar",
+            "VirtualKeyReturn",
+            "Assert-MT5VmEditorCommitSequence",
+        ):
+            self.assertIn(required, source)
+
+        body = (
+            "$c=Get-MT5VmTerminalUiConstants;"
+            "$messages=[uint32[]]@($c.WmKeyDown,$c.WmChar,$c.WmKeyUp);"
+            "$parameters=[long[]]@($c.VirtualKeyReturn,$c.VirtualKeyReturn,"
+            "$c.VirtualKeyReturn);"
+            "$ok=Assert-MT5VmEditorCommitSequence -Messages $messages "
+            "-WParams $parameters;"
+            "$cases=@("
+            "@{Messages=@($messages[0..1]);WParams=@($parameters[0..1])},"
+            "@{Messages=@($messages[1],$messages[0],$messages[2]);"
+            "WParams=$parameters},"
+            "@{Messages=@($messages+$c.WmKeyUp);"
+            "WParams=@($parameters+$c.VirtualKeyReturn)},"
+            "@{Messages=@($c.WmKeyDown,0x0103,$c.WmKeyUp);WParams=$parameters},"
+            "@{Messages=$messages;WParams=@($c.VirtualKeyReturn,0,"
+            "$c.VirtualKeyReturn)});"
+            "$errors=@();foreach($case in $cases){try{"
+            "Assert-MT5VmEditorCommitSequence @case|Out-Null;"
+            "$errors+=,'FAILED_OPEN'}catch{$errors+=,$_.Exception.Message}};"
+            "[pscustomobject]@{constants=[pscustomobject]@{char=$c.WmChar;"
+            "return_key=$c.VirtualKeyReturn};ok=$ok;errors=$errors}|"
+            "ConvertTo-Json -Compress -Depth 5"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertEqual({"char": 0x0102, "return_key": 0x0D}, observed["constants"])
+        self.assertTrue(observed["ok"])
+        self.assertEqual(5, len(observed["errors"]))
+        for error in observed["errors"]:
+            self.assertIn("PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID", error)
+
+    def test_webrequest_editor_commit_boundary_sends_exact_sequence(self) -> None:
+        body = (
+            "$original=(Get-Command Invoke-MT5VmBoundedUiMessage).ScriptBlock;"
+            "$script:calls=@();function Invoke-MT5VmBoundedUiMessage {"
+            "param([IntPtr]$Handle,[uint32]$Message,[IntPtr]$WParam,[IntPtr]$LParam);"
+            "$script:calls+=,[pscustomobject]@{handle=$Handle.ToInt64();"
+            "message=[long]$Message;wparam=$WParam.ToInt64();"
+            "lparam=$LParam.ToInt64()};[IntPtr]::Zero};"
+            "try{$ok=[bool](Invoke-MT5VmEditorCommitSequenceBoundary "
+            "-EditorHandle ([IntPtr]42))}finally{"
+            "Set-Item -Path Function:Invoke-MT5VmBoundedUiMessage -Value $original};"
+            "[pscustomobject]@{ok=$ok;calls=$script:calls}|"
+            "ConvertTo-Json -Compress -Depth 5"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertTrue(observed["ok"])
+        self.assertEqual(
+            [
+                {"handle": 42, "message": 0x0100, "wparam": 0x0D, "lparam": 0},
+                {"handle": 42, "message": 0x0102, "wparam": 0x0D, "lparam": 0},
+                {"handle": 42, "message": 0x0101, "wparam": 0x0D, "lparam": 0},
+            ],
+            observed["calls"],
+        )
+
+    def test_webrequest_origin_character_stream_is_exact(self) -> None:
+        source = UI_HELPER.read_text(encoding="utf-8")
+        for required in (
+            "WmGetText",
+            "WmGetTextLength",
+            "ReadBoundedText",
+            "Assert-MT5VmExactOriginCharacterStream",
+        ):
+            self.assertIn(required, source)
+
+        body = (
+            "$origin='http://127.0.0.1:8790';"
+            "$codes=[long[]]@($origin.ToCharArray()|ForEach-Object{[int]$_});"
+            "$ok=Assert-MT5VmExactOriginCharacterStream -Origin $origin "
+            "-CharacterCodes $codes -ExpectedOrigin $origin;"
+            "$missing=[long[]]@($codes[0..($codes.Count-2)]);"
+            "$reordered=[long[]]@($codes.Clone());$swap=$reordered[0];"
+            "$reordered[0]=$reordered[1];$reordered[1]=$swap;"
+            "$extra=[long[]]@($codes+65);"
+            "$changed=[long[]]@($codes.Clone());$changed[3]=65;"
+            "$nulled=[long[]]@($codes.Clone());$nulled[4]=0;"
+            "$cases=@($missing,$reordered,$extra,$changed,[long[]]@(),$nulled);"
+            "$errors=@();foreach($candidate in $cases){try{"
+            "Assert-MT5VmExactOriginCharacterStream -Origin $origin "
+            "-CharacterCodes $candidate -ExpectedOrigin $origin|Out-Null;"
+            "$errors+=,'FAILED_OPEN'}catch{$errors+=,$_.Exception.Message}};"
+            "$c=Get-MT5VmTerminalUiConstants;"
+            "[pscustomobject]@{constants=[pscustomobject]@{"
+            "get_text=$c.WmGetText;get_text_length=$c.WmGetTextLength};"
+            "ok=$ok;count=$codes.Count;errors=$errors}|"
+            "ConvertTo-Json -Compress -Depth 5"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertEqual(
+            {"get_text": 0x000D, "get_text_length": 0x000E},
+            observed["constants"],
+        )
+        self.assertTrue(observed["ok"])
+        self.assertEqual(len("http://127.0.0.1:8790"), observed["count"])
+        self.assertEqual(6, len(observed["errors"]))
+        for error in observed["errors"]:
+            self.assertIn("PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID", error)
+
+    def test_webrequest_exact_text_boundary_orders_clear_chars_readback_commit(self) -> None:
+        body = (
+            "$origin='http://127.0.0.1:8790';$script:events=@();"
+            "$setOriginal=(Get-Command Set-MT5VmEditorTextBoundary).ScriptBlock;"
+            "$readOriginal=(Get-Command Read-MT5VmEditorTextBoundary).ScriptBlock;"
+            "$messageOriginal=(Get-Command Invoke-MT5VmBoundedUiMessage).ScriptBlock;"
+            "function Set-MT5VmEditorTextBoundary {"
+            "param([IntPtr]$EditorHandle,[AllowEmptyString()][string]$Text);"
+            "$script:events+=,[pscustomobject]@{kind='clear';"
+            "handle=$EditorHandle.ToInt64();text=$Text}};"
+            "function Read-MT5VmEditorTextBoundary {param([IntPtr]$EditorHandle);"
+            "$script:events+=,[pscustomobject]@{kind='read';"
+            "handle=$EditorHandle.ToInt64()};$origin};"
+            "function Invoke-MT5VmBoundedUiMessage {"
+            "param([IntPtr]$Handle,[uint32]$Message,[IntPtr]$WParam,[IntPtr]$LParam);"
+            "$script:events+=,[pscustomobject]@{kind='message';"
+            "handle=$Handle.ToInt64();message=[long]$Message;"
+            "wparam=$WParam.ToInt64();lparam=$LParam.ToInt64()};[IntPtr]::Zero};"
+            "try{$ok=[bool](Invoke-MT5VmExactEditorTextBoundary "
+            "-EditorHandle ([IntPtr]42) -ExpectedOrigin $origin)}finally{"
+            "Set-Item Function:Set-MT5VmEditorTextBoundary -Value $setOriginal;"
+            "Set-Item Function:Read-MT5VmEditorTextBoundary -Value $readOriginal;"
+            "Set-Item Function:Invoke-MT5VmBoundedUiMessage -Value $messageOriginal};"
+            "[pscustomobject]@{ok=$ok;events=$script:events}|"
+            "ConvertTo-Json -Compress -Depth 5"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        events = observed["events"]
+        origin = "http://127.0.0.1:8790"
+        self.assertTrue(observed["ok"])
+        self.assertEqual(
+            {"kind": "clear", "handle": 42, "text": ""}, events[0]
+        )
+        character_events = events[1 : 1 + len(origin)]
+        self.assertEqual(len(origin), len(character_events))
+        for event, character in zip(character_events, origin):
+            self.assertEqual(
+                {
+                    "kind": "message",
+                    "handle": 42,
+                    "message": 0x0102,
+                    "wparam": ord(character),
+                    "lparam": 0,
+                },
+                event,
+            )
+        self.assertEqual({"kind": "read", "handle": 42}, events[-2])
+        self.assertEqual(
+            {
+                "kind": "message",
+                "handle": 42,
+                "message": 0x0102,
+                "wparam": 0x0D,
+                "lparam": 0,
+            },
+            events[-1],
+        )
+        self.assertEqual(len(origin) + 3, len(events))
+
+    def test_webrequest_queued_text_boundary_orders_exact_dispatch(self) -> None:
+        body = (
+            "$script:testOrigin='http://127.0.0.1:8790';$script:events=@();"
+            "$setOriginal=(Get-Command Set-MT5VmEditorTextBoundary).ScriptBlock;"
+            "$readOriginal=(Get-Command Read-MT5VmEditorTextBoundary).ScriptBlock;"
+            "$queueOriginal=(Get-Command Invoke-MT5VmQueuedUiMessageBoundary).ScriptBlock;"
+            "$syncOriginal=(Get-Command Invoke-MT5VmBoundedUiMessage).ScriptBlock;"
+            "function Set-MT5VmEditorTextBoundary {"
+            "param([IntPtr]$EditorHandle,[AllowEmptyString()][string]$Text);"
+            "$script:events+=,[pscustomobject]@{kind='clear';"
+            "handle=$EditorHandle.ToInt64();text=$Text}};"
+            "function Read-MT5VmEditorTextBoundary {param([IntPtr]$EditorHandle);"
+            "$script:events+=,[pscustomobject]@{kind='read';"
+            "handle=$EditorHandle.ToInt64()};$script:testOrigin};"
+            "function Invoke-MT5VmQueuedUiMessageBoundary {"
+            "param([IntPtr]$Handle,[uint32]$Message,[IntPtr]$WParam,[IntPtr]$LParam);"
+            "$script:events+=,[pscustomobject]@{kind='queue';"
+            "handle=$Handle.ToInt64();message=[long]$Message;"
+            "wparam=$WParam.ToInt64();lparam=$LParam.ToInt64()};$true};"
+            "function Invoke-MT5VmBoundedUiMessage {throw 'SYNCHRONOUS_CHAR_FORBIDDEN'};"
+            "try{$ok=[bool](Invoke-MT5VmQueuedExactEditorTextBoundary "
+            "-EditorHandle ([IntPtr]42) -ExpectedOrigin $script:testOrigin)}finally{"
+            "Set-Item Function:Set-MT5VmEditorTextBoundary -Value $setOriginal;"
+            "Set-Item Function:Read-MT5VmEditorTextBoundary -Value $readOriginal;"
+            "Set-Item Function:Invoke-MT5VmQueuedUiMessageBoundary -Value $queueOriginal;"
+            "Set-Item Function:Invoke-MT5VmBoundedUiMessage -Value $syncOriginal};"
+            "[pscustomobject]@{ok=$ok;events=$script:events}|"
+            "ConvertTo-Json -Compress -Depth 5"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        events = observed["events"]
+        origin = "http://127.0.0.1:8790"
+        self.assertTrue(observed["ok"])
+        self.assertEqual(
+            {"kind": "clear", "handle": 42, "text": ""}, events[0]
+        )
+        character_events = events[1 : 1 + len(origin)]
+        self.assertEqual(len(origin), len(character_events))
+        for event, character in zip(character_events, origin):
+            self.assertEqual(
+                {
+                    "kind": "queue",
+                    "handle": 42,
+                    "message": 0x0102,
+                    "wparam": ord(character),
+                    "lparam": 0,
+                },
+                event,
+            )
+        self.assertEqual({"kind": "read", "handle": 42}, events[-2])
+        self.assertEqual(
+            {
+                "kind": "queue",
+                "handle": 42,
+                "message": 0x0102,
+                "wparam": 0x0D,
+                "lparam": 0,
+            },
+            events[-1],
+        )
+        self.assertEqual(len(origin) + 3, len(events))
+
+    def test_webrequest_queued_text_boundary_fails_closed(self) -> None:
+        origin = "http://127.0.0.1:8790"
+        expected = {
+            "character": {"queues": 2, "reads": 0},
+            "return": {"queues": len(origin) + 1, "reads": 1},
+            "readback": {"queues": len(origin), "reads": 25},
+        }
+        for mode, counts in expected.items():
+            with self.subTest(mode=mode):
+                body = (
+                    f"$script:mode='{mode}';"
+                    "$script:testOrigin='http://127.0.0.1:8790';"
+                    "$script:queues=0;$script:reads=0;"
+                    "$setOriginal=(Get-Command Set-MT5VmEditorTextBoundary).ScriptBlock;"
+                    "$readOriginal=(Get-Command Read-MT5VmEditorTextBoundary).ScriptBlock;"
+                    "$queueOriginal=(Get-Command Invoke-MT5VmQueuedUiMessageBoundary).ScriptBlock;"
+                    "function Set-MT5VmEditorTextBoundary {"
+                    "param([IntPtr]$EditorHandle,[AllowEmptyString()][string]$Text)};"
+                    "function Read-MT5VmEditorTextBoundary {param([IntPtr]$EditorHandle);"
+                    "$script:reads++;if($script:mode -ceq 'readback'){return ''};"
+                    "return $script:testOrigin};"
+                    "function Invoke-MT5VmQueuedUiMessageBoundary {"
+                    "param([IntPtr]$Handle,[uint32]$Message,[IntPtr]$WParam,[IntPtr]$LParam);"
+                    "$script:queues++;"
+                    "if($script:mode -ceq 'character' -and $script:queues -eq 2){"
+                    "throw 'INJECTED_QUEUE_FAILURE'};"
+                    "if($script:mode -ceq 'return' -and $WParam.ToInt64() -eq 13){"
+                    "throw 'INJECTED_QUEUE_FAILURE'};$true};"
+                    "function Start-Sleep {param([int]$Milliseconds)};"
+                    "try{try{Invoke-MT5VmQueuedExactEditorTextBoundary "
+                    "-EditorHandle ([IntPtr]42) -ExpectedOrigin $script:testOrigin|Out-Null;"
+                    "$errorCode='FAILED_OPEN'}catch{$errorCode=$_.Exception.Message}}finally{"
+                    "Set-Item Function:Set-MT5VmEditorTextBoundary -Value $setOriginal;"
+                    "Set-Item Function:Read-MT5VmEditorTextBoundary -Value $readOriginal;"
+                    "Set-Item Function:Invoke-MT5VmQueuedUiMessageBoundary -Value $queueOriginal;"
+                    "Remove-Item Function:Start-Sleep -ErrorAction SilentlyContinue};"
+                    "[pscustomobject]@{error=$errorCode;queues=$script:queues;"
+                    "reads=$script:reads}|ConvertTo-Json -Compress"
+                )
+                completed = self._run_module(body)
+                self.assertEqual(0, completed.returncode, completed.stderr)
+                observed = json.loads(completed.stdout)
+                self.assertIn(
+                    "PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID",
+                    observed["error"],
+                )
+                self.assertEqual(counts["queues"], observed["queues"])
+                self.assertEqual(counts["reads"], observed["reads"])
+
+    def test_webrequest_exact_keyboard_input_plan(self) -> None:
+        source = UI_HELPER.read_text(encoding="utf-8")
+        for required in (
+            "SendInput",
+            "GetForegroundWindow",
+            "GetGUIThreadInfo",
+            "KeyEventUnicode",
+            "KeyEventKeyUp",
+            "New-MT5VmExactKeyboardInputPlan",
+        ):
+            self.assertIn(required, source)
+
+        body = (
+            "$origin='http://127.0.0.1:8790';"
+            "$plan=@(New-MT5VmExactKeyboardInputPlan -Origin $origin "
+            "-ExpectedOrigin $origin);$c=Get-MT5VmTerminalUiConstants;"
+            "$records=@($plan|ForEach-Object{[pscustomobject]@{"
+            "vk=[int]$_.VirtualKey;scan=[int]$_.ScanCode;flags=[long]$_.Flags}});"
+            "[pscustomobject]@{constants=[pscustomobject]@{"
+            "unicode=[long]$c.KeyEventUnicode;keyup=[long]$c.KeyEventKeyUp};"
+            "records=$records}|ConvertTo-Json -Compress -Depth 6"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertEqual({"unicode": 0x0004, "keyup": 0x0002}, observed["constants"])
+        expected_records = []
+        for character in "http://127.0.0.1:8790":
+            expected_records.extend(
+                (
+                    {"vk": 0, "scan": ord(character), "flags": 0x0004},
+                    {"vk": 0, "scan": ord(character), "flags": 0x0006},
+                )
+            )
+        expected_records.extend(
+            (
+                {"vk": 0x0D, "scan": 0, "flags": 0},
+                {"vk": 0x0D, "scan": 0, "flags": 0x0002},
+            )
+        )
+        self.assertEqual(expected_records, observed["records"])
+
+    def test_webrequest_exact_keyboard_input_plan_rejects_mutations(self) -> None:
+        body = (
+            "$origin='http://127.0.0.1:8790';"
+            "$plan=@(New-MT5VmExactKeyboardInputPlan -Origin $origin "
+            "-ExpectedOrigin $origin);"
+            "$missing=@($plan[0..($plan.Count-2)]);"
+            "$reordered=@($plan.Clone());$swap=$reordered[0];"
+            "$reordered[0]=$reordered[1];$reordered[1]=$swap;"
+            "$extra=@($plan+[pscustomobject]@{VirtualKey=65;ScanCode=0;Flags=0});"
+            "$changed=@($plan.Clone());$changed[4]=[pscustomobject]@{"
+            "VirtualKey=0;ScanCode=65;Flags=4};"
+            "$nulled=@($plan.Clone());$nulled[0]=[pscustomobject]@{"
+            "VirtualKey=0;ScanCode=0;Flags=4};"
+            "$cases=@($missing,$reordered,$extra,$changed,@(),$nulled);"
+            "$errors=@();foreach($candidate in $cases){try{"
+            "Assert-MT5VmExactKeyboardInputPlan -Origin $origin "
+            "-Plan @($candidate) -ExpectedOrigin $origin|Out-Null;"
+            "$errors+=,'FAILED_OPEN'}catch{$errors+=,$_.Exception.Message}};"
+            "$ok=Assert-MT5VmExactKeyboardInputPlan -Origin $origin "
+            "-Plan $plan -ExpectedOrigin $origin;"
+            "[pscustomobject]@{ok=$ok;errors=$errors}|"
+            "ConvertTo-Json -Compress -Depth 5"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertTrue(observed["ok"])
+        self.assertEqual(6, len(observed["errors"]))
+        for error in observed["errors"]:
+            self.assertIn("PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID", error)
+
+    def test_webrequest_guarded_keyboard_input_boundary_fails_closed(self) -> None:
+        expected = {
+            "success": {"ok": True, "guards": 1, "sends": 1},
+            "guard": {"ok": False, "guards": 1, "sends": 0},
+            "partial": {"ok": False, "guards": 1, "sends": 1},
+        }
+        for mode, result in expected.items():
+            with self.subTest(mode=mode):
+                body = (
+                    f"$script:mode='{mode}';"
+                    "$script:guards=0;$script:sends=0;$script:clears=0;"
+                    "$guardOriginal=(Get-Command Test-MT5VmExactEditorInputGuardBoundary).ScriptBlock;"
+                    "$sendOriginal=(Get-Command Invoke-MT5VmNativeKeyboardInputBoundary).ScriptBlock;"
+                    "$setOriginal=(Get-Command Set-MT5VmEditorTextBoundary).ScriptBlock;"
+                    "function Set-MT5VmEditorTextBoundary {"
+                    "param([IntPtr]$EditorHandle,[AllowEmptyString()][string]$Text);"
+                    "$script:clears++;if($EditorHandle.ToInt64() -ne 42 -or $Text -cne ''){"
+                    "throw 'WRONG_CLEAR'}};"
+                    "function Test-MT5VmExactEditorInputGuardBoundary {"
+                    "param([IntPtr]$OptionsHandle,[IntPtr]$EditorHandle,[int]$ProcessId);"
+                    "$script:guards++;if($OptionsHandle.ToInt64() -ne 41 -or "
+                    "$EditorHandle.ToInt64() -ne 42 -or $ProcessId -ne 700){"
+                    "throw 'WRONG_GUARD'};return ($script:mode -cne 'guard')};"
+                    "function Invoke-MT5VmNativeKeyboardInputBoundary {param([object[]]$Plan);"
+                    "$script:sends++;if($script:mode -ceq 'partial'){return $Plan.Count-1};"
+                    "return $Plan.Count};"
+                    "function Invoke-MT5VmBoundedUiMessage {throw 'SYNC_FORBIDDEN'};"
+                    "function Invoke-MT5VmQueuedUiMessageBoundary {throw 'QUEUE_FORBIDDEN'};"
+                    "try{try{$value=[bool](Invoke-MT5VmGuardedExactKeyboardInputBoundary "
+                    "-OptionsHandle ([IntPtr]41) -EditorHandle ([IntPtr]42) "
+                    "-ProcessId 700 -ExpectedOrigin 'http://127.0.0.1:8790');"
+                    "$errorCode=''}catch{$value=$false;$errorCode=$_.Exception.Message}}finally{"
+                    "Set-Item Function:Test-MT5VmExactEditorInputGuardBoundary -Value $guardOriginal;"
+                    "Set-Item Function:Invoke-MT5VmNativeKeyboardInputBoundary -Value $sendOriginal;"
+                    "Set-Item Function:Set-MT5VmEditorTextBoundary -Value $setOriginal};"
+                    "[pscustomobject]@{ok=$value;error=$errorCode;clears=$script:clears;"
+                    "guards=$script:guards;sends=$script:sends}|ConvertTo-Json -Compress"
+                )
+                completed = self._run_module(body)
+                self.assertEqual(0, completed.returncode, completed.stderr)
+                observed = json.loads(completed.stdout)
+                self.assertEqual(result["ok"], observed["ok"])
+                self.assertEqual(1, observed["clears"])
+                self.assertEqual(result["guards"], observed["guards"])
+                self.assertEqual(result["sends"], observed["sends"])
+                if result["ok"]:
+                    self.assertEqual("", observed["error"])
+                else:
+                    self.assertIn(
+                        "PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID",
+                        observed["error"],
+                    )
+
+    def test_webrequest_exact_virtual_key_plan_and_return_isolation(self) -> None:
+        source = UI_HELPER.read_text(encoding="utf-8")
+        for required in (
+            "GetKeyState",
+            "VirtualKeyShift",
+            "VirtualKeyOem1",
+            "VirtualKeyOem2",
+            "VirtualKeyOemPeriod",
+            "New-MT5VmExactVirtualKeyInputPlan",
+            "New-MT5VmReturnKeyInputPlan",
+        ):
+            self.assertIn(required, source)
+
+        body = (
+            "$origin='http://127.0.0.1:8790';"
+            "$characters=@(New-MT5VmExactVirtualKeyInputPlan -Origin $origin "
+            "-ExpectedOrigin $origin);$return=@(New-MT5VmReturnKeyInputPlan);"
+            "$convert={param($records)@($records|ForEach-Object{[pscustomobject]@{"
+            "vk=[int]$_.VirtualKey;scan=[int]$_.ScanCode;flags=[long]$_.Flags}})};"
+            "[pscustomobject]@{characters=(& $convert $characters);"
+            "return=(& $convert $return)}|ConvertTo-Json -Compress -Depth 6"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        expected_characters = []
+        mapping = {".": 0xBE, "/": 0xBF}
+        for character in "http://127.0.0.1:8790":
+            if character == ":":
+                expected_characters.extend(
+                    (
+                        {"vk": 0x10, "scan": 0, "flags": 0},
+                        {"vk": 0xBA, "scan": 0, "flags": 0},
+                        {"vk": 0xBA, "scan": 0, "flags": 0x0002},
+                        {"vk": 0x10, "scan": 0, "flags": 0x0002},
+                    )
+                )
+            else:
+                virtual_key = mapping.get(character, ord(character.upper()))
+                expected_characters.extend(
+                    (
+                        {"vk": virtual_key, "scan": 0, "flags": 0},
+                        {"vk": virtual_key, "scan": 0, "flags": 0x0002},
+                    )
+                )
+        self.assertEqual(expected_characters, observed["characters"])
+        self.assertEqual(
+            [
+                {"vk": 0x0D, "scan": 0, "flags": 0},
+                {"vk": 0x0D, "scan": 0, "flags": 0x0002},
+            ],
+            observed["return"],
+        )
+
+    def test_webrequest_exact_virtual_key_plan_rejects_mutations(self) -> None:
+        body = (
+            "$origin='http://127.0.0.1:8790';"
+            "$plan=@(New-MT5VmExactVirtualKeyInputPlan -Origin $origin "
+            "-ExpectedOrigin $origin);"
+            "$missing=@($plan[1..($plan.Count-1)]);"
+            "$reordered=@($plan.Clone());$swap=$reordered[0];"
+            "$reordered[0]=$reordered[1];$reordered[1]=$swap;"
+            "$extra=@($plan+[pscustomobject]@{VirtualKey=65;ScanCode=0;Flags=0});"
+            "$changed=@($plan.Clone());$colon=($changed|Where-Object{"
+            "$_.VirtualKey -eq 186}|Select-Object -First 1);"
+            "$colonIndex=[array]::IndexOf($changed,$colon);"
+            "$changed[$colonIndex-1]=[pscustomobject]@{VirtualKey=16;ScanCode=0;Flags=2};"
+            "$cases=@($missing,$reordered,$extra,$changed,@());$errors=@();"
+            "foreach($candidate in $cases){try{"
+            "Assert-MT5VmExactVirtualKeyInputPlan -Origin $origin "
+            "-Plan @($candidate) -ExpectedOrigin $origin|Out-Null;"
+            "$errors+=,'FAILED_OPEN'}catch{$errors+=,$_.Exception.Message}};"
+            "$ok=Assert-MT5VmExactVirtualKeyInputPlan -Origin $origin "
+            "-Plan $plan -ExpectedOrigin $origin;"
+            "[pscustomobject]@{ok=$ok;errors=$errors}|ConvertTo-Json -Compress"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertTrue(observed["ok"])
+        self.assertEqual(5, len(observed["errors"]))
+        for error in observed["errors"]:
+            self.assertIn("PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID", error)
+
+    def test_webrequest_virtual_key_boundary_orders_guards_readback_and_return(self) -> None:
+        body = (
+            "$script:origin='http://127.0.0.1:8790';$script:events=@();"
+            "$setOriginal=(Get-Command Set-MT5VmEditorTextBoundary).ScriptBlock;"
+            "$capsOriginal=(Get-Command Test-MT5VmCapsLockOffBoundary).ScriptBlock;"
+            "$guardOriginal=(Get-Command Test-MT5VmExactEditorInputGuardBoundary).ScriptBlock;"
+            "$sendOriginal=(Get-Command Invoke-MT5VmNativeKeyboardInputBoundary).ScriptBlock;"
+            "$readOriginal=(Get-Command Read-MT5VmEditorTextBoundary).ScriptBlock;"
+            "function Set-MT5VmEditorTextBoundary {"
+            "param([IntPtr]$EditorHandle,[AllowEmptyString()][string]$Text);"
+            "$script:events+=,'clear'};"
+            "function Test-MT5VmCapsLockOffBoundary {$script:events+=,'caps';$true};"
+            "function Test-MT5VmExactEditorInputGuardBoundary {"
+            "param([IntPtr]$OptionsHandle,[IntPtr]$EditorHandle,[int]$ProcessId);"
+            "$script:events+=,'guard';$true};"
+            "function Invoke-MT5VmNativeKeyboardInputBoundary {param([object[]]$Plan);"
+            "$script:events+=,('send:'+[string]$Plan.Count);$Plan.Count};"
+            "function Read-MT5VmEditorTextBoundary {param([IntPtr]$EditorHandle);"
+            "$script:events+=,'read';$script:origin};"
+            "function Start-Sleep {param([int]$Milliseconds)};"
+            "try{$ok=[bool](Invoke-MT5VmGuardedExactVirtualKeyInputBoundary "
+            "-OptionsHandle ([IntPtr]41) -EditorHandle ([IntPtr]42) "
+            "-ProcessId 700 -ExpectedOrigin $script:origin)}finally{"
+            "Set-Item Function:Set-MT5VmEditorTextBoundary -Value $setOriginal;"
+            "Set-Item Function:Test-MT5VmCapsLockOffBoundary -Value $capsOriginal;"
+            "Set-Item Function:Test-MT5VmExactEditorInputGuardBoundary -Value $guardOriginal;"
+            "Set-Item Function:Invoke-MT5VmNativeKeyboardInputBoundary -Value $sendOriginal;"
+            "Set-Item Function:Read-MT5VmEditorTextBoundary -Value $readOriginal;"
+            "Remove-Item Function:Start-Sleep -ErrorAction SilentlyContinue};"
+            "[pscustomobject]@{ok=$ok;events=$script:events}|"
+            "ConvertTo-Json -Compress -Depth 5"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertTrue(observed["ok"])
+        self.assertEqual(
+            ["clear", "caps", "guard", "send:46", "read", "guard", "send:2"],
+            observed["events"],
+        )
+
+    def test_webrequest_virtual_key_boundary_fails_before_later_stages(self) -> None:
+        expected = {
+            "caps": {"guards": 0, "sends": 0, "reads": 0},
+            "guard1": {"guards": 1, "sends": 0, "reads": 0},
+            "partial_chars": {"guards": 1, "sends": 1, "reads": 0},
+            "readback": {"guards": 1, "sends": 1, "reads": 25},
+            "guard2": {"guards": 2, "sends": 1, "reads": 1},
+            "partial_return": {"guards": 2, "sends": 2, "reads": 1},
+        }
+        for mode, counts in expected.items():
+            with self.subTest(mode=mode):
+                body = (
+                    f"$script:mode='{mode}';"
+                    "$script:origin='http://127.0.0.1:8790';"
+                    "$script:guards=0;$script:sends=0;$script:reads=0;"
+                    "$setOriginal=(Get-Command Set-MT5VmEditorTextBoundary).ScriptBlock;"
+                    "$capsOriginal=(Get-Command Test-MT5VmCapsLockOffBoundary).ScriptBlock;"
+                    "$guardOriginal=(Get-Command Test-MT5VmExactEditorInputGuardBoundary).ScriptBlock;"
+                    "$sendOriginal=(Get-Command Invoke-MT5VmNativeKeyboardInputBoundary).ScriptBlock;"
+                    "$readOriginal=(Get-Command Read-MT5VmEditorTextBoundary).ScriptBlock;"
+                    "function Set-MT5VmEditorTextBoundary {"
+                    "param([IntPtr]$EditorHandle,[AllowEmptyString()][string]$Text)};"
+                    "function Test-MT5VmCapsLockOffBoundary {return ($script:mode -cne 'caps')};"
+                    "function Test-MT5VmExactEditorInputGuardBoundary {"
+                    "param([IntPtr]$OptionsHandle,[IntPtr]$EditorHandle,[int]$ProcessId);"
+                    "$script:guards++;if($script:mode -ceq 'guard1'){return $false};"
+                    "if($script:mode -ceq 'guard2' -and $script:guards -eq 2){return $false};"
+                    "$true};"
+                    "function Invoke-MT5VmNativeKeyboardInputBoundary {param([object[]]$Plan);"
+                    "$script:sends++;if($script:mode -ceq 'partial_chars' -and "
+                    "$script:sends -eq 1){return $Plan.Count-1};"
+                    "if($script:mode -ceq 'partial_return' -and $script:sends -eq 2){"
+                    "return 1};$Plan.Count};"
+                    "function Read-MT5VmEditorTextBoundary {param([IntPtr]$EditorHandle);"
+                    "$script:reads++;if($script:mode -ceq 'readback'){return ''};"
+                    "$script:origin};function Start-Sleep {param([int]$Milliseconds)};"
+                    "try{try{Invoke-MT5VmGuardedExactVirtualKeyInputBoundary "
+                    "-OptionsHandle ([IntPtr]41) -EditorHandle ([IntPtr]42) "
+                    "-ProcessId 700 -ExpectedOrigin $script:origin|Out-Null;"
+                    "$errorCode='FAILED_OPEN'}catch{$errorCode=$_.Exception.Message}}finally{"
+                    "Set-Item Function:Set-MT5VmEditorTextBoundary -Value $setOriginal;"
+                    "Set-Item Function:Test-MT5VmCapsLockOffBoundary -Value $capsOriginal;"
+                    "Set-Item Function:Test-MT5VmExactEditorInputGuardBoundary -Value $guardOriginal;"
+                    "Set-Item Function:Invoke-MT5VmNativeKeyboardInputBoundary -Value $sendOriginal;"
+                    "Set-Item Function:Read-MT5VmEditorTextBoundary -Value $readOriginal;"
+                    "Remove-Item Function:Start-Sleep -ErrorAction SilentlyContinue};"
+                    "[pscustomobject]@{error=$errorCode;guards=$script:guards;"
+                    "sends=$script:sends;reads=$script:reads}|ConvertTo-Json -Compress"
+                )
+                completed = self._run_module(body)
+                self.assertEqual(0, completed.returncode, completed.stderr)
+                observed = json.loads(completed.stdout)
+                self.assertIn(
+                    "PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID",
+                    observed["error"],
+                )
+                self.assertEqual(counts["guards"], observed["guards"])
+                self.assertEqual(counts["sends"], observed["sends"])
+                self.assertEqual(counts["reads"], observed["reads"])
+
+    def test_webrequest_mouse_sequence_requires_exact_messages_flags_and_point(self) -> None:
+        source = UI_HELPER.read_text(encoding="utf-8")
+        for required in (
+            "WmLButtonDown",
+            "WmLButtonUp",
+            "Assert-MT5VmMouseActivationSequence",
+            "PROVISIONING_WEBREQUEST_ALLOWLIST_SEQUENCE_INVALID",
+        ):
+            self.assertIn(required, source)
+
+        body = (
+            "$c=Get-MT5VmTerminalUiConstants;$point=655410;"
+            "$messages=@($c.WmLButtonDown,$c.WmLButtonUp,"
+            "$c.WmLButtonDoubleClick,$c.WmLButtonUp);"
+            "$flags=@(1,0,1,0);$points=@($point,$point,$point,$point);"
+            "$ok=Assert-MT5VmMouseActivationSequence -Messages $messages "
+            "-WParams $flags -LParams $points -ExpectedPoint $point;"
+            "$cases=@("
+            "@{Messages=@($messages[0..2]);WParams=@($flags[0..2]);"
+            "LParams=@($points[0..2]);ExpectedPoint=$point},"
+            "@{Messages=@($messages[2],$messages[1],$messages[0],$messages[3]);"
+            "WParams=$flags;LParams=$points;ExpectedPoint=$point},"
+            "@{Messages=@($messages+$c.WmLButtonUp);WParams=@($flags+0);"
+            "LParams=@($points+$point);ExpectedPoint=$point},"
+            "@{Messages=$messages;WParams=$flags;"
+            "LParams=@($point,$point,42,$point);ExpectedPoint=$point},"
+            "@{Messages=$messages;WParams=@(0,0,1,0);"
+            "LParams=$points;ExpectedPoint=$point});"
+            "$errors=@();foreach($case in $cases){try{"
+            "Assert-MT5VmMouseActivationSequence @case|Out-Null;"
+            "$errors+=,'FAILED_OPEN'}catch{$errors+=,$_.Exception.Message}};"
+            "[pscustomobject]@{constants=[pscustomobject]@{down=$c.WmLButtonDown;"
+            "up=$c.WmLButtonUp};ok=$ok;errors=$errors}|"
+            "ConvertTo-Json -Compress -Depth 6"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertEqual({"down": 0x0201, "up": 0x0202}, observed["constants"])
+        self.assertTrue(observed["ok"])
+        self.assertEqual(5, len(observed["errors"]))
+        for error in observed["errors"]:
+            self.assertIn("PROVISIONING_WEBREQUEST_ALLOWLIST_SEQUENCE_INVALID", error)
+
+    def test_webrequest_queue_boundary_uses_postmessage_and_fails_closed(self) -> None:
+        source = UI_HELPER.read_text(encoding="utf-8")
+        for required in (
+            "PostMessageW",
+            "TryPostMessage",
+            "Invoke-MT5VmQueuedUiMessageBoundary",
+            "PROVISIONING_WEBREQUEST_ALLOWLIST_SEQUENCE_QUEUE_FAILED",
+        ):
+            self.assertIn(required, source)
+
+        body = (
+            "$caught='';try{Invoke-MT5VmQueuedUiMessageBoundary "
+            "-Handle ([IntPtr]::Zero) -Message 0x0201 -WParam ([IntPtr]1) "
+            "-LParam ([IntPtr]655410)|Out-Null;$caught='FAILED_OPEN'}"
+            "catch{$caught=$_.Exception.Message};"
+            "[pscustomobject]@{caught=$caught}|ConvertTo-Json -Compress"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertEqual(
+            "PROVISIONING_WEBREQUEST_ALLOWLIST_SEQUENCE_QUEUE_FAILED",
+            observed["caught"],
+        )
+
+    def test_webrequest_queue_sequence_aborts_at_each_failed_position(self) -> None:
+        body = (
+            "$c=Get-MT5VmTerminalUiConstants;$point=655410;"
+            "$messages=[uint32[]]@($c.WmLButtonDown,$c.WmLButtonUp,"
+            "$c.WmLButtonDoubleClick,$c.WmLButtonUp);"
+            "$flags=[long[]]@(1,0,1,0);"
+            "$points=[long[]]@($point,$point,$point,$point);"
+            "$original=(Get-Command Invoke-MT5VmQueuedUiMessageBoundary).ScriptBlock;"
+            "$failures=@();foreach($failureAt in 0..3){"
+            "$script:queueIndex=0;$script:failureAt=$failureAt;"
+            "function Invoke-MT5VmQueuedUiMessageBoundary {"
+            "param([IntPtr]$Handle,[uint32]$Message,[IntPtr]$WParam,[IntPtr]$LParam);"
+            "$current=$script:queueIndex;$script:queueIndex+=1;"
+            "if($current -eq $script:failureAt){"
+            "throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_SEQUENCE_QUEUE_FAILED'}};"
+            "$reported=$false;$caught='';try{"
+            "$reported=[bool](Invoke-MT5VmMouseActivationSequenceBoundary "
+            "-Handle ([IntPtr]42) -Messages $messages -WParams $flags "
+            "-LParams $points -ExpectedPoint $point)}catch{$caught=$_.Exception.Message};"
+            "$failures+=,[pscustomobject]@{failure_at=$failureAt;"
+            "calls=$script:queueIndex;reported=$reported;caught=$caught}};"
+            "$script:queueIndex=0;$script:failureAt=-1;"
+            "$success=[bool](Invoke-MT5VmMouseActivationSequenceBoundary "
+            "-Handle ([IntPtr]42) -Messages $messages -WParams $flags "
+            "-LParams $points -ExpectedPoint $point);"
+            "$successCalls=$script:queueIndex;"
+            "Set-Item -Path Function:Invoke-MT5VmQueuedUiMessageBoundary -Value $original;"
+            "[pscustomobject]@{failures=$failures;success=$success;"
+            "success_calls=$successCalls}|ConvertTo-Json -Compress -Depth 5"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertTrue(observed["success"])
+        self.assertEqual(4, observed["success_calls"])
+        self.assertEqual(4, len(observed["failures"]))
+        for index, failure in enumerate(observed["failures"]):
+            self.assertEqual(index, failure["failure_at"])
+            self.assertEqual(index + 1, failure["calls"])
+            self.assertFalse(failure["reported"])
+            self.assertEqual(
+                "PROVISIONING_WEBREQUEST_ALLOWLIST_SEQUENCE_QUEUE_FAILED",
+                failure["caught"],
+            )
 
     def test_server_enrollment_uses_in_memory_credential_and_closes_only_owned_process(self) -> None:
         body = (
