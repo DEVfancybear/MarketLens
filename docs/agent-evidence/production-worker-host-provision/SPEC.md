@@ -1654,3 +1654,73 @@ APPROVE SPEC REVISION: production-worker-host-provision v20
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v20`. No v20 implementation occurred
 before that approval.
+
+## Revision v21 - deliver Return's exact character message (approval required)
+
+### Discovery during approved v20 execution
+
+V20 RED was observed because the production Add URL editor constant and exact-candidate contract did
+not exist. GREEN passed 36/36 focused tests. A mutant changing production ID `32954` back to legacy
+`10325` was killed with `PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID`; the helper was restored
+to SHA-256 `6D47C625E085F40D7B7E8A6E4E4BF03A02D1113223BA02040BDAF14B2023C0A8` and the targeted test returned
+GREEN.
+
+The selected-host transaction still failed closed with
+`PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID` and restored the exact prior state. A pending-only,
+always-Cancel stage trace proved the icon activation found the exact ID `32954` editor,
+`WM_SETTEXT` succeeded, and bounded `WM_KEYDOWN(VK_RETURN)` and `WM_KEYUP(VK_RETURN)` both returned
+success. The editor nevertheless remained visible and the pending list state was not committed.
+No OK or persisted mutation occurred.
+
+Microsoft's Win32 documentation states that `TranslateMessage` translates key messages and posts
+the corresponding `WM_CHAR`; its keyboard-input documentation explicitly lists Enter as generating
+a carriage-return `WM_CHAR`. A directly delivered `WM_KEYDOWN` does not traverse the target
+thread's retrieve/translate loop, so v16-v20 omitted the character message the edit control uses to
+commit its value.
+
+### v21 exact Return character sequence
+
+Revision v21 remains Tier 3 and changes only the editor commit delivery after exact `WM_SETTEXT`
+succeeds. Deliver exactly these three bounded synchronous messages, in order, to the same verified
+ID `32954` editor handle:
+
+1. `WM_KEYDOWN=0x0100` with `VK_RETURN=0x0D`;
+2. `WM_CHAR=0x0102` with carriage return `0x0D`; and
+3. `WM_KEYUP=0x0101` with `VK_RETURN=0x0D`.
+
+All three calls must succeed through the existing timeout wrapper. Missing, reordered, extra,
+wrong-handle, wrong-message, or wrong-`wParam` delivery fails closed with the existing
+`PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID`; the dialog is cancelled and the exact snapshot
+rollback remains mandatory. After the exact sequence, the editor must disappear within the existing
+bounded wait and the exact desired pending state must be reread before OK.
+
+No arbitrary character, text, key, retry, keyboard-layout inference, global input, SendKeys,
+Clipboard, focus/foreground mutation, or additional handle is authorized. All v20 editor identity,
+v19 icon geometry, v18 mouse queue, exact origin, persisted reread, idempotency run, live receipt,
+terminal/signer/PID boundary, verifier layers, Git operations, and canonical production command
+remain unchanged. No tracked path or dependency is added.
+
+### v21 RED -> GREEN additions
+
+Before changing commit delivery, add and observe RED constants and a pure sequence contract for
+exact messages `[WM_KEYDOWN, WM_CHAR, WM_KEYUP]` and exact parameters `[0x0D, 0x0D, 0x0D]`. Reject a
+missing, reordered, extra, wrong-message, or wrong-parameter sequence with the pinned editor-invalid
+error. Keep assertions frozen through GREEN. Kill and restore a mutant that drops or changes the
+`WM_CHAR` element.
+
+Then rerun all focused tests, the exact selected-host transaction, a second idempotency transaction,
+and the live nonce-bound WebRequest probe. Only after a GREEN checkpoint, clean local-master
+fast-forward, and one fresh all-pass execution of the complete 13-layer verifier may EVIDENCE claim
+production success.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v21
+```
+
+### v21 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v21`. No v21 implementation occurred
+before that approval.
