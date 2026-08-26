@@ -2434,3 +2434,72 @@ APPROVE SPEC REVISION: production-worker-host-provision v29
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v29`. No v29 implementation or host
 mutation occurred before that approval.
+
+## Revision v30 - paced guarded MT5 double-click (approval required)
+
+### Discovery during approved v29 execution
+
+V29 reached GREEN with 72/72 focused regression tests, 4/4 allowlist mutants, and 4/4 physical
+mouse mutants killed. The selected-host pending-only entrypoint was then run twice. Both runs
+failed closed with `PROVISIONING_WEBREQUEST_ALLOWLIST_PENDING_FAILED`; each failure left the IPv4
+portproxy table empty, port 80 unbound, no selected terminal process, and no persisted UI change.
+An always-Cancel diagnostic again observed `enabled=1 items=["", ""]`, proving the single
+four-record `SendInput` batch did not open the URL editor.
+
+A second always-Cancel diagnostic kept the same validated point and the same down/up/down/up
+records, but sent the first down/up pair, waited 150 milliseconds for MT5 to process and redraw,
+revalidated the target, and then sent the second down/up pair. After the first pair the state was
+`enabled=1 items=[""]`; after the second pair exactly one visible editor was found. No URL was
+typed and Cancel restored the original state. The initial cursor position is therefore not the
+cause; MT5 requires paced processing between the two physical clicks.
+
+### v30 exact paced activation boundary
+
+Revision v30 remains Tier 3 and supersedes only v29 step 4's single-batch timing. Every other v29
+and v28 requirement remains unchanged. After the validated absolute move and post-move guard, the
+helper must:
+
+1. retain one frozen exact four-record plan ordered down, up, down, up;
+2. submit records 0 and 1 as the first `SendInput` batch and require the native return count to be
+   exactly 2;
+3. wait exactly 150 milliseconds, which is below the Windows double-click interval on the selected
+   host and is the value proven by the always-Cancel diagnostic;
+4. immediately recheck the exact foreground options window, selected terminal PID, point-to-list
+   identity, checked checkbox, and enabled list before the second batch;
+5. submit records 2 and 3 as the second `SendInput` batch and require the native return count to be
+   exactly 2; and
+6. wait only the existing bounded interval for exactly one visible enabled editor `32954` owned by
+   the selected terminal PID, then continue the unchanged guarded text/Return/pending/Cancel flow.
+
+The helper must fail before the second batch if the user moves the pointer, changes foreground,
+closes or replaces the dialog, changes PID, or changes checkbox/list state during the paced
+interval. It may not retry, emit a fifth button record, increase the delay, use an unbounded wait,
+or relax any v29 cursor-restoration or identity guard. The two-batch operation is still one
+transaction with authoritative cursor restoration in `finally`.
+
+### v30 RED -> GREEN and gauntlet additions
+
+Before implementation, add and observe RED tests proving one frozen four-record plan is sliced
+into two exact two-record batches, the 150 ms pause occurs between them, the full mid-click guard
+runs before batch two, and both native counts must equal 2. Freeze assertions through GREEN. Kill
+and restore at least three plausible timing mutants: combine all four records into one batch,
+remove the 150 ms pause, and omit the mid-click guard. Re-run all unchanged v29 controls and
+mutants, the 72 focused regressions, and the complete 13-layer verifier. Add no dependency or
+download.
+
+Run the selected-host pending-only entrypoint first and require its exact PASS/restoration marker.
+Only after that pass may the agent create the exact loopback portproxy and press OK. Then run the
+full driver twice, provision the managed worker, and execute the canonical no-switch
+`powershell.exe -File .\run-backend-production.ps1` through the complete verifier.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v30
+```
+
+### v30 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v30`. No v30 implementation or host
+mutation occurred before that approval.
