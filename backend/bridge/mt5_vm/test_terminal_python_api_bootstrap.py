@@ -1408,7 +1408,7 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             "[pscustomobject]@{constants=[pscustomobject]@{move=$c.MouseEventMove;"
             "left_down=$c.MouseEventLeftDown;left_up=$c.MouseEventLeftUp;"
             "absolute=$c.MouseEventAbsolute;virtual_desk=$c.MouseEventVirtualDesk};"
-            "move=(& $records $move);clicks=(& $records $clicks);"
+            "move=@(& $records $move);clicks=@(& $records $clicks);"
             "move_errors=$moveErrors;click_errors=$clickErrors}|"
             "ConvertTo-Json -Compress -Depth 6"
         )

@@ -114,6 +114,21 @@ public static class Mt5VmTerminalUiNative {
   private static extern IntPtr GetForegroundWindow();
 
   [DllImport("user32.dll", SetLastError = true)]
+  private static extern bool GetCursorPos(out NativePoint point);
+
+  [DllImport("user32.dll", SetLastError = true)]
+  private static extern bool SetCursorPos(int x, int y);
+
+  [DllImport("user32.dll", SetLastError = true)]
+  private static extern bool ClientToScreen(IntPtr window, ref NativePoint point);
+
+  [DllImport("user32.dll")]
+  private static extern IntPtr WindowFromPoint(NativePoint point);
+
+  [DllImport("user32.dll")]
+  private static extern int GetSystemMetrics(int index);
+
+  [DllImport("user32.dll", SetLastError = true)]
   private static extern bool GetGUIThreadInfo(uint threadId, ref GuiThreadInfo info);
 
   [DllImport("user32.dll", SetLastError = true)]
@@ -318,6 +333,113 @@ public static class Mt5VmTerminalUiNative {
       inputs,
       Marshal.SizeOf(typeof(NativeInput))
     );
+  }
+
+  public static uint SendMouseInput(
+    int[] x,
+    int[] y,
+    uint[] mouseData,
+    uint[] flags
+  ) {
+    if (x == null || y == null || mouseData == null || flags == null ||
+        x.Length == 0 || x.Length != y.Length || x.Length != mouseData.Length ||
+        x.Length != flags.Length) {
+      return 0;
+    }
+    var inputs = new NativeInput[x.Length];
+    for (int index = 0; index < inputs.Length; index++) {
+      inputs[index].type = 0;
+      inputs[index].data.mouse.x = x[index];
+      inputs[index].data.mouse.y = y[index];
+      inputs[index].data.mouse.mouseData = mouseData[index];
+      inputs[index].data.mouse.flags = flags[index];
+      inputs[index].data.mouse.time = 0;
+      inputs[index].data.mouse.extraInfo = UIntPtr.Zero;
+    }
+    return SendInput(
+      (uint)inputs.Length,
+      inputs,
+      Marshal.SizeOf(typeof(NativeInput))
+    );
+  }
+
+  public static int[] GetCursorPosition() {
+    NativePoint point;
+    if (!GetCursorPos(out point)) {
+      return new int[0];
+    }
+    return new int[] { point.x, point.y };
+  }
+
+  public static bool TrySetCursorPosition(int x, int y) {
+    if (!SetCursorPos(x, y)) {
+      return false;
+    }
+    NativePoint observed;
+    return GetCursorPos(out observed) && observed.x == x && observed.y == y;
+  }
+
+  public static int[] ClientPointToScreen(IntPtr window, int x, int y) {
+    var point = new NativePoint();
+    point.x = x;
+    point.y = y;
+    if (window == IntPtr.Zero || !ClientToScreen(window, ref point)) {
+      return new int[0];
+    }
+    return new int[] { point.x, point.y };
+  }
+
+  public static int[] VirtualScreen() {
+    return new int[] {
+      GetSystemMetrics(76), GetSystemMetrics(77),
+      GetSystemMetrics(78), GetSystemMetrics(79)
+    };
+  }
+
+  public static bool IsExactPhysicalMouseActivationGuard(
+    IntPtr optionsWindow,
+    IntPtr listWindow,
+    IntPtr checkboxWindow,
+    uint expectedProcessId,
+    int screenX,
+    int screenY,
+    uint getCheckMessage,
+    uint timeout
+  ) {
+    if (optionsWindow == IntPtr.Zero || listWindow == IntPtr.Zero ||
+        checkboxWindow == IntPtr.Zero || expectedProcessId == 0 ||
+        GetForegroundWindow() != optionsWindow ||
+        !IsWindowVisible(listWindow) || !IsWindowEnabled(listWindow) ||
+        !IsWindowVisible(checkboxWindow) || !IsWindowEnabled(checkboxWindow)) {
+      return false;
+    }
+    uint optionsProcessId;
+    uint optionsThreadId = GetWindowThreadProcessId(optionsWindow, out optionsProcessId);
+    uint listProcessId;
+    uint listThreadId = GetWindowThreadProcessId(listWindow, out listProcessId);
+    uint checkboxProcessId;
+    uint checkboxThreadId = GetWindowThreadProcessId(checkboxWindow, out checkboxProcessId);
+    if (optionsThreadId == 0 || listThreadId == 0 || checkboxThreadId == 0 ||
+        optionsThreadId != listThreadId || optionsThreadId != checkboxThreadId ||
+        optionsProcessId != expectedProcessId || listProcessId != expectedProcessId ||
+        checkboxProcessId != expectedProcessId) {
+      return false;
+    }
+    var point = new NativePoint();
+    point.x = screenX;
+    point.y = screenY;
+    if (WindowFromPoint(point) != listWindow) {
+      return false;
+    }
+    IntPtr checkedResult;
+    return TryMessage(
+      checkboxWindow,
+      getCheckMessage,
+      IntPtr.Zero,
+      IntPtr.Zero,
+      timeout,
+      out checkedResult
+    ) && checkedResult.ToInt64() == 1;
   }
 
   public static bool IsToggleKeyOff(int virtualKey) {
@@ -815,6 +937,11 @@ function Get-MT5VmTerminalUiConstants {
     WmGetTextLength = 0x000E
     KeyEventKeyUp = 0x0002
     KeyEventUnicode = 0x0004
+    MouseEventMove = 0x0001
+    MouseEventLeftDown = 0x0002
+    MouseEventLeftUp = 0x0004
+    MouseEventVirtualDesk = 0x4000
+    MouseEventAbsolute = 0x8000
     CbGetCount = 0x0146
     CbGetCurrentSelection = 0x0147
     CbGetItemText = 0x0148
@@ -1667,6 +1794,271 @@ function Invoke-MT5VmMouseActivationSequenceBoundary {
   return $true
 }
 
+function New-MT5VmAbsoluteMouseMoveInputPlan {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][int]$ScreenX,
+    [Parameter(Mandatory = $true)][int]$ScreenY,
+    [Parameter(Mandatory = $true)][int]$VirtualLeft,
+    [Parameter(Mandatory = $true)][int]$VirtualTop,
+    [Parameter(Mandatory = $true)][int]$VirtualWidth,
+    [Parameter(Mandatory = $true)][int]$VirtualHeight
+  )
+
+  $right = [long]$VirtualLeft + [long]$VirtualWidth
+  $bottom = [long]$VirtualTop + [long]$VirtualHeight
+  if ($VirtualWidth -lt 2 -or $VirtualHeight -lt 2 -or
+      [long]$ScreenX -lt [long]$VirtualLeft -or [long]$ScreenX -ge $right -or
+      [long]$ScreenY -lt [long]$VirtualTop -or [long]$ScreenY -ge $bottom) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+  $constants = Get-MT5VmTerminalUiConstants
+  $normalizedX = [int][Math]::Round(
+    (([long]$ScreenX - [long]$VirtualLeft) * 65535.0) / ($VirtualWidth - 1)
+  )
+  $normalizedY = [int][Math]::Round(
+    (([long]$ScreenY - [long]$VirtualTop) * 65535.0) / ($VirtualHeight - 1)
+  )
+  return ,([pscustomobject][ordered]@{
+      Dx = $normalizedX
+      Dy = $normalizedY
+      MouseData = 0
+      Flags = [long](
+        $constants.MouseEventMove -bor
+        $constants.MouseEventAbsolute -bor
+        $constants.MouseEventVirtualDesk
+      )
+    })
+}
+
+function Assert-MT5VmExactDoubleClickInputPlan {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Plan
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  [long[]]$expectedFlags = @(
+    $constants.MouseEventLeftDown,
+    $constants.MouseEventLeftUp,
+    $constants.MouseEventLeftDown,
+    $constants.MouseEventLeftUp
+  )
+  if ($Plan.Count -ne $expectedFlags.Count) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+  for ($index = 0; $index -lt $expectedFlags.Count; $index++) {
+    $record = $Plan[$index]
+    foreach ($propertyName in @('Dx', 'Dy', 'MouseData', 'Flags')) {
+      if ($null -eq $record -or $null -eq $record.PSObject.Properties[$propertyName]) {
+        throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+      }
+    }
+    if ([int]$record.Dx -ne 0 -or [int]$record.Dy -ne 0 -or
+        [int]$record.MouseData -ne 0 -or
+        [long]$record.Flags -ne $expectedFlags[$index]) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+    }
+  }
+  return $true
+}
+
+function New-MT5VmExactDoubleClickInputPlan {
+  [CmdletBinding()]
+  param()
+
+  $constants = Get-MT5VmTerminalUiConstants
+  $plan = @(
+    [pscustomobject][ordered]@{
+      Dx = 0; Dy = 0; MouseData = 0; Flags = [long]$constants.MouseEventLeftDown
+    },
+    [pscustomobject][ordered]@{
+      Dx = 0; Dy = 0; MouseData = 0; Flags = [long]$constants.MouseEventLeftUp
+    },
+    [pscustomobject][ordered]@{
+      Dx = 0; Dy = 0; MouseData = 0; Flags = [long]$constants.MouseEventLeftDown
+    },
+    [pscustomobject][ordered]@{
+      Dx = 0; Dy = 0; MouseData = 0; Flags = [long]$constants.MouseEventLeftUp
+    }
+  )
+  $null = Assert-MT5VmExactDoubleClickInputPlan -Plan $plan
+  return @($plan)
+}
+
+function Convert-MT5VmClientPointToScreenBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$ListHandle,
+    [Parameter(Mandatory = $true)][int]$ClientX,
+    [Parameter(Mandatory = $true)][int]$ClientY
+  )
+
+  $point = [int[]][Mt5VmTerminalUiNative]::ClientPointToScreen(
+    $ListHandle,
+    $ClientX,
+    $ClientY
+  )
+  if ($point.Count -ne 2) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+  return [pscustomobject][ordered]@{ x = $point[0]; y = $point[1] }
+}
+
+function Get-MT5VmVirtualScreenBoundary {
+  [CmdletBinding()]
+  param()
+
+  $screen = [int[]][Mt5VmTerminalUiNative]::VirtualScreen()
+  if ($screen.Count -ne 4 -or $screen[2] -lt 2 -or $screen[3] -lt 2) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+  return [pscustomobject][ordered]@{
+    left = $screen[0]
+    top = $screen[1]
+    width = $screen[2]
+    height = $screen[3]
+  }
+}
+
+function Test-MT5VmPhysicalMouseActivationGuardBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$OptionsHandle,
+    [Parameter(Mandatory = $true)][IntPtr]$ListHandle,
+    [Parameter(Mandatory = $true)][IntPtr]$CheckboxHandle,
+    [Parameter(Mandatory = $true)][int]$ProcessId,
+    [Parameter(Mandatory = $true)][int]$ScreenX,
+    [Parameter(Mandatory = $true)][int]$ScreenY
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  return [bool][Mt5VmTerminalUiNative]::IsExactPhysicalMouseActivationGuard(
+    $OptionsHandle,
+    $ListHandle,
+    $CheckboxHandle,
+    [uint32]$ProcessId,
+    $ScreenX,
+    $ScreenY,
+    [uint32]$constants.BmGetCheck,
+    [uint32]$constants.UiMessageTimeoutMs
+  )
+}
+
+function Invoke-MT5VmNativeMouseInputBoundary {
+  [CmdletBinding()]
+  param([Parameter(Mandatory = $true)][object[]]$Plan)
+
+  try {
+    [int[]]$x = @($Plan | ForEach-Object { [int]$_.Dx })
+    [int[]]$y = @($Plan | ForEach-Object { [int]$_.Dy })
+    [uint32[]]$data = @($Plan | ForEach-Object { [uint32]$_.MouseData })
+    [uint32[]]$flags = @($Plan | ForEach-Object { [uint32]$_.Flags })
+    return [int][Mt5VmTerminalUiNative]::SendMouseInput($x, $y, $data, $flags)
+  } catch {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+}
+
+function Invoke-MT5VmGuardedPhysicalMouseActivationBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$OptionsHandle,
+    [Parameter(Mandatory = $true)][IntPtr]$ListHandle,
+    [Parameter(Mandatory = $true)][IntPtr]$CheckboxHandle,
+    [Parameter(Mandatory = $true)][int]$ProcessId,
+    [Parameter(Mandatory = $true)][int]$ClientX,
+    [Parameter(Mandatory = $true)][int]$ClientY
+  )
+
+  $point = Convert-MT5VmClientPointToScreenBoundary `
+    -ListHandle $ListHandle -ClientX $ClientX -ClientY $ClientY
+  $screen = Get-MT5VmVirtualScreenBoundary
+  $move = @(New-MT5VmAbsoluteMouseMoveInputPlan `
+      -ScreenX ([int]$point.x) -ScreenY ([int]$point.y) `
+      -VirtualLeft ([int]$screen.left) -VirtualTop ([int]$screen.top) `
+      -VirtualWidth ([int]$screen.width) -VirtualHeight ([int]$screen.height))
+  $clicks = @(New-MT5VmExactDoubleClickInputPlan)
+  if (-not (Test-MT5VmPhysicalMouseActivationGuardBoundary `
+      -OptionsHandle $OptionsHandle -ListHandle $ListHandle `
+      -CheckboxHandle $CheckboxHandle -ProcessId $ProcessId `
+      -ScreenX ([int]$point.x) -ScreenY ([int]$point.y)
+    )) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+  if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $move) -ne $move.Count) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+  if (-not (Test-MT5VmPhysicalMouseActivationGuardBoundary `
+      -OptionsHandle $OptionsHandle -ListHandle $ListHandle `
+      -CheckboxHandle $CheckboxHandle -ProcessId $ProcessId `
+      -ScreenX ([int]$point.x) -ScreenY ([int]$point.y)
+    )) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+  if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $clicks) -ne $clicks.Count) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+  return $true
+}
+
+function Get-MT5VmCursorPositionBoundary {
+  [CmdletBinding()]
+  param()
+
+  $position = [int[]][Mt5VmTerminalUiNative]::GetCursorPosition()
+  if ($position.Count -ne 2) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+  return [pscustomobject][ordered]@{ x = $position[0]; y = $position[1] }
+}
+
+function Restore-MT5VmCursorPositionBoundary {
+  [CmdletBinding()]
+  param([Parameter(Mandatory = $true)][object]$Cursor)
+
+  if ($null -eq $Cursor.PSObject.Properties['x'] -or
+      $null -eq $Cursor.PSObject.Properties['y'] -or
+      -not [Mt5VmTerminalUiNative]::TrySetCursorPosition(
+        [int]$Cursor.x,
+        [int]$Cursor.y
+      )) {
+    return $false
+  }
+  return $true
+}
+
+function Invoke-MT5VmPhysicalMouseActivationTransactionCore {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][scriptblock]$CaptureCursorAction,
+    [Parameter(Mandatory = $true)][scriptblock]$ActivationAction,
+    [Parameter(Mandatory = $true)][scriptblock]$ContinuationAction,
+    [Parameter(Mandatory = $true)][scriptblock]$RestoreCursorAction
+  )
+
+  $cursor = & $CaptureCursorAction
+  $originalFailure = $null
+  $result = $null
+  try {
+    $null = & $ActivationAction
+    $result = & $ContinuationAction
+  } catch {
+    $originalFailure = $_.Exception
+  }
+  try {
+    if ((& $RestoreCursorAction $cursor) -ne $true) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED'
+    }
+  } catch {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED'
+  }
+  if ($null -ne $originalFailure) {
+    throw $originalFailure
+  }
+  return $result
+}
+
 function Assert-MT5VmWebRequestEditorCandidate {
   [CmdletBinding()]
   param(
@@ -1675,7 +2067,9 @@ function Assert-MT5VmWebRequestEditorCandidate {
     [Parameter(Mandatory = $true)][int]$CandidateCount,
     [Parameter(Mandatory = $true)][AllowEmptyString()][string]$WindowClass,
     [Parameter(Mandatory = $true)][bool]$Visible,
-    [Parameter(Mandatory = $true)][bool]$Enabled
+    [Parameter(Mandatory = $true)][bool]$Enabled,
+    [Parameter(Mandatory = $true)][int]$ExpectedProcessId,
+    [Parameter(Mandatory = $true)][int]$ObservedProcessId
   )
 
   $constants = Get-MT5VmTerminalUiConstants
@@ -1683,7 +2077,8 @@ function Assert-MT5VmWebRequestEditorCandidate {
       $ObservedControlId -ne $ExpectedControlId -or
       $CandidateCount -ne 1 -or
       $WindowClass -cne 'Edit' -or
-      -not $Visible -or -not $Enabled) {
+      -not $Visible -or -not $Enabled -or
+      $ExpectedProcessId -lt 1 -or $ObservedProcessId -ne $ExpectedProcessId) {
     throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
   }
   return $true
@@ -2339,7 +2734,8 @@ function Invoke-MT5VmGuardedExactVirtualKeyInputBoundary {
 function Get-MT5VmWebRequestEditorBoundary {
   [CmdletBinding()]
   param(
-    [Parameter(Mandatory = $true)][IntPtr]$OptionsHandle
+    [Parameter(Mandatory = $true)][IntPtr]$OptionsHandle,
+    [Parameter(Mandatory = $true)][int]$ProcessId
   )
 
   $constants = Get-MT5VmTerminalUiConstants
@@ -2357,7 +2753,9 @@ function Get-MT5VmWebRequestEditorBoundary {
       -CandidateCount $matches.Count `
       -WindowClass '' `
       -Visible $false `
-      -Enabled $false
+      -Enabled $false `
+      -ExpectedProcessId $ProcessId `
+      -ObservedProcessId 0
   }
   $editor = [IntPtr]$matches[0]
   $null = Assert-MT5VmWebRequestEditorCandidate `
@@ -2366,7 +2764,9 @@ function Get-MT5VmWebRequestEditorBoundary {
     -CandidateCount $matches.Count `
     -WindowClass ([Mt5VmTerminalUiNative]::WindowClass($editor)) `
     -Visible ([Mt5VmTerminalUiNative]::IsWindowVisible($editor)) `
-    -Enabled ([Mt5VmTerminalUiNative]::IsWindowEnabled($editor))
+    -Enabled ([Mt5VmTerminalUiNative]::IsWindowEnabled($editor)) `
+    -ExpectedProcessId $ProcessId `
+    -ObservedProcessId ([int][Mt5VmTerminalUiNative]::WindowProcessId($editor))
   return $editor
 }
 
@@ -2405,46 +2805,50 @@ function Invoke-MT5VmWebRequestEditorApplyBoundary {
 
   $geometry = Get-MT5VmListActivationGeometryBoundary `
     -ListHandle ([IntPtr]$controls.List)
-  $packedPoint = (($geometry.y -band 0xFFFF) -shl 16) -bor
-    ($geometry.x -band 0xFFFF)
-  $messages = [uint32[]]@(
-    $constants.WmLButtonDown,
-    $constants.WmLButtonUp,
-    $constants.WmLButtonDoubleClick,
-    $constants.WmLButtonUp
-  )
-  $wParams = [long[]]@(1, 0, 1, 0)
-  $lParams = [long[]]@($packedPoint, $packedPoint, $packedPoint, $packedPoint)
-  $null = Invoke-MT5VmMouseActivationSequenceBoundary `
-    -Handle ([IntPtr]$controls.List) `
-    -Messages $messages `
-    -WParams $wParams `
-    -LParams $lParams `
-    -ExpectedPoint $packedPoint
-
-  $editor = [IntPtr]::Zero
-  for ($attempt = 0; $attempt -lt 25; $attempt++) {
-    $editor = Get-MT5VmWebRequestEditorBoundary -OptionsHandle $OptionsHandle
-    if ($editor -ne [IntPtr]::Zero) { break }
-    Start-Sleep -Milliseconds 100
-  }
-  if ($editor -eq [IntPtr]::Zero) {
+  $terminalProcessId = [int][Mt5VmTerminalUiNative]::WindowProcessId($OptionsHandle)
+  if ($terminalProcessId -lt 1) {
     throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
   }
-  $editorProcessId = [int][Mt5VmTerminalUiNative]::WindowProcessId($OptionsHandle)
-  if ($editorProcessId -lt 1) {
-    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
-  }
-  $null = Invoke-MT5VmGuardedExactVirtualKeyInputBoundary `
-    -OptionsHandle $OptionsHandle `
-    -EditorHandle $editor `
-    -ProcessId $editorProcessId `
-    -ExpectedOrigin $ExpectedOrigin
-  for ($attempt = 0; $attempt -lt 25; $attempt++) {
-    if (-not [Mt5VmTerminalUiNative]::IsWindowVisible($editor)) { return }
-    Start-Sleep -Milliseconds 100
-  }
-  throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  $null = Invoke-MT5VmPhysicalMouseActivationTransactionCore `
+    -CaptureCursorAction {
+      return Get-MT5VmCursorPositionBoundary
+    } `
+    -ActivationAction {
+      return Invoke-MT5VmGuardedPhysicalMouseActivationBoundary `
+        -OptionsHandle $OptionsHandle `
+        -ListHandle ([IntPtr]$controls.List) `
+        -CheckboxHandle ([IntPtr]$controls.Checkbox) `
+        -ProcessId $terminalProcessId `
+        -ClientX ([int]$geometry.x) `
+        -ClientY ([int]$geometry.y)
+    } `
+    -ContinuationAction {
+      $editor = [IntPtr]::Zero
+      for ($attempt = 0; $attempt -lt 25; $attempt++) {
+        $editor = Get-MT5VmWebRequestEditorBoundary `
+          -OptionsHandle $OptionsHandle `
+          -ProcessId $terminalProcessId
+        if ($editor -ne [IntPtr]::Zero) { break }
+        Start-Sleep -Milliseconds 100
+      }
+      if ($editor -eq [IntPtr]::Zero) {
+        throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+      }
+      $null = Invoke-MT5VmGuardedExactVirtualKeyInputBoundary `
+        -OptionsHandle $OptionsHandle `
+        -EditorHandle $editor `
+        -ProcessId $terminalProcessId `
+        -ExpectedOrigin $ExpectedOrigin
+      for ($attempt = 0; $attempt -lt 25; $attempt++) {
+        if (-not [Mt5VmTerminalUiNative]::IsWindowVisible($editor)) { return $true }
+        Start-Sleep -Milliseconds 100
+      }
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+    } `
+    -RestoreCursorAction {
+      param($cursor)
+      return Restore-MT5VmCursorPositionBoundary -Cursor $cursor
+    }
 }
 
 function Read-MT5VmWebRequestStateBoundary {
