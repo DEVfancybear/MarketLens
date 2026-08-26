@@ -3,7 +3,9 @@ param(
   [switch]$ContractTestsOnly,
   [switch]$KnownBadControl,
   [switch]$UnreadableInputControl,
-  [switch]$OccupiedPortControl
+  [switch]$OccupiedPortControl,
+  [switch]$MouseHitControl,
+  [switch]$CursorRestoreControl
 )
 
 $ErrorActionPreference = 'Stop'
@@ -751,6 +753,22 @@ if ($ContractTestsOnly) {
       }
     ) -ExpectPresent $false
     throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_OCCUPIED_CONTROL_FAILED_OPEN'
+  }
+  if ($MouseHitControl) {
+    Assert-MT5VmPhysicalMousePointIdentity `
+      -ExpectedListHandle ([IntPtr]42) `
+      -ObservedPointHandle ([IntPtr]99)
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_CONTROL_FAILED_OPEN'
+  }
+  if ($CursorRestoreControl) {
+    Invoke-MT5VmPhysicalMouseActivationTransactionCore `
+      -CaptureCursorAction {
+        return [pscustomobject]@{ x = 7; y = 9 }
+      } `
+      -ActivationAction { return $true } `
+      -ContinuationAction { return $true } `
+      -RestoreCursorAction { return $false }
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_CONTROL_FAILED_OPEN'
   }
   Invoke-ProductionAllowlistContractTests
   exit 0

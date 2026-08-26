@@ -396,6 +396,13 @@ public static class Mt5VmTerminalUiNative {
     };
   }
 
+  public static IntPtr WindowAtScreenPoint(int x, int y) {
+    var point = new NativePoint();
+    point.x = x;
+    point.y = y;
+    return WindowFromPoint(point);
+  }
+
   public static bool IsExactPhysicalMouseActivationGuard(
     IntPtr optionsWindow,
     IntPtr listWindow,
@@ -1932,6 +1939,13 @@ function Test-MT5VmPhysicalMouseActivationGuardBoundary {
     [Parameter(Mandatory = $true)][int]$ScreenY
   )
 
+  $observedPointHandle = [IntPtr][Mt5VmTerminalUiNative]::WindowAtScreenPoint(
+    $ScreenX,
+    $ScreenY
+  )
+  $null = Assert-MT5VmPhysicalMousePointIdentity `
+    -ExpectedListHandle $ListHandle `
+    -ObservedPointHandle $observedPointHandle
   $constants = Get-MT5VmTerminalUiConstants
   return [bool][Mt5VmTerminalUiNative]::IsExactPhysicalMouseActivationGuard(
     $OptionsHandle,
@@ -1943,6 +1957,20 @@ function Test-MT5VmPhysicalMouseActivationGuardBoundary {
     [uint32]$constants.BmGetCheck,
     [uint32]$constants.UiMessageTimeoutMs
   )
+}
+
+function Assert-MT5VmPhysicalMousePointIdentity {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$ExpectedListHandle,
+    [Parameter(Mandatory = $true)][IntPtr]$ObservedPointHandle
+  )
+
+  if ($ExpectedListHandle -eq [IntPtr]::Zero -or
+      $ObservedPointHandle -ne $ExpectedListHandle) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+  return $true
 }
 
 function Invoke-MT5VmNativeMouseInputBoundary {
