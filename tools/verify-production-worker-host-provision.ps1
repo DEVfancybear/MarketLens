@@ -369,7 +369,10 @@ function Assert-PostgreSqlProductionState {
     'PROVISIONING_POSTGRESQL16_NOT_RUNNING'
   $psql = Get-Command psql.exe -ErrorAction SilentlyContinue
   if (-not $psql) { $psql = Get-Command psql -ErrorAction SilentlyContinue }
-  Assert-Gate ($null -ne $psql) 'PROVISIONING_PSQL_MISSING'
+  $psqlPath = if ($psql) { [string]$psql.Source } else {
+    'C:\Program Files\PostgreSQL\16\bin\psql.exe'
+  }
+  Assert-Gate (Test-Path -LiteralPath $psqlPath -PathType Leaf) 'PROVISIONING_PSQL_MISSING'
   $databaseEnvironment = Get-DatabaseEnvironment
   $saved = @{}
   foreach ($entry in $databaseEnvironment.GetEnumerator()) {
@@ -377,9 +380,9 @@ function Assert-PostgreSqlProductionState {
     [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, 'Process')
   }
   try {
-    $version = @(& $psql.Source -X -q -t -A -c 'SHOW server_version_num;') -join ''
+    $version = @(& $psqlPath -X -q -t -A -c 'SHOW server_version_num;') -join ''
     Assert-NativeSuccess 'PROVISIONING_POSTGRESQL_QUERY_FAILED'
-    $migration = @(& $psql.Source -X -q -t -A -c 'SELECT version::text || '':'' || dirty::text FROM schema_migrations;') -join ''
+    $migration = @(& $psqlPath -X -q -t -A -c 'SELECT version::text || '':'' || dirty::text FROM schema_migrations;') -join ''
     Assert-NativeSuccess 'PROVISIONING_POSTGRESQL_QUERY_FAILED'
   } finally {
     foreach ($entry in $saved.GetEnumerator()) {
