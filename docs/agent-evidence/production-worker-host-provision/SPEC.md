@@ -1724,3 +1724,83 @@ APPROVE SPEC REVISION: production-worker-host-provision v21
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v21`. No v21 implementation occurred
 before that approval.
+
+## Revision v22 - enter the exact origin through character messages (approval required)
+
+### Discovery during approved v21 execution
+
+V21 RED was observed as two failures because the Return character contract and execution boundary
+did not exist. GREEN passed 38/38 focused tests. A mutant dropping `WM_CHAR` from the execution
+boundary was killed with `PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID`; the helper was restored
+to SHA-256 `E915B0E18D3D194FCA6A4DD6951F0A2984E76AD0B271644645F2F5B390ECFEB6` and the targeted test
+returned GREEN.
+
+The selected-host transaction still failed closed and restored the prior state. An always-Cancel
+per-message trace proved `WM_KEYDOWN(Return)` left the editor open, `WM_CHAR(Return)` immediately
+closed and destroyed the editor, and the following `WM_KEYUP` failed because its exact handle no
+longer existed. The pending list contained two rows but both were empty, so no desired state was
+confirmed.
+
+A second always-Cancel shape-only trace repeated the result: checkbox enabled, two empty rows,
+zero non-empty rows, and no editor after `WM_CHAR(Return)`. This proves two independent v21 model
+errors: `WM_SETTEXT` changes the Edit window's displayed text but does not drive MT5's private
+per-character URL model, and a Return key-up cannot be sent to the editor after the character
+commit destroys it. The existing desired-state invariant already allows exactly one exact non-empty
+origin plus at most one empty Add URL placeholder, so it does not need to be weakened.
+
+No OK, persisted mutation, live receipt, protected host input, worker mutation, or production
+runner followed.
+
+### v22 exact character-entry boundary
+
+Revision v22 remains Tier 3 and replaces only v21's editor text/commit delivery after the exact
+ID `32954` editor is verified:
+
+1. clear only that editor with bounded `WM_SETTEXT` and the empty string;
+2. derive the UTF-16 code units only from the already pinned origin
+   `http://127.0.0.1:8790` and deliver exactly one bounded `WM_CHAR=0x0102` per code unit, in order,
+   to the same editor handle;
+3. use bounded `WM_GETTEXTLENGTH=0x000E` and `WM_GETTEXT=0x000D`, capped by the existing 2048
+   character limit, to reread the editor internally and require ordinal equality with the pinned
+   origin without printing it; and
+4. deliver exactly one bounded `WM_CHAR` with carriage return `0x0D` to the same editor as the
+   commit message.
+
+The commit succeeds only if that call returns and the editor then disappears within the existing
+bounded wait. Do not send `WM_KEYDOWN` or `WM_KEYUP` to the destroyed editor. The existing immediate
+pending reread must then require one exact non-empty origin and no more than one empty placeholder
+before OK; the reopened persisted reread retains the same invariant.
+
+Any clear, character, readback, equality, commit, editor-disappearance, pending, persisted, or
+rollback failure uses the existing pinned editor/state/rollback errors and fails closed. No other
+string, character stream, key, handle, control, encoding conversion, clipboard, SendKeys, global
+input, focus/foreground mutation, retry, or fallback is authorized. All v20 editor identity, v19
+icon geometry, v18 mouse queue, exact terminal/signer/PID boundary, idempotency run, live receipt,
+verifier layers, Git operations, and canonical production command remain unchanged. No tracked
+path or dependency is added.
+
+### v22 RED -> GREEN additions
+
+Before implementation, add and observe RED constants and pure contracts that map only the exact
+pinned origin to its exact ordered UTF-16 `WM_CHAR` values and reject a missing, reordered, extra,
+changed, empty, or NUL-containing stream. Add a mocked-boundary contract proving clear occurs first,
+every exact origin code unit is delivered once to the same handle, exact bounded readback occurs
+before one carriage-return `WM_CHAR`, and no post-commit key message is attempted. Keep assertions
+frozen through GREEN. Kill and restore a mutant that drops or changes one origin character.
+
+Then rerun all focused tests, the exact selected-host transaction, a second idempotency transaction,
+and the live nonce-bound WebRequest probe. Only after a GREEN checkpoint, clean local-master
+fast-forward, and one fresh all-pass execution of the complete 13-layer verifier may EVIDENCE claim
+production success.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v22
+```
+
+### v22 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v22`. No v22 implementation occurred
+before that approval.
