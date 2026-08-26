@@ -25,7 +25,7 @@ $selectedIdentity = 'DESKTOP-MDC339G\Duong'
 $selectedTerminal = 'C:\Program Files\MetaTrader 5\terminal64.exe'
 $selectedStateRoot = 'C:\Users\Duong\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075'
 $slotInputRoot = 'C:\ProgramData\MarketLens\slot-inputs\slot-01'
-$expectedOrigin = 'http://127.0.0.1:8790'
+$expectedOrigin = 'http://127.0.0.1'
 $taskName = 'MarketLens MT5 Worker'
 $workerId = 'marketlens-baremetal-01'
 $baselineCommit = '097bcf7f523b1327b2c970036d24d1542740fd8b'
@@ -163,34 +163,34 @@ function Invoke-AllowlistMutationTests {
   $originalText = [Text.Encoding]::UTF8.GetString($originalBytes)
   $mutants = @(
     [pscustomobject]@{
-      name = 'accept-duplicate-key'
-      search = @'
-if ($webMatches.Count -ne 1 -or $urlMatches.Count -ne 1 -or
-      $allWebMatches.Count -ne 1 -or $allUrlMatches.Count -ne 1) {
-'@
-      replace = @'
-if ($webMatches.Count -lt 1 -or $urlMatches.Count -ne 1 -or
-      $allWebMatches.Count -lt 1 -or $allUrlMatches.Count -ne 1) {
-'@
+      name = 'permit-wildcard-listen-address'
+      search = '[string]$entry.listen_address -cne $listenAddress -or'
+      replace = '$false -or'
       expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_FAILED_OPEN'
     },
     [pscustomobject]@{
-      name = 'change-unrelated-bytes'
-      search = '$desiredText = Set-ProductionCommonIniValueSpans -Model $model -WebValue ''1'' -UrlValue $ExpectedOrigin'
-      replace = '$desiredText = (Set-ProductionCommonIniValueSpans -Model $model -WebValue ''1'' -UrlValue $ExpectedOrigin).Replace(''Untouched=tail'', ''Untouched=mutant'')'
-      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_UNRELATED_BYTES_CHANGED'
+      name = 'accept-wrong-connect-port'
+      search = '[int]$entry.connect_port -ne $connectPort) {'
+      replace = '$false) {'
+      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_FAILED_OPEN'
     },
     [pscustomobject]@{
-      name = 'accept-idempotency-hash-change'
-      search = 'DesiredHash = $sameHash'
-      replace = 'DesiredHash = ''PROVISIONING_IDEMPOTENCY_MUTANT'''
-      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_IDEMPOTENCY_INVALID'
+      name = 'ensure-proxy-before-pending-preflight'
+      search = @'
+$preflight = & $PreflightAction
+    $proxy = & $EnsureProxyAction
+'@
+      replace = @'
+$proxy = & $EnsureProxyAction
+    $preflight = & $PreflightAction
+'@
+      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_FAILED'
     },
     [pscustomobject]@{
-      name = 'report-original-after-rollback-failure'
-      search = 'if ($rollbackResult -ne $true) {'
-      replace = 'if ($false) {'
-      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_PROBE_FAILED'
+      name = 'delete-preexisting-mapping-during-rollback'
+      search = 'if ($null -ne $proxy -and [bool]$proxy.created) {'
+      replace = 'if ($null -ne $proxy) {'
+      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_FAILED'
     }
   )
   $killed = 0
@@ -580,14 +580,19 @@ try {
     Assert-NativeSuccess 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_POSITIVE_FAILED'
     Assert-PowerShellKnownBad `
       -Arguments @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $allowlistDriver, '-ContractTestsOnly', '-KnownBadControl') `
-      -ExpectedCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_SCHEMA_INVALID' `
+      -ExpectedCode 'PROVISIONING_WEBREQUEST_PORTPROXY_STATE_INVALID' `
       -FailedOpenCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_NEGATIVE_FAILED_OPEN' `
       -WrongReasonCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_NEGATIVE_WRONG_REASON'
     Assert-PowerShellKnownBad `
       -Arguments @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $allowlistDriver, '-ContractTestsOnly', '-UnreadableInputControl') `
-      -ExpectedCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONFIG_UNREADABLE' `
+      -ExpectedCode 'PROVISIONING_WEBREQUEST_PORTPROXY_OUTPUT_INVALID' `
       -FailedOpenCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_UNREADABLE_CONTROL_FAILED_OPEN' `
       -WrongReasonCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_UNREADABLE_CONTROL_WRONG_REASON'
+    Assert-PowerShellKnownBad `
+      -Arguments @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $allowlistDriver, '-ContractTestsOnly', '-OccupiedPortControl') `
+      -ExpectedCode 'PROVISIONING_WEBREQUEST_PORT80_OCCUPIED' `
+      -FailedOpenCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_OCCUPIED_CONTROL_FAILED_OPEN' `
+      -WrongReasonCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_OCCUPIED_CONTROL_WRONG_REASON'
     Invoke-AllowlistMutationTests
   }
 

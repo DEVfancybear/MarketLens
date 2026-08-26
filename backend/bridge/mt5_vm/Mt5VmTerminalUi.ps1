@@ -22,6 +22,81 @@ public static class Mt5VmTerminalUiNative {
     public IntPtr parameter;
   }
 
+  [StructLayout(LayoutKind.Sequential)]
+  private struct NativeRectangle {
+    public int left;
+    public int top;
+    public int right;
+    public int bottom;
+  }
+
+  [StructLayout(LayoutKind.Sequential)]
+  private struct NativePoint {
+    public int x;
+    public int y;
+  }
+
+  [StructLayout(LayoutKind.Sequential)]
+  private struct KeyboardInput {
+    public ushort virtualKey;
+    public ushort scanCode;
+    public uint flags;
+    public uint time;
+    public UIntPtr extraInfo;
+  }
+
+  [StructLayout(LayoutKind.Sequential)]
+  private struct MouseInput {
+    public int x;
+    public int y;
+    public uint mouseData;
+    public uint flags;
+    public uint time;
+    public UIntPtr extraInfo;
+  }
+
+  [StructLayout(LayoutKind.Sequential)]
+  private struct HardwareInput {
+    public uint message;
+    public ushort parameterLow;
+    public ushort parameterHigh;
+  }
+
+  [StructLayout(LayoutKind.Explicit)]
+  private struct InputUnion {
+    [FieldOffset(0)] public MouseInput mouse;
+    [FieldOffset(0)] public KeyboardInput keyboard;
+    [FieldOffset(0)] public HardwareInput hardware;
+  }
+
+  [StructLayout(LayoutKind.Sequential)]
+  private struct NativeInput {
+    public uint type;
+    public InputUnion data;
+  }
+
+  [StructLayout(LayoutKind.Sequential)]
+  private struct GuiThreadInfo {
+    public uint size;
+    public uint flags;
+    public IntPtr active;
+    public IntPtr focus;
+    public IntPtr capture;
+    public IntPtr menuOwner;
+    public IntPtr moveSize;
+    public IntPtr caret;
+    public NativeRectangle caretRectangle;
+  }
+
+  [StructLayout(LayoutKind.Sequential)]
+  private struct ListViewHitTestInfo {
+    public NativePoint point;
+    public uint flags;
+    public int item;
+    public int subItem;
+    public int group;
+  }
+
   [DllImport("user32.dll")]
   public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr parameter);
 
@@ -36,6 +111,22 @@ public static class Mt5VmTerminalUiNative {
   public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
 
   [DllImport("user32.dll")]
+  private static extern IntPtr GetForegroundWindow();
+
+  [DllImport("user32.dll", SetLastError = true)]
+  private static extern bool GetGUIThreadInfo(uint threadId, ref GuiThreadInfo info);
+
+  [DllImport("user32.dll", SetLastError = true)]
+  private static extern uint SendInput(
+    uint inputCount,
+    NativeInput[] inputs,
+    int inputSize
+  );
+
+  [DllImport("user32.dll")]
+  private static extern short GetKeyState(int virtualKey);
+
+  [DllImport("user32.dll")]
   public static extern bool IsWindow(IntPtr window);
 
   [DllImport("user32.dll")]
@@ -43,6 +134,9 @@ public static class Mt5VmTerminalUiNative {
 
   [DllImport("user32.dll")]
   public static extern bool IsWindowEnabled(IntPtr window);
+
+  [DllImport("user32.dll")]
+  private static extern bool GetClientRect(IntPtr window, out NativeRectangle rectangle);
 
   [DllImport("user32.dll")]
   public static extern IntPtr GetDlgItem(IntPtr dialog, int controlId);
@@ -69,6 +163,11 @@ public static class Mt5VmTerminalUiNative {
   );
 
   [DllImport("kernel32.dll", SetLastError = true)]
+  private static extern bool ReadProcessMemory(
+    IntPtr process, IntPtr address, byte[] buffer, UIntPtr size, out UIntPtr read
+  );
+
+  [DllImport("kernel32.dll", SetLastError = true)]
   private static extern bool CloseHandle(IntPtr handle);
 
   [DllImport("user32.dll", CharSet = CharSet.Auto)]
@@ -79,13 +178,31 @@ public static class Mt5VmTerminalUiNative {
     IntPtr lParam
   );
 
-  [DllImport("user32.dll", SetLastError = true)]
-  public static extern bool PostMessage(
+  [DllImport("user32.dll", EntryPoint = "PostMessageW", SetLastError = true)]
+  private static extern bool PostMessageW(
     IntPtr window,
     uint message,
     IntPtr wParam,
     IntPtr lParam
   );
+
+  public static bool PostMessage(
+    IntPtr window,
+    uint message,
+    IntPtr wParam,
+    IntPtr lParam
+  ) {
+    return PostMessageW(window, message, wParam, lParam);
+  }
+
+  public static bool TryPostMessage(
+    IntPtr window,
+    uint message,
+    IntPtr wParam,
+    IntPtr lParam
+  ) {
+    return PostMessageW(window, message, wParam, lParam);
+  }
 
   [DllImport("user32.dll", CharSet = CharSet.Unicode)]
   public static extern int GetClassName(IntPtr window, System.Text.StringBuilder text, int count);
@@ -143,6 +260,113 @@ public static class Mt5VmTerminalUiNative {
     return SendMessageTimeoutText(
       window, message, IntPtr.Zero, text, 0x0002, timeout, out result
     ) != IntPtr.Zero && result != IntPtr.Zero;
+  }
+
+  public static uint WindowProcessId(IntPtr window) {
+    uint processId;
+    if (window == IntPtr.Zero || GetWindowThreadProcessId(window, out processId) == 0) {
+      return 0;
+    }
+    return processId;
+  }
+
+  public static bool IsExactForegroundFocus(
+    IntPtr optionsWindow,
+    IntPtr editorWindow,
+    uint expectedProcessId
+  ) {
+    if (optionsWindow == IntPtr.Zero || editorWindow == IntPtr.Zero ||
+        expectedProcessId == 0 || GetForegroundWindow() != optionsWindow) {
+      return false;
+    }
+    uint optionsProcessId;
+    uint optionsThreadId = GetWindowThreadProcessId(optionsWindow, out optionsProcessId);
+    uint editorProcessId;
+    uint editorThreadId = GetWindowThreadProcessId(editorWindow, out editorProcessId);
+    if (optionsThreadId == 0 || editorThreadId == 0 ||
+        optionsThreadId != editorThreadId || optionsProcessId != expectedProcessId ||
+        editorProcessId != expectedProcessId) {
+      return false;
+    }
+    var info = new GuiThreadInfo();
+    info.size = (uint)Marshal.SizeOf(typeof(GuiThreadInfo));
+    return GetGUIThreadInfo(optionsThreadId, ref info) &&
+      info.active == optionsWindow && info.focus == editorWindow;
+  }
+
+  public static uint SendKeyboardInput(
+    ushort[] virtualKeys,
+    ushort[] scanCodes,
+    uint[] flags
+  ) {
+    if (virtualKeys == null || scanCodes == null || flags == null ||
+        virtualKeys.Length == 0 || virtualKeys.Length != scanCodes.Length ||
+        virtualKeys.Length != flags.Length) {
+      return 0;
+    }
+    var inputs = new NativeInput[virtualKeys.Length];
+    for (int index = 0; index < inputs.Length; index++) {
+      inputs[index].type = 1;
+      inputs[index].data.keyboard.virtualKey = virtualKeys[index];
+      inputs[index].data.keyboard.scanCode = scanCodes[index];
+      inputs[index].data.keyboard.flags = flags[index];
+      inputs[index].data.keyboard.time = 0;
+      inputs[index].data.keyboard.extraInfo = UIntPtr.Zero;
+    }
+    return SendInput(
+      (uint)inputs.Length,
+      inputs,
+      Marshal.SizeOf(typeof(NativeInput))
+    );
+  }
+
+  public static bool IsToggleKeyOff(int virtualKey) {
+    return (GetKeyState(virtualKey) & 0x0001) == 0;
+  }
+
+  public static string ReadBoundedText(
+    IntPtr window,
+    uint getTextLengthMessage,
+    uint getTextMessage,
+    int maxCharacters,
+    uint timeout
+  ) {
+    if (maxCharacters < 1) {
+      throw new InvalidOperationException(
+        "PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID"
+      );
+    }
+    IntPtr lengthResult;
+    if (!TryMessage(
+        window,
+        getTextLengthMessage,
+        IntPtr.Zero,
+        IntPtr.Zero,
+        timeout,
+        out lengthResult
+      ) || lengthResult.ToInt64() < 0 || lengthResult.ToInt64() > maxCharacters) {
+      throw new InvalidOperationException(
+        "PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID"
+      );
+    }
+    int length = (int)lengthResult.ToInt64();
+    var text = new System.Text.StringBuilder(length + 1);
+    IntPtr textResult;
+    if (SendMessageTimeoutBuffer(
+        window,
+        getTextMessage,
+        new IntPtr(length + 1),
+        text,
+        0x0002,
+        timeout,
+        out textResult
+      ) == IntPtr.Zero || textResult.ToInt64() < 0 ||
+      textResult.ToInt64() > length || text.Length != textResult.ToInt64()) {
+      throw new InvalidOperationException(
+        "PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID"
+      );
+    }
+    return text.ToString();
   }
 
   public static string WindowClass(IntPtr window) {
@@ -240,6 +464,282 @@ public static class Mt5VmTerminalUiNative {
     }
   }
 
+  public static string[] ReadListViewItems(
+    IntPtr list,
+    uint getItemCountMessage,
+    uint getItemTextMessage,
+    int maxItems,
+    int maxCharacters,
+    uint timeout
+  ) {
+    if (maxItems < 1 || maxCharacters < 1) {
+      throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_STATE_INVALID");
+    }
+    IntPtr countResult;
+    if (!TryMessage(
+        list, getItemCountMessage, IntPtr.Zero, IntPtr.Zero, timeout, out countResult
+      ) || countResult.ToInt64() < 0 || countResult.ToInt64() > maxItems) {
+      throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_STATE_INVALID");
+    }
+    int count = (int)countResult.ToInt64();
+    uint processId;
+    GetWindowThreadProcessId(list, out processId);
+    if (processId == 0) {
+      throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_CONTROL_INVALID");
+    }
+    var process = OpenProcess(0x0008 | 0x0010 | 0x0020, false, processId);
+    if (process == IntPtr.Zero) {
+      throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_LIST_READ_FAILED");
+    }
+    int itemSize = Marshal.SizeOf(typeof(ListViewItemState));
+    int textBytes = checked((maxCharacters + 2) * 2);
+    int totalBytes = checked(itemSize + textBytes);
+    var remote = VirtualAllocEx(
+      process, IntPtr.Zero, new UIntPtr((uint)totalBytes), 0x1000 | 0x2000, 0x04
+    );
+    if (remote == IntPtr.Zero) {
+      CloseHandle(process);
+      throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_LIST_READ_FAILED");
+    }
+    var local = Marshal.AllocHGlobal(itemSize);
+    try {
+      var items = new List<string>();
+      for (int index = 0; index < count; index++) {
+        var item = new ListViewItemState();
+        item.item = index;
+        item.subItem = 0;
+        item.text = new IntPtr(remote.ToInt64() + itemSize);
+        item.textLength = maxCharacters + 2;
+        Marshal.StructureToPtr(item, local, false);
+        var itemBytes = new byte[itemSize];
+        Marshal.Copy(local, itemBytes, 0, itemSize);
+        UIntPtr written;
+        if (!WriteProcessMemory(
+            process, remote, itemBytes, new UIntPtr((uint)itemSize), out written
+          ) || written.ToUInt64() != (ulong)itemSize) {
+          throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_LIST_READ_FAILED");
+        }
+        IntPtr textResult;
+        if (!TryMessage(
+            list, getItemTextMessage, new IntPtr(index), remote, timeout, out textResult
+          ) || textResult.ToInt64() < 0 || textResult.ToInt64() > maxCharacters) {
+          throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_STATE_INVALID");
+        }
+        var textBuffer = new byte[textBytes];
+        UIntPtr read;
+        if (!ReadProcessMemory(
+            process, item.text, textBuffer, new UIntPtr((uint)textBytes), out read
+          ) || read.ToUInt64() != (ulong)textBytes) {
+          throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_LIST_READ_FAILED");
+        }
+        string decoded = System.Text.Encoding.Unicode.GetString(textBuffer);
+        int terminator = decoded.IndexOf((char)0);
+        string value = terminator < 0 ? decoded : decoded.Substring(0, terminator);
+        if (value.Length > maxCharacters) {
+          throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_STATE_INVALID");
+        }
+        items.Add(value);
+      }
+      return items.ToArray();
+    } finally {
+      Marshal.FreeHGlobal(local);
+      VirtualFreeEx(process, remote, UIntPtr.Zero, 0x8000);
+      CloseHandle(process);
+    }
+  }
+
+  public static void ReplaceListViewItems(
+    IntPtr list,
+    uint deleteAllItemsMessage,
+    uint insertItemMessage,
+    string[] values,
+    int maxItems,
+    int maxCharacters,
+    uint timeout
+  ) {
+    if (values == null || values.Length > maxItems) {
+      throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_STATE_INVALID");
+    }
+    foreach (string value in values) {
+      if (value == null || value.Length > maxCharacters || value.IndexOf((char)0) >= 0) {
+        throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_STATE_INVALID");
+      }
+    }
+    IntPtr deleteResult;
+    if (!TryMessage(
+        list, deleteAllItemsMessage, IntPtr.Zero, IntPtr.Zero, timeout, out deleteResult
+      ) || deleteResult == IntPtr.Zero) {
+      throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_LIST_WRITE_FAILED");
+    }
+    uint processId;
+    GetWindowThreadProcessId(list, out processId);
+    if (processId == 0) {
+      throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_CONTROL_INVALID");
+    }
+    var process = OpenProcess(0x0008 | 0x0020, false, processId);
+    if (process == IntPtr.Zero) {
+      throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_LIST_WRITE_FAILED");
+    }
+    int itemSize = Marshal.SizeOf(typeof(ListViewItemState));
+    int textBytes = checked((maxCharacters + 1) * 2);
+    int totalBytes = checked(itemSize + textBytes);
+    var remote = VirtualAllocEx(
+      process, IntPtr.Zero, new UIntPtr((uint)totalBytes), 0x1000 | 0x2000, 0x04
+    );
+    if (remote == IntPtr.Zero) {
+      CloseHandle(process);
+      throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_LIST_WRITE_FAILED");
+    }
+    var local = Marshal.AllocHGlobal(itemSize);
+    try {
+      for (int index = 0; index < values.Length; index++) {
+        var encoded = System.Text.Encoding.Unicode.GetBytes(values[index] + (char)0);
+        UIntPtr written;
+        var remoteText = new IntPtr(remote.ToInt64() + itemSize);
+        if (!WriteProcessMemory(
+            process, remoteText, encoded, new UIntPtr((uint)encoded.Length), out written
+          ) || written.ToUInt64() != (ulong)encoded.Length) {
+          throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_LIST_WRITE_FAILED");
+        }
+        var item = new ListViewItemState();
+        item.mask = 0x0001;
+        item.item = index;
+        item.subItem = 0;
+        item.text = remoteText;
+        item.textLength = values[index].Length + 1;
+        Marshal.StructureToPtr(item, local, false);
+        var itemBytes = new byte[itemSize];
+        Marshal.Copy(local, itemBytes, 0, itemSize);
+        if (!WriteProcessMemory(
+            process, remote, itemBytes, new UIntPtr((uint)itemSize), out written
+          ) || written.ToUInt64() != (ulong)itemSize) {
+          throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_LIST_WRITE_FAILED");
+        }
+        IntPtr insertResult;
+        if (!TryMessage(
+            list, insertItemMessage, IntPtr.Zero, remote, timeout, out insertResult
+          ) || insertResult.ToInt64() != index) {
+          throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_LIST_WRITE_FAILED");
+        }
+      }
+    } finally {
+      Marshal.FreeHGlobal(local);
+      VirtualFreeEx(process, remote, UIntPtr.Zero, 0x8000);
+      CloseHandle(process);
+    }
+  }
+
+  public static int[] GetListViewActivationGeometry(
+    IntPtr list,
+    uint getItemRectangleMessage,
+    uint hitTestMessage,
+    int rectangleKind,
+    int itemIndex,
+    uint timeout
+  ) {
+    if (rectangleKind != 1 || itemIndex != 0) {
+      throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_HIT_INVALID");
+    }
+    NativeRectangle clientRectangle;
+    if (!GetClientRect(list, out clientRectangle) ||
+        clientRectangle.left != 0 || clientRectangle.top != 0 ||
+        clientRectangle.right <= 0 || clientRectangle.bottom <= 0) {
+      throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_HIT_INVALID");
+    }
+    uint processId;
+    GetWindowThreadProcessId(list, out processId);
+    if (processId == 0) {
+      throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_CONTROL_INVALID");
+    }
+    var process = OpenProcess(0x0008 | 0x0010 | 0x0020, false, processId);
+    if (process == IntPtr.Zero) {
+      throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_HIT_INVALID");
+    }
+    int rectangleSize = Marshal.SizeOf(typeof(NativeRectangle));
+    int hitSize = Marshal.SizeOf(typeof(ListViewHitTestInfo));
+    int allocationSize = Math.Max(rectangleSize, hitSize);
+    var remote = VirtualAllocEx(
+      process, IntPtr.Zero, new UIntPtr((uint)allocationSize), 0x1000 | 0x2000, 0x04
+    );
+    if (remote == IntPtr.Zero) {
+      CloseHandle(process);
+      throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_HIT_INVALID");
+    }
+    var local = Marshal.AllocHGlobal(allocationSize);
+    try {
+      var rectangle = new NativeRectangle();
+      rectangle.left = rectangleKind;
+      Marshal.StructureToPtr(rectangle, local, false);
+      var rectangleBytes = new byte[rectangleSize];
+      Marshal.Copy(local, rectangleBytes, 0, rectangleSize);
+      UIntPtr written;
+      if (!WriteProcessMemory(
+          process, remote, rectangleBytes, new UIntPtr((uint)rectangleSize), out written
+        ) || written.ToUInt64() != (ulong)rectangleSize) {
+        throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_HIT_INVALID");
+      }
+      IntPtr rectangleResult;
+      if (!TryMessage(
+          list, getItemRectangleMessage, new IntPtr(itemIndex), remote, timeout,
+          out rectangleResult
+        ) || rectangleResult == IntPtr.Zero) {
+        throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_HIT_INVALID");
+      }
+      var rectangleOutput = new byte[rectangleSize];
+      UIntPtr read;
+      if (!ReadProcessMemory(
+          process, remote, rectangleOutput, new UIntPtr((uint)rectangleSize), out read
+        ) || read.ToUInt64() != (ulong)rectangleSize) {
+        throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_HIT_INVALID");
+      }
+      Marshal.Copy(rectangleOutput, 0, local, rectangleSize);
+      rectangle = (NativeRectangle)Marshal.PtrToStructure(local, typeof(NativeRectangle));
+      if (rectangle.left < 0 || rectangle.top < 0 ||
+          rectangle.right <= rectangle.left || rectangle.bottom <= rectangle.top ||
+          rectangle.right > clientRectangle.right ||
+          rectangle.bottom > clientRectangle.bottom) {
+        throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_HIT_INVALID");
+      }
+      int x = rectangle.left + ((rectangle.right - rectangle.left) / 2);
+      int y = rectangle.top + ((rectangle.bottom - rectangle.top) / 2);
+
+      var hit = new ListViewHitTestInfo();
+      hit.point.x = x;
+      hit.point.y = y;
+      Marshal.StructureToPtr(hit, local, false);
+      var hitBytes = new byte[hitSize];
+      Marshal.Copy(local, hitBytes, 0, hitSize);
+      if (!WriteProcessMemory(
+          process, remote, hitBytes, new UIntPtr((uint)hitSize), out written
+        ) || written.ToUInt64() != (ulong)hitSize) {
+        throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_HIT_INVALID");
+      }
+      IntPtr hitResult;
+      if (!TryMessage(
+          list, hitTestMessage, IntPtr.Zero, remote, timeout, out hitResult
+        ) || hitResult.ToInt64() < 0) {
+        throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_HIT_INVALID");
+      }
+      var hitOutput = new byte[hitSize];
+      if (!ReadProcessMemory(
+          process, remote, hitOutput, new UIntPtr((uint)hitSize), out read
+        ) || read.ToUInt64() != (ulong)hitSize) {
+        throw new InvalidOperationException("PROVISIONING_WEBREQUEST_ALLOWLIST_HIT_INVALID");
+      }
+      Marshal.Copy(hitOutput, 0, local, hitSize);
+      hit = (ListViewHitTestInfo)Marshal.PtrToStructure(local, typeof(ListViewHitTestInfo));
+      return new int[] {
+        rectangle.left, rectangle.top, rectangle.right, rectangle.bottom,
+        x, y, (int)hitResult.ToInt64(), unchecked((int)hit.flags), hit.item,
+        clientRectangle.right, clientRectangle.bottom
+      };
+    } finally {
+      Marshal.FreeHGlobal(local);
+      VirtualFreeEx(process, remote, UIntPtr.Zero, 0x8000);
+      CloseHandle(process);
+    }
+  }
+
   public static IntPtr[] TopWindowsForProcess(uint wantedProcessId) {
     var windows = new List<IntPtr>();
     EnumWindows(delegate(IntPtr window, IntPtr parameter) {
@@ -272,13 +772,23 @@ function Get-MT5VmTerminalUiConstants {
     WmClose = 0x0010
     WmCommand = 0x0111
     WmKeyDown = 0x0100
+    WmChar = 0x0102
     WmKeyUp = 0x0101
+    WmLButtonDown = 0x0201
+    WmLButtonUp = 0x0202
+    WmLButtonDoubleClick = 0x0203
     BmGetCheck = 0x00F0
     BmSetCheck = 0x00F1
     BmClick = 0x00F5
     TcmGetCurrentSelection = 0x130B
     VirtualKeyLeft = 0x25
     VirtualKeyRight = 0x27
+    VirtualKeyReturn = 0x0D
+    VirtualKeyShift = 0x10
+    VirtualKeyCapsLock = 0x14
+    VirtualKeyOem1 = 0xBA
+    VirtualKeyOemPeriod = 0xBE
+    VirtualKeyOem2 = 0xBF
     ToolsOptionsCommand = 32849
     OptionsTabControl = 12320
     ExpertAdvisorsTabIndex = 3
@@ -301,6 +811,10 @@ function Get-MT5VmTerminalUiConstants {
     EnrollmentNext = 12324
     EnrollmentFinish = 12325
     WmSetText = 0x000C
+    WmGetText = 0x000D
+    WmGetTextLength = 0x000E
+    KeyEventKeyUp = 0x0002
+    KeyEventUnicode = 0x0004
     CbGetCount = 0x0146
     CbGetCurrentSelection = 0x0147
     CbGetItemText = 0x0148
@@ -310,7 +824,23 @@ function Get-MT5VmTerminalUiConstants {
     LvmGetNextItem = 0x100C
     LvmGetSelectedCount = 0x1032
     LvmSetItemState = 0x102B
+    LvmDeleteAllItems = 0x1009
+    LvmGetItemText = 0x1073
+    LvmInsertItem = 0x104D
+    LvmGetItemRect = 0x100E
+    LvmHitTest = 0x1012
+    LvirIcon = 0x0001
     LvniSelected = 0x0002
+    LvhtOnItemIcon = 0x0002
+    LvhtOnItemLabel = 0x0004
+    LvhtOnItemMask = 0x000E
+    WebRequestList = 10191
+    WebRequestEditor = 10325
+    WebRequestAddEditor = 32954
+    WebRequestMaxItems = 64
+    WebRequestMaxCharacters = 2048
+    UiMessageTimeoutMs = 2000
+    OwnedTerminalCloseTimeoutMs = 15000
   }
 }
 
@@ -797,6 +1327,1329 @@ function Cancel-MT5VmOptionsDialogBoundary {
     -ButtonId $constants.DialogCancel
 }
 
+function ConvertTo-MT5VmWebRequestState {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][object]$State
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  $enabledProperty = $State.PSObject.Properties['Enabled']
+  $itemsProperty = $State.PSObject.Properties['Items']
+  if ($null -eq $enabledProperty -or $enabledProperty.Value -notin 0, 1 -or
+      $null -eq $itemsProperty) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_STATE_INVALID'
+  }
+  $items = @($itemsProperty.Value)
+  if ($items.Count -gt $constants.WebRequestMaxItems) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_STATE_INVALID'
+  }
+  $normalizedItems = @()
+  foreach ($item in $items) {
+    if ($null -eq $item -or -not ($item -is [string]) -or
+        ([string]$item).Length -gt $constants.WebRequestMaxCharacters -or
+        ([string]$item).IndexOf([char]0) -ge 0) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_STATE_INVALID'
+    }
+    $normalizedItems += [string]$item
+  }
+  return [pscustomobject][ordered]@{
+    Enabled = [int]$enabledProperty.Value
+    Items = @($normalizedItems)
+  }
+}
+
+function Assert-MT5VmDesiredWebRequestState {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][object]$State,
+    [Parameter(Mandatory = $true)][string]$ExpectedOrigin
+  )
+
+  if ([string]::IsNullOrWhiteSpace($ExpectedOrigin)) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_STATE_INVALID'
+  }
+  $normalized = ConvertTo-MT5VmWebRequestState -State $State
+  $nonEmpty = @($normalized.Items | Where-Object { -not [string]::IsNullOrEmpty($_) })
+  $blank = @($normalized.Items | Where-Object { [string]::IsNullOrEmpty($_) })
+  if ($normalized.Enabled -ne 1 -or $blank.Count -gt 1 -or
+      $nonEmpty.Count -ne 1 -or
+      -not [string]::Equals(
+        [string]$nonEmpty[0],
+        $ExpectedOrigin,
+        [StringComparison]::Ordinal
+      )) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_STATE_INVALID'
+  }
+  return $normalized
+}
+
+function Test-MT5VmWebRequestStateExact {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][object]$Left,
+    [Parameter(Mandatory = $true)][object]$Right
+  )
+
+  $leftState = ConvertTo-MT5VmWebRequestState -State $Left
+  $rightState = ConvertTo-MT5VmWebRequestState -State $Right
+  if ($leftState.Enabled -ne $rightState.Enabled -or
+      $leftState.Items.Count -ne $rightState.Items.Count) {
+    return $false
+  }
+  for ($index = 0; $index -lt $leftState.Items.Count; $index++) {
+    if (-not [string]::Equals(
+        [string]$leftState.Items[$index],
+        [string]$rightState.Items[$index],
+        [StringComparison]::Ordinal
+      )) {
+      return $false
+    }
+  }
+  return $true
+}
+
+function Test-MT5VmDesiredWebRequestState {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][object]$State,
+    [Parameter(Mandatory = $true)][string]$ExpectedOrigin
+  )
+
+  try {
+    $null = Assert-MT5VmDesiredWebRequestState `
+      -State $State `
+      -ExpectedOrigin $ExpectedOrigin
+    return $true
+  } catch {
+    return $false
+  }
+}
+
+function Get-MT5VmWebRequestControlMapBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$OptionsHandle
+  )
+
+  try {
+    Select-MT5VmExpertAdvisorsTabBoundary -OptionsHandle $OptionsHandle
+    $constants = Get-MT5VmTerminalUiConstants
+    $checkboxMatches = @([Mt5VmTerminalUiNative]::DescendantsWithControlId(
+        $OptionsHandle,
+        $constants.AllowWebRequest
+      ))
+    $listMatches = @([Mt5VmTerminalUiNative]::DescendantsWithControlId(
+        $OptionsHandle,
+        $constants.WebRequestList
+      ))
+    if ($checkboxMatches.Count -ne 1 -or $listMatches.Count -ne 1) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTROL_INVALID'
+    }
+    $checkbox = [IntPtr]$checkboxMatches[0]
+    $list = [IntPtr]$listMatches[0]
+    if ([Mt5VmTerminalUiNative]::WindowClass($checkbox) -cne 'Button' -or
+        [Mt5VmTerminalUiNative]::WindowClass($list) -cne 'SysListView32' -or
+        -not [Mt5VmTerminalUiNative]::IsWindowVisible($checkbox) -or
+        -not [Mt5VmTerminalUiNative]::IsWindowEnabled($checkbox) -or
+        -not [Mt5VmTerminalUiNative]::IsWindowVisible($list)) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTROL_INVALID'
+    }
+    return [ordered]@{
+      Checkbox = $checkbox
+      List = $list
+    }
+  } catch {
+    if ([string]$_.Exception.Message -match '^PROVISIONING_WEBREQUEST_ALLOWLIST_') {
+      throw
+    }
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTROL_INVALID'
+  }
+}
+
+function Invoke-MT5VmBoundedUiMessage {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$Handle,
+    [Parameter(Mandatory = $true)][uint32]$Message,
+    [IntPtr]$WParam = [IntPtr]::Zero,
+    [IntPtr]$LParam = [IntPtr]::Zero
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  $result = [IntPtr]::Zero
+  if (-not [Mt5VmTerminalUiNative]::TryMessage(
+      $Handle,
+      $Message,
+      $WParam,
+      $LParam,
+      [uint32]$constants.UiMessageTimeoutMs,
+      [ref]$result
+    )) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTROL_INVALID'
+  }
+  return $result
+}
+
+function Invoke-MT5VmQueuedUiMessageBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$Handle,
+    [Parameter(Mandatory = $true)][uint32]$Message,
+    [IntPtr]$WParam = [IntPtr]::Zero,
+    [IntPtr]$LParam = [IntPtr]::Zero
+  )
+
+  if ($Handle -eq [IntPtr]::Zero -or
+      -not [Mt5VmTerminalUiNative]::TryPostMessage(
+      $Handle,
+      $Message,
+      $WParam,
+      $LParam
+    )) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_SEQUENCE_QUEUE_FAILED'
+  }
+  return $true
+}
+
+function Assert-MT5VmListActivationGeometry {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][int]$Left,
+    [Parameter(Mandatory = $true)][int]$Top,
+    [Parameter(Mandatory = $true)][int]$Right,
+    [Parameter(Mandatory = $true)][int]$Bottom,
+    [Parameter(Mandatory = $true)][int]$HitX,
+    [Parameter(Mandatory = $true)][int]$HitY,
+    [Parameter(Mandatory = $true)][int]$HitIndex,
+    [Parameter(Mandatory = $true)][uint32]$HitFlags
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  if ($Left -lt 0 -or $Top -lt 0 -or $Right -le $Left -or $Bottom -le $Top -or
+      $Right -gt [int16]::MaxValue -or $Bottom -gt [int16]::MaxValue) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_HIT_INVALID'
+  }
+  $expectedX = $Left + [int][Math]::Floor(($Right - $Left) / 2.0)
+  $expectedY = $Top + [int][Math]::Floor(($Bottom - $Top) / 2.0)
+  if ($HitX -ne $expectedX -or $HitY -ne $expectedY -or
+      $HitX -lt $Left -or $HitX -ge $Right -or
+      $HitY -lt $Top -or $HitY -ge $Bottom -or
+      $HitIndex -ne 0 -or
+      ($HitFlags -band [uint32]$constants.LvhtOnItemMask) -eq 0) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_HIT_INVALID'
+  }
+  return [pscustomobject][ordered]@{
+    x = $expectedX
+    y = $expectedY
+  }
+}
+
+function Assert-MT5VmIconActivationGeometry {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][int]$RectangleKind,
+    [Parameter(Mandatory = $true)][int]$ClientWidth,
+    [Parameter(Mandatory = $true)][int]$ClientHeight,
+    [Parameter(Mandatory = $true)][int]$Left,
+    [Parameter(Mandatory = $true)][int]$Top,
+    [Parameter(Mandatory = $true)][int]$Right,
+    [Parameter(Mandatory = $true)][int]$Bottom,
+    [Parameter(Mandatory = $true)][int]$HitX,
+    [Parameter(Mandatory = $true)][int]$HitY,
+    [Parameter(Mandatory = $true)][int]$HitIndex,
+    [Parameter(Mandatory = $true)][uint32]$HitFlags
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  if ($RectangleKind -ne [int]$constants.LvirIcon -or
+      $ClientWidth -lt 1 -or $ClientHeight -lt 1 -or
+      $Left -lt 0 -or $Top -lt 0 -or $Right -le $Left -or $Bottom -le $Top -or
+      $Right -gt $ClientWidth -or $Bottom -gt $ClientHeight -or
+      ($HitFlags -band [uint32]$constants.LvhtOnItemIcon) -eq 0) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_HIT_INVALID'
+  }
+  return Assert-MT5VmListActivationGeometry `
+    -Left $Left `
+    -Top $Top `
+    -Right $Right `
+    -Bottom $Bottom `
+    -HitX $HitX `
+    -HitY $HitY `
+    -HitIndex $HitIndex `
+    -HitFlags $HitFlags
+}
+
+function Get-MT5VmListActivationGeometryBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$ListHandle
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  $observed = [int[]][Mt5VmTerminalUiNative]::GetListViewActivationGeometry(
+    $ListHandle,
+    [uint32]$constants.LvmGetItemRect,
+    [uint32]$constants.LvmHitTest,
+    [int]$constants.LvirIcon,
+    0,
+    [uint32]$constants.UiMessageTimeoutMs
+  )
+  if ($observed.Count -ne 11 -or $observed[6] -ne $observed[8]) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_HIT_INVALID'
+  }
+  return Assert-MT5VmIconActivationGeometry `
+    -RectangleKind ([int]$constants.LvirIcon) `
+    -ClientWidth $observed[9] `
+    -ClientHeight $observed[10] `
+    -Left $observed[0] `
+    -Top $observed[1] `
+    -Right $observed[2] `
+    -Bottom $observed[3] `
+    -HitX $observed[4] `
+    -HitY $observed[5] `
+    -HitIndex $observed[6] `
+      -HitFlags ([uint32]$observed[7])
+}
+
+function Assert-MT5VmMouseActivationSequence {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][uint32[]]$Messages,
+    [Parameter(Mandatory = $true)][long[]]$WParams,
+    [Parameter(Mandatory = $true)][long[]]$LParams,
+    [Parameter(Mandatory = $true)][long]$ExpectedPoint
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  $expectedMessages = [uint32[]]@(
+    $constants.WmLButtonDown,
+    $constants.WmLButtonUp,
+    $constants.WmLButtonDoubleClick,
+    $constants.WmLButtonUp
+  )
+  $expectedFlags = [long[]]@(1, 0, 1, 0)
+  if ($Messages.Count -ne 4 -or $WParams.Count -ne 4 -or $LParams.Count -ne 4) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_SEQUENCE_INVALID'
+  }
+  for ($index = 0; $index -lt 4; $index++) {
+    if ($Messages[$index] -ne $expectedMessages[$index] -or
+        $WParams[$index] -ne $expectedFlags[$index] -or
+        $LParams[$index] -ne $ExpectedPoint) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_SEQUENCE_INVALID'
+    }
+  }
+  return $true
+}
+
+function Invoke-MT5VmMouseActivationSequenceBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$Handle,
+    [Parameter(Mandatory = $true)][uint32[]]$Messages,
+    [Parameter(Mandatory = $true)][long[]]$WParams,
+    [Parameter(Mandatory = $true)][long[]]$LParams,
+    [Parameter(Mandatory = $true)][long]$ExpectedPoint
+  )
+
+  $null = Assert-MT5VmMouseActivationSequence `
+    -Messages $Messages `
+    -WParams $WParams `
+    -LParams $LParams `
+    -ExpectedPoint $ExpectedPoint
+  for ($messageIndex = 0; $messageIndex -lt 4; $messageIndex++) {
+    $null = Invoke-MT5VmQueuedUiMessageBoundary `
+      -Handle $Handle `
+      -Message $Messages[$messageIndex] `
+      -WParam ([IntPtr]$WParams[$messageIndex]) `
+      -LParam ([IntPtr]$LParams[$messageIndex])
+  }
+  return $true
+}
+
+function Assert-MT5VmWebRequestEditorCandidate {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][int]$ExpectedControlId,
+    [Parameter(Mandatory = $true)][int]$ObservedControlId,
+    [Parameter(Mandatory = $true)][int]$CandidateCount,
+    [Parameter(Mandatory = $true)][AllowEmptyString()][string]$WindowClass,
+    [Parameter(Mandatory = $true)][bool]$Visible,
+    [Parameter(Mandatory = $true)][bool]$Enabled
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  if ($ExpectedControlId -ne [int]$constants.WebRequestAddEditor -or
+      $ObservedControlId -ne $ExpectedControlId -or
+      $CandidateCount -ne 1 -or
+      $WindowClass -cne 'Edit' -or
+      -not $Visible -or -not $Enabled) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+  return $true
+}
+
+function Assert-MT5VmEditorCommitSequence {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][uint32[]]$Messages,
+    [Parameter(Mandatory = $true)][long[]]$WParams
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  $expectedMessages = [uint32[]]@(
+    $constants.WmKeyDown,
+    $constants.WmChar,
+    $constants.WmKeyUp
+  )
+  if ($Messages.Count -ne 3 -or $WParams.Count -ne 3) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+  for ($index = 0; $index -lt 3; $index++) {
+    if ($Messages[$index] -ne $expectedMessages[$index] -or
+        $WParams[$index] -ne [long]$constants.VirtualKeyReturn) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+    }
+  }
+  return $true
+}
+
+function Invoke-MT5VmEditorCommitSequenceBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$EditorHandle
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  $messages = [uint32[]]@(
+    $constants.WmKeyDown,
+    $constants.WmChar,
+    $constants.WmKeyUp
+  )
+  $wParams = [long[]]@(
+    $constants.VirtualKeyReturn,
+    $constants.VirtualKeyReturn,
+    $constants.VirtualKeyReturn
+  )
+  $null = Assert-MT5VmEditorCommitSequence `
+    -Messages $messages `
+    -WParams $wParams
+  for ($index = 0; $index -lt 3; $index++) {
+    try {
+      $null = Invoke-MT5VmBoundedUiMessage `
+        -Handle $EditorHandle `
+        -Message $messages[$index] `
+        -WParam ([IntPtr]$wParams[$index]) `
+        -LParam ([IntPtr]::Zero)
+    } catch {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+    }
+  }
+  return $true
+}
+
+function Assert-MT5VmExactOriginCharacterStream {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][string]$Origin,
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][long[]]$CharacterCodes,
+    [Parameter(Mandatory = $true)][string]$ExpectedOrigin
+  )
+
+  if ([string]::IsNullOrWhiteSpace($Origin) -or
+      $Origin.Contains([char]0) -or
+      -not [string]::Equals($Origin, $ExpectedOrigin, [StringComparison]::Ordinal) -or
+      $CharacterCodes.Count -ne $Origin.Length) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+  for ($index = 0; $index -lt $Origin.Length; $index++) {
+    if ($CharacterCodes[$index] -eq 0 -or
+        $CharacterCodes[$index] -ne [long][int]$Origin[$index]) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+    }
+  }
+  return $true
+}
+
+function Set-MT5VmEditorTextBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$EditorHandle,
+    [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  if (-not [Mt5VmTerminalUiNative]::TrySetText(
+      $EditorHandle,
+      [uint32]$constants.WmSetText,
+      $Text,
+      [uint32]$constants.UiMessageTimeoutMs
+    )) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+  return $true
+}
+
+function Read-MT5VmEditorTextBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$EditorHandle
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  return [Mt5VmTerminalUiNative]::ReadBoundedText(
+    $EditorHandle,
+    [uint32]$constants.WmGetTextLength,
+    [uint32]$constants.WmGetText,
+    [int]$constants.WebRequestMaxCharacters,
+    [uint32]$constants.UiMessageTimeoutMs
+  )
+}
+
+function Invoke-MT5VmExactEditorTextBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$EditorHandle,
+    [Parameter(Mandatory = $true)][string]$ExpectedOrigin
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  $null = Set-MT5VmEditorTextBoundary -EditorHandle $EditorHandle -Text ''
+  [long[]]$characterCodes = @(
+    $ExpectedOrigin.ToCharArray() | ForEach-Object { [long][int]$_ }
+  )
+  $null = Assert-MT5VmExactOriginCharacterStream `
+    -Origin $ExpectedOrigin `
+    -CharacterCodes $characterCodes `
+    -ExpectedOrigin $ExpectedOrigin
+  foreach ($characterCode in $characterCodes) {
+    try {
+      $null = Invoke-MT5VmBoundedUiMessage `
+        -Handle $EditorHandle `
+        -Message ([uint32]$constants.WmChar) `
+        -WParam ([IntPtr]$characterCode) `
+        -LParam ([IntPtr]::Zero)
+    } catch {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+    }
+  }
+  $readback = Read-MT5VmEditorTextBoundary -EditorHandle $EditorHandle
+  if (-not [string]::Equals(
+      [string]$readback,
+      $ExpectedOrigin,
+      [StringComparison]::Ordinal
+    )) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+  try {
+    $null = Invoke-MT5VmBoundedUiMessage `
+      -Handle $EditorHandle `
+      -Message ([uint32]$constants.WmChar) `
+      -WParam ([IntPtr]$constants.VirtualKeyReturn) `
+      -LParam ([IntPtr]::Zero)
+  } catch {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+  return $true
+}
+
+function Invoke-MT5VmQueuedExactEditorTextBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$EditorHandle,
+    [Parameter(Mandatory = $true)][string]$ExpectedOrigin
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  $null = Set-MT5VmEditorTextBoundary -EditorHandle $EditorHandle -Text ''
+  [long[]]$characterCodes = @(
+    $ExpectedOrigin.ToCharArray() | ForEach-Object { [long][int]$_ }
+  )
+  $null = Assert-MT5VmExactOriginCharacterStream `
+    -Origin $ExpectedOrigin `
+    -CharacterCodes $characterCodes `
+    -ExpectedOrigin $ExpectedOrigin
+  foreach ($characterCode in $characterCodes) {
+    try {
+      $null = Invoke-MT5VmQueuedUiMessageBoundary `
+        -Handle $EditorHandle `
+        -Message ([uint32]$constants.WmChar) `
+        -WParam ([IntPtr]$characterCode) `
+        -LParam ([IntPtr]::Zero)
+    } catch {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+    }
+  }
+
+  $readbackExact = $false
+  for ($attempt = 0; $attempt -lt 25; $attempt++) {
+    try {
+      $readback = Read-MT5VmEditorTextBoundary -EditorHandle $EditorHandle
+    } catch {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+    }
+    if ([string]::Equals(
+        [string]$readback,
+        $ExpectedOrigin,
+        [StringComparison]::Ordinal
+      )) {
+      $readbackExact = $true
+      break
+    }
+    Start-Sleep -Milliseconds 100
+  }
+  if (-not $readbackExact) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+
+  try {
+    $null = Invoke-MT5VmQueuedUiMessageBoundary `
+      -Handle $EditorHandle `
+      -Message ([uint32]$constants.WmChar) `
+      -WParam ([IntPtr]$constants.VirtualKeyReturn) `
+      -LParam ([IntPtr]::Zero)
+  } catch {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+  return $true
+}
+
+function New-MT5VmExactKeyboardInputPlan {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][string]$Origin,
+    [Parameter(Mandatory = $true)][string]$ExpectedOrigin
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  [long[]]$characterCodes = @(
+    $Origin.ToCharArray() | ForEach-Object { [long][int]$_ }
+  )
+  $null = Assert-MT5VmExactOriginCharacterStream `
+    -Origin $Origin `
+    -CharacterCodes $characterCodes `
+    -ExpectedOrigin $ExpectedOrigin
+  $plan = [Collections.Generic.List[object]]::new()
+  foreach ($characterCode in $characterCodes) {
+    $plan.Add([pscustomobject][ordered]@{
+        VirtualKey = 0
+        ScanCode = $characterCode
+        Flags = [long]$constants.KeyEventUnicode
+      })
+    $plan.Add([pscustomobject][ordered]@{
+        VirtualKey = 0
+        ScanCode = $characterCode
+        Flags = [long]($constants.KeyEventUnicode -bor $constants.KeyEventKeyUp)
+      })
+  }
+  $plan.Add([pscustomobject][ordered]@{
+      VirtualKey = [long]$constants.VirtualKeyReturn
+      ScanCode = 0
+      Flags = 0
+    })
+  $plan.Add([pscustomobject][ordered]@{
+      VirtualKey = [long]$constants.VirtualKeyReturn
+      ScanCode = 0
+      Flags = [long]$constants.KeyEventKeyUp
+    })
+  $result = @($plan)
+  $null = Assert-MT5VmExactKeyboardInputPlan `
+    -Origin $Origin `
+    -Plan $result `
+    -ExpectedOrigin $ExpectedOrigin
+  return $result
+}
+
+function Assert-MT5VmExactKeyboardInputPlan {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][string]$Origin,
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Plan,
+    [Parameter(Mandatory = $true)][string]$ExpectedOrigin
+  )
+
+  try {
+    $constants = Get-MT5VmTerminalUiConstants
+    [long[]]$characterCodes = @(
+      $Origin.ToCharArray() | ForEach-Object { [long][int]$_ }
+    )
+    $null = Assert-MT5VmExactOriginCharacterStream `
+      -Origin $Origin `
+      -CharacterCodes $characterCodes `
+      -ExpectedOrigin $ExpectedOrigin
+    if ($Plan.Count -ne (($characterCodes.Count * 2) + 2)) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+    }
+    for ($characterIndex = 0; $characterIndex -lt $characterCodes.Count; $characterIndex++) {
+      $down = $Plan[$characterIndex * 2]
+      $up = $Plan[($characterIndex * 2) + 1]
+      foreach ($record in @($down, $up)) {
+        foreach ($propertyName in @('VirtualKey', 'ScanCode', 'Flags')) {
+          if ($null -eq $record -or
+              $null -eq $record.PSObject.Properties[$propertyName]) {
+            throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+          }
+        }
+      }
+      if ([long]$down.VirtualKey -ne 0 -or
+          [long]$down.ScanCode -ne $characterCodes[$characterIndex] -or
+          [long]$down.Flags -ne [long]$constants.KeyEventUnicode -or
+          [long]$up.VirtualKey -ne 0 -or
+          [long]$up.ScanCode -ne $characterCodes[$characterIndex] -or
+          [long]$up.Flags -ne [long](
+            $constants.KeyEventUnicode -bor $constants.KeyEventKeyUp
+          )) {
+        throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+      }
+    }
+    $returnDown = $Plan[$Plan.Count - 2]
+    $returnUp = $Plan[$Plan.Count - 1]
+    foreach ($record in @($returnDown, $returnUp)) {
+      foreach ($propertyName in @('VirtualKey', 'ScanCode', 'Flags')) {
+        if ($null -eq $record -or
+            $null -eq $record.PSObject.Properties[$propertyName]) {
+          throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+        }
+      }
+    }
+    if ([long]$returnDown.VirtualKey -ne [long]$constants.VirtualKeyReturn -or
+        [long]$returnDown.ScanCode -ne 0 -or [long]$returnDown.Flags -ne 0 -or
+        [long]$returnUp.VirtualKey -ne [long]$constants.VirtualKeyReturn -or
+        [long]$returnUp.ScanCode -ne 0 -or
+        [long]$returnUp.Flags -ne [long]$constants.KeyEventKeyUp) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+    }
+  } catch {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+  return $true
+}
+
+function Test-MT5VmExactEditorInputGuardBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$OptionsHandle,
+    [Parameter(Mandatory = $true)][IntPtr]$EditorHandle,
+    [Parameter(Mandatory = $true)][int]$ProcessId
+  )
+
+  if ($ProcessId -lt 1) { return $false }
+  return [Mt5VmTerminalUiNative]::IsExactForegroundFocus(
+    $OptionsHandle,
+    $EditorHandle,
+    [uint32]$ProcessId
+  )
+}
+
+function Invoke-MT5VmNativeKeyboardInputBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][object[]]$Plan
+  )
+
+  try {
+    [uint16[]]$virtualKeys = @($Plan | ForEach-Object { [uint16]$_.VirtualKey })
+    [uint16[]]$scanCodes = @($Plan | ForEach-Object { [uint16]$_.ScanCode })
+    [uint32[]]$flags = @($Plan | ForEach-Object { [uint32]$_.Flags })
+    return [int][Mt5VmTerminalUiNative]::SendKeyboardInput(
+      $virtualKeys,
+      $scanCodes,
+      $flags
+    )
+  } catch {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+}
+
+function Invoke-MT5VmGuardedExactKeyboardInputBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$OptionsHandle,
+    [Parameter(Mandatory = $true)][IntPtr]$EditorHandle,
+    [Parameter(Mandatory = $true)][int]$ProcessId,
+    [Parameter(Mandatory = $true)][string]$ExpectedOrigin
+  )
+
+  $plan = @(New-MT5VmExactKeyboardInputPlan `
+      -Origin $ExpectedOrigin `
+      -ExpectedOrigin $ExpectedOrigin)
+  $null = Assert-MT5VmExactKeyboardInputPlan `
+    -Origin $ExpectedOrigin `
+    -Plan $plan `
+    -ExpectedOrigin $ExpectedOrigin
+  $null = Set-MT5VmEditorTextBoundary -EditorHandle $EditorHandle -Text ''
+  if (-not (Test-MT5VmExactEditorInputGuardBoundary `
+      -OptionsHandle $OptionsHandle `
+      -EditorHandle $EditorHandle `
+      -ProcessId $ProcessId
+    )) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+  $inserted = Invoke-MT5VmNativeKeyboardInputBoundary -Plan $plan
+  if ([int]$inserted -ne $plan.Count) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+  return $true
+}
+
+function ConvertTo-MT5VmExactVirtualKeyRecords {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][char[]]$Characters
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  $records = [Collections.Generic.List[object]]::new()
+  foreach ($character in $Characters) {
+    $characterCode = [int]$character
+    $virtualKey = 0
+    if ($characterCode -ge [int][char]'a' -and
+        $characterCode -le [int][char]'z') {
+      $virtualKey = $characterCode - 32
+    } elseif ($characterCode -ge [int][char]'0' -and
+        $characterCode -le [int][char]'9') {
+      $virtualKey = $characterCode
+    } elseif ($characterCode -eq [int][char]'.') {
+      $virtualKey = [int]$constants.VirtualKeyOemPeriod
+    } elseif ($characterCode -eq [int][char]'/') {
+      $virtualKey = [int]$constants.VirtualKeyOem2
+    } elseif ($characterCode -eq [int][char]':') {
+      $records.Add([pscustomobject][ordered]@{
+          VirtualKey = [long]$constants.VirtualKeyShift
+          ScanCode = 0
+          Flags = 0
+        })
+      $records.Add([pscustomobject][ordered]@{
+          VirtualKey = [long]$constants.VirtualKeyOem1
+          ScanCode = 0
+          Flags = 0
+        })
+      $records.Add([pscustomobject][ordered]@{
+          VirtualKey = [long]$constants.VirtualKeyOem1
+          ScanCode = 0
+          Flags = [long]$constants.KeyEventKeyUp
+        })
+      $records.Add([pscustomobject][ordered]@{
+          VirtualKey = [long]$constants.VirtualKeyShift
+          ScanCode = 0
+          Flags = [long]$constants.KeyEventKeyUp
+        })
+      continue
+    } else {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+    }
+    $records.Add([pscustomobject][ordered]@{
+        VirtualKey = [long]$virtualKey
+        ScanCode = 0
+        Flags = 0
+      })
+    $records.Add([pscustomobject][ordered]@{
+        VirtualKey = [long]$virtualKey
+        ScanCode = 0
+        Flags = [long]$constants.KeyEventKeyUp
+      })
+  }
+  return @($records)
+}
+
+function Assert-MT5VmExactVirtualKeyInputPlan {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][string]$Origin,
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Plan,
+    [Parameter(Mandatory = $true)][string]$ExpectedOrigin
+  )
+
+  try {
+    [long[]]$characterCodes = @(
+      $Origin.ToCharArray() | ForEach-Object { [long][int]$_ }
+    )
+    $null = Assert-MT5VmExactOriginCharacterStream `
+      -Origin $Origin `
+      -CharacterCodes $characterCodes `
+      -ExpectedOrigin $ExpectedOrigin
+    $expected = @(ConvertTo-MT5VmExactVirtualKeyRecords `
+        -Characters $Origin.ToCharArray())
+    if ($Plan.Count -ne $expected.Count) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+    }
+    for ($index = 0; $index -lt $expected.Count; $index++) {
+      foreach ($propertyName in @('VirtualKey', 'ScanCode', 'Flags')) {
+        if ($null -eq $Plan[$index] -or
+            $null -eq $Plan[$index].PSObject.Properties[$propertyName]) {
+          throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+        }
+      }
+      if ([long]$Plan[$index].VirtualKey -ne [long]$expected[$index].VirtualKey -or
+          [long]$Plan[$index].ScanCode -ne [long]$expected[$index].ScanCode -or
+          [long]$Plan[$index].Flags -ne [long]$expected[$index].Flags) {
+        throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+      }
+    }
+  } catch {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+  return $true
+}
+
+function New-MT5VmExactVirtualKeyInputPlan {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][string]$Origin,
+    [Parameter(Mandatory = $true)][string]$ExpectedOrigin
+  )
+
+  [long[]]$characterCodes = @(
+    $Origin.ToCharArray() | ForEach-Object { [long][int]$_ }
+  )
+  $null = Assert-MT5VmExactOriginCharacterStream `
+    -Origin $Origin `
+    -CharacterCodes $characterCodes `
+    -ExpectedOrigin $ExpectedOrigin
+  $plan = @(ConvertTo-MT5VmExactVirtualKeyRecords -Characters $Origin.ToCharArray())
+  $null = Assert-MT5VmExactVirtualKeyInputPlan `
+    -Origin $Origin `
+    -Plan $plan `
+    -ExpectedOrigin $ExpectedOrigin
+  return $plan
+}
+
+function Assert-MT5VmExactReturnKeyInputPlan {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Plan
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  if ($Plan.Count -ne 2) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+  foreach ($record in $Plan) {
+    foreach ($propertyName in @('VirtualKey', 'ScanCode', 'Flags')) {
+      if ($null -eq $record -or
+          $null -eq $record.PSObject.Properties[$propertyName]) {
+        throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+      }
+    }
+  }
+  if ([long]$Plan[0].VirtualKey -ne [long]$constants.VirtualKeyReturn -or
+      [long]$Plan[0].ScanCode -ne 0 -or [long]$Plan[0].Flags -ne 0 -or
+      [long]$Plan[1].VirtualKey -ne [long]$constants.VirtualKeyReturn -or
+      [long]$Plan[1].ScanCode -ne 0 -or
+      [long]$Plan[1].Flags -ne [long]$constants.KeyEventKeyUp) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+  return $true
+}
+
+function New-MT5VmReturnKeyInputPlan {
+  [CmdletBinding()]
+  param()
+
+  $constants = Get-MT5VmTerminalUiConstants
+  $plan = @(
+    [pscustomobject][ordered]@{
+      VirtualKey = [long]$constants.VirtualKeyReturn
+      ScanCode = 0
+      Flags = 0
+    },
+    [pscustomobject][ordered]@{
+      VirtualKey = [long]$constants.VirtualKeyReturn
+      ScanCode = 0
+      Flags = [long]$constants.KeyEventKeyUp
+    }
+  )
+  $null = Assert-MT5VmExactReturnKeyInputPlan -Plan $plan
+  return $plan
+}
+
+function Test-MT5VmCapsLockOffBoundary {
+  [CmdletBinding()]
+  param()
+
+  $constants = Get-MT5VmTerminalUiConstants
+  return [Mt5VmTerminalUiNative]::IsToggleKeyOff(
+    [int]$constants.VirtualKeyCapsLock
+  )
+}
+
+function Invoke-MT5VmGuardedExactVirtualKeyInputBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$OptionsHandle,
+    [Parameter(Mandatory = $true)][IntPtr]$EditorHandle,
+    [Parameter(Mandatory = $true)][int]$ProcessId,
+    [Parameter(Mandatory = $true)][string]$ExpectedOrigin
+  )
+
+  $characterPlan = @(New-MT5VmExactVirtualKeyInputPlan `
+      -Origin $ExpectedOrigin `
+      -ExpectedOrigin $ExpectedOrigin)
+  $returnPlan = @(New-MT5VmReturnKeyInputPlan)
+  $null = Set-MT5VmEditorTextBoundary -EditorHandle $EditorHandle -Text ''
+  if (-not (Test-MT5VmCapsLockOffBoundary)) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+  if (-not (Test-MT5VmExactEditorInputGuardBoundary `
+      -OptionsHandle $OptionsHandle `
+      -EditorHandle $EditorHandle `
+      -ProcessId $ProcessId
+    )) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+  $insertedCharacters = Invoke-MT5VmNativeKeyboardInputBoundary -Plan $characterPlan
+  if ([int]$insertedCharacters -ne $characterPlan.Count) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+
+  $readbackExact = $false
+  for ($attempt = 0; $attempt -lt 25; $attempt++) {
+    try {
+      $readback = Read-MT5VmEditorTextBoundary -EditorHandle $EditorHandle
+    } catch {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+    }
+    if ([string]::Equals(
+        [string]$readback,
+        $ExpectedOrigin,
+        [StringComparison]::Ordinal
+      )) {
+      $readbackExact = $true
+      break
+    }
+    Start-Sleep -Milliseconds 100
+  }
+  if (-not $readbackExact) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+  if (-not (Test-MT5VmExactEditorInputGuardBoundary `
+      -OptionsHandle $OptionsHandle `
+      -EditorHandle $EditorHandle `
+      -ProcessId $ProcessId
+    )) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+  $insertedReturn = Invoke-MT5VmNativeKeyboardInputBoundary -Plan $returnPlan
+  if ([int]$insertedReturn -ne $returnPlan.Count) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+  return $true
+}
+
+function Get-MT5VmWebRequestEditorBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$OptionsHandle
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  $matches = @([Mt5VmTerminalUiNative]::DescendantsWithControlId(
+      $OptionsHandle,
+      $constants.WebRequestAddEditor
+    ))
+  if ($matches.Count -eq 0) {
+    return [IntPtr]::Zero
+  }
+  if ($matches.Count -ne 1) {
+    $null = Assert-MT5VmWebRequestEditorCandidate `
+      -ExpectedControlId ([int]$constants.WebRequestAddEditor) `
+      -ObservedControlId ([int]$constants.WebRequestAddEditor) `
+      -CandidateCount $matches.Count `
+      -WindowClass '' `
+      -Visible $false `
+      -Enabled $false
+  }
+  $editor = [IntPtr]$matches[0]
+  $null = Assert-MT5VmWebRequestEditorCandidate `
+    -ExpectedControlId ([int]$constants.WebRequestAddEditor) `
+    -ObservedControlId ([Mt5VmTerminalUiNative]::GetDlgCtrlID($editor)) `
+    -CandidateCount $matches.Count `
+    -WindowClass ([Mt5VmTerminalUiNative]::WindowClass($editor)) `
+    -Visible ([Mt5VmTerminalUiNative]::IsWindowVisible($editor)) `
+    -Enabled ([Mt5VmTerminalUiNative]::IsWindowEnabled($editor))
+  return $editor
+}
+
+function Invoke-MT5VmWebRequestEditorApplyBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$OptionsHandle,
+    [Parameter(Mandatory = $true)][string]$ExpectedOrigin
+  )
+
+  $before = Read-MT5VmWebRequestStateBoundary -OptionsHandle $OptionsHandle
+  if ($before.Enabled -ne 0 -or $before.Items.Count -ne 1 -or
+      -not [string]::IsNullOrEmpty([string]$before.Items[0])) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_STATE_INVALID'
+  }
+  $constants = Get-MT5VmTerminalUiConstants
+  $controls = Get-MT5VmWebRequestControlMapBoundary -OptionsHandle $OptionsHandle
+  $null = Invoke-MT5VmBoundedUiMessage `
+    -Handle ([IntPtr]$controls.Checkbox) `
+    -Message ([uint32]$constants.BmClick)
+  $controlsReady = $false
+  for ($attempt = 0; $attempt -lt 25; $attempt++) {
+    $checked = Invoke-MT5VmBoundedUiMessage `
+      -Handle ([IntPtr]$controls.Checkbox) `
+      -Message ([uint32]$constants.BmGetCheck)
+    if ([int]$checked.ToInt64() -eq 1 -and
+        [Mt5VmTerminalUiNative]::IsWindowEnabled([IntPtr]$controls.List)) {
+      $controlsReady = $true
+      break
+    }
+    Start-Sleep -Milliseconds 100
+  }
+  if (-not $controlsReady) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTROL_INVALID'
+  }
+
+  $geometry = Get-MT5VmListActivationGeometryBoundary `
+    -ListHandle ([IntPtr]$controls.List)
+  $packedPoint = (($geometry.y -band 0xFFFF) -shl 16) -bor
+    ($geometry.x -band 0xFFFF)
+  $messages = [uint32[]]@(
+    $constants.WmLButtonDown,
+    $constants.WmLButtonUp,
+    $constants.WmLButtonDoubleClick,
+    $constants.WmLButtonUp
+  )
+  $wParams = [long[]]@(1, 0, 1, 0)
+  $lParams = [long[]]@($packedPoint, $packedPoint, $packedPoint, $packedPoint)
+  $null = Invoke-MT5VmMouseActivationSequenceBoundary `
+    -Handle ([IntPtr]$controls.List) `
+    -Messages $messages `
+    -WParams $wParams `
+    -LParams $lParams `
+    -ExpectedPoint $packedPoint
+
+  $editor = [IntPtr]::Zero
+  for ($attempt = 0; $attempt -lt 25; $attempt++) {
+    $editor = Get-MT5VmWebRequestEditorBoundary -OptionsHandle $OptionsHandle
+    if ($editor -ne [IntPtr]::Zero) { break }
+    Start-Sleep -Milliseconds 100
+  }
+  if ($editor -eq [IntPtr]::Zero) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+  $editorProcessId = [int][Mt5VmTerminalUiNative]::WindowProcessId($OptionsHandle)
+  if ($editorProcessId -lt 1) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+  $null = Invoke-MT5VmGuardedExactVirtualKeyInputBoundary `
+    -OptionsHandle $OptionsHandle `
+    -EditorHandle $editor `
+    -ProcessId $editorProcessId `
+    -ExpectedOrigin $ExpectedOrigin
+  for ($attempt = 0; $attempt -lt 25; $attempt++) {
+    if (-not [Mt5VmTerminalUiNative]::IsWindowVisible($editor)) { return }
+    Start-Sleep -Milliseconds 100
+  }
+  throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+}
+
+function Read-MT5VmWebRequestStateBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$OptionsHandle
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  $controls = Get-MT5VmWebRequestControlMapBoundary -OptionsHandle $OptionsHandle
+  $enabledResult = Invoke-MT5VmBoundedUiMessage `
+    -Handle ([IntPtr]$controls.Checkbox) `
+    -Message ([uint32]$constants.BmGetCheck)
+  $enabled = [int]$enabledResult.ToInt64()
+  if ($enabled -notin 0, 1) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_STATE_INVALID'
+  }
+  $items = @([Mt5VmTerminalUiNative]::ReadListViewItems(
+      [IntPtr]$controls.List,
+      [uint32]$constants.LvmGetItemCount,
+      [uint32]$constants.LvmGetItemText,
+      [int]$constants.WebRequestMaxItems,
+      [int]$constants.WebRequestMaxCharacters,
+      [uint32]$constants.UiMessageTimeoutMs
+    ))
+  return ConvertTo-MT5VmWebRequestState -State ([pscustomobject][ordered]@{
+      Enabled = $enabled
+      Items = @($items)
+    })
+}
+
+function Write-MT5VmWebRequestStateBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$OptionsHandle,
+    [Parameter(Mandatory = $true)][object]$State
+  )
+
+  $target = ConvertTo-MT5VmWebRequestState -State $State
+  $targetNonEmpty = @($target.Items | Where-Object {
+      -not [string]::IsNullOrEmpty([string]$_)
+    })
+  if ($target.Enabled -eq 1 -and $target.Items.Count -eq 1 -and
+      $targetNonEmpty.Count -eq 1) {
+    Invoke-MT5VmWebRequestEditorApplyBoundary `
+      -OptionsHandle $OptionsHandle `
+      -ExpectedOrigin ([string]$targetNonEmpty[0])
+    return
+  }
+  $constants = Get-MT5VmTerminalUiConstants
+  $controls = Get-MT5VmWebRequestControlMapBoundary -OptionsHandle $OptionsHandle
+  $currentResult = Invoke-MT5VmBoundedUiMessage `
+    -Handle ([IntPtr]$controls.Checkbox) `
+    -Message ([uint32]$constants.BmGetCheck)
+  $current = [int]$currentResult.ToInt64()
+  if ($current -notin 0, 1) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_STATE_INVALID'
+  }
+  if ($current -eq 0) {
+    $null = Invoke-MT5VmBoundedUiMessage `
+      -Handle ([IntPtr]$controls.Checkbox) `
+      -Message ([uint32]$constants.BmClick)
+    $checked = Invoke-MT5VmBoundedUiMessage `
+      -Handle ([IntPtr]$controls.Checkbox) `
+      -Message ([uint32]$constants.BmGetCheck)
+    if ([int]$checked.ToInt64() -ne 1 -or
+        -not [Mt5VmTerminalUiNative]::IsWindowEnabled([IntPtr]$controls.List)) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTROL_INVALID'
+    }
+  }
+  [Mt5VmTerminalUiNative]::ReplaceListViewItems(
+    [IntPtr]$controls.List,
+    [uint32]$constants.LvmDeleteAllItems,
+    [uint32]$constants.LvmInsertItem,
+    [string[]]@($target.Items),
+    [int]$constants.WebRequestMaxItems,
+    [int]$constants.WebRequestMaxCharacters,
+    [uint32]$constants.UiMessageTimeoutMs
+  )
+  if ($target.Enabled -eq 0) {
+    $null = Invoke-MT5VmBoundedUiMessage `
+      -Handle ([IntPtr]$controls.Checkbox) `
+      -Message ([uint32]$constants.BmClick)
+  }
+  $final = Invoke-MT5VmBoundedUiMessage `
+    -Handle ([IntPtr]$controls.Checkbox) `
+    -Message ([uint32]$constants.BmGetCheck)
+  if ([int]$final.ToInt64() -ne $target.Enabled) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_STATE_INVALID'
+  }
+}
+
+function Restore-MT5VmTerminalWebRequestState {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][int]$ProcessId,
+    [Parameter(Mandatory = $true)][object]$State
+  )
+
+  $target = ConvertTo-MT5VmWebRequestState -State $State
+  $activeDialog = [IntPtr]::Zero
+  try {
+    $activeDialog = Open-MT5VmOptionsDialogBoundary -ProcessId $ProcessId
+    Write-MT5VmWebRequestStateBoundary -OptionsHandle $activeDialog -State $target
+    $pending = Read-MT5VmWebRequestStateBoundary -OptionsHandle $activeDialog
+    if (-not (Test-MT5VmWebRequestStateExact -Left $pending -Right $target)) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED'
+    }
+    Confirm-MT5VmOptionsDialogBoundary -OptionsHandle $activeDialog
+    $activeDialog = [IntPtr]::Zero
+
+    $activeDialog = Open-MT5VmOptionsDialogBoundary -ProcessId $ProcessId
+    $persisted = Read-MT5VmWebRequestStateBoundary -OptionsHandle $activeDialog
+    Cancel-MT5VmOptionsDialogBoundary -OptionsHandle $activeDialog
+    $activeDialog = [IntPtr]::Zero
+    if (-not (Test-MT5VmWebRequestStateExact -Left $persisted -Right $target)) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED'
+    }
+  } catch {
+    if ($activeDialog -ne [IntPtr]::Zero) {
+      try {
+        Cancel-MT5VmOptionsDialogBoundary -OptionsHandle $activeDialog
+      } catch {
+        # The rollback failure remains authoritative.
+      }
+    }
+    throw
+  }
+}
+
+function Set-MT5VmTerminalWebRequestAllowlist {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][int]$ProcessId,
+    [Parameter(Mandatory = $true)][string]$Origin
+  )
+
+  $desired = Assert-MT5VmDesiredWebRequestState `
+    -State ([pscustomobject][ordered]@{ Enabled = 1; Items = @($Origin) }) `
+    -ExpectedOrigin $Origin
+  $prior = $null
+  $activeDialog = [IntPtr]::Zero
+  try {
+    $activeDialog = Open-MT5VmOptionsDialogBoundary -ProcessId $ProcessId
+    $prior = ConvertTo-MT5VmWebRequestState -State (
+      Read-MT5VmWebRequestStateBoundary -OptionsHandle $activeDialog
+    )
+    if (Test-MT5VmDesiredWebRequestState -State $prior -ExpectedOrigin $Origin) {
+      Cancel-MT5VmOptionsDialogBoundary -OptionsHandle $activeDialog
+      $activeDialog = [IntPtr]::Zero
+      return [pscustomobject][ordered]@{
+        status = 'UNCHANGED'
+        enabled = $true
+        non_empty_count = 1
+      }
+    }
+
+    if ($prior.Enabled -ne 0 -or $prior.Items.Count -ne 1 -or
+        -not [string]::IsNullOrEmpty([string]$prior.Items[0])) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_STATE_INVALID'
+    }
+
+    Write-MT5VmWebRequestStateBoundary -OptionsHandle $activeDialog -State $desired
+    $pending = Read-MT5VmWebRequestStateBoundary -OptionsHandle $activeDialog
+    if (-not (Test-MT5VmDesiredWebRequestState -State $pending -ExpectedOrigin $Origin)) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_PENDING_FAILED'
+    }
+    Confirm-MT5VmOptionsDialogBoundary -OptionsHandle $activeDialog
+    $activeDialog = [IntPtr]::Zero
+
+    $activeDialog = Open-MT5VmOptionsDialogBoundary -ProcessId $ProcessId
+    $persisted = Read-MT5VmWebRequestStateBoundary -OptionsHandle $activeDialog
+    Cancel-MT5VmOptionsDialogBoundary -OptionsHandle $activeDialog
+    $activeDialog = [IntPtr]::Zero
+    if (-not (Test-MT5VmDesiredWebRequestState -State $persisted -ExpectedOrigin $Origin)) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_PERSIST_FAILED'
+    }
+    return [pscustomobject][ordered]@{
+      status = 'APPLIED'
+      enabled = $true
+      non_empty_count = 1
+    }
+  } catch {
+    $originalError = $_.Exception
+    if ($activeDialog -ne [IntPtr]::Zero) {
+      try {
+        Cancel-MT5VmOptionsDialogBoundary -OptionsHandle $activeDialog
+      } catch {
+        # Continue to the exact snapshot rollback when one exists.
+      }
+    }
+    if ($null -ne $prior) {
+      try {
+        Restore-MT5VmTerminalWebRequestState -ProcessId $ProcessId -State $prior
+      } catch {
+        throw [InvalidOperationException]::new(
+          'PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED',
+          $originalError
+        )
+      }
+    }
+    throw $originalError
+  }
+}
+
 function Restore-MT5VmTerminalPythonApiSettings {
   [CmdletBinding()]
   param(
@@ -916,7 +2769,7 @@ function Close-MT5VmOwnedTerminalBoundary {
     )) {
     throw 'The owned MT5 terminal rejected graceful close.'
   }
-  if (-not $process.WaitForExit(5000)) {
+  if (-not $process.WaitForExit($constants.OwnedTerminalCloseTimeoutMs)) {
     throw 'The owned MT5 terminal did not exit after graceful close.'
   }
 }

@@ -2,7 +2,7 @@
 #property version   "1.00"
 #property strict
 
-#define PROBE_URL "http://127.0.0.1:8790/health"
+#define PROBE_URL "http://127.0.0.1/health"
 #define REQUEST_FILE "MarketLens\\webrequest-probe-request.txt"
 
 bool IsLowerHexNonce(const string value)
