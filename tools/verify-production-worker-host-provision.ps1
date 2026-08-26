@@ -491,15 +491,54 @@ try {
   }
 
   Invoke-GauntletLayer 'go-migration-gate-coverage' {
+    $mainPath = Join-Path $backendRoot 'cmd\mt5-migration-gate\main.go'
+    $originalBytes = [IO.File]::ReadAllBytes($mainPath)
+    $originalHash = (Get-FileHash -LiteralPath $mainPath -Algorithm SHA256).Hash
+    $originalText = [Text.Encoding]::UTF8.GetString($originalBytes)
+    Assert-Gate (
+      [regex]::Matches($originalText, '(?m)^func main\(\) \{\}$').Count -eq 1
+    ) 'PROVISIONING_GO_MAIN_SOURCE_UNEXPECTED'
     Invoke-InDirectory $backendRoot {
-      $coverage = Join-Path $reportRoot 'mt5-migration-gate.coverage.out'
-      & go test ./cmd/mt5-migration-gate -run '^TestProductionCommandMainIsInert$' `
-        -count=1 -coverprofile=$coverage
-      Assert-NativeSuccess 'PROVISIONING_GO_FOCUSED_COVERAGE_FAILED'
-      $coverageText = Get-Content -LiteralPath $coverage -Raw
-      Assert-Gate ($coverageText -match 'cmd/mt5-migration-gate/main.go:6.13,6.14 1 1') `
-        'PROVISIONING_GO_MAIN_NOT_COVERED'
+      & go test ./cmd/mt5-migration-gate -run '^TestProductionCommandMainIsInert$' -count=1
+      Assert-NativeSuccess 'PROVISIONING_GO_FOCUSED_TEST_FAILED'
     }
+    $mutantText = $originalText.Replace(
+      'func main() {}',
+      'func main() { panic("PROVISIONING_MAIN_MUTANT") }'
+    )
+    Assert-Gate (-not [string]::Equals($mutantText, $originalText, [StringComparison]::Ordinal)) `
+      'PROVISIONING_GO_MAIN_MUTANT_NOT_APPLIED'
+    try {
+      [IO.File]::WriteAllBytes($mainPath, [Text.Encoding]::UTF8.GetBytes($mutantText))
+      $mutantHash = (Get-FileHash -LiteralPath $mainPath -Algorithm SHA256).Hash
+      Assert-Gate ($mutantHash -cne $originalHash) 'PROVISIONING_GO_MAIN_MUTANT_NOT_APPLIED'
+      $savedErrorActionPreference = $ErrorActionPreference
+      try {
+        $ErrorActionPreference = 'Continue'
+        $mutantOutput = @(Invoke-InDirectory $backendRoot {
+          & go test ./cmd/mt5-migration-gate -run '^TestProductionCommandMainIsInert$' -count=1 2>&1
+        })
+        $mutantExitCode = $LASTEXITCODE
+      } finally {
+        $ErrorActionPreference = $savedErrorActionPreference
+      }
+      Assert-Gate ($mutantExitCode -ne 0) 'PROVISIONING_GO_MAIN_MUTANT_SURVIVED'
+      Assert-Gate (($mutantOutput -join "`n").Contains('PROVISIONING_MAIN_MUTANT')) `
+        'PROVISIONING_GO_MAIN_MUTANT_WRONG_REASON'
+    } finally {
+      [IO.File]::WriteAllBytes($mainPath, $originalBytes)
+    }
+    $restoredHash = (Get-FileHash -LiteralPath $mainPath -Algorithm SHA256).Hash
+    Assert-Gate ($restoredHash -ceq $originalHash) 'PROVISIONING_GO_MAIN_RESTORE_HASH_MISMATCH'
+    & git -C $repoRoot diff --quiet -- 'backend/cmd/mt5-migration-gate/main.go'
+    Assert-NativeSuccess 'PROVISIONING_GO_MAIN_WORKTREE_DIRTY'
+    & git -C $repoRoot diff --cached --quiet -- 'backend/cmd/mt5-migration-gate/main.go'
+    Assert-NativeSuccess 'PROVISIONING_GO_MAIN_INDEX_DIRTY'
+    Invoke-InDirectory $backendRoot {
+      & go test ./cmd/mt5-migration-gate -run '^TestProductionCommandMainIsInert$' -count=1
+      Assert-NativeSuccess 'PROVISIONING_GO_FOCUSED_RESTORE_TEST_FAILED'
+    }
+    Write-Output 'PROVISIONING_GO_MAIN_MUTANT=KILLED'
   }
 
   Invoke-GauntletLayer 'python-managed-suites' {
