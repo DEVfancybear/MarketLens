@@ -1886,3 +1886,86 @@ APPROVE SPEC REVISION: production-worker-host-provision v23
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v23`. No v23 implementation occurred
 before that approval.
+
+## Revision v24 - inject one guarded exact keyboard batch into the verified editor (approval required)
+
+### Discovery during approved v23 execution
+
+V23 RED was observed in both new tests: the exact queued boundary was absent, and its character,
+Return, and readback-timeout failure cases could not reach the pinned fail-closed path. GREEN then
+passed 42/42 focused tests. A mutant dropping the first queued character was killed when the frozen
+event assertion observed `t` instead of the required `h`; the helper was restored byte-for-byte to
+SHA-256 `3CE6FFA5FA72421CFD5F6C887FA7D9D5456BF25C341773122E5E89B5D76B3D69`, and the targeted test
+returned GREEN.
+
+The required always-Cancel selected-host trace still read checkbox `1`, two empty rows of lengths
+`[0, 0]`, zero exact rows, and `desired=false` after all exact `WM_CHAR` messages were dispatched
+through the editor's UI queue. The dialog was cancelled and the owned terminal was closed. No OK,
+persisted desired setting, live receipt, protected host input, worker mutation, or production
+runner followed.
+
+Together v22 and v23 prove that direct window messages can change and reread the Edit control but
+do not traverse the keyboard-input path MT5 uses to update its private Add URL model. The remaining
+agent-owned path is Windows `SendInput`; this is a materially broader capability than v23 and is
+therefore isolated and approval-gated here rather than introduced silently.
+
+### v24 exact guarded input boundary
+
+Revision v24 remains Tier 3 and replaces only production use of v23's editor character delivery.
+After all existing exact terminal, signer, PID, Options dialog, icon geometry, and editor ID/class/
+visible/enabled checks pass, the boundary must:
+
+1. query `GetForegroundWindow` and `GetGUIThreadInfo` immediately before injection and require the
+   foreground window to be the same exact Options dialog and the focused window to be the same
+   verified ID `32954` editor; independently resolve both windows to the already selected terminal
+   PID, otherwise send zero input and fail closed;
+2. derive only the frozen exact UTF-16 stream for `http://127.0.0.1:8790` and construct one fixed
+   keyboard `INPUT` batch: for each code unit, one `KEYEVENTF_UNICODE` down record and one
+   `KEYEVENTF_UNICODE|KEYEVENTF_KEYUP` record, followed by exactly one `VK_RETURN` down record and
+   one `VK_RETURN|KEYEVENTF_KEYUP` record;
+3. call `SendInput` exactly once and require its return count to equal the complete batch length;
+   zero or partial insertion fails with `PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID`;
+4. wait only the existing bounded interval for the exact editor to disappear, then rely on the
+   unchanged pending-state reread to require one exact non-empty origin and at most one blank
+   placeholder before OK.
+
+The boundary must not call `SetForegroundWindow`, `SetFocus`, `AttachThreadInput`, `BlockInput`,
+`keybd_event`, mouse injection, SendKeys, Clipboard, or any window-title/text lookup. It may not
+send input if the exact foreground/focus/PID guard is false, split the input into multiple calls,
+accept a partial count, use an arbitrary string/terminal/handle, or retry after focus changes. This
+does not eliminate the operating-system race between the final guard and `SendInput`; that residual
+risk must be recorded explicitly in EVIDENCE. Batching minimizes the interval but cannot make a
+global input API handle-addressed.
+
+The v23 queued function may remain only as frozen regression history; production must not call it.
+All bounded editor-disappearance, immediate pending, reopened persisted, idempotency, rollback,
+nonce-bound live probe, protected-host-input, verifier, Git, and canonical no-switch production
+requirements remain unchanged. No tracked path, package, download, or third-party dependency is
+added.
+
+### v24 RED -> GREEN additions
+
+Before adding native input code, add and observe RED pure construction tests for the exact record
+count, ordered Unicode down/up pairs, final Return down/up pair, and rejection of missing,
+reordered, extra, changed, empty, or NUL-containing streams. Add mocked-boundary tests proving the
+foreground/focus/PID guard runs before exactly one send, false guard sends zero input, and a partial
+send count fails closed. Keep assertions frozen through GREEN. Kill and restore mutants that remove
+one Unicode record and that accept a partial send count.
+
+Run the first selected-host attempt as always-Cancel pending-only evidence. Only an exact desired
+pending reread authorizes the no-argument transaction to click OK. Then require persisted `APPLIED`,
+a second `UNCHANGED` run, and the live nonce-bound WebRequest receipt. Only after the GREEN
+checkpoint, clean local-master fast-forward, and one fresh all-pass execution of the complete
+13-layer verifier may EVIDENCE claim production success.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v24
+```
+
+### v24 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v24`. No v24 implementation occurred
+before that approval.
