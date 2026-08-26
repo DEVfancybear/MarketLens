@@ -923,3 +923,79 @@ APPROVE SPEC REVISION: production-worker-host-provision v11
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v11`. No v11 implementation occurred
 before that approval.
+
+## Revision v12 - use the MetaEditor command-line compiler contract (approval required)
+
+### Discovery during the v11 fresh gauntlet
+
+The v11 fresh run passed tool contracts, Go quality and its restored mutant, both Python suites,
+Rust quality, frontend typecheck/lint/84 trade tests/production build, 2,563 backend-documentation
+checks, 18 managed-worker contract tests, and PostgreSQL preflight. It then stopped at
+`live-webrequest-and-host-inputs` with `PROVISIONING_PROBE_COMPILE_FAILED`; no bootstrap material,
+install input, worker provisioning, canonical production runner, or postcondition ran.
+
+The retained MetaEditor log reports `Result: 0 errors, 0 warnings`, and the previously deleted
+`MarketLensWebRequestProbe.ex5` was freshly created. Both of those predicates in the current gate
+are therefore true. The remaining predicate incorrectly requires MetaEditor's process exit code
+to equal zero. MetaEditor's command-line convention uses exit code `1` for a successful compile.
+A bounded local diagnostic also observed the complementary failure case: an attempted overwrite
+returned exit code `0`, left the prior binary unchanged, and logged `EX5 write error` plus
+`Result: 1 errors, 0 warnings`. The compiler log and newly created artifact must remain mandatory;
+the correction must not accept an exit code by itself.
+
+### v12 scope, RED -> GREEN controls, and acceptance
+
+Revision v12 remains Tier 3 and keeps every v3-v11 invariant. It authorizes edits only to:
+
+- `backend/bridge/mt5_vm/test_production_webrequest_probe.py`;
+- `tools/mt5-baremetal/Invoke-MT5WebRequestProbe.ps1`;
+- this SPEC and the final EVIDENCE record.
+
+First add an executable contract expectation and observe it fail against the v11 driver because
+the MetaEditor compile contract marker/helper is absent (RED). Then introduce one pure compile
+result assertion used by both contract-only and live paths. A successful result must require all
+of the following simultaneously:
+
+1. MetaEditor exit code is exactly `1`;
+2. the destination `.ex5` exists as a leaf after the driver deleted the old artifact before
+   compilation;
+3. the compiler log contains exactly one `Result:` summary; and
+4. that summary reports exactly `0 errors, 0 warnings` (additional elapsed-time/CPU fields may
+   follow).
+
+Contract-only execution must accept that positive fixture and reject each bounded negative fixture
+with `PROVISIONING_PROBE_COMPILE_FAILED`: exit code `0` with an otherwise clean log, exit code `1`
+with no binary, exit code `1` with one compiler error, and duplicate `Result:` summaries. The
+existing receipt positive/negative controls remain unchanged. The live path must replace only the
+incorrect `ExitCode -eq 0` conjunction with the shared assertion; it must continue deleting the
+old `.ex5`, invoking the exact signed MetaEditor path, and reading the exact compile log.
+
+No MQL5 source, URL, signer, terminal/state-root boundary, terminal stop behavior, WebRequest
+receipt, nonce, host input, secret, ACL, worker installer, database check, source-diff gate,
+production command, layer order, or health/postcondition may change. No dependency, download,
+ambient host configuration change, push, or out-of-scope terminal action is authorized.
+
+After GREEN, run PowerShell parsing, the probe's `-ContractTestsOnly` and retained known-bad control,
+the targeted Python probe suite, and `git diff --check`. Commit the checker checkpoint on the task
+branch, fast-forward local `master`, require a clean worktree, and restart one complete 13-layer
+gauntlet from layer one. Only that later fresh run may provision the host, invoke exactly
+`.\run-backend-production.ps1` without switches, and provide final evidence. Any failed layer
+remains blocking and must not be reported as production success.
+
+Planned tools and generated files are unchanged from v3-v11: `apply_patch`, PowerShell 5.1,
+Python unittest, Git checkpoint/fast-forward operations, and the existing gauntlet toolchains.
+The gauntlet may recreate only its already disclosed `.artifacts` reports and the approved MT5,
+ProgramData, worker-root, task, build, migration, and runtime outputs. The diagnostic-only
+`webrequest-probe-exitcode-diagnostic.log` is not source evidence and must not be committed.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v12
+```
+
+### v12 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v12`. No v12 implementation occurred
+before that approval.
