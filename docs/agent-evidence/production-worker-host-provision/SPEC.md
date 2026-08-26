@@ -591,3 +591,60 @@ APPROVE SPEC REVISION: production-worker-host-provision v5
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v5`. No v5 dependency restoration occurred
 before that approval.
+
+## Revision v6 — select the lockfile-pinned TypeScript 6 compiler for the CommonJS test build
+
+### Discovery after v5 dependency restoration
+
+The approved clean install completed without changing `frontend/package-lock.json` and restored
+`@tailwindcss/postcss@4.3.3`. It also exposed the package binaries exactly as pinned by the existing
+manifest: `tsc` is provided by `@typescript/native` 7.0.2, while the aliased
+`typescript: npm:@typescript/typescript6@6.0.2` package provides `tsc6`.
+
+The current `test:build` script invokes `tsc`, so the required `npm run test:trade` now fails RED
+with `TS5108` because native TypeScript 7 has removed the CommonJS-compatible `node10` resolver.
+Changing to Node16 resolution was observed RED with ESM/CJS boundary and extension errors, and
+passing `--ignoreDeprecations 7.0` to native TypeScript 7 was also observed RED with the same
+removed-option error. In contrast, the lockfile-pinned `tsc6` compiler completed the exact test
+project with `--ignoreDeprecations 6.0`, and its emitted CommonJS output passed all 84 trade tests.
+
+### v6 scope and behavior
+
+Revision v6 keeps Tier 3 and every v3-v5 invariant. It authorizes exactly two additional edits in
+already-approved files:
+
+- in `frontend/package.json`, change only the `test:build` compiler executable from `tsc` to
+  `tsc6`; its cleanup command and project path remain byte-for-byte unchanged; and
+- in `frontend/tsconfig.test.json`, add only `"ignoreDeprecations": "6.0"` so the pinned TS6
+  compiler may continue using the required CommonJS-compatible resolver.
+
+No dependency/version, lockfile, application source, test assertion, production compiler, base
+TypeScript config, or other package script may change. `npm run typecheck` deliberately remains on
+native `tsc`/TypeScript 7, and the production Next.js build must remain independent of the test-only
+compiler and Ky shim.
+
+### v6 RED → GREEN and negative controls
+
+After the two edits, `npm run test:build` and `npm run test:trade` must pass from the clean v5
+dependency tree, with the trade suite reporting 84 passed and zero failed. `npm run typecheck`,
+`npm run lint`, and `npm run build` must also pass. `npm ls typescript @typescript/native --depth=0`
+must report only the versions already pinned by the manifest/lockfile, and Git must show no
+`package-lock.json` delta.
+
+The retained RED evidence consists of native TypeScript 7 rejecting `moduleResolution=node10`,
+native TypeScript 7 rejecting the deprecation override, and Node16 resolution producing ESM/CJS
+boundary failures. The GREEN compiler-selection control is a direct `tsc6` compile followed by the
+84-test Node run. No live production host mutation may continue until this revision is approved and
+the complete frontend acceptance set is GREEN.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v6
+```
+
+### v6 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v6`. No v6 implementation occurred before
+that approval.
