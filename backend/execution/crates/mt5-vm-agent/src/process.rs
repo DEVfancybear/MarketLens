@@ -2947,11 +2947,33 @@ pub(crate) mod tests {
         );
     }
 
-    pub(crate) struct AppDataGuard(Option<std::ffi::OsString>);
+    static APPDATA_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    impl Drop for AppDataGuard {
-        fn drop(&mut self) {
-            if let Some(value) = self.0.take() {
+    pub(crate) struct AppDataGuard {
+        prior: Option<std::ffi::OsString>,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl AppDataGuard {
+        fn acquire() -> Self {
+            let lock = match APPDATA_ENV_LOCK.lock() {
+                Ok(lock) => lock,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            let prior = env::var_os("APPDATA");
+            Self { prior, _lock: lock }
+        }
+
+        fn replace(&self, value: Option<&Path>) {
+            if let Some(value) = value {
+                unsafe { env::set_var("APPDATA", value) };
+            } else {
+                unsafe { env::remove_var("APPDATA") };
+            }
+        }
+
+        fn restore(&self) {
+            if let Some(value) = &self.prior {
                 unsafe { env::set_var("APPDATA", value) };
             } else {
                 unsafe { env::remove_var("APPDATA") };
@@ -2959,15 +2981,20 @@ pub(crate) mod tests {
         }
     }
 
+    impl Drop for AppDataGuard {
+        fn drop(&mut self) {
+            self.restore();
+        }
+    }
+
     #[test]
     fn appdata_guard_restores_an_absent_environment_variable() {
-        let prior = env::var_os("APPDATA");
-        unsafe { env::remove_var("APPDATA") };
-        drop(AppDataGuard(None));
+        let guard = AppDataGuard::acquire();
+        let prior = guard.prior.clone();
+        guard.replace(None);
         assert!(env::var_os("APPDATA").is_none());
-        if let Some(value) = prior {
-            unsafe { env::set_var("APPDATA", value) };
-        }
+        guard.restore();
+        assert_eq!(env::var_os("APPDATA"), prior);
     }
 
     fn fixture_sha256(bytes: &[u8]) -> String {
@@ -2975,6 +3002,7 @@ pub(crate) mod tests {
     }
 
     fn valid_process_config_fixture() -> (ProcessDriverConfig, AppDataGuard, PathBuf) {
+        let guard = AppDataGuard::acquire();
         let root = std::env::temp_dir().join(format!(
             "marketlens-valid-process-config-{}-{}",
             std::process::id(),
@@ -3003,8 +3031,7 @@ pub(crate) mod tests {
         fs::write(&acl_helper_path, b"acl-helper-fixture").expect("write ACL fixture");
         fs::write(&powershell_path, b"powershell-fixture").expect("write PowerShell fixture");
 
-        let guard = AppDataGuard(env::var_os("APPDATA"));
-        unsafe { env::set_var("APPDATA", &app_data) };
+        guard.replace(Some(&app_data));
         let instance = terminal_instance_id(&install).expect("derive terminal instance id");
         let state_config = app_data
             .join("MetaQuotes")
