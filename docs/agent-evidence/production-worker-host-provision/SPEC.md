@@ -870,3 +870,56 @@ APPROVE SPEC REVISION: production-worker-host-provision v10
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v10`. No v10 implementation occurred
 before that approval.
+
+## Revision v11 - resolve the installed PostgreSQL 16 client outside PATH (approval required)
+
+### Discovery during the v10 fresh gauntlet
+
+The v10 fresh run passed tool contracts, Go quality and its restored mutant, both Python suites,
+Rust quality, frontend typecheck/lint/84 trade tests/production build, 2,563 backend-documentation
+checks, and 18 managed-worker contract tests. It then stopped at `postgresql-preflight` with
+`PROVISIONING_PSQL_MISSING`; WebRequest, host-input mutation, provisioning, the canonical runner,
+and postconditions did not run.
+
+The PostgreSQL 16 service check succeeded. `psql.exe` is not on this account's process PATH, but
+the existing host installation contains the regular file
+`C:\Program Files\PostgreSQL\16\bin\psql.exe`, product version 16.15. A read-only direct invocation
+using the existing `.env` database URL returned server version `160015` and migration state
+`42:false` with exit code zero. PostgreSQL is installed and healthy; only verifier discovery is
+wrong. Persistently changing user/machine PATH would mutate ambient host configuration and would
+make the documented entry point less reproducible, so it is not authorized.
+
+### v11 scope, controls, and acceptance
+
+Revision v11 keeps Tier 3 and every v3-v10 invariant. It authorizes edits only to
+`Assert-PostgreSqlProductionState` in the already-approved
+`tools/verify-production-worker-host-provision.ps1`:
+
+1. Preserve `Get-Command psql.exe` / `Get-Command psql` as the first choice.
+2. When neither command exists, select only the exact absolute fallback
+   `C:\Program Files\PostgreSQL\16\bin\psql.exe`.
+3. Require the selected path to be an existing leaf or fail with the unchanged
+   `PROVISIONING_PSQL_MISSING` code, and invoke both existing read-only queries through that path.
+
+No PATH value, PostgreSQL file/service/data/auth/configuration, database value, query, migration,
+credential handling, error code, layer order, production command, or other tracked path may change.
+No download or dependency is authorized.
+
+The retained RED is the v10 fresh report. After implementation, PowerShell parsing and
+`-ContractTestsOnly` must pass; the exact fallback must resolve while PATH discovery remains absent;
+a synthetic missing fallback must still take the `PROVISIONING_PSQL_MISSING` branch; and the real
+fallback must return server major 16 plus `42:false` without printing credentials. Commit the
+checker checkpoint, fast-forward local `master`, require a clean worktree, and restart one complete
+gauntlet from layer one. Only that later fresh run may provide final evidence.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v11
+```
+
+### v11 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v11`. No v11 implementation occurred
+before that approval.
