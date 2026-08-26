@@ -5,7 +5,8 @@ param(
   [switch]$UnreadableInputControl,
   [switch]$OccupiedPortControl,
   [switch]$MouseHitControl,
-  [switch]$CursorRestoreControl
+  [switch]$CursorRestoreControl,
+  [switch]$PendingOnlyTrace
 )
 
 $ErrorActionPreference = 'Stop'
@@ -794,6 +795,24 @@ try {
         param($handle)
         Cancel-MT5VmOptionsDialogBoundary -OptionsHandle $handle
       }
+  }
+  if ($PendingOnlyTrace) {
+    $initialProxy = Get-ProductionLoopbackPortProxyState
+    if ([string]$initialProxy.status -cne 'EMPTY') {
+      throw 'PROVISIONING_WEBREQUEST_PENDING_TRACE_PROXY_PRESENT'
+    }
+    $initialListeners = @(Get-ProductionPort80Listeners)
+    $null = Assert-ProductionPort80ListenerState `
+      -Listeners $initialListeners -ExpectPresent $false
+    $pendingOnly = & $preflightAction
+    if ([string]$pendingOnly.status -cne 'PENDING_ONLY') {
+      throw 'PROVISIONING_WEBREQUEST_PENDING_TRACE_INVALID'
+    }
+    Write-Output (
+      'PRODUCTION_WEBREQUEST_ALLOWLIST_PENDING_ONLY=PASS status={0} persisted_restored=True' -f
+        [string]$pendingOnly.status
+    )
+    return
   }
   $ensureProxyAction = {
     $proxy = Ensure-ProductionLoopbackPortProxy
