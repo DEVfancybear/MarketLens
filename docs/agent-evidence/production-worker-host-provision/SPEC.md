@@ -2085,3 +2085,125 @@ APPROVE SPEC REVISION: production-worker-host-provision v26
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v26`. No v26 assertion correction occurred
 before that approval.
+
+## Revision v27 - atomically provision the pinned MT5 profile and prove it live (approval required)
+
+### Discovery during approved v26 execution
+
+The one-line v26 assertion correction was applied only after approval. All four new v25/v26 tests
+then passed, followed by all 49 focused terminal/bootstrap tests. A mutant that removed the
+required Shift around the colon virtual key was killed because `VK_SHIFT=16` disappeared from the
+frozen plan. A mutant that allowed Return after a mismatched editor readback was killed by the
+frozen `FAILED_OPEN` case. The helper was restored byte-for-byte to SHA-256
+`4706F235D31CB5AA9B10C401A3564F901F053C3EB76C4C96500D84DE979F77F9`, and both targeted tests
+returned GREEN after restoration.
+
+The required selected-host v25 pending-only trace still reported checkbox `1`, two empty rows,
+zero exact rows, and `desired=false`; it cancelled the dialog and closed the terminal owned by the
+trace. No OK, persisted desired state, live receipt, protected host input, worker mutation, or
+production runner followed. Exact physical keys therefore reach the verified Edit control but do
+not update MT5's private allowlist model.
+
+A subsequent read-only profile inspection found the authoritative persisted surface. The pinned
+profile
+`C:\Users\Duong\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075`
+has an `origin.txt` that resolves exactly to `C:\Program Files\MetaTrader 5`; its
+`config\common.ini` is a 1,814-byte UTF-16LE BOM file with one `[Experts]` section, one
+`WebRequest=0`, and one empty `WebRequestUrl=`. The inspection printed only file metadata, hashes,
+key names, value lengths, and equality booleans; it did not print any unrelated configuration
+value. The existing live probe independently pins the same terminal, profile, publisher, and
+origin, and reports MT5 error 4014 when this persisted allowlist is absent.
+
+### v27 failure model and exact transaction
+
+Revision v27 remains Tier 3. It replaces only the production allowlist driver's use of the UI
+transaction; all UI implementations and tests remain frozen regression history. The production
+driver continues to accept no terminal, profile, origin, or config path from the caller and must
+pin these exact values:
+
+- terminal `C:\Program Files\MetaTrader 5\terminal64.exe`;
+- publisher `CN=MetaQuotes Ltd., O=MetaQuotes Ltd., S=Lemesos, C=CY`;
+- profile root named above, whose non-reparse `origin.txt` must resolve ordinal-ignore-case to the
+  terminal installation directory; and
+- origin `http://127.0.0.1:8790`.
+
+Before mutation it must validate every existing path component against reparse traversal, require
+the exact terminal's valid Authenticode signer, require zero running processes whose executable
+path is the selected terminal, and read only the pinned `config\common.ini`. The file must be a
+bounded regular UTF-16LE BOM file containing exactly one `[Experts]` section and exactly one each
+of case-sensitive `WebRequest` and `WebRequestUrl`. The only accepted initial states are the
+observed `WebRequest=0` plus empty `WebRequestUrl=`, or the exact desired `WebRequest=1` plus exact
+origin. Missing/duplicate sections or keys, another encoding, another prior value, an oversized
+file, a reparse point, a running selected terminal, or an ambiguous process query fails before any
+write. No configuration value other than the two equality-bounded values may be emitted to stdout,
+stderr, exception text, evidence, or artifacts.
+
+For the observed initial state, the driver must transform only those two exact value spans, retain
+the BOM, line endings, and every other byte, and prove the reverse transformation hashes to the
+original bytes. It must write a same-directory, create-new temporary file, flush it, apply the
+original ACL, and use same-volume atomic replacement while retaining one fixed-name exact backup
+with the original ACL and SHA-256. It must immediately reread the destination, prove the exact
+desired keys, prove the reverse-transformed byte hash and ACL equal the snapshot, and invoke the
+same operation a second time; that second operation must return `UNCHANGED` and leave the file hash
+unchanged. Temporary paths must be cleaned on every handled exit and must never be followed through
+a reparse point.
+
+The backup is a crash-recovery journal, not success evidence. If it already exists on entry, the
+driver may resume only when the backup is a valid exact accepted prior file and the current file is
+its exact v27 desired transformation; every other combination fails without overwriting either
+file. Once the desired persisted state is present, the driver must invoke the existing exact
+repo-local `Invoke-MT5WebRequestProbe.ps1` in a separate PowerShell 5.1 process and require its
+nonce-bound HTTP receipt. It must then wait for the selected terminal to exit, reread
+`common.ini`, require the exact desired keys, and prove that reversing only those keys still yields
+the snapshot hash and ACL. A second verifier-owned probe may remain as independent repeat evidence.
+
+If atomic replacement, reread, idempotency, process shutdown, or the live probe fails, the driver
+must first ensure the exact selected terminal is absent using only bounded graceful close for a
+process proven to have the exact executable path. It must then atomically restore the fixed backup,
+require the restored bytes and ACL to equal the original snapshot, remove its failed replacement
+artifact, and throw the original failure. If restoration cannot be proven, the authoritative error
+is `PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED`, and the backup must remain for recovery.
+Only after a live PASS and all post-probe invariants pass may the driver remove the backup and emit
+a redacted `APPLIED` or `UNCHANGED` result. It may not use UI automation, SendInput, Clipboard,
+registry mutation, arbitrary INI parsing, an alternate terminal/profile/origin, force-kill,
+network download, or delete/replace any unrelated profile file.
+
+### v27 RED -> GREEN and gauntlet additions
+
+Before production implementation, add and observe RED tests against a temporary UTF-16LE fixture
+with unrelated sentinel bytes proving: exact two-value transformation; BOM/newline/unrelated-byte
+preservation; exact desired idempotency; rejection of missing, duplicate, reordered-section,
+wrong-encoding, wrong-prior-value, oversized, and backup/current mismatch states; no secret value
+in output; exact snapshot restoration after injected post-write and probe failures; and
+rollback-failure authority. Add a production source contract proving the fixed terminal, publisher,
+profile, origin, signer/reparse/process guards, atomic replace, exact probe entrypoint, and absence
+of UI-helper invocation or caller-controlled paths. Contract fixtures may exist only below a fresh
+system temporary directory and must be removed in `finally`; no tracked fixture or dependency is
+added. Keep assertions frozen through GREEN.
+
+Kill and restore at least four persisted manual mutants: accept a duplicate key, omit preservation
+of unrelated bytes, accept a changed hash on the idempotent pass, and report the original failure
+after rollback verification fails. Prove the driver contract gate's known-bad control and its
+unreadable-input failure path. Then run the selected-host driver: require first status `APPLIED` or
+recovery-resume, internal second status `UNCHANGED`, one nonce-bound live receipt, no remaining
+backup/temp file, and a fresh direct reread with exact desired equality booleans but no value dump.
+Run the driver a second time and require `UNCHANGED` plus another live receipt.
+
+Only after those host checks pass may implementation receive a GREEN checkpoint and the complete
+13-layer verifier run once from a clean, local-master-fast-forward source state. The verifier must
+then execute the canonical no-switch `powershell.exe -File .\run-backend-production.ps1`; local and
+public health must pass before EVIDENCE may claim the production backend is running. Existing
+dependencies, protected-host-input rules, generated artifact manifest, Git checkpoint cadence,
+verifier layers, and canonical production command otherwise remain unchanged.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v27
+```
+
+### v27 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v27`. No v27 implementation occurred
+before that approval.
