@@ -310,24 +310,38 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
         self.assertIn(
             "CN=MetaQuotes Ltd., O=MetaQuotes Ltd., S=Lemesos, C=CY", source
         )
-        self.assertIn("http://127.0.0.1:8790", source)
-        self.assertIn(r"config\common.ini", source)
-        self.assertIn("origin.txt", source)
+        self.assertIn("$expectedOrigin = 'http://127.0.0.1'", source)
+        self.assertNotIn("$expectedOrigin = 'http://127.0.0.1:8790'", source)
         self.assertIn("Invoke-MT5WebRequestProbe.ps1", source)
         for required in (
-            "Read-ProductionWebRequestCommonIni",
-            "Convert-ProductionWebRequestCommonIni",
-            "Invoke-ProductionWebRequestCommonIniTransaction",
-            "Assert-ProductionSelectedTerminalAndProfile",
-            "Assert-ProductionSelectedTerminalAbsent",
-            "[IO.File]::Replace",
+            "$uiHelper",
+            "Invoke-ProductionPendingOnlyPreflight",
+            "Get-ProductionLoopbackPortProxyState",
+            "Assert-ProductionLoopbackPortProxyState",
+            "Ensure-ProductionLoopbackPortProxy",
+            "Remove-ProductionOwnedLoopbackPortProxy",
+            "Assert-ProductionForwardedGatewayHealth",
+            "Set-MT5VmTerminalWebRequestAllowlist",
+            "netsh.exe",
+            "listenaddress=127.0.0.1",
+            "listenport=80",
+            "connectaddress=127.0.0.1",
+            "connectport=8790",
         ):
             self.assertIn(required, source, required)
         self.assertNotIn("$TerminalPath", source)
         self.assertNotIn("$Origin", source)
-        self.assertNotIn("$uiHelper", source)
-        self.assertNotIn("Set-MT5VmTerminalWebRequestAllowlist", source)
-        self.assertNotIn("Resolve-MT5VmTerminalProcess", source)
+        self.assertNotIn("Read-ProductionWebRequestCommonIni", source)
+        self.assertNotIn("Convert-ProductionWebRequestCommonIni", source)
+        self.assertNotIn("[IO.File]::Replace", source)
+        self.assertLess(
+            source.rfind("Invoke-ProductionPendingOnlyPreflight"),
+            source.rfind("Ensure-ProductionLoopbackPortProxy"),
+        )
+        self.assertLess(
+            source.rfind("Ensure-ProductionLoopbackPortProxy"),
+            source.rfind("Set-MT5VmTerminalWebRequestAllowlist"),
+        )
         for forbidden in (
             "SendKeys",
             "Clipboard",
@@ -392,10 +406,27 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             check=False,
             timeout=30,
         )
+        occupied = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(ALLOWLIST),
+                "-ContractTestsOnly",
+                "-OccupiedPortControl",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
         self.assertEqual(0, positive.returncode, positive.stderr)
         self.assertIn("PRODUCTION_WEBREQUEST_ALLOWLIST_CONTRACTS=PASS", positive.stdout)
         self.assertIn(
-            "PRODUCTION_WEBREQUEST_ALLOWLIST_CONFIG_CONTRACTS=PASS",
+            "PRODUCTION_WEBREQUEST_ALLOWLIST_PORTPROXY_CONTRACTS=PASS",
             positive.stdout,
         )
         self.assertIn(
@@ -403,19 +434,23 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             positive.stdout,
         )
         self.assertIn(
-            "PRODUCTION_WEBREQUEST_ALLOWLIST_RECOVERY_CONTRACTS=PASS",
+            "PRODUCTION_WEBREQUEST_ALLOWLIST_PREFLIGHT_CONTRACTS=PASS",
             positive.stdout,
         )
-        self.assertNotIn("SuperSecretSentinel-v27", positive.stdout + positive.stderr)
         self.assertNotEqual(0, negative.returncode)
         self.assertIn(
-            "PROVISIONING_WEBREQUEST_ALLOWLIST_SCHEMA_INVALID",
+            "PROVISIONING_WEBREQUEST_PORTPROXY_STATE_INVALID",
             negative.stdout + negative.stderr,
         )
         self.assertNotEqual(0, unreadable.returncode)
         self.assertIn(
-            "PROVISIONING_WEBREQUEST_ALLOWLIST_CONFIG_UNREADABLE",
+            "PROVISIONING_WEBREQUEST_PORTPROXY_OUTPUT_INVALID",
             unreadable.stdout + unreadable.stderr,
+        )
+        self.assertNotEqual(0, occupied.returncode)
+        self.assertIn(
+            "PROVISIONING_WEBREQUEST_PORT80_OCCUPIED",
+            occupied.stdout + occupied.stderr,
         )
 
     def test_webrequest_allowlist_transaction_applies_once_and_is_idempotent(self) -> None:

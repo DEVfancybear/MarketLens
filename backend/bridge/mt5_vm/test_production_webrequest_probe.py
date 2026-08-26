@@ -37,7 +37,8 @@ class ProductionWebRequestProbeTests(unittest.TestCase):
 
         self.assertIn("void OnStart()", source)
         self.assertIn('WebRequest("GET", PROBE_URL', source)
-        self.assertIn('http://127.0.0.1:8790/health', source)
+        self.assertIn('http://127.0.0.1/health', source)
+        self.assertNotIn('http://127.0.0.1:8790/health', source)
         self.assertIn("FILE_COMMON", source)
         self.assertIn("TERMINAL_BUILD", source)
         self.assertIn("requestedAtUnix", source)
@@ -64,6 +65,8 @@ class ProductionWebRequestProbeTests(unittest.TestCase):
             "PROVISIONING_WEBREQUEST_ALLOWLIST_REQUIRED",
             "PROVISIONING_GATEWAY_LISTENER_MISMATCH",
             "PROVISIONING_PROBE_RECEIPT_INVALID",
+            "$gatewayOrigin = 'http://127.0.0.1'",
+            "$gatewayHealthUrl = 'http://127.0.0.1/health'",
             "WindowStyle Hidden",
             "/config:",
         ):

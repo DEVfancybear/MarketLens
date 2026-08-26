@@ -84,7 +84,7 @@ class BareMetalWorkerInstallTests(unittest.TestCase):
         self,
         root: Path,
         *,
-        gateway_origin: str = "http://127.0.0.1:8790",
+        gateway_origin: str = "http://127.0.0.1",
         extra_expert: bool = False,
         allowed_origins: list[str] | None = None,
     ) -> dict[str, str]:
@@ -236,7 +236,7 @@ class BareMetalWorkerInstallTests(unittest.TestCase):
             "servers_sha256=('b'*64);terminal_license_sha256=('c'*64);"
             "ea_path='C:\\Slots\\slot-01\\MQL5\\Experts\\MarketLensExecutionEA.ex5';"
             "ea_sha256=('d'*64);ea_bootstrap_pipe='marketlens-slot-01';"
-            "ea_profile='MarketLens-slot-01';ea_gateway_origin='http://127.0.0.1:8790';"
+            "ea_profile='MarketLens-slot-01';ea_gateway_origin='http://127.0.0.1';"
             "terminal_state_root='C:\\State';"
             "ea_chart_template_path='C:\\Release\\chart01.chr';"
             "ea_chart_template_sha256=('3'*64);"
@@ -304,7 +304,7 @@ class BareMetalWorkerInstallTests(unittest.TestCase):
         self.assertEqual("2" * 64, observed["taskArgs"]["config_sha256"])
         slot = observed["config"]["process"]["terminal_slots"][0]
         self.assertEqual("slot-01", slot["slot_id"])
-        self.assertEqual("http://127.0.0.1:8790", slot["ea_gateway_origin"])
+        self.assertEqual("http://127.0.0.1", slot["ea_gateway_origin"])
         self.assertEqual("3" * 64, slot["ea_profile_chart_sha256"])
         self.assertEqual("4" * 64, slot["ea_webrequest_settings_sha256"])
         self.assertEqual("5" * 64, slot["ea_topology_attestation_sha256"])
@@ -429,7 +429,7 @@ class BareMetalWorkerInstallTests(unittest.TestCase):
         cases = (
             ({"extra_expert": True}, "BAREMETAL_EA_CHART_TEMPLATE_INVALID"),
             (
-                {"allowed_origins": ["http://127.0.0.1:8790", "https://public.example"]},
+                {"allowed_origins": ["http://127.0.0.1", "https://public.example"]},
                 "BAREMETAL_WEBREQUEST_ATTESTATION_INVALID",
             ),
             (
