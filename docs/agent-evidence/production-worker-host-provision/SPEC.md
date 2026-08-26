@@ -1138,3 +1138,152 @@ APPROVE SPEC REVISION: production-worker-host-provision v14
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v14`. No v14 implementation occurred
 before that approval.
+
+## Revision v15 - agent-owned MT5 WebRequest allowlist transaction (approval required)
+
+### User input and bounded discovery
+
+The user rejected the v14 manual MT5 Options step and requires the production agent to complete
+the whole cutover without asking the user to manipulate the terminal UI. This is new authorization
+input, not approval of a changed implementation. Official MQL5 documentation states that the
+WebRequest list is an end-user safety setting in the Expert Advisors tab and cannot be edited
+programmatically through MQL; therefore this revision uses the terminal's real Options dialog as
+the configuration boundary and retains the live nonce-bound WebRequest probe as the only positive
+attestation.
+
+Read-only discovery against only the signed selected terminal
+`C:\Program Files\MetaTrader 5\terminal64.exe` used the existing exact-PID Win32 helper, selected
+the Expert Advisors tab, inspected control metadata without printing list contents, clicked
+Cancel, and gracefully closed the terminal it started. It found:
+
+- WebRequest checkbox control ID `10322`, initially unchecked;
+- one visible `SysListView32` control ID `10191`;
+- exactly one list item, which is empty; and
+- no pre-existing non-empty WebRequest URL to preserve on this host.
+
+The discovery made no persisted terminal setting change. One attempted .NET UI Automation tree
+read failed because Windows PowerShell 5.1 rejected the collection shape; its `finally` block still
+cancelled the dialog and closed the owned terminal. The successful discovery used bounded Win32
+control IDs because this MT5 dialog does not expose a useful UI Automation child tree.
+
+### v15 scope, setup, and planned paths
+
+Revision v15 remains old-coder **Tier 3** and retains every v3-v14 invariant except the explicit
+manual-only allowlist clause. It authorizes an agent-owned UI transaction only for the exact
+selected terminal and exact origin `http://127.0.0.1:8790`.
+
+Tools/dependencies to install: **none**. Use only Windows PowerShell 5.1, the .NET/Win32 APIs already
+available on the host, Python unittest, `apply_patch`, Git checkpoint/fast-forward operations, and
+the existing gauntlet toolchains. No browser automation, UI Automation package, SendKeys helper,
+or third-party desktop dependency is authorized.
+
+Additional planned tracked paths are limited to:
+
+- `backend/bridge/mt5_vm/Mt5VmTerminalUi.ps1` - add bounded list-view read/replace primitives and
+  a transactional exact-origin apply/verify/rollback operation;
+- `backend/bridge/mt5_vm/test_terminal_python_api_bootstrap.py` - add RED/GREEN transaction,
+  ambiguity, idempotency, rollback, and forbidden-capability contracts;
+- `tools/mt5-baremetal/Set-MT5WebRequestAllowlist.ps1` - new no-argument production entry point
+  pinned internally to the selected terminal and origin, plus contract-only known-bad mode;
+- `tools/verify-production-worker-host-provision.ps1` - parse/contract-test the new entry point,
+  authorize these exact tracked paths, and invoke it immediately before the existing live probe;
+- this SPEC and the final EVIDENCE record.
+
+No other tracked path, dependency, download, service/database/security-policy change, global PATH
+change, push, broker enrollment, credential access, or out-of-scope terminal action is authorized.
+The existing task branch/checkpoint cadence, fast-forward-only local `master`, clean-worktree gate,
+13-layer manifest, and no-switch canonical runner remain unchanged.
+
+### v15 failure model and defenses
+
+| Failure mode | Required executable defense |
+|---|---|
+| Wrong terminal or another broker terminal receives UI messages | Reuse exact canonical path, valid MetaQuotes signature/company, exact PID, and single-process boundary before opening Options |
+| UI layout changes or a control ID is ambiguous | Require exactly one visible Options dialog, checkbox `10322`, and enabled `SysListView32` `10191` with exact classes; otherwise fail before OK |
+| Existing URLs are silently lost | Snapshot checkbox plus every list item in memory before mutation; bound count/length; never print item values; restore the exact snapshot on a failed transaction |
+| Partial/pending edits persist after an error | Cancel any open dialog in `finally`; after OK reopen and compare normalized persisted state; on mismatch perform and verify exact rollback |
+| Rollback itself fails | Emit `PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED`, retain failure, and do not run the live probe or production runner |
+| Arbitrary UI automation capability is introduced | No SendKeys, Clipboard, coordinate/mouse click, foreground-window stealing, window-title matching, arbitrary terminal path, or arbitrary URL argument |
+| A blank MT5 placeholder is mistaken for an allowed URL | Normalize only non-empty list items; permit at most one UI-created blank placeholder; require exactly one non-empty item equal ordinally to the expected origin |
+| Direct list write does not affect MT5's persisted setting | Reopen Options after OK and require checkbox `1` plus the exact normalized list; then require the existing real MT5 WebRequest receipt and HTTP response |
+| A fake UI pass replaces network evidence | The allowlist transaction emits only a configuration result; positive topology attestation remains forbidden until the nonce-bound live probe succeeds |
+
+### v15 RED -> GREEN acceptance scenarios
+
+#### V15-S1 - exact boundary and source capability
+
+Given the new production allowlist entry point,
+when its contract-only positive and known-bad modes run,
+then it accepts only the internally pinned selected terminal and
+`http://127.0.0.1:8790`, rejects an out-of-scope terminal or non-loopback/different origin with a
+pinned `PROVISIONING_WEBREQUEST_ALLOWLIST_BOUNDARY_INVALID` reason, and its source contains no
+SendKeys, Clipboard, coordinate/mouse, title-match, credential, trade, or force-termination
+capability. The test must be observed RED before the entry point exists.
+
+#### V15-S2 - exact state transaction is idempotent
+
+Given a mocked exact-PID Options boundary whose prior state is unchecked with one blank item,
+when the high-level transaction applies the expected origin,
+then it snapshots the prior state, writes checkbox `1` and exactly one non-empty expected origin,
+confirms once, reopens, rereads the same normalized state, cancels the verification dialog, and
+returns a sanitized result containing no URL-list contents. Given that exact state already exists,
+the transaction performs no confirmed write and returns idempotent success.
+
+#### V15-S3 - ambiguity and invalid list state fail closed
+
+Given zero/duplicate/wrong-class/disabled list controls, more than 64 items, an item longer than
+2048 UTF-16 characters, duplicate expected origins, or any unexpected non-empty origin after a
+write,
+when the transaction evaluates the dialog,
+then it exits nonzero before positive attestation with a pinned allowlist error and never guesses a
+control or accepts a subset/partial match.
+
+#### V15-S4 - failed apply restores the exact snapshot
+
+Given a write or persisted reread mismatch after the prior state was captured,
+when the transaction handles the failure,
+then it cancels any pending dialog, reapplies the exact prior checkbox/list snapshot through a new
+exact-PID dialog, confirms, rereads, and verifies the rollback. The original apply error remains
+authoritative if rollback succeeds; if rollback cannot be verified, the exact rollback-failed code
+above is authoritative. Tests must cover both branches.
+
+#### V15-S5 - live selected-host proof precedes production
+
+Given V15-S1 through V15-S4 are GREEN and PostgreSQL preflight passes,
+when the fresh gauntlet reaches `live-webrequest-and-host-inputs`,
+then it runs the no-argument allowlist entry point, observes its persisted exact-state result, and
+immediately runs the existing nonce-bound MT5 probe. Only an actual HTTP 200 receipt from
+`http://127.0.0.1:8790/health` may unlock protected host inputs, worker provisioning, and the exact
+no-switch `\.\run-backend-production.ps1`. Error 4014, timeout, mismatched receipt, allowlist
+postcondition failure, or rollback failure blocks every later layer.
+
+### v15 RED, mutation, and final gauntlet
+
+First add the tests for V15-S1 through V15-S4 and observe them fail against v14 before adding the
+entry point or implementation. Keep assertions frozen through GREEN. Run focused Python tests,
+PowerShell parsing, both contract-only modes, and `git diff --check`. Kill and restore at least one
+one-off mutant that changes the exact origin comparison or persisted-state equality; verify the
+source hash is restored.
+
+Commit the GREEN checkpoint on the existing task branch, fast-forward local `master`, require a
+clean worktree, and rerun the single fresh entry point from layer one:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\verify-production-worker-host-provision.ps1
+```
+
+The final EVIDENCE may claim production success only if all 13 layers pass, including the real
+allowlist transaction, live MT5 receipt, protected worker provisioning, the canonical runner, and
+local/public/worker postconditions. Any failure remains blocking and must be reported exactly.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v15
+```
+
+### v15 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v15`. No v15 implementation occurred
+before that approval.
