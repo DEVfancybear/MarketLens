@@ -2207,3 +2207,129 @@ APPROVE SPEC REVISION: production-worker-host-provision v27
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v27`. No v27 implementation occurred
 before that approval.
+
+## Revision v28 - use MT5's standard HTTP port through an exact loopback proxy (approval required)
+
+### Discovery during approved v27 execution
+
+V27 RED was observed because the production driver still invoked the UI helper and lacked the
+pinned profile, signer, parser, atomic-replace, recovery, rollback, probe, and negative-control
+contracts. GREEN then passed the new focused contract and all 49 terminal/bootstrap tests in
+45.387 seconds. Four persisted manual mutants were killed: accepting a duplicate key, changing an
+unrelated sentinel byte, accepting an idempotency hash mismatch, and reporting the original probe
+failure after rollback verification failed. Each mutant changed the source hash, failed for the
+pinned reason, and the restored positive contracts passed; the final mutation result was 4/4.
+
+The selected-host v27 transaction wrote the exact desired legacy `common.ini` transformation and
+started the nonce-bound probe, but MT5 returned error 4014 and the transaction failed with
+`PROVISIONING_WEBREQUEST_ALLOWLIST_REQUIRED`. Rollback restored `common.ini` to its exact
+pre-run SHA-256
+`1A177F9FA04FE8B7B36362866D9562361F735EF2AED17F1218C1E67BE6BCFE9A` and original ACL. A fresh
+post-rollback check found `WebRequest=0`, empty `WebRequestUrl`, no backup, no v27 temporary
+file, and no selected terminal process.
+
+MetaQuotes' current WebRequest reference states that the port is selected from the protocol:
+HTTP uses port 80 and HTTPS uses port 443. The MQL5 Algo Book states that the client-side network
+allowlist must be set in the Expert Advisors options and cannot be edited programmatically from
+MQL. This explains both observed facts: every exact `:8790` UI attempt left blank pending rows,
+and editing the legacy text keys did not alter the effective client-side allowlist. The host
+currently has no listener on port 80, no IPv4 portproxy entry, and the IP Helper service is running.
+
+The repository already separates the EA and admin listeners: Rust remains bound to loopback
+`127.0.0.1:8790`, while managed EA topology carries its own validated `ea_gateway_origin`.
+Both the Rust gateway and agent validators already accept `http://127.0.0.1` without a port.
+Therefore v28 introduces no public relay, public token path, or non-loopback listener.
+
+### v28 exact standard-port topology
+
+Revision v28 remains Tier 3 and supersedes only the selected production origin and the failed v27
+direct-file production path:
+
+- MT5 allowed origin and managed EA `GatewayUrl`: `http://127.0.0.1`;
+- Windows listener: exact IPv4 `127.0.0.1:80`;
+- Windows connect target: exact IPv4 `127.0.0.1:8790`; and
+- Rust execution gateway continues to own `127.0.0.1:8790` and admin
+  `127.0.0.1:8791` unchanged.
+
+The production allowlist driver must again use the signed selected terminal and existing UI
+transaction; the v27 direct `common.ini` parser/replacer must not be called by production.
+Before any persistent host change, the driver must run one exact always-Cancel preflight using
+`http://127.0.0.1`: require the initial disabled/one-empty-row state, type only the exact origin
+through the already guarded physical-key boundary, require exactly one ordinal-equal non-empty
+pending row and at most one blank placeholder, cancel, reopen, and require the original state.
+Failure here blocks all portproxy, OK, worker, and production mutations.
+
+Only after that preflight passes may the driver inspect the exact IPv4 portproxy table and port 80.
+The only accepted initial states are no portproxy/no port-80 listener, or the exact v28 mapping
+already present with one loopback listener owned by the Windows portproxy service. Any wildcard,
+IPv6, different target, duplicate mapping, unrelated port-80 listener, unreadable netsh output, or
+stopped IP Helper service fails closed. For the empty state, add exactly:
+
+```text
+listenaddress=127.0.0.1 listenport=80 connectaddress=127.0.0.1 connectport=8790
+```
+
+and immediately require exactly that mapping, exactly one `127.0.0.1:80` listener, zero
+`0.0.0.0:80`/external port-80 listeners, and successful
+`http://127.0.0.1/health` content from the already signer/path-bound Rust gateway process on
+`127.0.0.1:8790`. No firewall rule, URL ACL, HTTP.sys binding, service installation, download,
+DNS/hosts change, public listener, alternate port, or force-kill is authorized.
+
+The driver may then apply the exact UI allowlist transaction, require persisted `APPLIED`, rerun
+it for `UNCHANGED`, and invoke a revised nonce-bound probe whose request URL is exactly
+`http://127.0.0.1/health`. The probe must independently prove the gateway binary still owns
+`127.0.0.1:8790`; a successful request through port 80 does not substitute for process ownership.
+The generated chart, settings, and attestation must carry exactly `http://127.0.0.1`. Managed
+worker install input and its validators must carry the same origin, while Go-to-Rust
+`EXECUTION_EA_URL` and Rust bind configuration remain `:8790`.
+
+If portproxy creation, loopback health, UI apply/persist/idempotency, live receipt, worker
+provisioning, or canonical production health fails, the transaction must restore the prior UI
+allowlist snapshot and remove only the exact v28 portproxy entry if this run created it. It must
+then prove the portproxy table and listener returned to the initial empty state. If either rollback
+cannot be proven, `PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED` is authoritative. An exact
+pre-existing v28 mapping is never removed by rollback. Success leaves the exact mapping installed
+as required production host state and records its netsh and listener attestations without secrets.
+
+### v28 RED -> GREEN and gauntlet additions
+
+Before implementation, add and observe RED tests proving:
+
+1. production wrapper, probe, chart, settings, attestation, managed worker input, and relevant
+   contracts use `http://127.0.0.1`, while gateway/admin binds and Go relay remain on
+   `:8790`/`:8791`;
+2. the pending-only UI preflight must pass before any portproxy mutation and always cancels;
+3. exact empty/existing portproxy states are accepted, while wildcard, IPv6, duplicate, wrong
+   target, stopped service, unreadable output, and unrelated listener states fail before mutation;
+4. creation is idempotent, verifies exact listener and forwarded health, and never emits a
+   firewall/URLACL/hosts/service-install command;
+5. every downstream injected failure removes only a mapping created by that run and restores the
+   exact UI snapshot, while a rollback verification failure is authoritative; and
+6. the live probe rejects a receipt not bound to the exact no-port URL and nonce.
+
+Keep assertions frozen through GREEN. Kill and restore at least four plausible mutants: permit a
+wildcard listen address, accept the wrong connect port, allow UI commit before pending preflight,
+and delete a pre-existing exact mapping during rollback. Add known-bad controls for malformed
+netsh output and an occupied port-80 fixture boundary. No new package or download is allowed.
+The existing verifier remains the single 13-layer entry point and must include these controls and
+mutants.
+
+Run the selected-host driver twice. The first run must produce pending-only PASS, exact portproxy
+attestation, UI `APPLIED`, internal `UNCHANGED`, and one nonce-bound live WebRequest receipt.
+The second must observe the existing exact mapping, return UI `UNCHANGED`, and produce a fresh
+receipt. Then provision the managed worker with the no-port origin, run the complete verifier from
+a clean source state, and execute the canonical no-switch
+`powershell.exe -File .\run-backend-production.ps1`. Local/public health and managed worker
+postconditions must pass before EVIDENCE may claim production is running.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v28
+```
+
+### v28 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v28`. No v28 implementation or host
+mutation occurred before that approval.
