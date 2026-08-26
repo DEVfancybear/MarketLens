@@ -825,3 +825,48 @@ APPROVE SPEC REVISION: production-worker-host-provision v9
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v9`. No v9 implementation occurred before
 that approval.
+
+## Revision v10 - admit the approved v9 Rust path to the source-state gate (approval required)
+
+### Discovery after v9 GREEN
+
+The v9 implementation is committed at `d38358e`. The three formerly failing tests pass, the
+default-parallel `mt5-vm-agent` library suite passed three consecutive runs with 49 active tests
+and zero failures per run, and Rust format, check, and clippy pass. The first implementation attempt
+also supplied an additional RED: acquiring the mutex after fixture-file creation still allowed
+same-millisecond temporary roots to interfere; acquiring it before the entire fixture transaction
+made all three stress runs GREEN.
+
+The production verifier's `Assert-ApprovedSourceState` allow-list does not yet contain
+`backend/execution/crates/mt5-vm-agent/src/process.rs`. Because the approved v9 change is now in
+`HEAD`, the unchanged gate would deterministically fail later with
+`PROVISIONING_UNAPPROVED_TRACKED_PATH`, after the live host layers. No v9 verifier edit was
+authorized, so none was made, and no new complete production gauntlet has started.
+
+### v10 scope, controls, and acceptance
+
+Revision v10 keeps Tier 3 and every v3-v9 behavior and security invariant. It authorizes exactly
+one edit to `tools/verify-production-worker-host-provision.ps1`: add the literal normalized path
+`backend/execution/crates/mt5-vm-agent/src/process.rs` to the existing `$allowed` array in
+`Assert-ApprovedSourceState`.
+
+No command, layer order, baseline commit, dirty-worktree check, secret scan, host input, WebRequest
+probe, production runner, health assertion, error code, or other allow-list entry may change. The
+RED control is the current committed task diff being rejected because this one literal is absent.
+After the edit, PowerShell parsing and `-ContractTestsOnly` must pass, the allowed set must contain
+the exact path once, an unrelated synthetic path must remain rejected by the same membership rule,
+and `git diff --check` must pass. Then commit the checker checkpoint, fast-forward local `master`,
+normalize checkout-only Go line endings without content drift, and restart one complete gauntlet
+from layer one. Only that fresh run may mutate the live host or supply final evidence.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v10
+```
+
+### v10 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v10`. No v10 implementation occurred
+before that approval.
