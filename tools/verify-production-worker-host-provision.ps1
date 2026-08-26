@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
   [switch]$ContractTestsOnly,
-  [switch]$KnownBadControl
+  [switch]$KnownBadControl,
+  [switch]$AllowlistMutationTestsOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,6 +15,7 @@ $executionRoot = Join-Path $backendRoot 'execution'
 $reportRoot = Join-Path $repoRoot '.artifacts\production-worker-host-provision'
 $reportPath = Join-Path $reportRoot 'gauntlet-report.json'
 $probeDriver = Join-Path $repoRoot 'tools\mt5-baremetal\Invoke-MT5WebRequestProbe.ps1'
+$allowlistDriver = Join-Path $repoRoot 'tools\mt5-baremetal\Set-MT5WebRequestAllowlist.ps1'
 $backendEnvPath = Join-Path $backendRoot '.env'
 $installInputPath = 'C:\ProgramData\MarketLens\managed-worker-install-input.json'
 $bootstrapTokenPath = 'C:\ProgramData\MarketLens\secrets\worker-bootstrap.token'
@@ -147,11 +149,105 @@ function Invoke-ContractTests {
   Assert-SelectedTerminalBoundary -Path $selectedTerminal
   Assert-PowerShellParses -Path $PSCommandPath
   Assert-PowerShellParses -Path $probeDriver
+  Assert-PowerShellParses -Path $allowlistDriver
   if ($KnownBadControl) {
     Assert-SelectedTerminalBoundary -Path 'C:\Program Files\FTMO Global Markets MT5 Terminal\terminal64.exe'
     throw 'PROVISIONING_KNOWN_BAD_CONTROL_FAILED_OPEN'
   }
   Write-Output 'PRODUCTION_WORKER_HOST_PROVISION_CONTRACTS=PASS'
+}
+
+function Invoke-AllowlistMutationTests {
+  $originalBytes = [IO.File]::ReadAllBytes($allowlistDriver)
+  $originalHash = (Get-FileHash -LiteralPath $allowlistDriver -Algorithm SHA256).Hash
+  $originalText = [Text.Encoding]::UTF8.GetString($originalBytes)
+  $mutants = @(
+    [pscustomobject]@{
+      name = 'accept-duplicate-key'
+      search = @'
+if ($webMatches.Count -ne 1 -or $urlMatches.Count -ne 1 -or
+      $allWebMatches.Count -ne 1 -or $allUrlMatches.Count -ne 1) {
+'@
+      replace = @'
+if ($webMatches.Count -lt 1 -or $urlMatches.Count -ne 1 -or
+      $allWebMatches.Count -lt 1 -or $allUrlMatches.Count -ne 1) {
+'@
+      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_FAILED_OPEN'
+    },
+    [pscustomobject]@{
+      name = 'change-unrelated-bytes'
+      search = '$desiredText = Set-ProductionCommonIniValueSpans -Model $model -WebValue ''1'' -UrlValue $ExpectedOrigin'
+      replace = '$desiredText = (Set-ProductionCommonIniValueSpans -Model $model -WebValue ''1'' -UrlValue $ExpectedOrigin).Replace(''Untouched=tail'', ''Untouched=mutant'')'
+      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_UNRELATED_BYTES_CHANGED'
+    },
+    [pscustomobject]@{
+      name = 'accept-idempotency-hash-change'
+      search = 'DesiredHash = $sameHash'
+      replace = 'DesiredHash = ''PROVISIONING_IDEMPOTENCY_MUTANT'''
+      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_IDEMPOTENCY_INVALID'
+    },
+    [pscustomobject]@{
+      name = 'report-original-after-rollback-failure'
+      search = 'if ($rollbackResult -ne $true) {'
+      replace = 'if ($false) {'
+      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_PROBE_FAILED'
+    }
+  )
+  $killed = 0
+  try {
+    foreach ($mutant in $mutants) {
+      Write-Output ('PRODUCTION_WEBREQUEST_ALLOWLIST_MUTANT_START=' + [string]$mutant.name)
+      $matchCount = [regex]::Matches(
+        $originalText,
+        [regex]::Escape([string]$mutant.search)
+      ).Count
+      Assert-Gate ($matchCount -eq 1) 'PROVISIONING_ALLOWLIST_MUTANT_SOURCE_UNEXPECTED'
+      $mutantText = $originalText.Replace(
+        [string]$mutant.search,
+        [string]$mutant.replace
+      )
+      [IO.File]::WriteAllText(
+        $allowlistDriver,
+        $mutantText,
+        (New-Object Text.UTF8Encoding($false))
+      )
+      $mutantHash = (Get-FileHash -LiteralPath $allowlistDriver -Algorithm SHA256).Hash
+      Assert-Gate ($mutantHash -cne $originalHash) 'PROVISIONING_ALLOWLIST_MUTANT_NOT_APPLIED'
+      $savedErrorActionPreference = $ErrorActionPreference
+      try {
+        $ErrorActionPreference = 'Continue'
+        $mutantOutput = @(& powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $allowlistDriver -ContractTestsOnly 2>&1)
+        $mutantExitCode = $LASTEXITCODE
+      } finally {
+        $ErrorActionPreference = $savedErrorActionPreference
+      }
+      Assert-Gate ($mutantExitCode -ne 0) 'PROVISIONING_ALLOWLIST_MUTANT_SURVIVED'
+      Assert-Gate (
+        ($mutantOutput -join "`n").Contains([string]$mutant.expected)
+      ) 'PROVISIONING_ALLOWLIST_MUTANT_WRONG_REASON'
+      $killed += 1
+      [IO.File]::WriteAllBytes($allowlistDriver, $originalBytes)
+      Assert-Gate (
+        (Get-FileHash -LiteralPath $allowlistDriver -Algorithm SHA256).Hash -ceq
+          $originalHash
+      ) 'PROVISIONING_ALLOWLIST_MUTANT_RESTORE_FAILED'
+    }
+  } finally {
+    [IO.File]::WriteAllBytes($allowlistDriver, $originalBytes)
+  }
+  Assert-Gate ($killed -eq $mutants.Count) 'PROVISIONING_ALLOWLIST_MUTATION_SCORE_INVALID'
+  Assert-Gate (
+    (Get-FileHash -LiteralPath $allowlistDriver -Algorithm SHA256).Hash -ceq
+      $originalHash
+  ) 'PROVISIONING_ALLOWLIST_MUTANT_RESTORE_FAILED'
+  & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $allowlistDriver -ContractTestsOnly
+  Assert-NativeSuccess 'PROVISIONING_ALLOWLIST_MUTATION_RESTORED_TEST_FAILED'
+  Write-Output "PRODUCTION_WEBREQUEST_ALLOWLIST_MUTATION=$killed/$($mutants.Count)"
+}
+
+if ($AllowlistMutationTestsOnly) {
+  Invoke-AllowlistMutationTests
+  exit 0
 }
 
 if ($ContractTestsOnly) {
@@ -420,6 +516,8 @@ function Assert-ApprovedSourceState {
     '.gitignore',
     'backend/bridge/mt5_vm/test_baremetal_worker_install.py',
     'backend/bridge/mt5_vm/test_production_webrequest_probe.py',
+    'backend/bridge/mt5_vm/test_terminal_python_api_bootstrap.py',
+    'backend/bridge/mt5_vm/Mt5VmTerminalUi.ps1',
     'backend/cmd/mt5-migration-gate/main_test.go',
     'backend/docs/CONFIGURATION.md',
     'backend/execution/crates/mt5-vm-agent/src/process.rs',
@@ -431,6 +529,7 @@ function Assert-ApprovedSourceState {
     'frontend/tsconfig.test.json',
     'tools/mt5-baremetal/Invoke-MT5WebRequestProbe.ps1',
     'tools/mt5-baremetal/MarketLensWebRequestProbe.mq5',
+    'tools/mt5-baremetal/Set-MT5WebRequestAllowlist.ps1',
     'tools/verify-production-worker-host-provision.ps1'
   )
   $changed = @(& git -C $repoRoot diff --name-only "$baselineCommit..HEAD")
@@ -462,6 +561,7 @@ try {
   Invoke-GauntletLayer 'tool-contracts' {
     Assert-PowerShellParses -Path $PSCommandPath
     Assert-PowerShellParses -Path $probeDriver
+    Assert-PowerShellParses -Path $allowlistDriver
     & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $PSCommandPath -ContractTestsOnly
     Assert-NativeSuccess 'PROVISIONING_CONTRACT_POSITIVE_FAILED'
     Assert-PowerShellKnownBad `
@@ -476,6 +576,19 @@ try {
       -ExpectedCode 'PROVISIONING_PROBE_RECEIPT_INVALID' `
       -FailedOpenCode 'PROVISIONING_PROBE_CONTRACT_NEGATIVE_FAILED_OPEN' `
       -WrongReasonCode 'PROVISIONING_PROBE_CONTRACT_NEGATIVE_WRONG_REASON'
+    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $allowlistDriver -ContractTestsOnly
+    Assert-NativeSuccess 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_POSITIVE_FAILED'
+    Assert-PowerShellKnownBad `
+      -Arguments @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $allowlistDriver, '-ContractTestsOnly', '-KnownBadControl') `
+      -ExpectedCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_SCHEMA_INVALID' `
+      -FailedOpenCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_NEGATIVE_FAILED_OPEN' `
+      -WrongReasonCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_NEGATIVE_WRONG_REASON'
+    Assert-PowerShellKnownBad `
+      -Arguments @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $allowlistDriver, '-ContractTestsOnly', '-UnreadableInputControl') `
+      -ExpectedCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONFIG_UNREADABLE' `
+      -FailedOpenCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_UNREADABLE_CONTROL_FAILED_OPEN' `
+      -WrongReasonCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_UNREADABLE_CONTROL_WRONG_REASON'
+    Invoke-AllowlistMutationTests
   }
 
   Invoke-GauntletLayer 'go-quality' {
@@ -623,6 +736,8 @@ try {
   }
 
   Invoke-GauntletLayer 'live-webrequest-and-host-inputs' {
+    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $allowlistDriver
+    Assert-NativeSuccess 'PROVISIONING_WEBREQUEST_ALLOWLIST_FAILED'
     & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $probeDriver
     Assert-NativeSuccess 'PROVISIONING_LIVE_WEBREQUEST_PROBE_FAILED'
     $secret = Prepare-BootstrapSecret
