@@ -2,7 +2,8 @@
 param(
   [switch]$ContractTestsOnly,
   [switch]$KnownBadControl,
-  [switch]$AllowlistMutationTestsOnly
+  [switch]$AllowlistMutationTestsOnly,
+  [switch]$MouseMutationTestsOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -16,6 +17,7 @@ $reportRoot = Join-Path $repoRoot '.artifacts\production-worker-host-provision'
 $reportPath = Join-Path $reportRoot 'gauntlet-report.json'
 $probeDriver = Join-Path $repoRoot 'tools\mt5-baremetal\Invoke-MT5WebRequestProbe.ps1'
 $allowlistDriver = Join-Path $repoRoot 'tools\mt5-baremetal\Set-MT5WebRequestAllowlist.ps1'
+$uiHelper = Join-Path $repoRoot 'backend\bridge\mt5_vm\Mt5VmTerminalUi.ps1'
 $backendEnvPath = Join-Path $backendRoot '.env'
 $installInputPath = 'C:\ProgramData\MarketLens\managed-worker-install-input.json'
 $bootstrapTokenPath = 'C:\ProgramData\MarketLens\secrets\worker-bootstrap.token'
@@ -245,8 +247,109 @@ $proxy = & $EnsureProxyAction
   Write-Output "PRODUCTION_WEBREQUEST_ALLOWLIST_MUTATION=$killed/$($mutants.Count)"
 }
 
+function Invoke-MouseMutationTests {
+  $originalBytes = [IO.File]::ReadAllBytes($uiHelper)
+  $originalHash = (Get-FileHash -LiteralPath $uiHelper -Algorithm SHA256).Hash
+  $originalText = [Text.Encoding]::UTF8.GetString($originalBytes)
+  $mutants = @(
+    [pscustomobject]@{
+      name = 'drop-post-move-hit-guard'
+      search = @'
+if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $move) -ne $move.Count) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+  if (-not (Test-MT5VmPhysicalMouseActivationGuardBoundary `
+'@
+      replace = @'
+if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $move) -ne $move.Count) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+  if ($false -and -not (Test-MT5VmPhysicalMouseActivationGuardBoundary `
+'@
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_activation_rechecks_guard_and_counts'
+    },
+    [pscustomobject]@{
+      name = 'permit-partial-double-click-count'
+      search = 'if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $clicks) -ne $clicks.Count) {'
+      replace = 'if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $clicks) -gt $clicks.Count) {'
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_activation_rechecks_guard_and_counts'
+    },
+    [pscustomobject]@{
+      name = 'accept-wrong-editor-pid'
+      search = '$ExpectedProcessId -lt 1 -or $ObservedProcessId -ne $ExpectedProcessId) {'
+      replace = '$ExpectedProcessId -lt 1 -or $false) {'
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_add_editor_identity_is_exact_and_fail_closed'
+    },
+    [pscustomobject]@{
+      name = 'skip-cursor-restoration'
+      search = 'if ((& $RestoreCursorAction $cursor) -ne $true) {'
+      replace = 'if ($false) {'
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_transaction_always_restores_cursor'
+    }
+  )
+  $killed = 0
+  try {
+    foreach ($mutant in $mutants) {
+      Write-Output ('PRODUCTION_WEBREQUEST_MOUSE_MUTANT_START=' + [string]$mutant.name)
+      $matchCount = [regex]::Matches(
+        $originalText,
+        [regex]::Escape([string]$mutant.search)
+      ).Count
+      Assert-Gate ($matchCount -eq 1) 'PROVISIONING_MOUSE_MUTANT_SOURCE_UNEXPECTED'
+      $mutantText = $originalText.Replace(
+        [string]$mutant.search,
+        [string]$mutant.replace
+      )
+      [IO.File]::WriteAllText(
+        $uiHelper,
+        $mutantText,
+        (New-Object Text.UTF8Encoding($false))
+      )
+      Assert-Gate (
+        (Get-FileHash -LiteralPath $uiHelper -Algorithm SHA256).Hash -cne $originalHash
+      ) 'PROVISIONING_MOUSE_MUTANT_NOT_APPLIED'
+      $savedErrorActionPreference = $ErrorActionPreference
+      try {
+        $ErrorActionPreference = 'Continue'
+        $mutantOutput = @(& python.exe -m unittest -v ([string]$mutant.test) 2>&1)
+        $mutantExitCode = $LASTEXITCODE
+      } finally {
+        $ErrorActionPreference = $savedErrorActionPreference
+      }
+      Assert-Gate ($mutantExitCode -ne 0) 'PROVISIONING_MOUSE_MUTANT_SURVIVED'
+      $expectedTestName = ([string]$mutant.test).Split('.')[-1]
+      Assert-Gate (
+        ($mutantOutput -join "`n").Contains($expectedTestName)
+      ) 'PROVISIONING_MOUSE_MUTANT_WRONG_TEST'
+      $killed += 1
+      [IO.File]::WriteAllBytes($uiHelper, $originalBytes)
+      Assert-Gate (
+        (Get-FileHash -LiteralPath $uiHelper -Algorithm SHA256).Hash -ceq $originalHash
+      ) 'PROVISIONING_MOUSE_MUTANT_RESTORE_FAILED'
+    }
+  } finally {
+    [IO.File]::WriteAllBytes($uiHelper, $originalBytes)
+  }
+  Assert-Gate ($killed -eq $mutants.Count) 'PROVISIONING_MOUSE_MUTATION_SCORE_INVALID'
+  Assert-Gate (
+    (Get-FileHash -LiteralPath $uiHelper -Algorithm SHA256).Hash -ceq $originalHash
+  ) 'PROVISIONING_MOUSE_MUTANT_RESTORE_FAILED'
+  & python.exe -m unittest -v `
+    backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_activation_rechecks_guard_and_counts `
+    backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_add_editor_identity_is_exact_and_fail_closed `
+    backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_transaction_always_restores_cursor
+  Assert-NativeSuccess 'PROVISIONING_MOUSE_MUTATION_RESTORED_TEST_FAILED'
+  Assert-Gate ($mutants.Count -eq 4) 'PROVISIONING_MOUSE_MUTATION_MANIFEST_INVALID'
+  Write-Output 'PRODUCTION_WEBREQUEST_MOUSE_MUTATION=4/4'
+}
+
 if ($AllowlistMutationTestsOnly) {
   Invoke-AllowlistMutationTests
+  exit 0
+}
+
+if ($MouseMutationTestsOnly) {
+  Invoke-MouseMutationTests
   exit 0
 }
 
@@ -593,7 +696,18 @@ try {
       -ExpectedCode 'PROVISIONING_WEBREQUEST_PORT80_OCCUPIED' `
       -FailedOpenCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_OCCUPIED_CONTROL_FAILED_OPEN' `
       -WrongReasonCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_OCCUPIED_CONTROL_WRONG_REASON'
+    Assert-PowerShellKnownBad `
+      -Arguments @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $allowlistDriver, '-ContractTestsOnly', '-MouseHitControl') `
+      -ExpectedCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID' `
+      -FailedOpenCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_CONTROL_FAILED_OPEN' `
+      -WrongReasonCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_CONTROL_WRONG_REASON'
+    Assert-PowerShellKnownBad `
+      -Arguments @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $allowlistDriver, '-ContractTestsOnly', '-CursorRestoreControl') `
+      -ExpectedCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED' `
+      -FailedOpenCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_CONTROL_FAILED_OPEN' `
+      -WrongReasonCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_CONTROL_WRONG_REASON'
     Invoke-AllowlistMutationTests
+    Invoke-MouseMutationTests
   }
 
   Invoke-GauntletLayer 'go-quality' {
