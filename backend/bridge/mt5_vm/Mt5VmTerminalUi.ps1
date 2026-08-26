@@ -2024,7 +2024,20 @@ function Invoke-MT5VmGuardedPhysicalMouseActivationBoundary {
     )) {
     throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
   }
-  if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $clicks) -ne $clicks.Count) {
+  $firstClick = @($clicks[0], $clicks[1])
+  if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $firstClick) -ne 2) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+  Start-Sleep -Milliseconds 150
+  if (-not (Test-MT5VmPhysicalMouseActivationGuardBoundary `
+      -OptionsHandle $OptionsHandle -ListHandle $ListHandle `
+      -CheckboxHandle $CheckboxHandle -ProcessId $ProcessId `
+      -ScreenX ([int]$point.x) -ScreenY ([int]$point.y)
+    )) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+  $secondClick = @($clicks[2], $clicks[3])
+  if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $secondClick) -ne 2) {
     throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
   }
   return $true

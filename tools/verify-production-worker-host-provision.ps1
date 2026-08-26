@@ -270,8 +270,53 @@ if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $move) -ne $move.Count) {
     },
     [pscustomobject]@{
       name = 'permit-partial-double-click-count'
-      search = 'if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $clicks) -ne $clicks.Count) {'
-      replace = 'if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $clicks) -gt $clicks.Count) {'
+      search = 'if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $firstClick) -ne 2) {'
+      replace = 'if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $firstClick) -gt 2) {'
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_activation_rechecks_guard_and_counts'
+    },
+    [pscustomobject]@{
+      name = 'combine-click-batches'
+      search = @'
+$firstClick = @($clicks[0], $clicks[1])
+  if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $firstClick) -ne 2) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+  Start-Sleep -Milliseconds 150
+  if (-not (Test-MT5VmPhysicalMouseActivationGuardBoundary `
+      -OptionsHandle $OptionsHandle -ListHandle $ListHandle `
+      -CheckboxHandle $CheckboxHandle -ProcessId $ProcessId `
+      -ScreenX ([int]$point.x) -ScreenY ([int]$point.y)
+    )) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+  $secondClick = @($clicks[2], $clicks[3])
+  if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $secondClick) -ne 2) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+'@
+      replace = @'
+if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $clicks) -ne 4) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+'@
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_activation_rechecks_guard_and_counts'
+    },
+    [pscustomobject]@{
+      name = 'remove-paced-click-delay'
+      search = 'Start-Sleep -Milliseconds 150'
+      replace = '$null = $true'
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_activation_rechecks_guard_and_counts'
+    },
+    [pscustomobject]@{
+      name = 'drop-mid-click-guard'
+      search = @'
+Start-Sleep -Milliseconds 150
+  if (-not (Test-MT5VmPhysicalMouseActivationGuardBoundary `
+'@
+      replace = @'
+Start-Sleep -Milliseconds 150
+  if ($false -and -not (Test-MT5VmPhysicalMouseActivationGuardBoundary `
+'@
       test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_activation_rechecks_guard_and_counts'
     },
     [pscustomobject]@{
@@ -339,8 +384,8 @@ if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $move) -ne $move.Count) {
     backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_add_editor_identity_is_exact_and_fail_closed `
     backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_transaction_always_restores_cursor
   Assert-NativeSuccess 'PROVISIONING_MOUSE_MUTATION_RESTORED_TEST_FAILED'
-  Assert-Gate ($mutants.Count -eq 4) 'PROVISIONING_MOUSE_MUTATION_MANIFEST_INVALID'
-  Write-Output 'PRODUCTION_WEBREQUEST_MOUSE_MUTATION=4/4'
+  Assert-Gate ($mutants.Count -eq 7) 'PROVISIONING_MOUSE_MUTATION_MANIFEST_INVALID'
+  Write-Output 'PRODUCTION_WEBREQUEST_MOUSE_MUTATION=7/7'
 }
 
 if ($AllowlistMutationTestsOnly) {
