@@ -28,6 +28,40 @@ function Assert-ProbeTrue {
   if (-not $Condition) { throw $Code }
 }
 
+function Assert-ProbeCompileResult {
+  param(
+    [Parameter(Mandatory = $true)][int]$ExitCode,
+    [Parameter(Mandatory = $true)][bool]$BinaryExists,
+    [Parameter(Mandatory = $true)][AllowEmptyString()][string]$CompileText
+  )
+  $resultLines = @(
+    $CompileText -split '\r?\n' | Where-Object { $_ -match '^\s*Result:' }
+  )
+  $isSuccessful = (
+    $ExitCode -eq 1 -and
+    $BinaryExists -and
+    $resultLines.Count -eq 1 -and
+    $resultLines[0] -match '^\s*Result:\s+0 errors,\s+0 warnings(?:,\s+.*)?\s*$'
+  )
+  Assert-ProbeTrue ([bool]$isSuccessful) 'PROVISIONING_PROBE_COMPILE_FAILED'
+}
+
+function Assert-ProbeCompileFixtureRejected {
+  param(
+    [Parameter(Mandatory = $true)][int]$ExitCode,
+    [Parameter(Mandatory = $true)][bool]$BinaryExists,
+    [Parameter(Mandatory = $true)][AllowEmptyString()][string]$CompileText
+  )
+  try {
+    Assert-ProbeCompileResult -ExitCode $ExitCode -BinaryExists $BinaryExists `
+      -CompileText $CompileText
+  } catch {
+    if ($_.Exception.Message -ceq 'PROVISIONING_PROBE_COMPILE_FAILED') { return }
+    throw
+  }
+  throw 'PROVISIONING_PROBE_COMPILE_CONTROL_FAILED_OPEN'
+}
+
 function Assert-ProbeReceipt {
   param(
     [Parameter(Mandatory = $true)][psobject]$Receipt,
@@ -86,6 +120,17 @@ function Invoke-ProbeContractTests {
   }
   Assert-ProbeReceipt -Receipt $valid -ExpectedNonce $nonce `
     -ExpectedRequestedAtUnix $requestedAt -MaximumObservedAtUnix ($requestedAt + 1)
+  $cleanCompileLog = "Result: 0 errors, 0 warnings, 1 ms elapsed, cpu='X64 Regular'"
+  Assert-ProbeCompileResult -ExitCode 1 -BinaryExists $true -CompileText $cleanCompileLog
+  Assert-ProbeCompileFixtureRejected -ExitCode 0 -BinaryExists $true `
+    -CompileText $cleanCompileLog
+  Assert-ProbeCompileFixtureRejected -ExitCode 1 -BinaryExists $false `
+    -CompileText $cleanCompileLog
+  Assert-ProbeCompileFixtureRejected -ExitCode 1 -BinaryExists $true `
+    -CompileText 'Result: 1 errors, 0 warnings'
+  Assert-ProbeCompileFixtureRejected -ExitCode 1 -BinaryExists $true `
+    -CompileText "$cleanCompileLog`r`n$cleanCompileLog"
+  Write-Output 'PRODUCTION_METAEDITOR_COMPILE_CONTRACTS=PASS'
   Write-Output 'PRODUCTION_WEBREQUEST_PROBE_CONTRACTS=PASS'
 }
 
@@ -302,11 +347,9 @@ $compile = Start-Process -FilePath $metaEditorPath `
   -ArgumentList "/compile:`"$installedSource`"", "/log:`"$compileLog`"" `
   -WindowStyle Hidden -Wait -PassThru
 $compileText = Get-Content -LiteralPath $compileLog -Raw -ErrorAction SilentlyContinue
-Assert-ProbeTrue (
-  $compile.ExitCode -eq 0 -and
-  (Test-Path -LiteralPath $installedBinary -PathType Leaf) -and
-  $compileText -match 'Result:\s+0 errors'
-) 'PROVISIONING_PROBE_COMPILE_FAILED'
+Assert-ProbeCompileResult -ExitCode $compile.ExitCode `
+  -BinaryExists (Test-Path -LiteralPath $installedBinary -PathType Leaf) `
+  -CompileText ([string]$compileText)
 
 $nonceBytes = New-Object byte[] 16
 [Security.Cryptography.RandomNumberGenerator]::Fill($nonceBytes)

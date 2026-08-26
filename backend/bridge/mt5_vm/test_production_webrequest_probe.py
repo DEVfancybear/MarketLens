@@ -96,6 +96,7 @@ class ProductionWebRequestProbeTests(unittest.TestCase):
         self.assertEqual(0, parsed.returncode, parsed.stderr)
         self.assertEqual(0, accepted.returncode, accepted.stderr)
         self.assertIn("PRODUCTION_WEBREQUEST_PROBE_CONTRACTS=PASS", accepted.stdout)
+        self.assertIn("PRODUCTION_METAEDITOR_COMPILE_CONTRACTS=PASS", accepted.stdout)
         self.assertNotEqual(0, rejected.returncode)
         self.assertIn("PROVISIONING_PROBE_RECEIPT_INVALID", rejected.stderr)
 
