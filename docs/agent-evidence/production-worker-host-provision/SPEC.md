@@ -700,3 +700,62 @@ APPROVE SPEC REVISION: production-worker-host-provision v7
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v7`. No v7 formatting or checker
 allow-list implementation occurred before that approval.
+
+## Revision v8 — replace impossible empty-function coverage with a reproducible mutant
+
+### Discovery during the final fresh gauntlet
+
+After v7, `tool-contracts` and the complete Go quality layer (vet, shuffled tests, regular tests,
+and race tests) passed. The next layer ran the exact focused test successfully, but Go 1.26.5
+reported `coverage: [no statements]` and created no coverage profile. Production source is exactly
+`func main() {}`; Go statement coverage cannot instrument an empty function. The v3 expectation
+that a profile contain a span for `main.go:6` is therefore impossible without adding a synthetic
+no-op statement solely to increase coverage, which is forbidden coverage gaming.
+
+The gauntlet stopped before Python, Rust, frontend, PostgreSQL, MT5, host-input, runner, or health
+layers. No live production-host mutation occurred in this failed run.
+
+### v8 scope and executable substitute
+
+Revision v8 keeps Tier 3 and all v3-v7 runtime/security invariants. It revises only V3-S2's
+coverage mechanism and authorizes edits only to the already-approved
+`tools/verify-production-worker-host-provision.ps1`:
+
+1. Require `backend/cmd/mt5-migration-gate/main.go` to contain one unique exact
+   `func main() {}` definition and retain its original bytes plus SHA-256.
+2. Run `TestProductionCommandMainIsInert` against the original source and require exit zero.
+3. In a guarded `try/finally`, replace that exact definition with
+   `func main() { panic("PROVISIONING_MAIN_MUTANT") }`, prove the bytes/hash changed, run the same
+   focused test, and require a nonzero exit whose captured output contains
+   `PROVISIONING_MAIN_MUTANT`.
+4. Restore the original bytes in `finally`, require the restored SHA-256 to equal the original,
+   rerun the focused test successfully, and require Git to report no worktree/index delta for
+   `main.go`.
+
+The final gauntlet must retain the layer name `go-migration-gate-coverage` for report compatibility,
+but EVIDENCE must classify statement coverage for this zero-statement production file as **N-A**
+and the persisted manual mutant as **SUBSTITUTED**, never as coverage pass. The substitution proves
+the regression test executes `main()` and detects a non-inert panic; it cannot measure branch or
+statement coverage where no instrumentable statement exists.
+
+### v8 must NOT and acceptance
+
+- Must not commit or leave any change to `main.go`, add a synthetic statement, edit the test,
+  suppress a failing test, or claim a coverage percentage.
+- Any source mismatch, mutant not applied, unexpected mutant success, wrong failure reason,
+  restore error/hash mismatch, or post-restore Git delta fails closed with a pinned provisioning
+  code.
+- After approval, the verifier contract controls must pass, a forced mutant must be killed and
+  restored, and a fresh complete entry-point run must restart from layer one.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v8
+```
+
+### v8 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v8`. No v8 mutation-substitute
+implementation occurred before that approval.
