@@ -1969,3 +1969,90 @@ APPROVE SPEC REVISION: production-worker-host-provision v24
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v24`. No v24 implementation occurred
 before that approval.
+
+## Revision v25 - use fixed physical virtual keys with exact pre-commit readback (approval required)
+
+### Discovery during approved v24 execution
+
+V24 RED was observed because the native input APIs, exact keyboard plan, and guarded send boundary
+did not exist. GREEN passed all three new tests and then 45/45 focused tests after the v16
+whole-file `SendInput` prohibition was narrowed to its original geometry/mouse boundary; all other
+cursor and mouse-injection prohibitions remained global. A mutant removing one Unicode record was
+killed by the exact plan validator, and a mutant accepting a partial `SendInput` count was killed
+by the frozen partial-send case. The helper was restored byte-for-byte to SHA-256
+`F6F177E73FDEF610E332B7B72357507F2D8BA8B327FB78B73220F232E674F75F`.
+
+The first selected-host trace failed before input because editor visibility had not stabilized; it
+cancelled without sending. A subsequent no-input trace proved exactly one ID `32954` Edit candidate
+was visible/enabled and the Options/editor/PID foreground-focus guard was exact. The guarded v24
+pending-only trace then inserted the complete Unicode batch and returned the exact count, but after
+Return MT5 still reported checkbox `1`, two empty rows of lengths `[0, 0]`, and `desired=false`.
+The dialog was cancelled and the owned terminal was closed. No OK, persisted desired state, live
+receipt, protected host input, worker mutation, or production runner followed.
+
+This proves that MT5's private Add URL model ignores `KEYEVENTF_UNICODE`/`VK_PACKET`, just as it
+ignored direct `WM_CHAR`. The remaining keyboard path is the virtual-key sequence produced by
+physical keys. Because v24 authorized one Unicode batch only, the fixed virtual-key plan and
+pre-commit readback below require a new approval.
+
+### v25 fixed virtual-key boundary
+
+Revision v25 remains Tier 3 and replaces only production use of v24's Unicode input plan. It keeps
+the same exact terminal, signer, PID, Options, editor, foreground/focus guard, rollback, and
+postconditions. The boundary must:
+
+1. clear the exact editor and require `GetKeyState(VK_CAPITAL)` to show Caps Lock off; otherwise
+   send zero input and fail closed without changing toggle state;
+2. construct a fixed virtual-key plan only for the already pinned ASCII origin: lowercase letters
+   use their uppercase `VK_A..VK_Z` without Shift, digits use `VK_0..VK_9`, period uses
+   `VK_OEM_PERIOD=0xBE`, slash uses `VK_OEM_2=0xBF`, and colon uses exactly
+   `VK_SHIFT down, VK_OEM_1=0xBA down/up, VK_SHIFT up`; every other character is rejected;
+3. re-run the exact Options/editor/PID foreground-focus guard and call `SendInput` once with the
+   complete character key-down/key-up plan, requiring the exact full count;
+4. poll only bounded `WM_GETTEXTLENGTH`/`WM_GETTEXT` for the existing 25-by-100ms interval and
+   require ordinal equality with `http://127.0.0.1:8790`; mismatch fails before Return and the
+   dialog is cancelled;
+5. re-run the exact foreground-focus/PID guard, call `SendInput` a second and final time with only
+   `VK_RETURN` down/up, require count `2`, and then require bounded editor disappearance before the
+   unchanged pending-state reread.
+
+The two calls are purpose-separated and may not be merged, split further, retried, or sent after a
+failed guard/readback. The implementation must not infer or change keyboard layout, change Caps
+Lock, call `SetForegroundWindow`, `SetFocus`, `AttachThreadInput`, `BlockInput`, use scan-code,
+Unicode, packet, Clipboard, SendKeys, mouse input, or accept an arbitrary character/string. Exact
+editor readback is the positive defense against layout/key-state mismatch; it is still not evidence
+of configuration until pending, persisted, idempotency, and live WebRequest checks pass. The same
+residual operating-system race between each final guard and its global `SendInput` call remains an
+explicit EVIDENCE limitation.
+
+V24's Unicode plan may remain only as frozen regression history; production must not call it. No
+tracked path, dependency, download, third-party package, host policy, verifier layer, Git operation,
+or canonical production command changes.
+
+### v25 RED -> GREEN additions
+
+Before implementation, add and observe RED pure-plan tests for every exact character mapping,
+colon modifier ordering, Return isolation, Caps Lock rejection, and missing/reordered/extra/changed
+records. Add mocked-boundary tests proving exact order `clear -> caps guard -> focus guard -> one
+character send -> exact readback -> focus guard -> one Return send`, and proving any false guard,
+partial character/Return count, or readback mismatch prevents all later stages. Keep assertions
+frozen through GREEN. Kill and restore mutants that remove colon's Shift and that permit Return
+after a mismatched readback.
+
+Run the selected-host path first as always-Cancel pending-only evidence. Only an exact desired
+pending reread authorizes the no-argument transaction to click OK. Then require persisted `APPLIED`,
+a second `UNCHANGED` run, and the live nonce-bound WebRequest receipt. Only after the GREEN
+checkpoint, clean local-master fast-forward, and one fresh all-pass execution of the complete
+13-layer verifier may EVIDENCE claim production success.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v25
+```
+
+### v25 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v25`. No v25 implementation occurred
+before that approval.
