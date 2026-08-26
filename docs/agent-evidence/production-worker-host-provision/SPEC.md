@@ -999,3 +999,78 @@ APPROVE SPEC REVISION: production-worker-host-provision v12
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v12`. No v12 implementation occurred
 before that approval.
+
+## Revision v13 - generate the probe nonce on Windows PowerShell 5.1 (approval required)
+
+### Discovery during the v12 fresh gauntlet
+
+The v12 fresh run passed the first nine layers and the corrected live MetaEditor compile contract.
+It then stopped inside `live-webrequest-and-host-inputs`, before writing a probe request, bootstrap
+secret, install input, worker files/task, or invoking the canonical production runner, because
+Windows PowerShell reported that `RandomNumberGenerator` has no static `Fill` method.
+
+Read-only runtime inspection identifies Windows PowerShell `5.1.19041.6456` on CLR
+`4.0.30319.42000`. That runtime has no static `RandomNumberGenerator.Fill` and no
+`Convert.ToHexString`, so merely replacing the first failing call would expose a second failure.
+It does provide `RandomNumberGenerator.Create()` and instance `GetBytes`, while `BitConverter` can
+produce the required hexadecimal representation. The failure is a PowerShell 5.1 compatibility
+defect in nonce generation, not a WebRequest, compiler, terminal, gateway, or database failure.
+
+### v13 scope, RED -> GREEN controls, and acceptance
+
+Revision v13 remains Tier 3 and keeps every v3-v12 invariant. It authorizes edits only to:
+
+- `backend/bridge/mt5_vm/test_production_webrequest_probe.py`;
+- `tools/mt5-baremetal/Invoke-MT5WebRequestProbe.ps1`;
+- this SPEC and the final EVIDENCE record.
+
+First add an executable contract expectation and observe it fail against the v12 driver because
+the PowerShell-5.1 nonce contract marker and compatible implementation are absent (RED). Then add a
+single nonce generator and a shared nonce-shape assertion with these exact requirements:
+
+1. allocate exactly 16 bytes;
+2. create a `System.Security.Cryptography.RandomNumberGenerator` instance, fill the bytes through
+   instance `GetBytes`, and dispose the instance in `finally`;
+3. encode with `BitConverter.ToString`, remove only hyphens, and lowercase invariantly;
+4. require the result to match the case-sensitive shape `^[0-9a-f]{32}$` before use; and
+5. replace the live inline `Fill`/`Convert.ToHexString` block with that shared generator.
+
+Contract-only execution must generate and accept a real nonce, emit
+`PRODUCTION_PROBE_NONCE_CONTRACTS=PASS`, and reject short, uppercase, and non-hex fixtures with the
+exact code `PROVISIONING_PROBE_NONCE_INVALID`. The Python source contract must require the
+PowerShell-5.1-compatible `Create`/`GetBytes`/`BitConverter` path and reject reintroduction of
+`RandomNumberGenerator.Fill` or `Convert.ToHexString`. The existing MetaEditor positive and four
+negative compile fixtures, receipt controls, nonce-bound receipt, and no-trade source checks remain
+unchanged.
+
+No nonce length or entropy source, MQL5 source, URL, signer, terminal/state-root boundary, terminal
+stop behavior, WebRequest receipt, host input, secret, ACL, worker installer, database check,
+source-diff gate, production command, layer order, or health/postcondition may change. No
+dependency, download, ambient host configuration change, push, or out-of-scope terminal action is
+authorized.
+
+After GREEN, run PowerShell parsing, the probe's `-ContractTestsOnly` and retained known-bad control,
+the targeted Python probe suite, a nonce-defense mutant, and `git diff --check`. Commit the checker
+checkpoint on the task branch, fast-forward local `master`, require a clean worktree, and restart
+one complete 13-layer gauntlet from layer one. Only that later fresh run may write protected host
+inputs, provision the worker, invoke exactly `.\run-backend-production.ps1` without switches, and
+provide final evidence. Any failed layer remains blocking and must not be reported as production
+success.
+
+Planned tools and generated files are unchanged from v3-v12: `apply_patch`, PowerShell 5.1, Python
+unittest, Git checkpoint/fast-forward operations, and the existing gauntlet toolchains. No new
+dependency or tracked file is planned. The gauntlet may recreate only its already disclosed
+`.artifacts` reports and approved MT5, ProgramData, worker-root, task, build, migration, and runtime
+outputs.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v13
+```
+
+### v13 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v13`. No v13 implementation occurred
+before that approval.
