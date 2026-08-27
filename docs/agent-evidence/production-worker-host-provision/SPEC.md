@@ -2640,3 +2640,55 @@ APPROVE SPEC REVISION: production-worker-host-provision v32
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v32`. No v32 implementation or retained
 host mutation occurred before that approval.
+
+## Revision v33 - commit active MT5 URL editor before guarded OK (approval required)
+
+### Discovery during approved v32 execution
+
+V32 passed 60/60 MT5 regressions and killed 13/13 UI/mouse mutants. Its selected-host trace
+proved that the guarded physical click reached and closed the exact Options OK button, but reopening
+still did not contain the URL. Exact rollback succeeded, the trace returned
+`PROVISIONING_WEBREQUEST_ALLOWLIST_PERSIST_FAILED`, `common.ini` remained `WebRequest=0`, and
+portproxy, port 80, terminal processes, and the worktree remained clean.
+
+The physical OK focus transition alone therefore does not commit MT5's active URL entry. The
+selected control requires its standard Return editor-commit event before the physical dialog OK;
+as established in v30 diagnostics, the pre-OK list readback is not authoritative, so only the
+post-OK reopen may prove persistence.
+
+### v33 exact editor-commit then physical-confirm transaction
+
+Revision v33 remains Tier 3 and supersedes only v31 step 2's prohibition on Return. Every v32
+identity, foreground, point, mouse-count, cursor-restoration, reopen, exact rollback, no-proxy
+preflight, probe, worker, and production requirement remains unchanged.
+
+After typing and ordinally rereading exactly `http://127.0.0.1`, and after the final exact
+foreground/options/editor/PID guard, the helper must submit exactly one isolated Return key plan
+containing one key-down and one key-up record through the existing native keyboard boundary and
+require the native return count to equal `2`. It must not send Tab, plus-click, `WM_CHAR`, a second
+Return, text mutation, retry, `SendKeys`, or clipboard input. It must then run the unchanged v32
+guarded physical OK boundary. It may not treat editor disappearance or the pre-OK list model as
+proof; it must reopen Options and require the exact desired persisted state. Every failure must
+execute and prove exact rollback, with rollback failure authoritative.
+
+Before implementation, add and observe RED tests for exact ordering
+readback/final-guard→Return-down/up→physical-OK→reopen, exact Return count, no duplicate key plan,
+and cursor restoration through the later physical click. Kill and restore at least three plausible
+mutants: omit Return, permit a partial Return count, and send Return after physical OK. Add no
+dependency or download.
+
+Run commit-rollback trace first while portproxy and port 80 are empty. Require its exact
+persisted-desired/restored-prior PASS marker. Only then run the normal driver twice and the complete
+unchanged 13-layer verifier, including canonical no-switch backend production.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v33
+```
+
+### v33 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v33`. No v33 implementation or retained
+host mutation occurred before that approval.
