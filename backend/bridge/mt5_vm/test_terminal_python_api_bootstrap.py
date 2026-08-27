@@ -1657,6 +1657,18 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
         ):
             self.assertIn(required, source, required)
 
+    def test_webrequest_persisted_preflight_gauntlet_persists_v31_mutants(self) -> None:
+        source = HOST_VERIFIER.read_text(encoding="utf-8")
+        for required in (
+            "send-return-before-options-confirm",
+            "accept-editor-readback-as-persisted-proof",
+            "create-proxy-before-persisted-preflight",
+            "skip-successful-trace-rollback",
+            "PRODUCTION_WEBREQUEST_MOUSE_MUTATION=9/9",
+            "PRODUCTION_WEBREQUEST_ALLOWLIST_MUTATION=5/5",
+        ):
+            self.assertIn(required, source, required)
+
     def test_webrequest_queue_sequence_aborts_at_each_failed_position(self) -> None:
         body = (
             "$c=Get-MT5VmTerminalUiConstants;$point=655410;"
