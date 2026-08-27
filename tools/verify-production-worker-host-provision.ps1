@@ -342,8 +342,26 @@ Start-Sleep -Milliseconds 150
     },
     [pscustomobject]@{
       name = 'skip-cursor-restoration'
-      search = 'if ((& $RestoreCursorAction $cursor) -ne $true) {'
-      replace = 'if ($false) {'
+      search = @'
+    $result = & $ContinuationAction
+  } catch {
+    $originalFailure = $_.Exception
+  }
+  try {
+    if ((& $RestoreCursorAction $cursor) -ne $true) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED'
+    }
+'@
+      replace = @'
+    $result = & $ContinuationAction
+  } catch {
+    $originalFailure = $_.Exception
+  }
+  try {
+    if ($false) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED'
+    }
+'@
       test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_transaction_always_restores_cursor'
     },
     [pscustomobject]@{
@@ -378,6 +396,48 @@ function Get-MT5VmWebRequestEditorBoundary {
     if (-not (Test-MT5VmDesiredWebRequestState -State $persisted -ExpectedOrigin $Origin)) {
 '@
       test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_allowlist_mismatch_restores_snapshot_before_rethrow'
+    },
+    [pscustomobject]@{
+      name = 'accept-wrong-options-ok-pid'
+      search = '$ButtonProcessId -ne $ExpectedProcessId -or'
+      replace = '$false -or'
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_ok_identity_point_and_click_plan_are_exact'
+    },
+    [pscustomobject]@{
+      name = 'accept-wrong-options-ok-point'
+      search = '$ObservedPointHandle -ne $ExpectedButtonHandle) {'
+      replace = '$false) {'
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_ok_identity_point_and_click_plan_are_exact'
+    },
+    [pscustomobject]@{
+      name = 'permit-partial-options-ok-click'
+      search = 'if ([int](& $ClickAction $plan) -ne 2 -or (& $WaitAction) -ne $true) {'
+      replace = 'if ([int](& $ClickAction $plan) -gt 2 -or (& $WaitAction) -ne $true) {'
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_ok_confirm_fails_closed_and_restores_cursor'
+    },
+    [pscustomobject]@{
+      name = 'skip-options-ok-cursor-restoration'
+      search = @'
+  try {
+    if ((& $RestoreCursorAction $cursor) -ne $true) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED'
+    }
+  } catch {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED'
+  }
+  if ($null -ne $originalFailure) { throw $originalFailure }
+'@
+      replace = @'
+  try {
+    if ($false) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED'
+    }
+  } catch {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED'
+  }
+  if ($null -ne $originalFailure) { throw $originalFailure }
+'@
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_ok_confirm_fails_closed_and_restores_cursor'
     }
   )
   $killed = 0
@@ -432,10 +492,12 @@ function Get-MT5VmWebRequestEditorBoundary {
     backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_add_editor_identity_is_exact_and_fail_closed `
     backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_transaction_always_restores_cursor `
     backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_virtual_key_stage_orders_guards_and_readback_without_return `
-    backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_allowlist_mismatch_restores_snapshot_before_rethrow
+    backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_allowlist_mismatch_restores_snapshot_before_rethrow `
+    backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_ok_identity_point_and_click_plan_are_exact `
+    backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_ok_confirm_fails_closed_and_restores_cursor
   Assert-NativeSuccess 'PROVISIONING_MOUSE_MUTATION_RESTORED_TEST_FAILED'
-  Assert-Gate ($mutants.Count -eq 9) 'PROVISIONING_MOUSE_MUTATION_MANIFEST_INVALID'
-  Write-Output 'PRODUCTION_WEBREQUEST_MOUSE_MUTATION=9/9'
+  Assert-Gate ($mutants.Count -eq 13) 'PROVISIONING_MOUSE_MUTATION_MANIFEST_INVALID'
+  Write-Output 'PRODUCTION_WEBREQUEST_MOUSE_MUTATION=13/13'
 }
 
 if ($AllowlistMutationTestsOnly) {
