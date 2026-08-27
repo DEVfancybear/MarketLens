@@ -694,6 +694,83 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             observed["errors"],
         )
 
+    def test_webrequest_committed_row_guard_accepts_only_retired_editor_exact_state_and_identity(
+        self,
+    ) -> None:
+        body = (
+            "$origin='http://127.0.0.1:8790';"
+            "$exact=[pscustomobject]@{Enabled=1;Items=[string[]]@($origin)};"
+            "$ok=Assert-MT5VmCommittedOptionsOkGuard "
+            "-EditorIsWindow $false -EditorVisible $false "
+            "-NativeIdentityValid $true -State $exact -ExpectedOrigin $origin;"
+            "$cases=@("
+            "@{EditorIsWindow=$true;EditorVisible=$false;NativeIdentityValid=$true;"
+            "State=$exact;ExpectedOrigin=$origin},"
+            "@{EditorIsWindow=$false;EditorVisible=$true;NativeIdentityValid=$true;"
+            "State=$exact;ExpectedOrigin=$origin},"
+            "@{EditorIsWindow=$false;EditorVisible=$false;NativeIdentityValid=$false;"
+            "State=$exact;ExpectedOrigin=$origin},"
+            "@{EditorIsWindow=$false;EditorVisible=$false;NativeIdentityValid=$true;"
+            "State=[pscustomobject]@{Enabled=0;Items=[string[]]@($origin)};"
+            "ExpectedOrigin=$origin},"
+            "@{EditorIsWindow=$false;EditorVisible=$false;NativeIdentityValid=$true;"
+            "State=[pscustomobject]@{Enabled=1;Items=[string[]]@()};"
+            "ExpectedOrigin=$origin},"
+            "@{EditorIsWindow=$false;EditorVisible=$false;NativeIdentityValid=$true;"
+            "State=[pscustomobject]@{Enabled=1;Items=[string[]]@($origin,$origin)};"
+            "ExpectedOrigin=$origin},"
+            "@{EditorIsWindow=$false;EditorVisible=$false;NativeIdentityValid=$true;"
+            "State=[pscustomobject]@{Enabled=1;Items=[string[]]@('http://wrong')};"
+            "ExpectedOrigin=$origin});"
+            "$errors=@();foreach($case in $cases){try{"
+            "Assert-MT5VmCommittedOptionsOkGuard @case|Out-Null;"
+            "$errors+=,'FAILED_OPEN'}catch{$errors+=,$_.Exception.Message}};"
+            "[pscustomobject]@{ok=[bool]$ok;errors=$errors}|"
+            "ConvertTo-Json -Compress -Depth 5"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertTrue(observed["ok"])
+        self.assertEqual(7, len(observed["errors"]))
+        for error in observed["errors"]:
+            self.assertEqual(
+                "PROVISIONING_WEBREQUEST_ALLOWLIST_OK_MOUSE_INVALID", error
+            )
+
+    def test_webrequest_committed_row_guard_precedes_physical_ok_and_persisted_reopen(
+        self,
+    ) -> None:
+        source = UI_HELPER.read_text(encoding="utf-8")
+        confirm_start = source.index(
+            "function Confirm-MT5VmOptionsDialogWithActiveEditorBoundary"
+        )
+        confirm_end = source.index(
+            "function Invoke-MT5VmWebRequestEditorApplyBoundary", confirm_start
+        )
+        confirm_source = source[confirm_start:confirm_end]
+        for required in (
+            "Assert-MT5VmCommittedOptionsOkGuard",
+            "Read-MT5VmWebRequestStateBoundary",
+            "IsExactCommittedOptionsOkGuard",
+        ):
+            self.assertIn(required, confirm_source, required)
+        self.assertNotIn("IsExactOptionsOkGuard", confirm_source)
+
+        set_start = source.index("function Set-MT5VmTerminalWebRequestAllowlist {")
+        set_source = source[set_start:]
+        write_at = set_source.index("Write-MT5VmWebRequestStateBoundary")
+        confirm_at = set_source.index(
+            "Confirm-MT5VmOptionsDialogWithActiveEditorBoundary", write_at
+        )
+        reopen_at = set_source.index("Open-MT5VmOptionsDialogBoundary", confirm_at)
+        persisted_at = set_source.index(
+            "$persisted = Read-MT5VmWebRequestStateBoundary", reopen_at
+        )
+        self.assertLess(write_at, confirm_at)
+        self.assertLess(confirm_at, reopen_at)
+        self.assertLess(reopen_at, persisted_at)
+
     def test_webrequest_restore_does_not_insert_the_add_row_placeholder(self) -> None:
         source = UI_HELPER.read_text(encoding="utf-8")
         start = source.index("function Write-MT5VmWebRequestStateBoundary {")
