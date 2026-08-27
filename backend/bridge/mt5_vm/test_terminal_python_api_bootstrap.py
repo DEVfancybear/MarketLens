@@ -550,6 +550,96 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
         self.assertLess(reopen_at, persisted_at)
         self.assertNotIn("$pending = Read-MT5VmWebRequestStateBoundary", set_source)
 
+    def test_webrequest_physical_ok_confirm_is_guarded_and_ordered(self) -> None:
+        source = UI_HELPER.read_text(encoding="utf-8")
+        for required in (
+            "Assert-MT5VmOptionsOkCandidate",
+            "Assert-MT5VmOptionsOkPointIdentity",
+            "New-MT5VmExactSingleClickInputPlan",
+            "Invoke-MT5VmGuardedOptionsOkClickCore",
+            "Confirm-MT5VmOptionsDialogWithActiveEditorBoundary",
+        ):
+            self.assertIn(required, source, required)
+        set_start = source.index("function Set-MT5VmTerminalWebRequestAllowlist {")
+        set_end = source.index("function Restore-MT5VmTerminalPythonApiSettings {", set_start)
+        set_source = source[set_start:set_end]
+        write_at = set_source.index("Write-MT5VmWebRequestStateBoundary")
+        confirm_at = set_source.index(
+            "Confirm-MT5VmOptionsDialogWithActiveEditorBoundary"
+        )
+        reopen_at = set_source.index("Open-MT5VmOptionsDialogBoundary", confirm_at)
+        persisted_at = set_source.index(
+            "$persisted = Read-MT5VmWebRequestStateBoundary", reopen_at
+        )
+        self.assertLess(write_at, confirm_at)
+        self.assertLess(confirm_at, reopen_at)
+        self.assertLess(reopen_at, persisted_at)
+        self.assertNotIn(
+            "Confirm-MT5VmOptionsDialogBoundary -OptionsHandle $activeDialog",
+            set_source[:reopen_at],
+        )
+
+        body = (
+            "$events=[Collections.Generic.List[string]]::new();"
+            "$result=Invoke-MT5VmGuardedOptionsOkClickCore "
+            "-ResolveAction {$events.Add('resolve');[IntPtr]43} "
+            "-GeometryAction {param($button);$events.Add('geometry');"
+            "[pscustomobject]@{x=10;y=20}} "
+            "-CaptureCursorAction {$events.Add('capture');[pscustomobject]@{x=1;y=2}} "
+            "-MoveAction {param($point);$events.Add('move');$true} "
+            "-GuardAction {param($button,$point);$events.Add('guard');$true} "
+            "-ClickAction {param($plan);$events.Add('click');$plan.Count} "
+            "-WaitAction {$events.Add('wait');$true} "
+            "-RestoreCursorAction {param($cursor);$events.Add('restore');$true};"
+            "[pscustomobject]@{result=[bool]$result;events=$events}|"
+            "ConvertTo-Json -Compress"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertTrue(observed["result"])
+        self.assertEqual(
+            ["resolve", "geometry", "capture", "move", "guard", "click", "wait", "restore"],
+            observed["events"],
+        )
+
+    def test_webrequest_physical_ok_confirm_fails_closed_and_restores_cursor(self) -> None:
+        for mode, expected_events in (
+            ("guard", ["resolve", "geometry", "capture", "move", "guard", "restore"]),
+            (
+                "partial_click",
+                ["resolve", "geometry", "capture", "move", "guard", "click", "restore"],
+            ),
+            (
+                "wait",
+                ["resolve", "geometry", "capture", "move", "guard", "click", "wait", "restore"],
+            ),
+        ):
+            body = (
+                f"$mode='{mode}';$events=[Collections.Generic.List[string]]::new();"
+                "try{Invoke-MT5VmGuardedOptionsOkClickCore "
+                "-ResolveAction {$events.Add('resolve');[IntPtr]43} "
+                "-GeometryAction {param($button);$events.Add('geometry');"
+                "[pscustomobject]@{x=10;y=20}} "
+                "-CaptureCursorAction {$events.Add('capture');[pscustomobject]@{x=1;y=2}} "
+                "-MoveAction {param($point);$events.Add('move');$true} "
+                "-GuardAction {param($button,$point);$events.Add('guard');$mode -ne 'guard'} "
+                "-ClickAction {param($plan);$events.Add('click');"
+                "if($mode -eq 'partial_click'){1}else{$plan.Count}} "
+                "-WaitAction {$events.Add('wait');$mode -ne 'wait'} "
+                "-RestoreCursorAction {param($cursor);$events.Add('restore');$true}|Out-Null;"
+                "$result='FAILED_OPEN'}catch{$result=$_.Exception.Message};"
+                "[pscustomobject]@{result=$result;events=$events}|ConvertTo-Json -Compress"
+            )
+            completed = self._run_module(body)
+            self.assertEqual(0, completed.returncode, completed.stderr)
+            observed = json.loads(completed.stdout)
+            self.assertEqual(
+                "PROVISIONING_WEBREQUEST_ALLOWLIST_OK_MOUSE_INVALID",
+                observed["result"],
+            )
+            self.assertEqual(expected_events, observed["events"])
+
     def test_webrequest_restore_does_not_insert_the_add_row_placeholder(self) -> None:
         source = UI_HELPER.read_text(encoding="utf-8")
         start = source.index("function Write-MT5VmWebRequestStateBoundary {")
