@@ -432,6 +432,54 @@ public static class Mt5VmTerminalUiNative {
     return WindowFromPoint(point) == buttonWindow;
   }
 
+  public static bool IsExactCommittedOptionsOkGuard(
+    IntPtr optionsWindow,
+    IntPtr buttonWindow,
+    IntPtr listWindow,
+    IntPtr checkboxWindow,
+    IntPtr retiredEditorWindow,
+    uint expectedProcessId,
+    int screenX,
+    int screenY
+  ) {
+    if (optionsWindow == IntPtr.Zero || buttonWindow == IntPtr.Zero ||
+        listWindow == IntPtr.Zero || checkboxWindow == IntPtr.Zero ||
+        expectedProcessId == 0 || GetForegroundWindow() != optionsWindow ||
+        !IsWindowVisible(optionsWindow) || !IsWindowVisible(buttonWindow) ||
+        !IsWindowEnabled(buttonWindow) || !IsWindowVisible(listWindow) ||
+        !IsWindowEnabled(listWindow) || !IsWindowVisible(checkboxWindow) ||
+        !IsWindowEnabled(checkboxWindow) ||
+        (retiredEditorWindow != IntPtr.Zero &&
+          (IsWindow(retiredEditorWindow) || IsWindowVisible(retiredEditorWindow)))) {
+      return false;
+    }
+    uint optionsProcessId;
+    uint optionsThreadId = GetWindowThreadProcessId(optionsWindow, out optionsProcessId);
+    uint buttonProcessId;
+    uint buttonThreadId = GetWindowThreadProcessId(buttonWindow, out buttonProcessId);
+    uint listProcessId;
+    uint listThreadId = GetWindowThreadProcessId(listWindow, out listProcessId);
+    uint checkboxProcessId;
+    uint checkboxThreadId = GetWindowThreadProcessId(checkboxWindow, out checkboxProcessId);
+    if (optionsThreadId == 0 || buttonThreadId != optionsThreadId ||
+        listThreadId != optionsThreadId || checkboxThreadId != optionsThreadId ||
+        optionsProcessId != expectedProcessId || buttonProcessId != expectedProcessId ||
+        listProcessId != expectedProcessId || checkboxProcessId != expectedProcessId) {
+      return false;
+    }
+    var info = new GuiThreadInfo();
+    info.size = (uint)Marshal.SizeOf(typeof(GuiThreadInfo));
+    if (!GetGUIThreadInfo(optionsThreadId, ref info) || info.active != optionsWindow ||
+        (info.focus != optionsWindow && info.focus != buttonWindow &&
+          info.focus != listWindow && info.focus != checkboxWindow)) {
+      return false;
+    }
+    var point = new NativePoint();
+    point.x = screenX;
+    point.y = screenY;
+    return WindowFromPoint(point) == buttonWindow;
+  }
+
   public static int[] VirtualScreen() {
     return new int[] {
       GetSystemMetrics(76), GetSystemMetrics(77),
@@ -1992,6 +2040,54 @@ function Assert-MT5VmOptionsOkPointIdentity {
   return $true
 }
 
+function Assert-MT5VmCommittedOptionsOkGuard {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][bool]$EditorIsWindow,
+    [Parameter(Mandatory = $true)][bool]$EditorVisible,
+    [Parameter(Mandatory = $true)][bool]$NativeIdentityValid,
+    [Parameter(Mandatory = $true)][object]$State,
+    [Parameter(Mandatory = $true)][string]$ExpectedOrigin
+  )
+
+  if ($EditorIsWindow -or $EditorVisible -or -not $NativeIdentityValid -or
+      -not (Test-MT5VmDesiredWebRequestState `
+        -State $State `
+        -ExpectedOrigin $ExpectedOrigin
+      )) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_OK_MOUSE_INVALID'
+  }
+  return $true
+}
+
+function Assert-MT5VmCommittedOptionsOkCandidate {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][int]$ExpectedControlId,
+    [Parameter(Mandatory = $true)][int]$ObservedControlId,
+    [Parameter(Mandatory = $true)][int]$CandidateCount,
+    [Parameter(Mandatory = $true)][string]$WindowClass,
+    [Parameter(Mandatory = $true)][bool]$Visible,
+    [Parameter(Mandatory = $true)][bool]$Enabled,
+    [Parameter(Mandatory = $true)][int]$ExpectedProcessId,
+    [Parameter(Mandatory = $true)][int]$OptionsProcessId,
+    [Parameter(Mandatory = $true)][int]$ButtonProcessId,
+    [Parameter(Mandatory = $true)][int]$ListProcessId,
+    [Parameter(Mandatory = $true)][int]$CheckboxProcessId
+  )
+
+  if ($ExpectedControlId -ne 1 -or $ObservedControlId -ne $ExpectedControlId -or
+      $CandidateCount -ne 1 -or $WindowClass -cne 'Button' -or
+      -not $Visible -or -not $Enabled -or $ExpectedProcessId -lt 1 -or
+      $OptionsProcessId -ne $ExpectedProcessId -or
+      $ButtonProcessId -ne $ExpectedProcessId -or
+      $ListProcessId -ne $ExpectedProcessId -or
+      $CheckboxProcessId -ne $ExpectedProcessId) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_OK_MOUSE_INVALID'
+  }
+  return $true
+}
+
 function Invoke-MT5VmGuardedOptionsOkClickCore {
   [CmdletBinding()]
   param(
@@ -2984,6 +3080,43 @@ function Get-MT5VmOptionsOkButtonBoundary {
   return $button
 }
 
+function Get-MT5VmCommittedOptionsOkButtonBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$OptionsHandle,
+    [Parameter(Mandatory = $true)][int]$ProcessId
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  $controls = Get-MT5VmWebRequestControlMapBoundary -OptionsHandle $OptionsHandle
+  $matches = @([Mt5VmTerminalUiNative]::DescendantsWithControlId(
+      $OptionsHandle,
+      $constants.DialogOk
+    ))
+  $button = if ($matches.Count -eq 1) { [IntPtr]$matches[0] } else { [IntPtr]::Zero }
+  $null = Assert-MT5VmCommittedOptionsOkCandidate `
+    -ExpectedControlId ([int]$constants.DialogOk) `
+    -ObservedControlId $(if ($button -eq [IntPtr]::Zero) { 0 } else {
+        [Mt5VmTerminalUiNative]::GetDlgCtrlID($button)
+      }) `
+    -CandidateCount $matches.Count `
+    -WindowClass $(if ($button -eq [IntPtr]::Zero) { '' } else {
+        [Mt5VmTerminalUiNative]::WindowClass($button)
+      }) `
+    -Visible ($button -ne [IntPtr]::Zero -and
+      [Mt5VmTerminalUiNative]::IsWindowVisible($button)) `
+    -Enabled ($button -ne [IntPtr]::Zero -and
+      [Mt5VmTerminalUiNative]::IsWindowEnabled($button)) `
+    -ExpectedProcessId $ProcessId `
+    -OptionsProcessId ([int][Mt5VmTerminalUiNative]::WindowProcessId($OptionsHandle)) `
+    -ButtonProcessId ([int][Mt5VmTerminalUiNative]::WindowProcessId($button)) `
+    -ListProcessId ([int][Mt5VmTerminalUiNative]::WindowProcessId([IntPtr]$controls.List)) `
+    -CheckboxProcessId ([int][Mt5VmTerminalUiNative]::WindowProcessId(
+        [IntPtr]$controls.Checkbox
+      ))
+  return $button
+}
+
 function Get-MT5VmWindowCenterScreenBoundary {
   [CmdletBinding()]
   param([Parameter(Mandatory = $true)][IntPtr]$WindowHandle)
@@ -3000,14 +3133,14 @@ function Confirm-MT5VmOptionsDialogWithActiveEditorBoundary {
   param(
     [Parameter(Mandatory = $true)][IntPtr]$OptionsHandle,
     [Parameter(Mandatory = $true)][IntPtr]$EditorHandle,
-    [Parameter(Mandatory = $true)][int]$ProcessId
+    [Parameter(Mandatory = $true)][int]$ProcessId,
+    [Parameter(Mandatory = $true)][string]$ExpectedOrigin
   )
 
   return Invoke-MT5VmGuardedOptionsOkClickCore `
     -ResolveAction {
-      return Get-MT5VmOptionsOkButtonBoundary `
+      return Get-MT5VmCommittedOptionsOkButtonBoundary `
         -OptionsHandle $OptionsHandle `
-        -EditorHandle $EditorHandle `
         -ProcessId $ProcessId
     } `
     -GeometryAction {
@@ -3026,6 +3159,8 @@ function Confirm-MT5VmOptionsDialogWithActiveEditorBoundary {
     } `
     -GuardAction {
       param($button, $point)
+      $controls = Get-MT5VmWebRequestControlMapBoundary -OptionsHandle $OptionsHandle
+      $committed = Read-MT5VmWebRequestStateBoundary -OptionsHandle $OptionsHandle
       $observed = [IntPtr][Mt5VmTerminalUiNative]::WindowAtScreenPoint(
         [int]$point.x,
         [int]$point.y
@@ -3033,14 +3168,22 @@ function Confirm-MT5VmOptionsDialogWithActiveEditorBoundary {
       $null = Assert-MT5VmOptionsOkPointIdentity `
         -ExpectedButtonHandle $button `
         -ObservedPointHandle $observed
-      return [bool][Mt5VmTerminalUiNative]::IsExactOptionsOkGuard(
+      $nativeIdentityValid = [bool][Mt5VmTerminalUiNative]::IsExactCommittedOptionsOkGuard(
         $OptionsHandle,
         $button,
+        [IntPtr]$controls.List,
+        [IntPtr]$controls.Checkbox,
         $EditorHandle,
         [uint32]$ProcessId,
         [int]$point.x,
         [int]$point.y
       )
+      return Assert-MT5VmCommittedOptionsOkGuard `
+        -EditorIsWindow ([Mt5VmTerminalUiNative]::IsWindow($EditorHandle)) `
+        -EditorVisible ([Mt5VmTerminalUiNative]::IsWindowVisible($EditorHandle)) `
+        -NativeIdentityValid $nativeIdentityValid `
+        -State $committed `
+        -ExpectedOrigin $ExpectedOrigin
     } `
     -ClickAction {
       param($plan)
@@ -3355,7 +3498,8 @@ function Set-MT5VmTerminalWebRequestAllowlist {
     Confirm-MT5VmOptionsDialogWithActiveEditorBoundary `
       -OptionsHandle $activeDialog `
       -EditorHandle $activeEditor `
-      -ProcessId $ProcessId
+      -ProcessId $ProcessId `
+      -ExpectedOrigin $Origin
     $activeDialog = [IntPtr]::Zero
 
     $activeDialog = Open-MT5VmOptionsDialogBoundary -ProcessId $ProcessId
