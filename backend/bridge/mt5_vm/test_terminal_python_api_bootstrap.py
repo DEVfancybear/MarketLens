@@ -550,6 +550,14 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
         self.assertLess(reopen_at, persisted_at)
         self.assertNotIn("$pending = Read-MT5VmWebRequestStateBoundary", set_source)
 
+    def test_webrequest_restore_does_not_insert_the_add_row_placeholder(self) -> None:
+        source = UI_HELPER.read_text(encoding="utf-8")
+        start = source.index("function Write-MT5VmWebRequestStateBoundary {")
+        end = source.index("function Restore-MT5VmTerminalWebRequestState {", start)
+        write_source = source[start:end]
+        self.assertIn("[string[]]@($targetNonEmpty)", write_source)
+        self.assertNotIn("[string[]]@($target.Items)", write_source)
+
     def test_webrequest_allowlist_mismatch_restores_snapshot_before_rethrow(self) -> None:
         body = (
             self._webrequest_ui_boundaries(mismatch_apply=True)
