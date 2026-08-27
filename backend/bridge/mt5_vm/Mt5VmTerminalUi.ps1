@@ -913,6 +913,7 @@ function Get-MT5VmTerminalUiConstants {
     VirtualKeyLeft = 0x25
     VirtualKeyRight = 0x27
     VirtualKeyReturn = 0x0D
+    VirtualKeyDelete = 0x2E
     VirtualKeyShift = 0x10
     VirtualKeyCapsLock = 0x14
     VirtualKeyOem1 = 0xBA
@@ -2912,6 +2913,57 @@ function Read-MT5VmWebRequestStateBoundary {
     })
 }
 
+function Select-MT5VmWebRequestListItemBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$ListHandle,
+    [Parameter(Mandatory = $true)][int]$ItemIndex
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  return [bool][Mt5VmTerminalUiNative]::TrySelectListItem(
+    $ListHandle,
+    [uint32]$constants.LvmSetItemState,
+    $ItemIndex,
+    [uint32]$constants.UiMessageTimeoutMs
+  )
+}
+
+function Remove-MT5VmWebRequestItemsBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$OptionsHandle,
+    [Parameter(Mandatory = $true)][IntPtr]$ListHandle
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  $before = Read-MT5VmWebRequestStateBoundary -OptionsHandle $OptionsHandle
+  $realItemCount = @($before.Items | Where-Object {
+      -not [string]::IsNullOrEmpty([string]$_)
+    }).Count
+  for ($index = 0; $index -lt $realItemCount; $index++) {
+    if (-not (Select-MT5VmWebRequestListItemBoundary `
+        -ListHandle $ListHandle -ItemIndex 0
+      )) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_LIST_WRITE_FAILED'
+    }
+    $null = Invoke-MT5VmBoundedUiMessage `
+      -Handle $ListHandle `
+      -Message ([uint32]$constants.WmKeyDown) `
+      -WParam ([IntPtr]$constants.VirtualKeyDelete)
+    $null = Invoke-MT5VmBoundedUiMessage `
+      -Handle $ListHandle `
+      -Message ([uint32]$constants.WmKeyUp) `
+      -WParam ([IntPtr]$constants.VirtualKeyDelete)
+  }
+  $after = Read-MT5VmWebRequestStateBoundary -OptionsHandle $OptionsHandle
+  if (@($after.Items).Count -ne 1 -or
+      -not [string]::IsNullOrEmpty([string]@($after.Items)[0])) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_LIST_WRITE_FAILED'
+  }
+  return $true
+}
+
 function Write-MT5VmWebRequestStateBoundary {
   [CmdletBinding()]
   param(
@@ -2951,15 +3003,21 @@ function Write-MT5VmWebRequestStateBoundary {
       throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTROL_INVALID'
     }
   }
-  [Mt5VmTerminalUiNative]::ReplaceListViewItems(
-    [IntPtr]$controls.List,
-    [uint32]$constants.LvmDeleteAllItems,
-    [uint32]$constants.LvmInsertItem,
-    [string[]]@($targetNonEmpty),
-    [int]$constants.WebRequestMaxItems,
-    [int]$constants.WebRequestMaxCharacters,
-    [uint32]$constants.UiMessageTimeoutMs
-  )
+  if ($targetNonEmpty.Count -eq 0) {
+    $null = Remove-MT5VmWebRequestItemsBoundary `
+      -OptionsHandle $OptionsHandle `
+      -ListHandle ([IntPtr]$controls.List)
+  } else {
+    [Mt5VmTerminalUiNative]::ReplaceListViewItems(
+      [IntPtr]$controls.List,
+      [uint32]$constants.LvmDeleteAllItems,
+      [uint32]$constants.LvmInsertItem,
+      [string[]]@($targetNonEmpty),
+      [int]$constants.WebRequestMaxItems,
+      [int]$constants.WebRequestMaxCharacters,
+      [uint32]$constants.UiMessageTimeoutMs
+    )
+  }
   if ($target.Enabled -eq 0) {
     $null = Invoke-MT5VmBoundedUiMessage `
       -Handle ([IntPtr]$controls.Checkbox) `
