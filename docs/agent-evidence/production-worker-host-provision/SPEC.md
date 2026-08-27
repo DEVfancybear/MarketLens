@@ -2582,3 +2582,61 @@ APPROVE SPEC REVISION: production-worker-host-provision v31
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v31`. No v31 implementation or retained
 host mutation occurred before that approval.
+
+## Revision v32 - guarded physical Options OK confirmation (approval required)
+
+### Discovery during approved v31 execution
+
+V31 reached GREEN with 57/57 MT5 regression tests, 5/5 allowlist mutants, and 9/9 UI/mouse
+mutants killed. Its selected-host commit-rollback trace typed and reread the exact editor text, but
+the existing message-based `BM_CLICK` OK boundary closed Options without persisting the URL. The
+transaction restored the prior disabled state and returned
+`PROVISIONING_WEBREQUEST_ALLOWLIST_PERSIST_FAILED`; portproxy and port 80 remained empty. During
+rollback hardening, the selected host exposed two blank list rows left by an earlier failed
+experiment. A bounded selected-item Delete path restored and reopened the exact prior
+`Enabled=0, Items=[""]` state successfully without retaining a terminal process.
+
+The selected MT5 build therefore requires the real mouse focus transition produced by clicking
+the visible OK button; programmatic `BM_CLICK` does not commit the active URL entry editor.
+
+### v32 exact guarded physical confirmation boundary
+
+Revision v32 remains Tier 3 and supersedes only v31 step 3's message-based Options confirmation.
+Every other v31/v30/v29/v28 requirement remains unchanged. After exact editor readback and its
+final focus/PID guard, the helper must:
+
+1. resolve exactly one visible, enabled `Button` with dialog control ID `1` under the exact Options
+   window and require the Options window, button, editor, and selected terminal to share the exact
+   expected PID;
+2. compute a bounded client-center point inside the OK button, convert it to screen coordinates,
+   require the exact Options window to be foreground and `WindowFromPoint` to equal that OK button;
+3. capture the cursor, submit exactly one physical left-down/left-up pair, require native return
+   count `2`, and restore the cursor in `finally`; no double-click, retry, keyboard focus command,
+   Return, Tab, plus-click, `SendKeys`, clipboard, or general-purpose automation API is allowed;
+4. require the Options dialog to become non-visible within the existing bounded interval, then
+   reopen and verify the exact persisted desired state as v31 requires; and
+5. fail closed on any identity, geometry, foreground, point, native-count, close-timeout, or cursor
+   restoration mismatch. Existing exact rollback remains mandatory and authoritative.
+
+Before implementation, add and observe RED tests for exact OK identity/geometry/point guards,
+single-click record/count, cursor restoration, and ordering after final editor readback but before
+persisted reopen. Kill and restore at least four plausible mutants: accept the wrong OK PID, accept
+a point resolving outside OK, permit one injected mouse record, and skip cursor restoration.
+Add no dependency or download.
+
+Run the commit-rollback trace first while portproxy and port 80 are empty. Require its exact
+persisted-desired/restored-prior PASS marker. Only then run the normal allowlist driver twice and
+the unchanged complete 13-layer verifier, including the canonical no-switch
+`powershell.exe -File .\run-backend-production.ps1` layer.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v32
+```
+
+### v32 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v32`. No v32 implementation or retained
+host mutation occurred before that approval.
