@@ -165,6 +165,36 @@ function Invoke-AllowlistMutationTests {
   $originalText = [Text.Encoding]::UTF8.GetString($originalBytes)
   $mutants = @(
     [pscustomobject]@{
+      name = 'accept-duplicate-key'
+      search = @'
+if ($webMatches.Count -ne 1 -or $urlMatches.Count -ne 1 -or
+      $allWebMatches.Count -ne 1 -or $allUrlMatches.Count -ne 1) {
+'@
+      replace = @'
+if ($webMatches.Count -lt 1 -or $urlMatches.Count -lt 1 -or
+      $allWebMatches.Count -lt 1 -or $allUrlMatches.Count -lt 1) {
+'@
+      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_FAILED_OPEN'
+    },
+    [pscustomobject]@{
+      name = 'change-unrelated-bytes'
+      search = '$desiredText = Set-ProductionCommonIniValueSpans -Model $model -WebValue ''1'' -UrlValue $ExpectedOrigin'
+      replace = '$desiredText = (Set-ProductionCommonIniValueSpans -Model $model -WebValue ''1'' -UrlValue $ExpectedOrigin).Replace(''Untouched=tail'', ''Untouched=mutant'')'
+      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_UNRELATED_BYTES_CHANGED'
+    },
+    [pscustomobject]@{
+      name = 'accept-idempotency-hash-change'
+      search = 'DesiredHash = $sameHash'
+      replace = 'DesiredHash = ''PROVISIONING_IDEMPOTENCY_MUTANT'''
+      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_IDEMPOTENCY_INVALID'
+    },
+    [pscustomobject]@{
+      name = 'report-original-after-rollback-failure'
+      search = 'if ($rollbackResult -ne $true) {'
+      replace = 'if ($false) {'
+      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_PROBE_FAILED'
+    },
+    [pscustomobject]@{
       name = 'permit-wildcard-listen-address'
       search = '[string]$entry.listen_address -cne $listenAddress -or'
       replace = '$false -or'
@@ -258,8 +288,8 @@ $proxy = & $EnsureProxyAction
   ) 'PROVISIONING_ALLOWLIST_MUTANT_RESTORE_FAILED'
   & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $allowlistDriver -ContractTestsOnly
   Assert-NativeSuccess 'PROVISIONING_ALLOWLIST_MUTATION_RESTORED_TEST_FAILED'
-  Assert-Gate ($mutants.Count -eq 5) 'PROVISIONING_ALLOWLIST_MUTATION_MANIFEST_INVALID'
-  Write-Output 'PRODUCTION_WEBREQUEST_ALLOWLIST_MUTATION=5/5'
+  Assert-Gate ($mutants.Count -eq 9) 'PROVISIONING_ALLOWLIST_MUTATION_MANIFEST_INVALID'
+  Write-Output 'PRODUCTION_WEBREQUEST_ALLOWLIST_MUTATION=9/9'
 }
 
 function Invoke-MouseMutationTests {

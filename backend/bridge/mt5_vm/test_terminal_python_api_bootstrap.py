@@ -493,12 +493,12 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
         )
         self.assertNotEqual(0, negative.returncode)
         self.assertIn(
-            "PROVISIONING_WEBREQUEST_PORTPROXY_STATE_INVALID",
+            "PROVISIONING_WEBREQUEST_ALLOWLIST_SCHEMA_INVALID",
             negative.stdout + negative.stderr,
         )
         self.assertNotEqual(0, unreadable.returncode)
         self.assertIn(
-            "PROVISIONING_WEBREQUEST_PORTPROXY_OUTPUT_INVALID",
+            "PROVISIONING_WEBREQUEST_ALLOWLIST_CONFIG_UNREADABLE",
             unreadable.stdout + unreadable.stderr,
         )
         self.assertNotEqual(0, occupied.returncode)
@@ -1958,6 +1958,10 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             "accept-visible-committed-editor",
             "accept-wrong-committed-control-identity",
             "accept-editor-readback-as-persisted-proof",
+            "accept-duplicate-key",
+            "change-unrelated-bytes",
+            "accept-idempotency-hash-change",
+            "report-original-after-rollback-failure",
             "create-proxy-before-persisted-preflight",
             "skip-successful-trace-rollback",
             "accept-wrong-options-ok-pid",
@@ -1965,7 +1969,7 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             "permit-partial-options-ok-click",
             "skip-options-ok-cursor-restoration",
             "PRODUCTION_WEBREQUEST_MOUSE_MUTATION=18/18",
-            "PRODUCTION_WEBREQUEST_ALLOWLIST_MUTATION=5/5",
+            "PRODUCTION_WEBREQUEST_ALLOWLIST_MUTATION=9/9",
         ):
             self.assertIn(required, source, required)
 
