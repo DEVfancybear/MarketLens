@@ -586,7 +586,7 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             "$script:events=@();$script:reads=0;"
             "function Read-MT5VmWebRequestStateBoundary {param([IntPtr]$OptionsHandle);"
             "$script:events+=,'read';$script:reads++;if($script:reads -eq 1){"
-            "return [pscustomobject]@{Enabled=1;Items=@('http://127.0.0.1','')}};"
+            "return [pscustomobject]@{Enabled=1;Items=@('','')}};"
             "return [pscustomobject]@{Enabled=1;Items=@('')}};"
             "function Select-MT5VmWebRequestListItemBoundary {"
             "param([IntPtr]$ListHandle,[int]$ItemIndex);"
