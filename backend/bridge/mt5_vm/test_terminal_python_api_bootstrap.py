@@ -557,6 +557,18 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
         write_source = source[start:end]
         self.assertIn("[string[]]@($targetNonEmpty)", write_source)
         self.assertNotIn("[string[]]@($target.Items)", write_source)
+        restore_end = source.index(
+            "function Set-MT5VmTerminalWebRequestAllowlist {", end
+        )
+        restore_source = source[end:restore_end]
+        self.assertNotIn("$pending = Read-MT5VmWebRequestStateBoundary", restore_source)
+        confirm_at = restore_source.index("Confirm-MT5VmOptionsDialogBoundary")
+        reopen_at = restore_source.index("Open-MT5VmOptionsDialogBoundary", confirm_at)
+        persisted_at = restore_source.index(
+            "$persisted = Read-MT5VmWebRequestStateBoundary", reopen_at
+        )
+        self.assertLess(confirm_at, reopen_at)
+        self.assertLess(reopen_at, persisted_at)
 
     def test_webrequest_allowlist_mismatch_restores_snapshot_before_rethrow(self) -> None:
         body = (
