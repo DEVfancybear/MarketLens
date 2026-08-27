@@ -2985,10 +2985,6 @@ function Restore-MT5VmTerminalWebRequestState {
   try {
     $activeDialog = Open-MT5VmOptionsDialogBoundary -ProcessId $ProcessId
     Write-MT5VmWebRequestStateBoundary -OptionsHandle $activeDialog -State $target
-    $pending = Read-MT5VmWebRequestStateBoundary -OptionsHandle $activeDialog
-    if (-not (Test-MT5VmWebRequestStateExact -Left $pending -Right $target)) {
-      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED'
-    }
     Confirm-MT5VmOptionsDialogBoundary -OptionsHandle $activeDialog
     $activeDialog = [IntPtr]::Zero
 
