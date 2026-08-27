@@ -2503,3 +2503,82 @@ APPROVE SPEC REVISION: production-worker-host-provision v30
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v30`. No v30 implementation or host
 mutation occurred before that approval.
+
+## Revision v31 - verify MT5 URL only after guarded dialog confirmation (approval required)
+
+### Discovery during approved v30 execution
+
+V30 passed 72/72 focused regressions, killed 7/7 physical-mouse mutants and 4/4 allowlist
+mutants, and opened the selected terminal's exact URL editor using the paced guarded double-click.
+The selected-host pending-only trace nevertheless failed closed. Repeated always-Cancel traces
+proved that the editor contained the exact ordinal URL `http://127.0.0.1`, while the list model
+continued to report only blank rows after physical Return, synchronous/queued Return, paced key
+pairs, `LVM_ENDEDITLABELNOW(FALSE)`, and a guarded click on the visible plus glyph. A captured
+diagnostic image confirmed that the selected control is MT5's URL entry row, not a normal inline
+list item. Every trace cancelled, closed the agent-owned terminal, and left portproxy and port 80
+empty.
+
+The v29-v30 requirement to prove the final list model before pressing dialog OK is therefore not
+implementable on this selected MT5 build. The URL entry remains exact and readable before OK, but
+MT5 does not expose the authoritative listed-URL state until the Options dialog is confirmed.
+
+### v31 exact guarded confirm-and-verify transaction
+
+Revision v31 remains Tier 3 and supersedes only the pending-only preflight and Return-based editor
+commit. All v28 loopback topology, signer/path/PID binding, rollback, probe, worker, verifier, and
+canonical production requirements remain unchanged. All v29 cursor/point/input guards and the v30
+paced double-click remain unchanged.
+
+Before any portproxy mutation, the selected-host driver must:
+
+1. snapshot the exact prior Options state and accept only the existing disabled/one-blank-row state
+   or the already persisted exact desired state;
+2. for the prior state, enable the checkbox, activate the exact URL entry using v30, type only
+   `http://127.0.0.1`, require exact editor focus/PID/visibility and ordinal readback, and deliberately
+   leave the editor active without Return, Tab, plus-click, or another text mutation;
+3. confirm the exact Options dialog through its already guarded OK boundary, reopen the exact
+   dialog, and require enabled state, exactly one ordinal-equal non-empty URL, and at most one blank
+   placeholder;
+4. if confirmation, reopen, or persisted verification fails, immediately restore the exact prior
+   checkbox/list snapshot through the existing bounded rollback path, reopen and prove exact
+   restoration, then throw the original failure; rollback failure remains the authoritative
+   `PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED`;
+5. expose a rerunnable commit-rollback trace mode that performs steps 1-3, restores the prior state
+   even after a successful persisted verification, reopens to prove restoration, and exits with one
+   exact PASS marker; this trace must pass while portproxy and port 80 are empty before the normal
+   production transaction may run; and
+6. in the normal transaction, keep the verified desired state, then create/verify the exact v28
+   loopback portproxy, run a second apply for `UNCHANGED`, and continue the nonce-bound live probe,
+   managed-worker provisioning, full verifier, and canonical no-switch production runner.
+
+The driver may not click OK unless editor readback and every existing foreground/PID/control guard
+has passed. It may not claim success from editor text alone, skip the persisted reopen, retain a
+failed experiment, create portproxy before persisted verification, or suppress rollback failure.
+No trade action, account mutation, firewall rule, download, dependency, or force termination is
+authorized.
+
+### v31 RED -> GREEN and gauntlet additions
+
+Before implementation, add and observe RED tests proving the editor remains active after exact
+readback, OK precedes persisted reread but follows every guard, persisted mismatch triggers exact
+rollback, a successful trace also rolls back, and no proxy action can run before persisted
+verification. Freeze assertions through GREEN. Kill and restore at least four plausible mutants:
+send Return before OK, accept editor readback as persisted proof, create proxy before reopen
+verification, and skip rollback after a successful trace. Re-run all v30/v29 controls and mutants,
+the focused regressions, then the complete 13-layer verifier. Add no dependency or download.
+
+Run commit-rollback trace first and require exact persisted-desired and restored-prior proofs. Only
+then run the full driver twice and the complete verifier, whose canonical production layer must
+execute `powershell.exe -File .\run-backend-production.ps1` with no switches.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v31
+```
+
+### v31 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v31`. No v31 implementation or retained
+host mutation occurred before that approval.
