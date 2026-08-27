@@ -698,30 +698,13 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
         self,
     ) -> None:
         body = (
-            "$origin='http://127.0.0.1:8790';"
-            "$exact=[pscustomobject]@{Enabled=1;Items=[string[]]@($origin)};"
             "$ok=Assert-MT5VmCommittedOptionsOkGuard "
             "-EditorIsWindow $false -EditorVisible $false "
-            "-NativeIdentityValid $true -State $exact -ExpectedOrigin $origin;"
+            "-NativeIdentityValid $true;"
             "$cases=@("
-            "@{EditorIsWindow=$true;EditorVisible=$false;NativeIdentityValid=$true;"
-            "State=$exact;ExpectedOrigin=$origin},"
-            "@{EditorIsWindow=$false;EditorVisible=$true;NativeIdentityValid=$true;"
-            "State=$exact;ExpectedOrigin=$origin},"
-            "@{EditorIsWindow=$false;EditorVisible=$false;NativeIdentityValid=$false;"
-            "State=$exact;ExpectedOrigin=$origin},"
-            "@{EditorIsWindow=$false;EditorVisible=$false;NativeIdentityValid=$true;"
-            "State=[pscustomobject]@{Enabled=0;Items=[string[]]@($origin)};"
-            "ExpectedOrigin=$origin},"
-            "@{EditorIsWindow=$false;EditorVisible=$false;NativeIdentityValid=$true;"
-            "State=[pscustomobject]@{Enabled=1;Items=[string[]]@()};"
-            "ExpectedOrigin=$origin},"
-            "@{EditorIsWindow=$false;EditorVisible=$false;NativeIdentityValid=$true;"
-            "State=[pscustomobject]@{Enabled=1;Items=[string[]]@($origin,$origin)};"
-            "ExpectedOrigin=$origin},"
-            "@{EditorIsWindow=$false;EditorVisible=$false;NativeIdentityValid=$true;"
-            "State=[pscustomobject]@{Enabled=1;Items=[string[]]@('http://wrong')};"
-            "ExpectedOrigin=$origin});"
+            "@{EditorIsWindow=$true;EditorVisible=$false;NativeIdentityValid=$true},"
+            "@{EditorIsWindow=$false;EditorVisible=$true;NativeIdentityValid=$true},"
+            "@{EditorIsWindow=$false;EditorVisible=$false;NativeIdentityValid=$false});"
             "$errors=@();foreach($case in $cases){try{"
             "Assert-MT5VmCommittedOptionsOkGuard @case|Out-Null;"
             "$errors+=,'FAILED_OPEN'}catch{$errors+=,$_.Exception.Message}};"
@@ -732,7 +715,7 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
         self.assertEqual(0, completed.returncode, completed.stderr)
         observed = json.loads(completed.stdout)
         self.assertTrue(observed["ok"])
-        self.assertEqual(7, len(observed["errors"]))
+        self.assertEqual(3, len(observed["errors"]))
         for error in observed["errors"]:
             self.assertEqual(
                 "PROVISIONING_WEBREQUEST_ALLOWLIST_OK_MOUSE_INVALID", error
@@ -751,10 +734,10 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
         confirm_source = source[confirm_start:confirm_end]
         for required in (
             "Assert-MT5VmCommittedOptionsOkGuard",
-            "Read-MT5VmWebRequestStateBoundary",
             "IsExactCommittedOptionsOkGuard",
         ):
             self.assertIn(required, confirm_source, required)
+        self.assertNotIn("Read-MT5VmWebRequestStateBoundary", confirm_source)
         self.assertNotIn("IsExactOptionsOkGuard", confirm_source)
 
         set_start = source.index("function Set-MT5VmTerminalWebRequestAllowlist {")
