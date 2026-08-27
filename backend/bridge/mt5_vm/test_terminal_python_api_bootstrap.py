@@ -613,14 +613,25 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
         )
 
     def test_webrequest_physical_ok_confirm_fails_closed_and_restores_cursor(self) -> None:
-        for mode, expected_events in (
-            ("guard", ["resolve", "geometry", "capture", "move", "guard", "restore"]),
+        for mode, expected_code, expected_events in (
+            (
+                "guard",
+                "PROVISIONING_WEBREQUEST_ALLOWLIST_OK_MOUSE_INVALID",
+                ["resolve", "geometry", "capture", "move", "guard", "restore"],
+            ),
             (
                 "partial_click",
+                "PROVISIONING_WEBREQUEST_ALLOWLIST_OK_MOUSE_INVALID",
                 ["resolve", "geometry", "capture", "move", "guard", "click", "restore"],
             ),
             (
                 "wait",
+                "PROVISIONING_WEBREQUEST_ALLOWLIST_OK_MOUSE_INVALID",
+                ["resolve", "geometry", "capture", "move", "guard", "click", "wait", "restore"],
+            ),
+            (
+                "restore",
+                "PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED",
                 ["resolve", "geometry", "capture", "move", "guard", "click", "wait", "restore"],
             ),
         ):
@@ -636,17 +647,15 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
                 "-ClickAction {param($plan);$events.Add('click');"
                 "if($mode -eq 'partial_click'){1}else{$plan.Count}} "
                 "-WaitAction {$events.Add('wait');$mode -ne 'wait'} "
-                "-RestoreCursorAction {param($cursor);$events.Add('restore');$true}|Out-Null;"
+                "-RestoreCursorAction {param($cursor);$events.Add('restore');"
+                "$mode -ne 'restore'}|Out-Null;"
                 "$result='FAILED_OPEN'}catch{$result=$_.Exception.Message};"
                 "[pscustomobject]@{result=$result;events=$events}|ConvertTo-Json -Compress"
             )
             completed = self._run_module(body)
             self.assertEqual(0, completed.returncode, completed.stderr)
             observed = json.loads(completed.stdout)
-            self.assertEqual(
-                "PROVISIONING_WEBREQUEST_ALLOWLIST_OK_MOUSE_INVALID",
-                observed["result"],
-            )
+            self.assertEqual(expected_code, observed["result"])
             self.assertEqual(expected_events, observed["events"])
 
     def test_webrequest_physical_ok_identity_point_and_click_plan_are_exact(self) -> None:
@@ -1847,7 +1856,7 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             "combine-click-batches",
             "remove-paced-click-delay",
             "drop-mid-click-guard",
-            "PRODUCTION_WEBREQUEST_MOUSE_MUTATION=9/9",
+            "PRODUCTION_WEBREQUEST_MOUSE_MUTATION=13/13",
             "PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID",
             "PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED",
         ):
@@ -1860,7 +1869,11 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             "accept-editor-readback-as-persisted-proof",
             "create-proxy-before-persisted-preflight",
             "skip-successful-trace-rollback",
-            "PRODUCTION_WEBREQUEST_MOUSE_MUTATION=9/9",
+            "accept-wrong-options-ok-pid",
+            "accept-wrong-options-ok-point",
+            "permit-partial-options-ok-click",
+            "skip-options-ok-cursor-restoration",
+            "PRODUCTION_WEBREQUEST_MOUSE_MUTATION=13/13",
             "PRODUCTION_WEBREQUEST_ALLOWLIST_MUTATION=5/5",
         ):
             self.assertIn(required, source, required)
