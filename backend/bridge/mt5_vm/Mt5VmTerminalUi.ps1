@@ -2903,6 +2903,11 @@ function Invoke-MT5VmGuardedExactVirtualKeyStageBoundary {
     )) {
     throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
   }
+  $returnPlan = @(New-MT5VmReturnKeyInputPlan)
+  $insertedReturn = Invoke-MT5VmNativeKeyboardInputBoundary -Plan $returnPlan
+  if ([int]$insertedReturn -ne $returnPlan.Count) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
   return $true
 }
 
