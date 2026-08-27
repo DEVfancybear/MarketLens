@@ -2938,10 +2938,8 @@ function Remove-MT5VmWebRequestItemsBoundary {
 
   $constants = Get-MT5VmTerminalUiConstants
   $before = Read-MT5VmWebRequestStateBoundary -OptionsHandle $OptionsHandle
-  $realItemCount = @($before.Items | Where-Object {
-      -not [string]::IsNullOrEmpty([string]$_)
-    }).Count
-  for ($index = 0; $index -lt $realItemCount; $index++) {
+  $removalCount = [Math]::Max(0, @($before.Items).Count - 1)
+  for ($index = 0; $index -lt $removalCount; $index++) {
     if (-not (Select-MT5VmWebRequestListItemBoundary `
         -ListHandle $ListHandle -ItemIndex 0
       )) {
