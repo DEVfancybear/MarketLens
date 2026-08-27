@@ -775,7 +775,8 @@ function Assert-ProductionPort80ListenerState {
   if ($Listeners.Count -ne 1 -or
       [string]$Listeners[0].local_address -cne $listenAddress -or
       [int]$Listeners[0].local_port -ne $listenPort -or
-      [string]$Listeners[0].process_name -cne 'System') {
+      [string]$Listeners[0].process_name -cne 'svchost' -or
+      @($Listeners[0].service_names) -cnotcontains 'iphlpsvc') {
     throw 'PROVISIONING_WEBREQUEST_PORT80_LISTENER_INVALID'
   }
   return $true
@@ -926,10 +927,21 @@ function Get-ProductionPort80Listeners {
   $listeners = @()
   foreach ($connection in $connections) {
     $process = Get-Process -Id ([int]$connection.OwningProcess) -ErrorAction SilentlyContinue
+    try {
+      $serviceNames = @(
+        Get-CimInstance Win32_Service `
+          -Filter ('ProcessId = {0}' -f [int]$connection.OwningProcess) `
+          -ErrorAction Stop |
+          ForEach-Object { [string]$_.Name }
+      )
+    } catch {
+      throw 'PROVISIONING_WEBREQUEST_PORT80_QUERY_FAILED'
+    }
     $listeners += [pscustomobject][ordered]@{
       local_address = [string]$connection.LocalAddress
       local_port = [int]$connection.LocalPort
       process_name = if ($null -eq $process) { '' } else { [string]$process.ProcessName }
+      service_names = $serviceNames
     }
   }
   return @($listeners)
@@ -1340,7 +1352,8 @@ Address         Port        Address         Port
     [pscustomobject]@{
       local_address = '127.0.0.1'
       local_port = 80
-      process_name = 'System'
+      process_name = 'svchost'
+      service_names = @('iphlpsvc')
     }
   ) -ExpectPresent $true
   Write-Output 'PRODUCTION_WEBREQUEST_ALLOWLIST_PORTPROXY_CONTRACTS=PASS'
