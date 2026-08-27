@@ -398,14 +398,16 @@ Start-Sleep -Milliseconds 150
     Confirm-MT5VmOptionsDialogWithActiveEditorBoundary `
       -OptionsHandle $activeDialog `
       -EditorHandle $activeEditor `
-      -ProcessId $ProcessId
+      -ProcessId $ProcessId `
+      -ExpectedOrigin $Origin
     $activeDialog = [IntPtr]::Zero
 '@
       replace2 = @'
     Confirm-MT5VmOptionsDialogWithActiveEditorBoundary `
       -OptionsHandle $activeDialog `
       -EditorHandle $activeEditor `
-      -ProcessId $ProcessId
+      -ProcessId $ProcessId `
+      -ExpectedOrigin $Origin
     $returnPlan = @(New-MT5VmReturnKeyInputPlan)
     $insertedReturn = Invoke-MT5VmNativeKeyboardInputBoundary -Plan $returnPlan
     if ([int]$insertedReturn -ne $returnPlan.Count) {
@@ -414,6 +416,31 @@ Start-Sleep -Milliseconds 150
     $activeDialog = [IntPtr]::Zero
 '@
       test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_virtual_key_stage_commits_once_after_readback'
+    },
+    [pscustomobject]@{
+      name = 'accept-live-committed-editor'
+      search = '$EditorIsWindow -or $EditorVisible -or -not $NativeIdentityValid -or'
+      replace = '$false -or $false -or -not $NativeIdentityValid -or'
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_committed_row_guard_accepts_only_retired_editor_exact_state_and_identity'
+    },
+    [pscustomobject]@{
+      name = 'skip-committed-row-state-check'
+      search = @'
+-not (Test-MT5VmDesiredWebRequestState `
+        -State $State `
+        -ExpectedOrigin $ExpectedOrigin
+      )
+'@
+      replace = @'
+$false
+'@
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_committed_row_guard_accepts_only_retired_editor_exact_state_and_identity'
+    },
+    [pscustomobject]@{
+      name = 'accept-wrong-committed-control-identity'
+      search = '-not $NativeIdentityValid -or'
+      replace = '$false -or'
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_committed_row_guard_accepts_only_retired_editor_exact_state_and_identity'
     },
     [pscustomobject]@{
       name = 'accept-editor-readback-as-persisted-proof'
@@ -433,8 +460,14 @@ Start-Sleep -Milliseconds 150
     },
     [pscustomobject]@{
       name = 'accept-wrong-options-ok-pid'
-      search = '$ButtonProcessId -ne $ExpectedProcessId -or'
-      replace = '$false -or'
+      search = @'
+$ButtonProcessId -ne $ExpectedProcessId -or
+      $EditorProcessId -ne $ExpectedProcessId) {
+'@
+      replace = @'
+$false -or
+      $EditorProcessId -ne $ExpectedProcessId) {
+'@
       test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_ok_identity_point_and_click_plan_are_exact'
     },
     [pscustomobject]@{
@@ -539,10 +572,11 @@ Start-Sleep -Milliseconds 150
     backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_virtual_key_stage_commits_once_after_readback `
     backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_allowlist_mismatch_restores_snapshot_before_rethrow `
     backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_ok_identity_point_and_click_plan_are_exact `
-    backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_ok_confirm_fails_closed_and_restores_cursor
+    backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_ok_confirm_fails_closed_and_restores_cursor `
+    backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_committed_row_guard_accepts_only_retired_editor_exact_state_and_identity
   Assert-NativeSuccess 'PROVISIONING_MOUSE_MUTATION_RESTORED_TEST_FAILED'
-  Assert-Gate ($mutants.Count -eq 15) 'PROVISIONING_MOUSE_MUTATION_MANIFEST_INVALID'
-  Write-Output 'PRODUCTION_WEBREQUEST_MOUSE_MUTATION=15/15'
+  Assert-Gate ($mutants.Count -eq 18) 'PROVISIONING_MOUSE_MUTATION_MANIFEST_INVALID'
+  Write-Output 'PRODUCTION_WEBREQUEST_MOUSE_MUTATION=18/18'
 }
 
 if ($AllowlistMutationTestsOnly) {
