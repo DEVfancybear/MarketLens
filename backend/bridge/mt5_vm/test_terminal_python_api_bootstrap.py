@@ -570,6 +570,47 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
         self.assertLess(confirm_at, reopen_at)
         self.assertLess(reopen_at, persisted_at)
 
+    def test_webrequest_restore_removes_backing_url_through_list_delete(self) -> None:
+        source = UI_HELPER.read_text(encoding="utf-8")
+        self.assertIn("VirtualKeyDelete = 0x2E", source)
+        self.assertIn("function Remove-MT5VmWebRequestItemsBoundary {", source)
+        self.assertIn("Select-MT5VmWebRequestListItemBoundary", source)
+        write_start = source.index("function Write-MT5VmWebRequestStateBoundary {")
+        write_end = source.index("function Restore-MT5VmTerminalWebRequestState {", write_start)
+        self.assertIn("Remove-MT5VmWebRequestItemsBoundary", source[write_start:write_end])
+
+        body = (
+            "$readOriginal=(Get-Command Read-MT5VmWebRequestStateBoundary).ScriptBlock;"
+            "$selectOriginal=(Get-Command Select-MT5VmWebRequestListItemBoundary).ScriptBlock;"
+            "$messageOriginal=(Get-Command Invoke-MT5VmBoundedUiMessage).ScriptBlock;"
+            "$script:events=@();$script:reads=0;"
+            "function Read-MT5VmWebRequestStateBoundary {param([IntPtr]$OptionsHandle);"
+            "$script:events+=,'read';$script:reads++;if($script:reads -eq 1){"
+            "return [pscustomobject]@{Enabled=1;Items=@('http://127.0.0.1','')}};"
+            "return [pscustomobject]@{Enabled=1;Items=@('')}};"
+            "function Select-MT5VmWebRequestListItemBoundary {"
+            "param([IntPtr]$ListHandle,[int]$ItemIndex);"
+            "$script:events+=,('select:'+$ItemIndex);return $true};"
+            "function Invoke-MT5VmBoundedUiMessage {"
+            "param([IntPtr]$Handle,[uint32]$Message,[IntPtr]$WParam,[IntPtr]$LParam);"
+            "$script:events+=,('message:'+$Message+':'+$WParam.ToInt64());"
+            "return [IntPtr]::Zero};"
+            "try{$ok=[bool](Remove-MT5VmWebRequestItemsBoundary "
+            "-OptionsHandle ([IntPtr]41) -ListHandle ([IntPtr]42))}finally{"
+            "Set-Item Function:Read-MT5VmWebRequestStateBoundary -Value $readOriginal;"
+            "Set-Item Function:Select-MT5VmWebRequestListItemBoundary -Value $selectOriginal;"
+            "Set-Item Function:Invoke-MT5VmBoundedUiMessage -Value $messageOriginal};"
+            "[pscustomobject]@{ok=$ok;events=$script:events}|ConvertTo-Json -Compress"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertTrue(observed["ok"])
+        self.assertEqual(
+            ["read", "select:0", "message:256:46", "message:257:46", "read"],
+            observed["events"],
+        )
+
     def test_webrequest_allowlist_mismatch_restores_snapshot_before_rethrow(self) -> None:
         body = (
             self._webrequest_ui_boundaries(mismatch_apply=True)
