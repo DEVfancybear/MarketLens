@@ -2709,7 +2709,7 @@ function Test-MT5VmCapsLockOffBoundary {
   )
 }
 
-function Invoke-MT5VmGuardedExactVirtualKeyInputBoundary {
+function Invoke-MT5VmGuardedExactVirtualKeyStageBoundary {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory = $true)][IntPtr]$OptionsHandle,
@@ -2721,7 +2721,6 @@ function Invoke-MT5VmGuardedExactVirtualKeyInputBoundary {
   $characterPlan = @(New-MT5VmExactVirtualKeyInputPlan `
       -Origin $ExpectedOrigin `
       -ExpectedOrigin $ExpectedOrigin)
-  $returnPlan = @(New-MT5VmReturnKeyInputPlan)
   $null = Set-MT5VmEditorTextBoundary -EditorHandle $EditorHandle -Text ''
   if (-not (Test-MT5VmCapsLockOffBoundary)) {
     throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
@@ -2763,10 +2762,6 @@ function Invoke-MT5VmGuardedExactVirtualKeyInputBoundary {
       -EditorHandle $EditorHandle `
       -ProcessId $ProcessId
     )) {
-    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
-  }
-  $insertedReturn = Invoke-MT5VmNativeKeyboardInputBoundary -Plan $returnPlan
-  if ([int]$insertedReturn -ne $returnPlan.Count) {
     throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
   }
   return $true
@@ -2875,16 +2870,12 @@ function Invoke-MT5VmWebRequestEditorApplyBoundary {
       if ($editor -eq [IntPtr]::Zero) {
         throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
       }
-      $null = Invoke-MT5VmGuardedExactVirtualKeyInputBoundary `
+      $null = Invoke-MT5VmGuardedExactVirtualKeyStageBoundary `
         -OptionsHandle $OptionsHandle `
         -EditorHandle $editor `
         -ProcessId $terminalProcessId `
         -ExpectedOrigin $ExpectedOrigin
-      for ($attempt = 0; $attempt -lt 25; $attempt++) {
-        if (-not [Mt5VmTerminalUiNative]::IsWindowVisible($editor)) { return $true }
-        Start-Sleep -Milliseconds 100
-      }
-      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+      return $true
     } `
     -RestoreCursorAction {
       param($cursor)
@@ -3053,10 +3044,6 @@ function Set-MT5VmTerminalWebRequestAllowlist {
     }
 
     Write-MT5VmWebRequestStateBoundary -OptionsHandle $activeDialog -State $desired
-    $pending = Read-MT5VmWebRequestStateBoundary -OptionsHandle $activeDialog
-    if (-not (Test-MT5VmDesiredWebRequestState -State $pending -ExpectedOrigin $Origin)) {
-      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_PENDING_FAILED'
-    }
     Confirm-MT5VmOptionsDialogBoundary -OptionsHandle $activeDialog
     $activeDialog = [IntPtr]::Zero
 

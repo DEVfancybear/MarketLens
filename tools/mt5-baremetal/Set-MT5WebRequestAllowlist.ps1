@@ -6,7 +6,7 @@ param(
   [switch]$OccupiedPortControl,
   [switch]$MouseHitControl,
   [switch]$CursorRestoreControl,
-  [switch]$PendingOnlyTrace
+  [switch]$CommitRollbackTrace
 )
 
 $ErrorActionPreference = 'Stop'
@@ -183,54 +183,49 @@ function Test-ProductionPriorWebRequestState {
   )
 }
 
-function Invoke-ProductionPendingOnlyPreflight {
+function Invoke-ProductionPersistedPreflight {
   [CmdletBinding()]
   param(
-    [Parameter(Mandatory = $true)][int]$ProcessId,
     [Parameter(Mandatory = $true)][string]$ExpectedOrigin,
-    [Parameter(Mandatory = $true)][scriptblock]$OpenAction,
-    [Parameter(Mandatory = $true)][scriptblock]$ReadAction,
-    [Parameter(Mandatory = $true)][scriptblock]$WriteAction,
-    [Parameter(Mandatory = $true)][scriptblock]$CancelAction
+    [Parameter(Mandatory = $true)][scriptblock]$SnapshotAction,
+    [Parameter(Mandatory = $true)][scriptblock]$ApplyAction
   )
 
-  $desired = [pscustomobject][ordered]@{
-    Enabled = 1
-    Items = @($ExpectedOrigin)
+  $prior = & $SnapshotAction
+  $wasDesired = Test-MT5VmDesiredWebRequestState `
+    -State $prior -ExpectedOrigin $ExpectedOrigin
+  if (-not $wasDesired -and -not (Test-ProductionPriorWebRequestState -State $prior)) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_STATE_INVALID'
   }
-  $active = [IntPtr]::Zero
-  try {
-    $active = [IntPtr](& $OpenAction $ProcessId)
-    $prior = & $ReadAction $active
-    if (Test-MT5VmDesiredWebRequestState -State $prior -ExpectedOrigin $ExpectedOrigin) {
-      & $CancelAction $active
-      $active = [IntPtr]::Zero
-      return [pscustomobject][ordered]@{ status = 'EXISTING'; prior = $prior }
-    }
-    if (-not (Test-ProductionPriorWebRequestState -State $prior)) {
-      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_STATE_INVALID'
-    }
-    & $WriteAction $active $desired
-    $pending = & $ReadAction $active
-    if (-not (Test-MT5VmDesiredWebRequestState -State $pending -ExpectedOrigin $ExpectedOrigin)) {
-      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_PENDING_FAILED'
-    }
-    & $CancelAction $active
-    $active = [IntPtr]::Zero
+  $applied = & $ApplyAction
+  $expectedStatus = if ($wasDesired) { 'UNCHANGED' } else { 'APPLIED' }
+  if ([string]$applied.status -cne $expectedStatus) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_PERSIST_FAILED'
+  }
+  return [pscustomobject][ordered]@{
+    status = $expectedStatus
+    prior = $prior
+  }
+}
 
-    $active = [IntPtr](& $OpenAction $ProcessId)
-    $persisted = & $ReadAction $active
-    & $CancelAction $active
-    $active = [IntPtr]::Zero
-    if (-not (Test-MT5VmWebRequestStateExact -Left $persisted -Right $prior)) {
-      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_PREFLIGHT_PERSISTED'
-    }
-    return [pscustomobject][ordered]@{ status = 'PENDING_ONLY'; prior = $prior }
-  } catch {
-    if ($active -ne [IntPtr]::Zero) {
-      try { & $CancelAction $active } catch {}
-    }
-    throw
+function Invoke-ProductionCommitRollbackTrace {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][scriptblock]$PreflightAction,
+    [Parameter(Mandatory = $true)][scriptblock]$RollbackUiAction
+  )
+
+  $preflight = & $PreflightAction
+  if ([string]$preflight.status -cne 'APPLIED') {
+    throw 'PROVISIONING_WEBREQUEST_COMMIT_ROLLBACK_TRACE_INVALID'
+  }
+  if ((& $RollbackUiAction $preflight.prior) -ne $true) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED'
+  }
+  return [pscustomobject][ordered]@{
+    status = 'APPLIED'
+    persisted_desired = $true
+    restored_prior = $true
   }
 }
 
@@ -273,7 +268,7 @@ function Invoke-ProductionAllowlistTransactionCore {
   } catch {
     $originalFailure = [string]$_.Exception.Message
     try {
-      if ($null -ne $first -and [string]$first.status -ceq 'APPLIED') {
+      if ($null -ne $preflight -and [string]$preflight.status -ceq 'APPLIED') {
         if ((& $RollbackUiAction $preflight.prior) -ne $true) {
           throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED'
         }
@@ -550,32 +545,37 @@ Address         Port        Address         Port
   ) -ExpectPresent $true
   Write-Output 'PRODUCTION_WEBREQUEST_ALLOWLIST_PORTPROXY_CONTRACTS=PASS'
 
-  $script:contractPersisted = [pscustomobject][ordered]@{ Enabled = 0; Items = @('') }
-  $script:contractPending = $null
+  $script:contractPrior = [pscustomobject][ordered]@{ Enabled = 0; Items = @('') }
   $script:contractEvents = [Collections.Generic.List[string]]::new()
-  $preflight = Invoke-ProductionPendingOnlyPreflight -ProcessId 701 -ExpectedOrigin $expectedOrigin -OpenAction {
-    param($processId)
-    $script:contractEvents.Add('open')
-    return [IntPtr]101
-  } -ReadAction {
-    param($handle)
-    $script:contractEvents.Add('read')
-    if ($null -ne $script:contractPending) { return $script:contractPending }
-    return $script:contractPersisted
-  } -WriteAction {
-    param($handle, $state)
-    $script:contractEvents.Add('write')
-    $script:contractPending = $state
-  } -CancelAction {
-    param($handle)
-    $script:contractEvents.Add('cancel')
-    $script:contractPending = $null
+  $preflight = Invoke-ProductionPersistedPreflight -ExpectedOrigin $expectedOrigin `
+    -SnapshotAction {
+      $script:contractEvents.Add('snapshot')
+      return $script:contractPrior
+    } `
+    -ApplyAction {
+      $script:contractEvents.Add('apply-persisted')
+      return [pscustomobject]@{ status = 'APPLIED' }
+    }
+  Assert-ProductionAllowlistTrue (
+    [string]$preflight.status -ceq 'APPLIED' -and
+    ($script:contractEvents -join ',') -ceq 'snapshot,apply-persisted' -and
+    (Test-ProductionPriorWebRequestState -State $preflight.prior)
+  ) 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_FAILED'
+
+  $script:contractEvents = [Collections.Generic.List[string]]::new()
+  $trace = Invoke-ProductionCommitRollbackTrace -PreflightAction {
+    $script:contractEvents.Add('preflight')
+    return [pscustomobject]@{ status = 'APPLIED'; prior = $script:contractPrior }
+  } -RollbackUiAction {
+    param($prior)
+    $script:contractEvents.Add('rollback-ui')
+    return (Test-ProductionPriorWebRequestState -State $prior)
   }
   Assert-ProductionAllowlistTrue (
-    [string]$preflight.status -ceq 'PENDING_ONLY' -and
-    ($script:contractEvents -join ',') -ceq
-      'open,read,write,read,cancel,open,read,cancel' -and
-    (Test-ProductionPriorWebRequestState -State $script:contractPersisted)
+    [string]$trace.status -ceq 'APPLIED' -and
+    [bool]$trace.persisted_desired -and
+    [bool]$trace.restored_prior -and
+    ($script:contractEvents -join ',') -ceq 'preflight,rollback-ui'
   ) 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_FAILED'
   Write-Output 'PRODUCTION_WEBREQUEST_ALLOWLIST_PREFLIGHT_CONTRACTS=PASS'
 
@@ -584,7 +584,7 @@ Address         Port        Address         Port
   $success = Invoke-ProductionAllowlistTransactionCore -PreflightAction {
     $script:contractEvents.Add('preflight')
     return [pscustomobject]@{
-      status = 'PENDING_ONLY'
+      status = 'APPLIED'
       prior = [pscustomobject]@{ Enabled = 0; Items = @('') }
     }
   } -EnsureProxyAction {
@@ -594,7 +594,7 @@ Address         Port        Address         Port
     $script:applyCount += 1
     $script:contractEvents.Add('apply')
     return [pscustomobject]@{
-      status = if ($script:applyCount -eq 1) { 'APPLIED' } else { 'UNCHANGED' }
+      status = 'UNCHANGED'
     }
   } -ProbeAction {
     $script:contractEvents.Add('probe')
@@ -607,7 +607,7 @@ Address         Port        Address         Port
     return $true
   }
   Assert-ProductionAllowlistTrue (
-    [string]$success.status -ceq 'APPLIED' -and
+    [string]$success.status -ceq 'UNCHANGED' -and
     ($script:contractEvents -join ',') -ceq
       'preflight,proxy,apply,apply,probe'
   ) 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_FAILED'
@@ -618,7 +618,7 @@ Address         Port        Address         Port
     Invoke-ProductionAllowlistTransactionCore -PreflightAction {
       $script:contractEvents.Add('preflight')
       return [pscustomobject]@{
-        status = 'PENDING_ONLY'
+        status = 'APPLIED'
         prior = [pscustomobject]@{ Enabled = 0; Items = @('') }
       }
     } -EnsureProxyAction {
@@ -628,7 +628,7 @@ Address         Port        Address         Port
       $script:applyCount += 1
       $script:contractEvents.Add('apply')
       return [pscustomobject]@{
-        status = if ($script:applyCount -eq 1) { 'APPLIED' } else { 'UNCHANGED' }
+        status = 'UNCHANGED'
       }
     } -ProbeAction {
       $script:contractEvents.Add('probe')
@@ -653,7 +653,7 @@ Address         Port        Address         Port
     Invoke-ProductionAllowlistTransactionCore -PreflightAction {
       $script:contractEvents.Add('preflight')
       return [pscustomobject]@{
-        status = 'PENDING_ONLY'
+        status = 'UNCHANGED'
         prior = [pscustomobject]@{ Enabled = 0; Items = @('') }
       }
     } -EnsureProxyAction {
@@ -663,7 +663,7 @@ Address         Port        Address         Port
       $script:applyCount += 1
       $script:contractEvents.Add('apply')
       return [pscustomobject]@{
-        status = if ($script:applyCount -eq 1) { 'APPLIED' } else { 'UNCHANGED' }
+        status = 'UNCHANGED'
       }
     } -ProbeAction {
       $script:contractEvents.Add('probe')
@@ -679,14 +679,14 @@ Address         Port        Address         Port
   }
   Assert-ProductionAllowlistTrue (
     ($script:contractEvents -join ',') -ceq
-      'preflight,proxy-existing,apply,apply,probe,rollback-ui'
+      'preflight,proxy-existing,apply,apply,probe'
   ) 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_FAILED'
 
   $script:contractEvents = [Collections.Generic.List[string]]::new()
-  Assert-ContractFailure -ExpectedCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_PENDING_FAILED' -Action {
+  Assert-ContractFailure -ExpectedCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_PERSIST_FAILED' -Action {
     Invoke-ProductionAllowlistTransactionCore -PreflightAction {
       $script:contractEvents.Add('preflight')
-      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_PENDING_FAILED'
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_PERSIST_FAILED'
     } -EnsureProxyAction {
       $script:contractEvents.Add('proxy')
       return [pscustomobject]@{ created = $true }
@@ -708,7 +708,7 @@ Address         Port        Address         Port
   Assert-ContractFailure -ExpectedCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED' -Action {
     Invoke-ProductionAllowlistTransactionCore -PreflightAction {
       return [pscustomobject]@{
-        status = 'PENDING_ONLY'
+        status = 'APPLIED'
         prior = [pscustomobject]@{ Enabled = 0; Items = @('') }
       }
     } -EnsureProxyAction {
@@ -716,7 +716,7 @@ Address         Port        Address         Port
     } -ApplyAction {
       $script:applyCount += 1
       return [pscustomobject]@{
-        status = if ($script:applyCount -eq 1) { 'APPLIED' } else { 'UNCHANGED' }
+        status = 'UNCHANGED'
       }
     } -ProbeAction {
       throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_PROBE_FAILED'
@@ -780,51 +780,29 @@ try {
   Assert-ProductionSelectedTerminalProfile
   $target = Resolve-MT5VmTerminalProcess -TerminalPath $selectedTerminal
   $processId = [int]$target.ProcessId
-  $preflightAction = {
-    Invoke-ProductionPendingOnlyPreflight -ProcessId $processId `
-      -ExpectedOrigin $expectedOrigin -OpenAction {
-        param($id)
-        return Open-MT5VmOptionsDialogBoundary -ProcessId $id
-      } -ReadAction {
-        param($handle)
-        return Read-MT5VmWebRequestStateBoundary -OptionsHandle $handle
-      } -WriteAction {
-        param($handle, $state)
-        Write-MT5VmWebRequestStateBoundary -OptionsHandle $handle -State $state
-      } -CancelAction {
-        param($handle)
-        Cancel-MT5VmOptionsDialogBoundary -OptionsHandle $handle
+  $snapshotAction = {
+    $activeDialog = [IntPtr]::Zero
+    try {
+      $activeDialog = Open-MT5VmOptionsDialogBoundary -ProcessId $processId
+      $snapshot = Read-MT5VmWebRequestStateBoundary -OptionsHandle $activeDialog
+      Cancel-MT5VmOptionsDialogBoundary -OptionsHandle $activeDialog
+      $activeDialog = [IntPtr]::Zero
+      return $snapshot
+    } finally {
+      if ($activeDialog -ne [IntPtr]::Zero) {
+        try { Cancel-MT5VmOptionsDialogBoundary -OptionsHandle $activeDialog } catch {}
       }
-  }
-  if ($PendingOnlyTrace) {
-    $initialProxy = Get-ProductionLoopbackPortProxyState
-    if ([string]$initialProxy.status -cne 'EMPTY') {
-      throw 'PROVISIONING_WEBREQUEST_PENDING_TRACE_PROXY_PRESENT'
     }
-    $initialListeners = @(Get-ProductionPort80Listeners)
-    $null = Assert-ProductionPort80ListenerState `
-      -Listeners $initialListeners -ExpectPresent $false
-    $pendingOnly = & $preflightAction
-    if ([string]$pendingOnly.status -cne 'PENDING_ONLY') {
-      throw 'PROVISIONING_WEBREQUEST_PENDING_TRACE_INVALID'
-    }
-    Write-Output (
-      'PRODUCTION_WEBREQUEST_ALLOWLIST_PENDING_ONLY=PASS status={0} persisted_restored=True' -f
-        [string]$pendingOnly.status
-    )
-    return
   }
-  $ensureProxyAction = {
-    $proxy = Ensure-ProductionLoopbackPortProxy
-    $null = Assert-ProductionForwardedGatewayHealth
-    return $proxy
-  }
-  $applyAction = {
+  $preflightApplyAction = {
     return Set-MT5VmTerminalWebRequestAllowlist `
       -ProcessId $processId -Origin $expectedOrigin
   }
-  $probeAction = {
-    return [bool](Invoke-ProductionAllowlistProbe)
+  $preflightAction = {
+    return Invoke-ProductionPersistedPreflight `
+      -ExpectedOrigin $expectedOrigin `
+      -SnapshotAction $snapshotAction `
+      -ApplyAction $preflightApplyAction
   }
   $rollbackUiAction = {
     param($prior)
@@ -839,6 +817,37 @@ try {
         Close-MT5VmOwnedTerminalBoundary -ProcessId ([int]$rollbackTarget.ProcessId)
       }
     }
+  }
+  if ($CommitRollbackTrace) {
+    $initialProxy = Get-ProductionLoopbackPortProxyState
+    if ([string]$initialProxy.status -cne 'EMPTY') {
+      throw 'PROVISIONING_WEBREQUEST_COMMIT_ROLLBACK_TRACE_PROXY_PRESENT'
+    }
+    $initialListeners = @(Get-ProductionPort80Listeners)
+    $null = Assert-ProductionPort80ListenerState `
+      -Listeners $initialListeners -ExpectPresent $false
+    $trace = Invoke-ProductionCommitRollbackTrace `
+      -PreflightAction $preflightAction `
+      -RollbackUiAction $rollbackUiAction
+    Write-Output (
+      'PRODUCTION_WEBREQUEST_ALLOWLIST_COMMIT_ROLLBACK=PASS status={0} persisted_desired={1} restored_prior={2}' -f
+        [string]$trace.status,
+        [bool]$trace.persisted_desired,
+        [bool]$trace.restored_prior
+    )
+    return
+  }
+  $ensureProxyAction = {
+    $proxy = Ensure-ProductionLoopbackPortProxy
+    $null = Assert-ProductionForwardedGatewayHealth
+    return $proxy
+  }
+  $applyAction = {
+    return Set-MT5VmTerminalWebRequestAllowlist `
+      -ProcessId $processId -Origin $expectedOrigin
+  }
+  $probeAction = {
+    return [bool](Invoke-ProductionAllowlistProbe)
   }
   $rollbackProxyAction = {
     return [bool](Remove-ProductionOwnedLoopbackPortProxy)
