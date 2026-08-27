@@ -1936,7 +1936,7 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             "combine-click-batches",
             "remove-paced-click-delay",
             "drop-mid-click-guard",
-            "PRODUCTION_WEBREQUEST_MOUSE_MUTATION=15/15",
+            "PRODUCTION_WEBREQUEST_MOUSE_MUTATION=18/18",
             "PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID",
             "PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED",
         ):
@@ -1948,6 +1948,9 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             "omit-editor-return-commit",
             "permit-partial-editor-return-count",
             "send-editor-return-after-physical-ok",
+            "accept-live-committed-editor",
+            "skip-committed-row-state-check",
+            "accept-wrong-committed-control-identity",
             "accept-editor-readback-as-persisted-proof",
             "create-proxy-before-persisted-preflight",
             "skip-successful-trace-rollback",
@@ -1955,7 +1958,7 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             "accept-wrong-options-ok-point",
             "permit-partial-options-ok-click",
             "skip-options-ok-cursor-restoration",
-            "PRODUCTION_WEBREQUEST_MOUSE_MUTATION=15/15",
+            "PRODUCTION_WEBREQUEST_MOUSE_MUTATION=18/18",
             "PRODUCTION_WEBREQUEST_ALLOWLIST_MUTATION=5/5",
         ):
             self.assertIn(required, source, required)
