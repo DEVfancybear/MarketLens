@@ -2761,3 +2761,67 @@ APPROVE SPEC REVISION: production-worker-host-provision v34
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v34`. No v34 implementation or retained
 host mutation occurred before that approval.
+
+## Revision v35 - treat the post-Return list as opaque until reopen (approval required)
+
+### Discovery during approved v34 execution
+
+V34 passed 62/62 MT5 regressions and killed 18/18 UI/mouse mutants. Two selected-host traces
+failed closed at the committed-row guard. A temporary diagnostic, removed immediately after use,
+proved candidate resolution PASS, the original editor destroyed and invisible, native foreground /
+active dialog / stable-control PID-thread / OK-point identity PASS, but the bounded pre-OK model was
+`Enabled=1, Items=["",""]`. Exact rollback succeeded after every trace: `common.ini` returned to
+`WebRequest=0` with an empty `WebRequestUrl`, no terminal remained, portproxy and port 80 remained
+empty, and the tracked worktree remained clean.
+
+The MT5 owner-data list therefore does not expose the committed URL before Options OK even though
+the exact editor readback succeeded, Return retired the editor, and all stable native identities
+remain exact. V34's requirement for the pre-OK list to equal the desired persisted state is
+incompatible with the selected production terminal. Only the already-required post-OK reopen can
+prove persistence.
+
+### v35 opaque transition then reopened persistence proof
+
+Revision v35 remains Tier 3 and supersedes only v34's pre-click requirement that the transient
+owner-data list contain exactly `http://127.0.0.1`. All exact pre-Return character/readback/final
+editor guard, isolated Return count, editor retirement, foreground/active Options identity,
+stable-control PID/thread, OK geometry/point, click count, close wait, cursor restoration, exact
+rollback, no-proxy, probe, worker, and production requirements remain unchanged.
+
+After Return, the guard must not interpret `Items=["",""]`, any other transient list rendering, or
+editor disappearance as desired state or persistence proof. It must rely only on the already-proven
+exact editor transaction plus editor retirement and the unchanged native stable-control guard to
+authorize the physical OK click. It must then reopen Options and require the exact desired bounded
+state; a missing, blank, duplicate, wrong, or disabled reopened state must fail and execute exact
+rollback. Rollback failure remains authoritative.
+
+Before implementation, change the committed guard assertions and observe RED against the v34
+state-dependent signature. Preserve the existing post-reopen and v33 assertions. Keep at least
+18 killed/restored UI mutants, replacing the now-invalid `skip-committed-row-state-check` mutant
+with a plausible mutant that accepts a wrong committed native identity or bypasses editor
+retirement; retain the mutant that falsely accepts pre-OK/editor readback as persistence proof.
+Add no dependency, download, generated source, runner switch, force termination, clipboard,
+SendKeys, direct config write, or proxy relaxation.
+
+Run the commit-rollback trace first while portproxy and port 80 are empty and require
+`PRODUCTION_WEBREQUEST_ALLOWLIST_COMMIT_ROLLBACK=PASS` with both `persisted_desired=True` and
+`restored_prior=True`. Only then run the normal allowlist driver twice and the complete unchanged
+13-layer verifier, including exactly `powershell.exe -File .\run-backend-production.ps1` without
+switches. Planned changed files remain
+`backend/bridge/mt5_vm/Mt5VmTerminalUi.ps1`,
+`backend/bridge/mt5_vm/test_terminal_python_api_bootstrap.py`,
+`tools/verify-production-worker-host-provision.ps1`, this SPEC, and final `EVIDENCE.md`; planned git
+operations remain isolated RED/GREEN/mutation/evidence checkpoints. The fresh final verifier is
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\verify-production-worker-host-provision.ps1`.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v35
+```
+
+### v35 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v35`. No v35 implementation or retained
+host mutation occurred before that approval.
