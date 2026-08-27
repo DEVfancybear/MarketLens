@@ -136,7 +136,14 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             "function Write-MT5VmWebRequestStateBoundary {"
             "param([IntPtr]$OptionsHandle,[object]$State);$script:writeCalls+=1;"
             "$script:pending=[ordered]@{Enabled=[int]$State.Enabled;"
-            "Items=@($State.Items)}};"
+            "Items=@($State.Items)};return [IntPtr]99};"
+            "function Confirm-MT5VmOptionsDialogWithActiveEditorBoundary {"
+            "param([IntPtr]$OptionsHandle,[IntPtr]$EditorHandle,[int]$ProcessId);"
+            "$script:confirmCalls+=1;"
+            "if($script:mismatchApply -and $script:confirmCalls -eq 1){"
+            "$script:persisted=[ordered]@{Enabled=1;"
+            "Items=@('http://127.0.0.1:9999')}}else{"
+            "$script:persisted=$script:pending};$script:pending=$null};"
             "function Confirm-MT5VmOptionsDialogBoundary {"
             "param([IntPtr]$OptionsHandle);$script:confirmCalls+=1;"
             "if($script:mismatchApply -and $script:confirmCalls -eq 1){"
@@ -542,7 +549,9 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
         set_start = source.index("function Set-MT5VmTerminalWebRequestAllowlist")
         set_source = source[set_start:]
         write_at = set_source.index("Write-MT5VmWebRequestStateBoundary")
-        confirm_at = set_source.index("Confirm-MT5VmOptionsDialogBoundary", write_at)
+        confirm_at = set_source.index(
+            "Confirm-MT5VmOptionsDialogWithActiveEditorBoundary", write_at
+        )
         reopen_at = set_source.index("Open-MT5VmOptionsDialogBoundary", confirm_at)
         persisted_at = set_source.index("Read-MT5VmWebRequestStateBoundary", reopen_at)
         self.assertLess(write_at, confirm_at)
