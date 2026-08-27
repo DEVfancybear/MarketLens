@@ -2825,3 +2825,86 @@ APPROVE SPEC REVISION: production-worker-host-provision v35
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v35`. No v35 implementation or retained
 host mutation occurred before that approval.
+
+## Revision v36 - combine atomic profile provisioning with standard-port topology (approval required)
+
+### Discovery during approved v35 execution
+
+V35 passed 63/63 MT5 regressions and killed/restored 18/18 UI/mouse mutants. Its selected-host
+trace passed editor retirement and every native OK guard, physically closed Options, reopened it,
+and still observed `Enabled=1, Items=["",""]`; it failed with
+`PROVISIONING_WEBREQUEST_ALLOWLIST_PERSIST_FAILED`. Exact rollback again restored
+`WebRequest=0`, an empty `WebRequestUrl`, no terminal, empty portproxy, empty port 80, and a clean
+tracked worktree.
+
+Repository history identifies the missing composition. Approved v27 implemented and tested an
+atomic, pinned, UTF-16LE `common.ini` transaction, but its live attempt wrote
+`http://127.0.0.1:8790` and MT5 returned 4014 because HTTP WebRequest selects port 80 from the
+protocol. Approved v28 corrected the topology to `http://127.0.0.1` plus exact loopback
+`127.0.0.1:80 -> 127.0.0.1:8790`, but replaced the atomic transaction with the UI path. The
+tested atomic profile mechanism and corrected standard-port topology have never been executed
+together.
+
+### v36 exact offline profile and loopback transaction
+
+Revision v36 remains Tier 3 and supersedes only v28-v35's requirement that production provision
+the allowlist through MT5 UI. UI helpers/tests remain frozen regression history. Production must
+reuse the v27 atomic transaction design from commits `1d71681` and `69c9d2e`, adapted only to the
+v28-v35 exact origin `http://127.0.0.1` and current driver interfaces.
+
+The driver must pin the existing selected terminal, signer, profile, `origin.txt`, and
+`config\common.ini`. It must require zero selected-terminal processes, non-reparse bounded paths,
+the exact valid Authenticode publisher, UTF-16LE BOM, exactly one `[Experts]` section, and exactly
+one case-sensitive `WebRequest` and `WebRequestUrl`. Accepted states are only
+`WebRequest=0` plus empty URL or `WebRequest=1` plus exact `http://127.0.0.1`. It must atomically
+transform only those two value spans, preserve every other byte/newline/BOM and the ACL, retain a
+validated fixed backup as a crash journal, prove reverse-transform hash equality, reread exact
+desired state, and prove a second application is `UNCHANGED` with identical hash.
+
+After the desired file is proven and while the terminal remains absent, the existing v28 exact
+portproxy transaction may create only `127.0.0.1:80 -> 127.0.0.1:8790` and must prove its exact
+listener/forwarded health invariants. The existing nonce-bound probe must then start only the
+signed selected terminal, call exactly `http://127.0.0.1/health`, and prove its receipt. After the
+probe-owned terminal exits, the driver must reread and prove the exact desired profile state and
+ACL/hash invariants. A second normal driver run must return `UNCHANGED` and produce a second live
+receipt.
+
+Any config, proxy, health, probe, shutdown, reread, worker, or later production failure must
+gracefully close only a process proven to use the selected executable, remove only a proxy created
+by that run, atomically restore only the validated backup when this run changed the profile, and
+prove original bytes/ACL plus original proxy/listener state. Rollback failure is authoritative and
+retains the backup for recovery. No UI action is part of the production path; no unrelated config
+value may be logged. No arbitrary INI parser, alternate path/origin, reparse traversal, registry,
+firewall, URLACL, service install, force termination, download, dependency, or runner switch is
+allowed.
+
+Before implementation, restore/adapt the frozen v27 fixture tests and observe RED against the
+current UI production driver. Prove exact no-port transformation, byte/ACL preservation,
+idempotency, backup recovery, hostile file rejection, probe-failure rollback, and rollback-failure
+authority. Preserve current standard-port/portproxy/probe tests and all 63 UI regressions. Kill and
+restore at least the four v27 config mutants (duplicate key, unrelated-byte change, idempotent hash
+mismatch, rollback authority), the current five portproxy/transaction mutants, and the current 18
+UI regression mutants. Add no dependency or generated source.
+
+First run an offline apply-rollback trace with no terminal, proxy, or port-80 listener and require
+exact desired-file then restored-original proofs. Then run the full driver twice and require live
+nonce receipts. Finally run the complete unchanged 13-layer verifier from a clean checkpoint; its
+canonical layer must execute exactly `powershell.exe -File .\run-backend-production.ps1` without
+switches, followed by local/public health and managed-worker readiness. Planned files are
+`tools/mt5-baremetal/Set-MT5WebRequestAllowlist.ps1`, its existing Python contract tests,
+`tools/verify-production-worker-host-provision.ps1`, this SPEC, and final `EVIDENCE.md`; UI source
+is not a v36 production implementation file. Planned git operations are isolated RED, GREEN,
+mutation/evidence checkpoints. The fresh final verifier is
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\verify-production-worker-host-provision.ps1`.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v36
+```
+
+### v36 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v36`. No v36 implementation or retained
+host mutation occurred before that approval.
