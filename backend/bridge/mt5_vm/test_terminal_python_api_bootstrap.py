@@ -323,16 +323,21 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
         self.assertIn("PRODUCTION_WEBREQUEST_ALLOWLIST_COMMIT_ROLLBACK=PASS", source)
         self.assertNotIn("$expectedOrigin = 'http://127.0.0.1:8790'", source)
         self.assertIn("Invoke-MT5WebRequestProbe.ps1", source)
+        self.assertIn(r"config\common.ini", source)
         for required in (
-            "$uiHelper",
-            "Invoke-ProductionPersistedPreflight",
+            "Read-ProductionWebRequestCommonIni",
+            "Convert-ProductionWebRequestCommonIni",
+            "Invoke-ProductionWebRequestCommonIniTransaction",
+            "Restore-ProductionWebRequestCommonIniSnapshot",
+            "Assert-ProductionSelectedTerminalAndProfile",
+            "Assert-ProductionSelectedTerminalAbsent",
+            "[IO.File]::Replace",
             "Invoke-ProductionCommitRollbackTrace",
             "Get-ProductionLoopbackPortProxyState",
             "Assert-ProductionLoopbackPortProxyState",
             "Ensure-ProductionLoopbackPortProxy",
             "Remove-ProductionOwnedLoopbackPortProxy",
             "Assert-ProductionForwardedGatewayHealth",
-            "Set-MT5VmTerminalWebRequestAllowlist",
             "netsh.exe",
             "listenaddress=127.0.0.1",
             "listenport=80",
@@ -342,16 +347,13 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             self.assertIn(required, source, required)
         self.assertNotIn("$TerminalPath", source)
         self.assertNotIn("$Origin", source)
-        self.assertNotIn("Read-ProductionWebRequestCommonIni", source)
-        self.assertNotIn("Convert-ProductionWebRequestCommonIni", source)
-        self.assertNotIn("[IO.File]::Replace", source)
         self.assertLess(
-            source.rfind("Invoke-ProductionPersistedPreflight"),
+            source.rfind("Invoke-ProductionWebRequestCommonIniTransaction"),
             source.rfind("Ensure-ProductionLoopbackPortProxy"),
         )
         self.assertLess(
             source.rfind("Ensure-ProductionLoopbackPortProxy"),
-            source.rfind("Set-MT5VmTerminalWebRequestAllowlist"),
+            source.rfind("Invoke-ProductionAllowlistProbe"),
         )
         for forbidden in (
             "SendKeys",
@@ -469,6 +471,14 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
         )
         self.assertEqual(0, positive.returncode, positive.stderr)
         self.assertIn("PRODUCTION_WEBREQUEST_ALLOWLIST_CONTRACTS=PASS", positive.stdout)
+        self.assertIn(
+            "PRODUCTION_WEBREQUEST_ALLOWLIST_CONFIG_CONTRACTS=PASS",
+            positive.stdout,
+        )
+        self.assertIn(
+            "PRODUCTION_WEBREQUEST_ALLOWLIST_RECOVERY_CONTRACTS=PASS",
+            positive.stdout,
+        )
         self.assertIn(
             "PRODUCTION_WEBREQUEST_ALLOWLIST_PORTPROXY_CONTRACTS=PASS",
             positive.stdout,
