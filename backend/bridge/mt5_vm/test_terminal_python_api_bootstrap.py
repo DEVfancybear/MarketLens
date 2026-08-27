@@ -771,6 +771,19 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
         self.assertLess(confirm_at, reopen_at)
         self.assertLess(reopen_at, persisted_at)
 
+    def test_webrequest_committed_row_native_guard_does_not_require_obsolete_focus(
+        self,
+    ) -> None:
+        source = UI_HELPER.read_text(encoding="utf-8")
+        guard_start = source.index(
+            "public static bool IsExactCommittedOptionsOkGuard"
+        )
+        guard_end = source.index("public static int[] VirtualScreen", guard_start)
+        guard_source = source[guard_start:guard_end]
+        self.assertIn("GetForegroundWindow() != optionsWindow", guard_source)
+        self.assertIn("info.active != optionsWindow", guard_source)
+        self.assertNotIn("info.focus", guard_source)
+
     def test_webrequest_restore_does_not_insert_the_add_row_placeholder(self) -> None:
         source = UI_HELPER.read_text(encoding="utf-8")
         start = source.index("function Write-MT5VmWebRequestStateBoundary {")
