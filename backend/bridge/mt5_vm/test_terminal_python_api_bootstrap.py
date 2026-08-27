@@ -649,6 +649,42 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             )
             self.assertEqual(expected_events, observed["events"])
 
+    def test_webrequest_physical_ok_identity_point_and_click_plan_are_exact(self) -> None:
+        body = (
+            "$ok=Assert-MT5VmOptionsOkCandidate -ExpectedControlId 1 "
+            "-ObservedControlId 1 -CandidateCount 1 -WindowClass 'Button' "
+            "-Visible $true -Enabled $true -ExpectedProcessId 700 "
+            "-OptionsProcessId 700 -ButtonProcessId 700 -EditorProcessId 700;"
+            "$point=Assert-MT5VmOptionsOkPointIdentity "
+            "-ExpectedButtonHandle ([IntPtr]43) -ObservedPointHandle ([IntPtr]43);"
+            "$plan=@(New-MT5VmExactSingleClickInputPlan);"
+            "$errors=@();foreach($action in @({Assert-MT5VmOptionsOkCandidate "
+            "-ExpectedControlId 1 "
+            "-ObservedControlId 1 -CandidateCount 1 -WindowClass 'Button' "
+            "-Visible $true -Enabled $true -ExpectedProcessId 700 "
+            "-OptionsProcessId 700 -ButtonProcessId 701 -EditorProcessId 700},"
+            "{Assert-MT5VmOptionsOkPointIdentity "
+            "-ExpectedButtonHandle ([IntPtr]43) -ObservedPointHandle ([IntPtr]44)}"
+            ")){try{&$action|Out-Null;$errors+=,'FAILED_OPEN'}"
+            "catch{$errors+=,$_.Exception.Message}};"
+            "[pscustomobject]@{ok=[bool]$ok;point=[bool]$point;"
+            "flags=@($plan|ForEach-Object{[long]$_.Flags});errors=$errors}|"
+            "ConvertTo-Json -Compress -Depth 5"
+        )
+        completed = self._run_module(body)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertTrue(observed["ok"])
+        self.assertTrue(observed["point"])
+        self.assertEqual([2, 4], observed["flags"])
+        self.assertEqual(
+            [
+                "PROVISIONING_WEBREQUEST_ALLOWLIST_OK_MOUSE_INVALID",
+                "PROVISIONING_WEBREQUEST_ALLOWLIST_OK_MOUSE_INVALID",
+            ],
+            observed["errors"],
+        )
+
     def test_webrequest_restore_does_not_insert_the_add_row_placeholder(self) -> None:
         source = UI_HELPER.read_text(encoding="utf-8")
         start = source.index("function Write-MT5VmWebRequestStateBoundary {")

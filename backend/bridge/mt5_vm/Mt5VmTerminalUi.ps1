@@ -389,6 +389,49 @@ public static class Mt5VmTerminalUiNative {
     return new int[] { point.x, point.y };
   }
 
+  public static int[] WindowCenterScreen(IntPtr window) {
+    NativeRectangle rectangle;
+    if (window == IntPtr.Zero || !GetClientRect(window, out rectangle) ||
+        rectangle.left != 0 || rectangle.top != 0 ||
+        rectangle.right <= 0 || rectangle.bottom <= 0) {
+      return new int[0];
+    }
+    var point = new NativePoint();
+    point.x = rectangle.right / 2;
+    point.y = rectangle.bottom / 2;
+    if (!ClientToScreen(window, ref point)) {
+      return new int[0];
+    }
+    return new int[] { point.x, point.y };
+  }
+
+  public static bool IsExactOptionsOkGuard(
+    IntPtr optionsWindow,
+    IntPtr buttonWindow,
+    IntPtr editorWindow,
+    uint expectedProcessId,
+    int screenX,
+    int screenY
+  ) {
+    if (!IsExactForegroundFocus(optionsWindow, editorWindow, expectedProcessId) ||
+        buttonWindow == IntPtr.Zero || !IsWindowVisible(buttonWindow) ||
+        !IsWindowEnabled(buttonWindow)) {
+      return false;
+    }
+    uint buttonProcessId;
+    uint buttonThreadId = GetWindowThreadProcessId(buttonWindow, out buttonProcessId);
+    uint optionsProcessId;
+    uint optionsThreadId = GetWindowThreadProcessId(optionsWindow, out optionsProcessId);
+    if (buttonThreadId == 0 || buttonThreadId != optionsThreadId ||
+        buttonProcessId != expectedProcessId || optionsProcessId != expectedProcessId) {
+      return false;
+    }
+    var point = new NativePoint();
+    point.x = screenX;
+    point.y = screenY;
+    return WindowFromPoint(point) == buttonWindow;
+  }
+
   public static int[] VirtualScreen() {
     return new int[] {
       GetSystemMetrics(76), GetSystemMetrics(77),
@@ -1894,6 +1937,101 @@ function New-MT5VmExactDoubleClickInputPlan {
   return @($plan)
 }
 
+function New-MT5VmExactSingleClickInputPlan {
+  [CmdletBinding()]
+  param()
+
+  $constants = Get-MT5VmTerminalUiConstants
+  return @(
+    [pscustomobject][ordered]@{
+      Dx = 0; Dy = 0; MouseData = 0; Flags = [long]$constants.MouseEventLeftDown
+    },
+    [pscustomobject][ordered]@{
+      Dx = 0; Dy = 0; MouseData = 0; Flags = [long]$constants.MouseEventLeftUp
+    }
+  )
+}
+
+function Assert-MT5VmOptionsOkCandidate {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][int]$ExpectedControlId,
+    [Parameter(Mandatory = $true)][int]$ObservedControlId,
+    [Parameter(Mandatory = $true)][int]$CandidateCount,
+    [Parameter(Mandatory = $true)][string]$WindowClass,
+    [Parameter(Mandatory = $true)][bool]$Visible,
+    [Parameter(Mandatory = $true)][bool]$Enabled,
+    [Parameter(Mandatory = $true)][int]$ExpectedProcessId,
+    [Parameter(Mandatory = $true)][int]$OptionsProcessId,
+    [Parameter(Mandatory = $true)][int]$ButtonProcessId,
+    [Parameter(Mandatory = $true)][int]$EditorProcessId
+  )
+
+  if ($ExpectedControlId -ne 1 -or $ObservedControlId -ne $ExpectedControlId -or
+      $CandidateCount -ne 1 -or $WindowClass -cne 'Button' -or
+      -not $Visible -or -not $Enabled -or $ExpectedProcessId -lt 1 -or
+      $OptionsProcessId -ne $ExpectedProcessId -or
+      $ButtonProcessId -ne $ExpectedProcessId -or
+      $EditorProcessId -ne $ExpectedProcessId) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_OK_MOUSE_INVALID'
+  }
+  return $true
+}
+
+function Assert-MT5VmOptionsOkPointIdentity {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$ExpectedButtonHandle,
+    [Parameter(Mandatory = $true)][IntPtr]$ObservedPointHandle
+  )
+
+  if ($ExpectedButtonHandle -eq [IntPtr]::Zero -or
+      $ObservedPointHandle -ne $ExpectedButtonHandle) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_OK_MOUSE_INVALID'
+  }
+  return $true
+}
+
+function Invoke-MT5VmGuardedOptionsOkClickCore {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][scriptblock]$ResolveAction,
+    [Parameter(Mandatory = $true)][scriptblock]$GeometryAction,
+    [Parameter(Mandatory = $true)][scriptblock]$CaptureCursorAction,
+    [Parameter(Mandatory = $true)][scriptblock]$MoveAction,
+    [Parameter(Mandatory = $true)][scriptblock]$GuardAction,
+    [Parameter(Mandatory = $true)][scriptblock]$ClickAction,
+    [Parameter(Mandatory = $true)][scriptblock]$WaitAction,
+    [Parameter(Mandatory = $true)][scriptblock]$RestoreCursorAction
+  )
+
+  $button = [IntPtr](& $ResolveAction)
+  $point = & $GeometryAction $button
+  $cursor = & $CaptureCursorAction
+  $originalFailure = $null
+  try {
+    if ((& $MoveAction $point) -ne $true -or
+        (& $GuardAction $button $point) -ne $true) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_OK_MOUSE_INVALID'
+    }
+    $plan = @(New-MT5VmExactSingleClickInputPlan)
+    if ([int](& $ClickAction $plan) -ne 2 -or (& $WaitAction) -ne $true) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_OK_MOUSE_INVALID'
+    }
+  } catch {
+    $originalFailure = $_.Exception
+  }
+  try {
+    if ((& $RestoreCursorAction $cursor) -ne $true) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED'
+    }
+  } catch {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED'
+  }
+  if ($null -ne $originalFailure) { throw $originalFailure }
+  return $true
+}
+
 function Convert-MT5VmClientPointToScreenBoundary {
   [CmdletBinding()]
   param(
@@ -2807,6 +2945,118 @@ function Get-MT5VmWebRequestEditorBoundary {
   return $editor
 }
 
+function Get-MT5VmOptionsOkButtonBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$OptionsHandle,
+    [Parameter(Mandatory = $true)][IntPtr]$EditorHandle,
+    [Parameter(Mandatory = $true)][int]$ProcessId
+  )
+
+  $constants = Get-MT5VmTerminalUiConstants
+  $matches = @([Mt5VmTerminalUiNative]::DescendantsWithControlId(
+      $OptionsHandle,
+      $constants.DialogOk
+    ))
+  $button = if ($matches.Count -eq 1) { [IntPtr]$matches[0] } else { [IntPtr]::Zero }
+  $null = Assert-MT5VmOptionsOkCandidate `
+    -ExpectedControlId ([int]$constants.DialogOk) `
+    -ObservedControlId $(if ($button -eq [IntPtr]::Zero) { 0 } else {
+        [Mt5VmTerminalUiNative]::GetDlgCtrlID($button)
+      }) `
+    -CandidateCount $matches.Count `
+    -WindowClass $(if ($button -eq [IntPtr]::Zero) { '' } else {
+        [Mt5VmTerminalUiNative]::WindowClass($button)
+      }) `
+    -Visible ($button -ne [IntPtr]::Zero -and
+      [Mt5VmTerminalUiNative]::IsWindowVisible($button)) `
+    -Enabled ($button -ne [IntPtr]::Zero -and
+      [Mt5VmTerminalUiNative]::IsWindowEnabled($button)) `
+    -ExpectedProcessId $ProcessId `
+    -OptionsProcessId ([int][Mt5VmTerminalUiNative]::WindowProcessId($OptionsHandle)) `
+    -ButtonProcessId ([int][Mt5VmTerminalUiNative]::WindowProcessId($button)) `
+    -EditorProcessId ([int][Mt5VmTerminalUiNative]::WindowProcessId($EditorHandle))
+  return $button
+}
+
+function Get-MT5VmWindowCenterScreenBoundary {
+  [CmdletBinding()]
+  param([Parameter(Mandatory = $true)][IntPtr]$WindowHandle)
+
+  $point = [int[]][Mt5VmTerminalUiNative]::WindowCenterScreen($WindowHandle)
+  if ($point.Count -ne 2) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_OK_MOUSE_INVALID'
+  }
+  return [pscustomobject][ordered]@{ x = $point[0]; y = $point[1] }
+}
+
+function Confirm-MT5VmOptionsDialogWithActiveEditorBoundary {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][IntPtr]$OptionsHandle,
+    [Parameter(Mandatory = $true)][IntPtr]$EditorHandle,
+    [Parameter(Mandatory = $true)][int]$ProcessId
+  )
+
+  return Invoke-MT5VmGuardedOptionsOkClickCore `
+    -ResolveAction {
+      return Get-MT5VmOptionsOkButtonBoundary `
+        -OptionsHandle $OptionsHandle `
+        -EditorHandle $EditorHandle `
+        -ProcessId $ProcessId
+    } `
+    -GeometryAction {
+      param($button)
+      return Get-MT5VmWindowCenterScreenBoundary -WindowHandle $button
+    } `
+    -CaptureCursorAction {
+      return Get-MT5VmCursorPositionBoundary
+    } `
+    -MoveAction {
+      param($point)
+      return [bool][Mt5VmTerminalUiNative]::TrySetCursorPosition(
+        [int]$point.x,
+        [int]$point.y
+      )
+    } `
+    -GuardAction {
+      param($button, $point)
+      $observed = [IntPtr][Mt5VmTerminalUiNative]::WindowAtScreenPoint(
+        [int]$point.x,
+        [int]$point.y
+      )
+      $null = Assert-MT5VmOptionsOkPointIdentity `
+        -ExpectedButtonHandle $button `
+        -ObservedPointHandle $observed
+      return [bool][Mt5VmTerminalUiNative]::IsExactOptionsOkGuard(
+        $OptionsHandle,
+        $button,
+        $EditorHandle,
+        [uint32]$ProcessId,
+        [int]$point.x,
+        [int]$point.y
+      )
+    } `
+    -ClickAction {
+      param($plan)
+      return Invoke-MT5VmNativeMouseInputBoundary -Plan $plan
+    } `
+    -WaitAction {
+      for ($attempt = 0; $attempt -lt 50; $attempt++) {
+        if (-not [Mt5VmTerminalUiNative]::IsWindow($OptionsHandle) -or
+            -not [Mt5VmTerminalUiNative]::IsWindowVisible($OptionsHandle)) {
+          return $true
+        }
+        Start-Sleep -Milliseconds 100
+      }
+      return $false
+    } `
+    -RestoreCursorAction {
+      param($cursor)
+      return Restore-MT5VmCursorPositionBoundary -Cursor $cursor
+    }
+}
+
 function Invoke-MT5VmWebRequestEditorApplyBoundary {
   [CmdletBinding()]
   param(
@@ -2846,7 +3096,7 @@ function Invoke-MT5VmWebRequestEditorApplyBoundary {
   if ($terminalProcessId -lt 1) {
     throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
   }
-  $null = Invoke-MT5VmPhysicalMouseActivationTransactionCore `
+  return Invoke-MT5VmPhysicalMouseActivationTransactionCore `
     -CaptureCursorAction {
       return Get-MT5VmCursorPositionBoundary
     } `
@@ -2876,7 +3126,7 @@ function Invoke-MT5VmWebRequestEditorApplyBoundary {
         -EditorHandle $editor `
         -ProcessId $terminalProcessId `
         -ExpectedOrigin $ExpectedOrigin
-      return $true
+      return $editor
     } `
     -RestoreCursorAction {
       param($cursor)
@@ -2975,10 +3225,9 @@ function Write-MT5VmWebRequestStateBoundary {
     })
   if ($target.Enabled -eq 1 -and $target.Items.Count -eq 1 -and
       $targetNonEmpty.Count -eq 1) {
-    Invoke-MT5VmWebRequestEditorApplyBoundary `
+    return Invoke-MT5VmWebRequestEditorApplyBoundary `
       -OptionsHandle $OptionsHandle `
       -ExpectedOrigin ([string]$targetNonEmpty[0])
-    return
   }
   $constants = Get-MT5VmTerminalUiConstants
   $controls = Get-MT5VmWebRequestControlMapBoundary -OptionsHandle $OptionsHandle
@@ -3095,8 +3344,13 @@ function Set-MT5VmTerminalWebRequestAllowlist {
       throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_STATE_INVALID'
     }
 
-    Write-MT5VmWebRequestStateBoundary -OptionsHandle $activeDialog -State $desired
-    Confirm-MT5VmOptionsDialogBoundary -OptionsHandle $activeDialog
+    $activeEditor = [IntPtr](Write-MT5VmWebRequestStateBoundary `
+        -OptionsHandle $activeDialog `
+        -State $desired)
+    Confirm-MT5VmOptionsDialogWithActiveEditorBoundary `
+      -OptionsHandle $activeDialog `
+      -EditorHandle $activeEditor `
+      -ProcessId $ProcessId
     $activeDialog = [IntPtr]::Zero
 
     $activeDialog = Open-MT5VmOptionsDialogBoundary -ProcessId $ProcessId
