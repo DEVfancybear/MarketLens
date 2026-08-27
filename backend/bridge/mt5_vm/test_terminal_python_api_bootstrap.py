@@ -1487,7 +1487,7 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
         for error in observed["errors"]:
             self.assertIn("PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID", error)
 
-    def test_webrequest_virtual_key_stage_orders_guards_and_readback_without_return(self) -> None:
+    def test_webrequest_virtual_key_stage_commits_once_after_readback(self) -> None:
         body = (
             "$script:origin='http://127.0.0.1:8790';$script:events=@();"
             "$setOriginal=(Get-Command Set-MT5VmEditorTextBoundary).ScriptBlock;"
@@ -1524,7 +1524,7 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
         observed = json.loads(completed.stdout)
         self.assertTrue(observed["ok"])
         self.assertEqual(
-            ["clear", "caps", "guard", "send:46", "read", "guard"],
+            ["clear", "caps", "guard", "send:46", "read", "guard", "send:2"],
             observed["events"],
         )
 
@@ -1535,6 +1535,7 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             "partial_chars": {"guards": 1, "sends": 1, "reads": 0},
             "readback": {"guards": 1, "sends": 1, "reads": 25},
             "guard2": {"guards": 2, "sends": 1, "reads": 1},
+            "partial_return": {"guards": 2, "sends": 2, "reads": 1},
         }
         for mode, counts in expected.items():
             with self.subTest(mode=mode):
@@ -1558,6 +1559,8 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
                     "function Invoke-MT5VmNativeKeyboardInputBoundary {param([object[]]$Plan);"
                     "$script:sends++;if($script:mode -ceq 'partial_chars' -and "
                     "$script:sends -eq 1){return $Plan.Count-1};"
+                    "if($script:mode -ceq 'partial_return' -and "
+                    "$script:sends -eq 2){return $Plan.Count-1};"
                     "$Plan.Count};"
                     "function Read-MT5VmEditorTextBoundary {param([IntPtr]$EditorHandle);"
                     "$script:reads++;if($script:mode -ceq 'readback'){return ''};"
