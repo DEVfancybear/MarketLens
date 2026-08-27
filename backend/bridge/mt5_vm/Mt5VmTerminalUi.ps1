@@ -469,9 +469,7 @@ public static class Mt5VmTerminalUiNative {
     }
     var info = new GuiThreadInfo();
     info.size = (uint)Marshal.SizeOf(typeof(GuiThreadInfo));
-    if (!GetGUIThreadInfo(optionsThreadId, ref info) || info.active != optionsWindow ||
-        (info.focus != optionsWindow && info.focus != buttonWindow &&
-          info.focus != listWindow && info.focus != checkboxWindow)) {
+    if (!GetGUIThreadInfo(optionsThreadId, ref info) || info.active != optionsWindow) {
       return false;
     }
     var point = new NativePoint();
