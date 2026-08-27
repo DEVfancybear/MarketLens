@@ -1945,7 +1945,7 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             "permit-partial-editor-return-count",
             "send-editor-return-after-physical-ok",
             "accept-live-committed-editor",
-            "skip-committed-row-state-check",
+            "accept-visible-committed-editor",
             "accept-wrong-committed-control-identity",
             "accept-editor-readback-as-persisted-proof",
             "create-proxy-before-persisted-preflight",

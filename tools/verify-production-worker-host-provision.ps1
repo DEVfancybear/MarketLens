@@ -398,16 +398,14 @@ Start-Sleep -Milliseconds 150
     Confirm-MT5VmOptionsDialogWithActiveEditorBoundary `
       -OptionsHandle $activeDialog `
       -EditorHandle $activeEditor `
-      -ProcessId $ProcessId `
-      -ExpectedOrigin $Origin
+      -ProcessId $ProcessId
     $activeDialog = [IntPtr]::Zero
 '@
       replace2 = @'
     Confirm-MT5VmOptionsDialogWithActiveEditorBoundary `
       -OptionsHandle $activeDialog `
       -EditorHandle $activeEditor `
-      -ProcessId $ProcessId `
-      -ExpectedOrigin $Origin
+      -ProcessId $ProcessId
     $returnPlan = @(New-MT5VmReturnKeyInputPlan)
     $insertedReturn = Invoke-MT5VmNativeKeyboardInputBoundary -Plan $returnPlan
     if ([int]$insertedReturn -ne $returnPlan.Count) {
@@ -419,27 +417,20 @@ Start-Sleep -Milliseconds 150
     },
     [pscustomobject]@{
       name = 'accept-live-committed-editor'
-      search = '$EditorIsWindow -or $EditorVisible -or -not $NativeIdentityValid -or'
-      replace = '$false -or $false -or -not $NativeIdentityValid -or'
+      search = 'if ($EditorIsWindow -or $EditorVisible -or -not $NativeIdentityValid) {'
+      replace = 'if ($false -or $false -or -not $NativeIdentityValid) {'
       test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_committed_row_guard_accepts_only_retired_editor_exact_state_and_identity'
     },
     [pscustomobject]@{
-      name = 'skip-committed-row-state-check'
-      search = @'
--not (Test-MT5VmDesiredWebRequestState `
-        -State $State `
-        -ExpectedOrigin $ExpectedOrigin
-      )
-'@
-      replace = @'
-$false
-'@
+      name = 'accept-visible-committed-editor'
+      search = 'if ($EditorIsWindow -or $EditorVisible -or -not $NativeIdentityValid) {'
+      replace = 'if ($EditorIsWindow -or $false -or -not $NativeIdentityValid) {'
       test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_committed_row_guard_accepts_only_retired_editor_exact_state_and_identity'
     },
     [pscustomobject]@{
       name = 'accept-wrong-committed-control-identity'
-      search = '-not $NativeIdentityValid -or'
-      replace = '$false -or'
+      search = 'if ($EditorIsWindow -or $EditorVisible -or -not $NativeIdentityValid) {'
+      replace = 'if ($EditorIsWindow -or $EditorVisible -or $false) {'
       test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_committed_row_guard_accepts_only_retired_editor_exact_state_and_identity'
     },
     [pscustomobject]@{

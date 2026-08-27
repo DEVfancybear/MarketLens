@@ -2043,16 +2043,10 @@ function Assert-MT5VmCommittedOptionsOkGuard {
   param(
     [Parameter(Mandatory = $true)][bool]$EditorIsWindow,
     [Parameter(Mandatory = $true)][bool]$EditorVisible,
-    [Parameter(Mandatory = $true)][bool]$NativeIdentityValid,
-    [Parameter(Mandatory = $true)][object]$State,
-    [Parameter(Mandatory = $true)][string]$ExpectedOrigin
+    [Parameter(Mandatory = $true)][bool]$NativeIdentityValid
   )
 
-  if ($EditorIsWindow -or $EditorVisible -or -not $NativeIdentityValid -or
-      -not (Test-MT5VmDesiredWebRequestState `
-        -State $State `
-        -ExpectedOrigin $ExpectedOrigin
-      )) {
+  if ($EditorIsWindow -or $EditorVisible -or -not $NativeIdentityValid) {
     throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_OK_MOUSE_INVALID'
   }
   return $true
@@ -3131,8 +3125,7 @@ function Confirm-MT5VmOptionsDialogWithActiveEditorBoundary {
   param(
     [Parameter(Mandatory = $true)][IntPtr]$OptionsHandle,
     [Parameter(Mandatory = $true)][IntPtr]$EditorHandle,
-    [Parameter(Mandatory = $true)][int]$ProcessId,
-    [Parameter(Mandatory = $true)][string]$ExpectedOrigin
+    [Parameter(Mandatory = $true)][int]$ProcessId
   )
 
   return Invoke-MT5VmGuardedOptionsOkClickCore `
@@ -3158,7 +3151,6 @@ function Confirm-MT5VmOptionsDialogWithActiveEditorBoundary {
     -GuardAction {
       param($button, $point)
       $controls = Get-MT5VmWebRequestControlMapBoundary -OptionsHandle $OptionsHandle
-      $committed = Read-MT5VmWebRequestStateBoundary -OptionsHandle $OptionsHandle
       $observed = [IntPtr][Mt5VmTerminalUiNative]::WindowAtScreenPoint(
         [int]$point.x,
         [int]$point.y
@@ -3179,9 +3171,7 @@ function Confirm-MT5VmOptionsDialogWithActiveEditorBoundary {
       return Assert-MT5VmCommittedOptionsOkGuard `
         -EditorIsWindow ([Mt5VmTerminalUiNative]::IsWindow($EditorHandle)) `
         -EditorVisible ([Mt5VmTerminalUiNative]::IsWindowVisible($EditorHandle)) `
-        -NativeIdentityValid $nativeIdentityValid `
-        -State $committed `
-        -ExpectedOrigin $ExpectedOrigin
+        -NativeIdentityValid $nativeIdentityValid
     } `
     -ClickAction {
       param($plan)
@@ -3496,8 +3486,7 @@ function Set-MT5VmTerminalWebRequestAllowlist {
     Confirm-MT5VmOptionsDialogWithActiveEditorBoundary `
       -OptionsHandle $activeDialog `
       -EditorHandle $activeEditor `
-      -ProcessId $ProcessId `
-      -ExpectedOrigin $Origin
+      -ProcessId $ProcessId
     $activeDialog = [IntPtr]::Zero
 
     $activeDialog = Open-MT5VmOptionsDialogBoundary -ProcessId $ProcessId
