@@ -2955,7 +2955,7 @@ function Write-MT5VmWebRequestStateBoundary {
     [IntPtr]$controls.List,
     [uint32]$constants.LvmDeleteAllItems,
     [uint32]$constants.LvmInsertItem,
-    [string[]]@($target.Items),
+    [string[]]@($targetNonEmpty),
     [int]$constants.WebRequestMaxItems,
     [int]$constants.WebRequestMaxCharacters,
     [uint32]$constants.UiMessageTimeoutMs

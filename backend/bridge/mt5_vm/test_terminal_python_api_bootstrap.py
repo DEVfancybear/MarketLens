@@ -1659,7 +1659,7 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             "combine-click-batches",
             "remove-paced-click-delay",
             "drop-mid-click-guard",
-            "PRODUCTION_WEBREQUEST_MOUSE_MUTATION=7/7",
+            "PRODUCTION_WEBREQUEST_MOUSE_MUTATION=9/9",
             "PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID",
             "PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED",
         ):
