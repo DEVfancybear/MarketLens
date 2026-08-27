@@ -2692,3 +2692,72 @@ APPROVE SPEC REVISION: production-worker-host-provision v33
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v33`. No v33 implementation or retained
 host mutation occurred before that approval.
+
+## Revision v34 - guard the committed MT5 row after Return (approval required)
+
+### Discovery during approved v33 execution
+
+V33 passed 60/60 MT5 regressions and killed 15/15 UI/mouse mutants. On the selected production
+host, the commit-rollback trace submitted the exact two-record Return plan and then failed closed
+with `PROVISIONING_WEBREQUEST_ALLOWLIST_OK_MOUSE_INVALID`. Exact rollback succeeded:
+`common.ini` contained `WebRequest=0` and an empty `WebRequestUrl`, no terminal remained, portproxy
+and port 80 remained empty, and the worktree remained clean.
+
+The selected MT5 control destroys its transient add-row editor when Return commits the row. The
+v32 OK guard still requires that destroyed editor to be the focused live child, so v33's
+requirement to use the unchanged v32 guard conflicts with the now-observed committed control
+state. The pre-Return editor guard remains valid; the post-Return OK guard must instead identify
+the committed row and stable Options controls.
+
+### v34 committed-row then physical-confirm transaction
+
+Revision v34 remains Tier 3 and supersedes only v33's requirement that the post-Return physical OK
+guard keep using the transient editor identity. All earlier exact input-plan, ordering, process,
+foreground, geometry, point-hit, click-count, cursor-restoration, reopen, rollback, no-proxy,
+probe, worker, and production requirements remain unchanged.
+
+After the exact Return key-down/key-up count succeeds, the helper must require the original editor
+handle to no longer be a live visible editor, resolve exactly one WebRequest list, checkbox, and OK
+button under the same still-visible foreground Options dialog, require every stable control to
+belong to the exact terminal PID and GUI thread, and require the current bounded list model to be
+enabled with exactly one non-empty item ordinally equal to `http://127.0.0.1`. This list check is
+only a pre-click identity/commit guard and is not persistence proof. The helper must then retain
+the v32 physical point identity, exact two-record single-click plan, dialog-close wait, and cursor
+restoration. Persistence is PASS only after reopening Options and reading the exact desired state.
+
+The guard must fail closed if the editor remains live or visible, any control count/class/PID/thread
+or foreground identity differs, the checkbox/list model differs, the cursor point does not hit the
+exact OK button, the click count is partial, the dialog remains open, or cursor restoration fails.
+Every failure must execute exact snapshot rollback, with rollback failure authoritative. No
+dependency, download, generated source, runner switch, force termination, clipboard, SendKeys,
+direct config write, or proxy relaxation is allowed.
+
+Before implementation, add and observe RED tests for the committed-row guard's positive ordering
+and every negative identity/state case. Keep v33 assertions frozen. Kill and restore at least three
+new plausible mutants: accept a still-live editor, skip the exact committed-row state check, and
+accept the wrong stable-control PID or foreground dialog. Persist them in the existing rerunnable
+mouse mutation entry point.
+
+Run the commit-rollback trace first while portproxy and port 80 are empty and require
+`PRODUCTION_WEBREQUEST_ALLOWLIST_COMMIT_ROLLBACK=PASS` with both `persisted_desired=True` and
+`restored_prior=True`. Only then run the normal allowlist driver twice and the complete unchanged
+13-layer verifier, which must invoke exactly `powershell.exe -File .\run-backend-production.ps1`
+without switches. Planned changed files are
+`backend/bridge/mt5_vm/Mt5VmTerminalUi.ps1`,
+`backend/bridge/mt5_vm/test_terminal_python_api_bootstrap.py`,
+`tools/verify-production-worker-host-provision.ps1`, this SPEC, and final `EVIDENCE.md`. Planned
+git operations are isolated RED, GREEN, mutation/evidence checkpoints and the already authorized
+canonical production execution; the fresh final verifier command is
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\verify-production-worker-host-provision.ps1`.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v34
+```
+
+### v34 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v34`. No v34 implementation or retained
+host mutation occurred before that approval.
