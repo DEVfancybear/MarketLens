@@ -177,7 +177,7 @@ function Invoke-AllowlistMutationTests {
       expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_FAILED_OPEN'
     },
     [pscustomobject]@{
-      name = 'ensure-proxy-before-pending-preflight'
+      name = 'create-proxy-before-persisted-preflight'
       search = @'
 $preflight = & $PreflightAction
     $proxy = & $EnsureProxyAction
@@ -192,6 +192,20 @@ $proxy = & $EnsureProxyAction
       name = 'delete-preexisting-mapping-during-rollback'
       search = 'if ($null -ne $proxy -and [bool]$proxy.created) {'
       replace = 'if ($null -ne $proxy) {'
+      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_FAILED'
+    },
+    [pscustomobject]@{
+      name = 'skip-successful-trace-rollback'
+      search = @'
+  if ((& $RollbackUiAction $preflight.prior) -ne $true) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED'
+  }
+  return [pscustomobject][ordered]@{
+'@
+      replace = @'
+  $null = $preflight.prior
+  return [pscustomobject][ordered]@{
+'@
       expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_FAILED'
     }
   )
@@ -244,7 +258,8 @@ $proxy = & $EnsureProxyAction
   ) 'PROVISIONING_ALLOWLIST_MUTANT_RESTORE_FAILED'
   & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $allowlistDriver -ContractTestsOnly
   Assert-NativeSuccess 'PROVISIONING_ALLOWLIST_MUTATION_RESTORED_TEST_FAILED'
-  Write-Output "PRODUCTION_WEBREQUEST_ALLOWLIST_MUTATION=$killed/$($mutants.Count)"
+  Assert-Gate ($mutants.Count -eq 5) 'PROVISIONING_ALLOWLIST_MUTATION_MANIFEST_INVALID'
+  Write-Output 'PRODUCTION_WEBREQUEST_ALLOWLIST_MUTATION=5/5'
 }
 
 function Invoke-MouseMutationTests {
@@ -330,6 +345,39 @@ Start-Sleep -Milliseconds 150
       search = 'if ((& $RestoreCursorAction $cursor) -ne $true) {'
       replace = 'if ($false) {'
       test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_transaction_always_restores_cursor'
+    },
+    [pscustomobject]@{
+      name = 'send-return-before-options-confirm'
+      search = @'
+  return $true
+}
+
+function Get-MT5VmWebRequestEditorBoundary {
+'@
+      replace = @'
+  $null = Invoke-MT5VmEditorCommitSequenceBoundary -EditorHandle $EditorHandle
+  return $true
+}
+
+function Get-MT5VmWebRequestEditorBoundary {
+'@
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_virtual_key_stage_orders_guards_and_readback_without_return'
+    },
+    [pscustomobject]@{
+      name = 'accept-editor-readback-as-persisted-proof'
+      search = @'
+    $persisted = Read-MT5VmWebRequestStateBoundary -OptionsHandle $activeDialog
+    Cancel-MT5VmOptionsDialogBoundary -OptionsHandle $activeDialog
+    $activeDialog = [IntPtr]::Zero
+    if (-not (Test-MT5VmDesiredWebRequestState -State $persisted -ExpectedOrigin $Origin)) {
+'@
+      replace = @'
+    $persisted = $desired
+    Cancel-MT5VmOptionsDialogBoundary -OptionsHandle $activeDialog
+    $activeDialog = [IntPtr]::Zero
+    if (-not (Test-MT5VmDesiredWebRequestState -State $persisted -ExpectedOrigin $Origin)) {
+'@
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_allowlist_mismatch_restores_snapshot_before_rethrow'
     }
   )
   $killed = 0
@@ -382,10 +430,12 @@ Start-Sleep -Milliseconds 150
   & python.exe -m unittest -v `
     backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_activation_rechecks_guard_and_counts `
     backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_add_editor_identity_is_exact_and_fail_closed `
-    backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_transaction_always_restores_cursor
+    backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_transaction_always_restores_cursor `
+    backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_virtual_key_stage_orders_guards_and_readback_without_return `
+    backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_allowlist_mismatch_restores_snapshot_before_rethrow
   Assert-NativeSuccess 'PROVISIONING_MOUSE_MUTATION_RESTORED_TEST_FAILED'
-  Assert-Gate ($mutants.Count -eq 7) 'PROVISIONING_MOUSE_MUTATION_MANIFEST_INVALID'
-  Write-Output 'PRODUCTION_WEBREQUEST_MOUSE_MUTATION=7/7'
+  Assert-Gate ($mutants.Count -eq 9) 'PROVISIONING_MOUSE_MUTATION_MANIFEST_INVALID'
+  Write-Output 'PRODUCTION_WEBREQUEST_MOUSE_MUTATION=9/9'
 }
 
 if ($AllowlistMutationTestsOnly) {
