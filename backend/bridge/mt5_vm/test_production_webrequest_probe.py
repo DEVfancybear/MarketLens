@@ -68,26 +68,20 @@ class ProductionWebRequestProbeTests(unittest.TestCase):
             "$gatewayOrigin = 'http://127.0.0.1'",
             "$gatewayHealthUrl = 'http://127.0.0.1/health'",
             "WindowStyle Hidden",
-            "/config:",
+            "Invoke-ProbeDefaultConfigStartupTransaction",
+            ".marketlens-v38-startup.bak",
+            "[IO.File]::Replace",
+            "PRODUCTION_DEFAULT_CONFIG_STARTUP_CONTRACTS=PASS",
         ):
             self.assertIn(required, source)
         self.assertNotIn("SendKeys", source)
         self.assertNotIn("Clipboard", source)
-        startup = source.split('$startup = @"', maxsplit=1)[1].split(
-            '"@\nWrite-Utf8NoBomFile -Path $startupConfig -Contents $startup',
-            maxsplit=1,
-        )[0]
-        self.assertEqual(
-            "\n[StartUp]\n"
-            "Script=MarketLensWebRequestProbe\n"
-            "Symbol=EURUSD\n"
-            "Period=M1\n"
-            "ShutdownTerminal=1\n",
-            startup,
+        self.assertNotIn("/config:", source)
+        self.assertIn(
+            "$terminal = Start-Process -FilePath $terminalPath `\n"
+            "    -WindowStyle Hidden -PassThru",
+            source,
         )
-        self.assertNotIn("[Experts]", startup)
-        self.assertNotIn("\nWebRequest=", startup)
-        self.assertNotIn("\nWebRequestUrl=", startup)
 
     def test_driver_crypto_is_compatible_with_windows_powershell_51(self) -> None:
         source = DRIVER.read_text(encoding="utf-8")
