@@ -2908,3 +2908,64 @@ APPROVE SPEC REVISION: production-worker-host-provision v36
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v36`. No v36 implementation or retained
 host mutation occurred before that approval.
+
+## Revision v37 - inherit the provisioned profile during the live probe (approval required)
+
+### Discovery during approved v36 execution
+
+V36's atomic profile trace passed with exact desired-file and restored-original proofs. Its
+standard-port listener was observed as the exact `127.0.0.1:80` endpoint owned by the `svchost`
+process hosting `iphlpsvc`, rather than by a process named `System`; the corrected service-identity
+contract passed 63/63 regressions and killed 9/9 allowlist mutants. The first live probe then
+compiled, loaded, and ran on signed terminal build 6140 but returned `status=-1 error=4014` twice.
+The second receipt proved that adding `WebRequest=1` and `WebRequestUrl=http://127.0.0.1` to the
+custom startup file does not authorize WebRequest. MetaQuotes documentation and selected-host
+execution agree that the URL must come from terminal Options/profile state, not the startup file.
+
+The first failed probe also exposed a rollback ownership defect: a proxy created inside a
+PowerShell scriptblock was not visible to the outer catch scope. The exact mapping was removed by
+a bounded emergency rollback only after its topology and the original config hash were proven;
+the subsequent state-holder implementation and contract now prove
+`ensure -> health -> probe -> rollback` and clear ownership after rollback. Every failed run ended
+with the original `common.ini` hash, no backup, no proxy/listener, and no terminal.
+
+### v37 minimal-startup probe and rollback ownership transaction
+
+Revision v37 remains Tier 3 and changes only the v36 live-probe launch boundary. The atomic
+desired `common.ini`, exact standard-port topology, nonce receipt, signed terminal boundary,
+two-run idempotency, worker provisioning, canonical runner, health gates, and every v36 rollback
+requirement remain unchanged.
+
+The probe startup file must contain only the bounded `[StartUp]` script/symbol/period/shutdown
+settings needed to run `MarketLensWebRequestProbe`; it must not contain an `[Experts]` section or
+attempt to set `WebRequest`/`WebRequestUrl`. The selected terminal must therefore inherit the
+already-proven desired profile state. A 4014 receipt remains a hard
+`PROVISIONING_WEBREQUEST_ALLOWLIST_REQUIRED` failure. The proxy ownership state-holder must remain
+visible across the nested probe action and must remove only a mapping created by that run on any
+health/probe failure, clear its ownership state, and prove the exact empty listener/proxy state.
+
+Before implementation, replace the now-refuted positive startup-key assertion with a RED negative
+contract requiring no `[Experts]` section in the startup here-string. Preserve the rollback
+state-holder regression, 63 MT5 regressions, 4 probe tests, 9/9 allowlist mutants, and 18/18 UI
+regression mutants. Add no dependency or download. Planned additional files are
+`tools/mt5-baremetal/Invoke-MT5WebRequestProbe.ps1`,
+`backend/bridge/mt5_vm/test_production_webrequest_probe.py`, this SPEC, and final `EVIDENCE.md`.
+
+After GREEN, start from the proven empty host state, run the normal allowlist driver twice through
+the approved UAC boundary, and require two live nonce receipts (`APPLIED`, then `UNCHANGED`). Then
+run the complete unchanged 13-layer verifier from a clean checkpoint; its canonical layer must
+execute `powershell.exe -File .\run-backend-production.ps1` without switches. The fresh final
+command remains
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\verify-production-worker-host-provision.ps1`.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v37
+```
+
+### v37 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v37`. No v37 implementation change was
+made after the revision was written and before this approval.
