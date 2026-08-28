@@ -420,15 +420,6 @@ if (Test-Path -LiteralPath $receiptPath) {
 
 $startupConfig = Join-Path $reportRoot 'webrequest-probe-startup.ini'
 $startup = @"
-[Experts]
-AllowLiveTrading=0
-AllowDllImport=0
-Enabled=1
-WebRequest=1
-WebRequestUrl=$gatewayOrigin
-Account=0
-Profile=0
-
 [StartUp]
 Script=MarketLensWebRequestProbe
 Symbol=EURUSD

@@ -86,7 +86,8 @@ class ProductionWebRequestProbeTests(unittest.TestCase):
             startup,
         )
         self.assertNotIn("[Experts]", startup)
-        self.assertNotIn("WebRequest", startup)
+        self.assertNotIn("\nWebRequest=", startup)
+        self.assertNotIn("\nWebRequestUrl=", startup)
 
     def test_driver_crypto_is_compatible_with_windows_powershell_51(self) -> None:
         source = DRIVER.read_text(encoding="utf-8")
