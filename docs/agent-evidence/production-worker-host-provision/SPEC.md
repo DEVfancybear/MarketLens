@@ -1138,3 +1138,1970 @@ APPROVE SPEC REVISION: production-worker-host-provision v14
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v14`. No v14 implementation occurred
 before that approval.
+
+## Revision v15 - agent-owned MT5 WebRequest allowlist transaction (approval required)
+
+### User input and bounded discovery
+
+The user rejected the v14 manual MT5 Options step and requires the production agent to complete
+the whole cutover without asking the user to manipulate the terminal UI. This is new authorization
+input, not approval of a changed implementation. Official MQL5 documentation states that the
+WebRequest list is an end-user safety setting in the Expert Advisors tab and cannot be edited
+programmatically through MQL; therefore this revision uses the terminal's real Options dialog as
+the configuration boundary and retains the live nonce-bound WebRequest probe as the only positive
+attestation.
+
+Read-only discovery against only the signed selected terminal
+`C:\Program Files\MetaTrader 5\terminal64.exe` used the existing exact-PID Win32 helper, selected
+the Expert Advisors tab, inspected control metadata without printing list contents, clicked
+Cancel, and gracefully closed the terminal it started. It found:
+
+- WebRequest checkbox control ID `10322`, initially unchecked;
+- one visible `SysListView32` control ID `10191`;
+- exactly one list item, which is empty; and
+- no pre-existing non-empty WebRequest URL to preserve on this host.
+
+The discovery made no persisted terminal setting change. One attempted .NET UI Automation tree
+read failed because Windows PowerShell 5.1 rejected the collection shape; its `finally` block still
+cancelled the dialog and closed the owned terminal. The successful discovery used bounded Win32
+control IDs because this MT5 dialog does not expose a useful UI Automation child tree.
+
+### v15 scope, setup, and planned paths
+
+Revision v15 remains old-coder **Tier 3** and retains every v3-v14 invariant except the explicit
+manual-only allowlist clause. It authorizes an agent-owned UI transaction only for the exact
+selected terminal and exact origin `http://127.0.0.1:8790`.
+
+Tools/dependencies to install: **none**. Use only Windows PowerShell 5.1, the .NET/Win32 APIs already
+available on the host, Python unittest, `apply_patch`, Git checkpoint/fast-forward operations, and
+the existing gauntlet toolchains. No browser automation, UI Automation package, SendKeys helper,
+or third-party desktop dependency is authorized.
+
+Additional planned tracked paths are limited to:
+
+- `backend/bridge/mt5_vm/Mt5VmTerminalUi.ps1` - add bounded list-view read/replace primitives and
+  a transactional exact-origin apply/verify/rollback operation;
+- `backend/bridge/mt5_vm/test_terminal_python_api_bootstrap.py` - add RED/GREEN transaction,
+  ambiguity, idempotency, rollback, and forbidden-capability contracts;
+- `tools/mt5-baremetal/Set-MT5WebRequestAllowlist.ps1` - new no-argument production entry point
+  pinned internally to the selected terminal and origin, plus contract-only known-bad mode;
+- `tools/verify-production-worker-host-provision.ps1` - parse/contract-test the new entry point,
+  authorize these exact tracked paths, and invoke it immediately before the existing live probe;
+- this SPEC and the final EVIDENCE record.
+
+No other tracked path, dependency, download, service/database/security-policy change, global PATH
+change, push, broker enrollment, credential access, or out-of-scope terminal action is authorized.
+The existing task branch/checkpoint cadence, fast-forward-only local `master`, clean-worktree gate,
+13-layer manifest, and no-switch canonical runner remain unchanged.
+
+### v15 failure model and defenses
+
+| Failure mode | Required executable defense |
+|---|---|
+| Wrong terminal or another broker terminal receives UI messages | Reuse exact canonical path, valid MetaQuotes signature/company, exact PID, and single-process boundary before opening Options |
+| UI layout changes or a control ID is ambiguous | Require exactly one visible Options dialog, checkbox `10322`, and enabled `SysListView32` `10191` with exact classes; otherwise fail before OK |
+| Existing URLs are silently lost | Snapshot checkbox plus every list item in memory before mutation; bound count/length; never print item values; restore the exact snapshot on a failed transaction |
+| Partial/pending edits persist after an error | Cancel any open dialog in `finally`; after OK reopen and compare normalized persisted state; on mismatch perform and verify exact rollback |
+| Rollback itself fails | Emit `PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED`, retain failure, and do not run the live probe or production runner |
+| Arbitrary UI automation capability is introduced | No SendKeys, Clipboard, coordinate/mouse click, foreground-window stealing, window-title matching, arbitrary terminal path, or arbitrary URL argument |
+| A blank MT5 placeholder is mistaken for an allowed URL | Normalize only non-empty list items; permit at most one UI-created blank placeholder; require exactly one non-empty item equal ordinally to the expected origin |
+| Direct list write does not affect MT5's persisted setting | Reopen Options after OK and require checkbox `1` plus the exact normalized list; then require the existing real MT5 WebRequest receipt and HTTP response |
+| A fake UI pass replaces network evidence | The allowlist transaction emits only a configuration result; positive topology attestation remains forbidden until the nonce-bound live probe succeeds |
+
+### v15 RED -> GREEN acceptance scenarios
+
+#### V15-S1 - exact boundary and source capability
+
+Given the new production allowlist entry point,
+when its contract-only positive and known-bad modes run,
+then it accepts only the internally pinned selected terminal and
+`http://127.0.0.1:8790`, rejects an out-of-scope terminal or non-loopback/different origin with a
+pinned `PROVISIONING_WEBREQUEST_ALLOWLIST_BOUNDARY_INVALID` reason, and its source contains no
+SendKeys, Clipboard, coordinate/mouse, title-match, credential, trade, or force-termination
+capability. The test must be observed RED before the entry point exists.
+
+#### V15-S2 - exact state transaction is idempotent
+
+Given a mocked exact-PID Options boundary whose prior state is unchecked with one blank item,
+when the high-level transaction applies the expected origin,
+then it snapshots the prior state, writes checkbox `1` and exactly one non-empty expected origin,
+confirms once, reopens, rereads the same normalized state, cancels the verification dialog, and
+returns a sanitized result containing no URL-list contents. Given that exact state already exists,
+the transaction performs no confirmed write and returns idempotent success.
+
+#### V15-S3 - ambiguity and invalid list state fail closed
+
+Given zero/duplicate/wrong-class/disabled list controls, more than 64 items, an item longer than
+2048 UTF-16 characters, duplicate expected origins, or any unexpected non-empty origin after a
+write,
+when the transaction evaluates the dialog,
+then it exits nonzero before positive attestation with a pinned allowlist error and never guesses a
+control or accepts a subset/partial match.
+
+#### V15-S4 - failed apply restores the exact snapshot
+
+Given a write or persisted reread mismatch after the prior state was captured,
+when the transaction handles the failure,
+then it cancels any pending dialog, reapplies the exact prior checkbox/list snapshot through a new
+exact-PID dialog, confirms, rereads, and verifies the rollback. The original apply error remains
+authoritative if rollback succeeds; if rollback cannot be verified, the exact rollback-failed code
+above is authoritative. Tests must cover both branches.
+
+#### V15-S5 - live selected-host proof precedes production
+
+Given V15-S1 through V15-S4 are GREEN and PostgreSQL preflight passes,
+when the fresh gauntlet reaches `live-webrequest-and-host-inputs`,
+then it runs the no-argument allowlist entry point, observes its persisted exact-state result, and
+immediately runs the existing nonce-bound MT5 probe. Only an actual HTTP 200 receipt from
+`http://127.0.0.1:8790/health` may unlock protected host inputs, worker provisioning, and the exact
+no-switch `\.\run-backend-production.ps1`. Error 4014, timeout, mismatched receipt, allowlist
+postcondition failure, or rollback failure blocks every later layer.
+
+### v15 RED, mutation, and final gauntlet
+
+First add the tests for V15-S1 through V15-S4 and observe them fail against v14 before adding the
+entry point or implementation. Keep assertions frozen through GREEN. Run focused Python tests,
+PowerShell parsing, both contract-only modes, and `git diff --check`. Kill and restore at least one
+one-off mutant that changes the exact origin comparison or persisted-state equality; verify the
+source hash is restored.
+
+Commit the GREEN checkpoint on the existing task branch, fast-forward local `master`, require a
+clean worktree, and rerun the single fresh entry point from layer one:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\verify-production-worker-host-provision.ps1
+```
+
+The final EVIDENCE may claim production success only if all 13 layers pass, including the real
+allowlist transaction, live MT5 receipt, protected worker provisioning, the canonical runner, and
+local/public/worker postconditions. Any failure remains blocking and must be reported exactly.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v15
+```
+
+### v15 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v15`. No v15 implementation occurred
+before that approval.
+
+## Revision v16 - activate MT5's private URL editor through a bounded list hit (approval required)
+
+### Discovery during approved v15 implementation
+
+V15 RED was observed as five new failures with all 25 retained tests passing. GREEN contracts then
+passed 30/30 tests; the exact-origin comparator mutant was killed and restored to its prior SHA-256.
+The first selected-host transaction opened the exact signed terminal and snapshotted the unchecked,
+one-blank-row state. Direct `LVM_DELETEALLITEMS`/`LVM_INSERTITEMW` changed the Windows list view but
+not MT5's private dialog model, so the mandatory pending reread failed with
+`PROVISIONING_WEBREQUEST_ALLOWLIST_PENDING_FAILED`. The exact snapshot rollback succeeded; no
+rollback-failed code, confirmation attestation, host input, worker mutation, or production runner
+followed.
+
+A second pending-only discovery tried standard `LVM_EDITLABELW`; the list does not expose the
+`LVS_EDITLABELS` behavior and returned no Edit handle (`EDIT_LABEL_NOT_AVAILABLE`). Its `finally`
+block cancelled the dialog and closed the owned terminal. Existing control discovery shows MT5
+instead owns a hidden Edit control ID `10325`; MT5 reveals that private editor only when its blank
+list row receives the dialog's normal double-click action.
+
+This means v15's prohibition on every coordinate/mouse message also prohibits the remaining
+agent-owned path. Revision v16 narrows one exception rather than silently weakening that boundary.
+
+### v16 bounded exception and unchanged scope
+
+Revision v16 remains Tier 3, retains all v15 paths, dependencies, failure codes, rollback rules,
+tests, mutation requirement, gauntlet, and exact terminal/origin boundary. It authorizes only this
+additional control-local activation sequence inside `Mt5VmTerminalUi.ps1`:
+
+1. require the WebRequest checkbox and the unique visible `SysListView32` ID `10191` already bound
+   to the exact selected terminal PID;
+2. require the pre-mutation state to be either the exact desired state or unchecked with exactly
+   one empty item; any unexpected non-empty item fails without mutation;
+3. query item 0's client rectangle using bounded `LVM_GETITEMRECT` and compute its midpoint inside
+   that list control only;
+4. prove that point resolves back to item 0 with bounded `LVM_HITTEST` and item/label hit flags;
+5. send one `WM_LBUTTONDBLCLK` message to that exact list handle using only the verified
+   control-client point;
+6. require exactly one visible, enabled `Edit` control ID `10325` under the same Options dialog;
+7. set only `http://127.0.0.1:8790` with bounded `WM_SETTEXT`, then commit only to that edit handle
+   with bounded `WM_KEYDOWN`/`WM_KEYUP` for `VK_RETURN`; and
+8. reread the pending checkbox/list state before any OK, then retain v15's persisted reread, live
+   WebRequest probe, and rollback requirements.
+
+The exception does **not** authorize `SendInput`, `mouse_event`, `SetCursorPos`, global cursor
+movement, absolute screen coordinates, coordinate literals, window-title lookup, focus stealing,
+arbitrary list rows, right-click, drag, menu traversal, SendKeys, or Clipboard. The user's physical
+cursor is not moved. If item-rectangle retrieval, hit testing, editor visibility/class/ID, text set,
+Return commit, or pending reread is ambiguous or fails, the dialog is cancelled and no OK is sent.
+
+No new tracked path or dependency is added. The v15 direct replace primitive may remain only for
+exact snapshot rollback if its result is verified pending and persisted; it may not be treated as a
+successful desired-state apply after the observed failure. If exact rollback cannot be verified,
+`PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED` remains authoritative.
+
+### v16 RED -> GREEN additions
+
+Before adding the activation implementation, add and observe RED source/contract expectations for
+the exact constants and defenses: `LVM_GETITEMRECT`, `LVM_HITTEST`, `WM_LBUTTONDBLCLK`, editor ID
+`10325`, one verified row, one editor, and forbidden global input APIs. A pure hit-test contract
+must accept a rectangle midpoint that maps to item 0 and reject wrong row, outside point, missing
+label/item flags, empty/negative rectangles, and duplicate editor controls with pinned allowlist
+errors. Keep assertions frozen through GREEN.
+
+Run the pending-only selected-host transaction first. It may click OK only after the exact desired
+state is reread from the live dialog. Reopen and verify persisted state, rerun the no-argument
+entrypoint for idempotency, then run the existing nonce-bound MT5 WebRequest probe. Kill and restore
+a mutant that bypasses the row/hit-test equality defense. After the GREEN checkpoint and local
+master fast-forward, restart the complete 13-layer gauntlet from layer one; only all-layer success
+permits the production claim.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v16
+```
+
+### v16 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v16`. No v16 implementation occurred
+before that approval.
+
+## Revision v17 - send the complete control-local double-click sequence (approval required)
+
+### Discovery during approved v16 execution
+
+V16 source/geometry contracts were observed RED, then passed 31/31 focused tests. A mutant that
+accepted the wrong hit row was killed with `PROVISIONING_WEBREQUEST_ALLOWLIST_HIT_INVALID`, and the
+helper was restored to SHA-256
+`6AF7C3F7F79A66CBDB27773EB4CCE9AA941E0849B5AB96695D54666372255DDF` before live execution.
+
+On the exact signed terminal, `LVM_GETITEMRECT` and `LVM_HITTEST` succeeded for item 0, the checkbox
+was enabled only in the pending dialog, and the single authorized `WM_LBUTTONDBLCLK` was delivered
+to the exact list handle. MT5 did not reveal Edit control `10325`, so the transaction failed with
+`PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID`. The dialog was cancelled, the exact unchecked
+one-blank-row snapshot was restored and verified, and the owned terminal was closed. No OK with a
+desired URL, live probe, attestation, protected host input, worker mutation, or production runner
+followed.
+
+The control-local double-click message alone lacks the preceding button state that Windows sends
+during a real double click. MT5's private handler requires the first click to select/focus the blank
+row before it treats the second click as activation.
+
+### v17 bounded exception
+
+Revision v17 remains Tier 3 and changes only the v16 activation delivery after the same exact
+rectangle/hit-test defenses pass. Replace the single message with exactly this four-message
+sequence to the same `SysListView32` handle and same computed control-client point:
+
+1. `WM_LBUTTONDOWN` with `MK_LBUTTON`;
+2. `WM_LBUTTONUP` with no button flags;
+3. `WM_LBUTTONDBLCLK` with `MK_LBUTTON`;
+4. `WM_LBUTTONUP` with no button flags.
+
+Every message must use the existing bounded timeout wrapper. No delay-dependent coordinate
+recalculation, second row, retry at another point, global input API, cursor movement, absolute
+screen coordinate, `SetFocus`, `SetForegroundWindow`, `SendInput`, SendKeys, Clipboard, or window
+title is authorized. After the sequence, exactly one same-dialog Edit ID `10325` must become visible
+and enabled; otherwise cancel and retain the v16 failure behavior.
+
+No path, dependency, URL, terminal, signer/PID boundary, state precondition, text/Return action,
+snapshot/rollback rule, live probe, gauntlet layer, Git operation, or production command changes.
+
+### v17 RED -> GREEN additions
+
+Add and observe RED constants/source contracts for `WM_LBUTTONDOWN=0x0201` and
+`WM_LBUTTONUP=0x0202`, and a pure sequence contract that requires exactly four ordered messages,
+the verified packed point on all four, and only the two specified `MK_LBUTTON` flags. Reject a
+missing/reordered/extra message, changed point, or wrong flag with
+`PROVISIONING_WEBREQUEST_ALLOWLIST_SEQUENCE_INVALID`. Keep assertions frozen through GREEN and kill
+a mutant that swaps or drops one sequence element.
+
+Then run the selected-host transaction. It may persist only after pending reread is exact; rerun it
+for idempotency and immediately run the live nonce-bound WebRequest probe. Only after the GREEN
+checkpoint, clean local-master fast-forward, and a fresh all-pass 13-layer gauntlet may EVIDENCE
+claim production success.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v17
+```
+
+### v17 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v17`. No v17 implementation occurred
+before that approval.
+
+## Revision v18 - queue the exact control-local mouse sequence (approval required)
+
+### Discovery during approved v17 execution
+
+V17 source and pure sequence contracts passed 32/32 focused tests after the exact four-message
+implementation. A mutant that swapped the first expected sequence element was killed with
+`PROVISIONING_WEBREQUEST_ALLOWLIST_SEQUENCE_INVALID` and the helper was restored before live
+execution.
+
+The exact signed-terminal transaction then failed closed with
+`PROVISIONING_WEBREQUEST_ALLOWLIST_SEQUENCE_INVALID` and restored the unchecked, one-blank-row
+snapshot. A no-output diagnostic retained message results in memory until after cancellation and
+rollback. It showed `WM_LBUTTONDOWN` itself returned Win32 `ERROR_TIMEOUT` (`1460`) after 2004 ms;
+the following three messages therefore could not be delivered by the synchronous
+`SendMessageTimeoutW` wrapper. No desired state was confirmed, no live receipt or protected host
+input ran, and no production runner followed.
+
+This is a synchronization deadlock at the interaction boundary: MT5's mouse-down handler waits for
+the rest of the mouse gesture while the external synchronous sender waits for that handler to
+return. Adding sleep before or after the synchronous call cannot make the corresponding mouse-up
+enter the target thread.
+
+### v18 bounded queue exception
+
+Revision v18 remains Tier 3 and changes only delivery of v17's already-approved exact four-message
+sequence after the same checkbox, PID, control ID, rectangle, and hit-test defenses pass. It
+authorizes a `PostMessageW` boundary that queues, in order, to the same verified
+`SysListView32` handle and same packed control-client point:
+
+1. `WM_LBUTTONDOWN` with `MK_LBUTTON`;
+2. `WM_LBUTTONUP` with no button flags;
+3. `WM_LBUTTONDBLCLK` with `MK_LBUTTON`; and
+4. `WM_LBUTTONUP` with no button flags.
+
+Every queue call must return success. Any false return fails with the exact code
+`PROVISIONING_WEBREQUEST_ALLOWLIST_SEQUENCE_QUEUE_FAILED`; the dialog is cancelled and the exact
+snapshot rollback remains mandatory. The queue is nonblocking but the operation remains bounded:
+after all four calls succeed, exactly one visible and enabled same-dialog Edit ID `10325` must
+appear within the existing bounded editor wait, and the existing pending reread, OK, reopened
+persisted reread, idempotency run, and nonce-bound live receipt remain required.
+
+The exception does not authorize another handle, another row or point, retries at alternate
+coordinates, arbitrary messages, global input, cursor movement, focus/foreground APIs, SendInput,
+SendKeys, Clipboard, window-title lookup, or removal of any state, rollback, signer, PID, terminal,
+or origin check. `PostMessageW` may be used only by this private exact-sequence boundary; all other
+control reads, text writes, Return commit, dialog confirmation, and dialog cancellation retain
+their existing bounded synchronous wrappers. Timing sleeps are not evidence of success and must
+not replace the exact editor and state rereads.
+
+No tracked path, dependency, URL, terminal, public API, host input, worker mutation, gauntlet
+layer, Git operation, or production command changes.
+
+### v18 RED -> GREEN additions
+
+Before adding the queue implementation, add and observe RED contracts requiring the private
+`PostMessageW` boundary, exactly four successful queue calls, and the pinned queue-failure code.
+Use a mocked native boundary only at the Win32 edge to prove a false result on any one of the four
+positions aborts and never reports success; retain v17's frozen pure ordering/flag/point assertions.
+Kill and restore a mutant that ignores one failed queue result.
+
+Then rerun all focused tests, the exact selected-host transaction, a second idempotency transaction,
+and the live nonce-bound WebRequest probe. Only after a GREEN checkpoint, clean local-master
+fast-forward, and one fresh all-pass execution of the complete 13-layer verifier may EVIDENCE claim
+production success.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v18
+```
+
+### v18 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v18`. No v18 implementation occurred
+before that approval.
+
+## Revision v19 - activate the verified Add URL icon rectangle (approval required)
+
+### Discovery during approved v18 execution
+
+V18 RED was observed as two failures: the `PostMessageW`/queue boundary did not exist and the
+four-position abort test could not resolve it. GREEN then passed 34/34 focused tests. A mutant that
+swallowed one queue failure was killed because the mocked sequence continued to all four calls
+instead of stopping at the failed position; the helper was restored to SHA-256
+`138F09473E0BDDAC1E2B96A893A1C02D02E56F96DD19BC02CA71B1A8CA3BC896` and the targeted test returned
+GREEN.
+
+The selected-host transaction no longer timed out but failed closed with
+`PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID` and restored the exact unchecked,
+one-placeholder-row state. A Cancel-only diagnostic showed that the queued gesture selected and
+focused item 0 (`selected_count=1`, `selected_index=0`, `focused_index=0`) but created no editor.
+No desired state was confirmed and no live receipt, protected host input, worker mutation, or
+production runner followed.
+
+Current MetaQuotes documentation renders the final list item as a green plus followed by
+`add new URL like 'https://www.mql5.com'`; current MetaQuotes-hosted setup guidance instructs users
+to double-click that green plus. A read-only, Cancel-only `LVM_GETITEMRECT`/`LVM_HITTEST` diagnostic
+on the exact selected terminal proved that v16-v18 targeted the entire item bounds midpoint
+`(268,10)`, while item 0's standard `LVIR_ICON` rectangle is `(left=4, top=0, right=22, bottom=20)`
+with midpoint `(13,10)`, hit item 0, and flags `0xE`. The existing bounds midpoint therefore selects
+the row but is not the documented Add URL activation target.
+
+### v19 bounded icon-geometry correction
+
+Revision v19 remains Tier 3 and changes only the rectangle kind used before the already-approved
+v18 exact queued sequence. The native geometry boundary must:
+
+1. request item 0's `LVIR_ICON=1` rectangle with bounded `LVM_GETITEMRECT`;
+2. reject empty, negative, overflowing, or out-of-client icon rectangles;
+3. compute only that icon rectangle's midpoint;
+4. prove bounded `LVM_HITTEST` maps the midpoint back to item 0 and includes
+   `LVHT_ONITEMICON=0x0002`; and
+5. pass that one packed point unchanged to all four v18 `PostMessageW` queue calls.
+
+No bounds/label/select-bounds fallback, alternate point, retry, coordinate literal, screen
+coordinate, cursor movement, global input, focus/foreground API, arbitrary message, or other row is
+authorized. If icon geometry, icon hit, any queue call, editor discovery, text/Return commit,
+pending reread, persisted reread, or rollback fails, retain the existing pinned fail-closed path.
+
+All v18 sequence ordering, flags, queue failure behavior, exact same list handle, exactly one visible
+enabled Edit ID `10325`, exact origin/terminal/signer/PID boundary, snapshot/rollback rules,
+idempotency run, live receipt, verifier layers, Git operations, and canonical production command
+remain unchanged. No tracked path or dependency is added.
+
+### v19 RED -> GREEN additions
+
+Before changing geometry, add and observe RED source/pure contracts for `LVIR_ICON=1`, passing the
+icon rectangle kind into the native `LVM_GETITEMRECT` request, and requiring
+`LVHT_ONITEMICON=0x0002`. The pure geometry contract must reject a bounds-style rectangle request,
+a hit lacking the icon bit, a wrong row, and an invalid icon rectangle while accepting the exact
+general form of a valid item-0 icon rectangle. Keep assertions frozen through GREEN. Kill and
+restore a mutant that changes `LVIR_ICON` to `LVIR_BOUNDS` or accepts a hit without the icon bit.
+
+Then rerun all focused tests, the exact selected-host transaction, a second idempotency transaction,
+and the live nonce-bound WebRequest probe. Only after a GREEN checkpoint, clean local-master
+fast-forward, and one fresh all-pass execution of the complete 13-layer verifier may EVIDENCE claim
+production success.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v19
+```
+
+### v19 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v19`. No v19 implementation occurred
+before that approval.
+
+## Revision v20 - bind the live Add URL editor control ID (approval required)
+
+### Discovery during approved v19 execution
+
+V19 RED was observed because the icon rectangle and hit contracts did not exist. GREEN passed
+35/35 focused tests. A mutant changing `LVIR_ICON=1` to `LVIR_BOUNDS=0` was killed by the frozen
+constant/geometry assertion; the helper was restored to SHA-256
+`8954110FD7285CFEC658D3A2BA534C331F0CB2DD261891B89FAB7EA742CC4D36` and the targeted test returned
+GREEN.
+
+The selected-host transaction targeted the verified item-0 icon midpoint but still failed closed
+with `PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID`; its exact snapshot rollback completed and
+no desired state was confirmed. A Cancel-only GUI-thread diagnostic then proved the Options dialog
+was active and foreground and that the double-click had moved keyboard focus to an `Edit` control
+ID `32954`. A second Cancel-only descendant query repeated the observation: exactly one ID `32954`
+control existed under the same Options dialog, class `Edit`, visible and enabled, while the
+previously assumed ID `10325` had zero matches. The editor therefore opened successfully; the
+postcondition rejected the correct live control because its pinned ID was wrong.
+
+No text was written during either diagnostic. No OK, live receipt, protected host input, worker
+mutation, or production runner followed.
+
+### v20 exact editor identity correction
+
+Revision v20 remains Tier 3 and changes only the editor control identity used after all approved
+v19 icon geometry and v18 queue checks pass. Add a production Add URL editor constant with exact
+value `32954`; `Get-MT5VmWebRequestEditorBoundary` must require exactly one same-dialog descendant
+with that ID, exact class `Edit`, visible, and enabled. Zero, duplicate, wrong-ID (including legacy
+`10325`), wrong-class, hidden, or disabled candidates fail with the existing exact code
+`PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID` before any text write.
+
+The older `WebRequestEditor=10325` constant may remain only as frozen regression history for the
+v16 contract; production discovery and writing must not use it. No fallback IDs, focused-control
+trust without descendant verification, title/text lookup, arbitrary Edit control, or retry against
+another editor is authorized.
+
+All icon rectangle/client/hit checks, exact four queued messages, same list handle and point,
+`WM_SETTEXT` exact origin, Return commit, pending and reopened persisted rereads, exact rollback,
+terminal/signer/PID boundary, idempotency run, live receipt, verifier layers, Git operations, and
+canonical production command remain unchanged. No tracked path or dependency is added.
+
+### v20 RED -> GREEN additions
+
+Before changing the resolver, add and observe RED constants/source and pure-candidate contracts for
+the exact Add URL editor ID `32954`. The pure contract must accept one ID `32954`, class `Edit`,
+visible and enabled candidate and reject legacy ID `10325`, zero/duplicate counts, wrong class,
+hidden, and disabled candidates with the pinned editor-invalid error. Keep all assertions frozen
+through GREEN. Kill and restore a mutant changing the production ID back to `10325` or accepting
+the legacy ID.
+
+Then rerun all focused tests, the exact selected-host transaction, a second idempotency transaction,
+and the live nonce-bound WebRequest probe. Only after a GREEN checkpoint, clean local-master
+fast-forward, and one fresh all-pass execution of the complete 13-layer verifier may EVIDENCE claim
+production success.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v20
+```
+
+### v20 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v20`. No v20 implementation occurred
+before that approval.
+
+## Revision v21 - deliver Return's exact character message (approval required)
+
+### Discovery during approved v20 execution
+
+V20 RED was observed because the production Add URL editor constant and exact-candidate contract did
+not exist. GREEN passed 36/36 focused tests. A mutant changing production ID `32954` back to legacy
+`10325` was killed with `PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID`; the helper was restored
+to SHA-256 `6D47C625E085F40D7B7E8A6E4E4BF03A02D1113223BA02040BDAF14B2023C0A8` and the targeted test returned
+GREEN.
+
+The selected-host transaction still failed closed with
+`PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID` and restored the exact prior state. A pending-only,
+always-Cancel stage trace proved the icon activation found the exact ID `32954` editor,
+`WM_SETTEXT` succeeded, and bounded `WM_KEYDOWN(VK_RETURN)` and `WM_KEYUP(VK_RETURN)` both returned
+success. The editor nevertheless remained visible and the pending list state was not committed.
+No OK or persisted mutation occurred.
+
+Microsoft's Win32 documentation states that `TranslateMessage` translates key messages and posts
+the corresponding `WM_CHAR`; its keyboard-input documentation explicitly lists Enter as generating
+a carriage-return `WM_CHAR`. A directly delivered `WM_KEYDOWN` does not traverse the target
+thread's retrieve/translate loop, so v16-v20 omitted the character message the edit control uses to
+commit its value.
+
+### v21 exact Return character sequence
+
+Revision v21 remains Tier 3 and changes only the editor commit delivery after exact `WM_SETTEXT`
+succeeds. Deliver exactly these three bounded synchronous messages, in order, to the same verified
+ID `32954` editor handle:
+
+1. `WM_KEYDOWN=0x0100` with `VK_RETURN=0x0D`;
+2. `WM_CHAR=0x0102` with carriage return `0x0D`; and
+3. `WM_KEYUP=0x0101` with `VK_RETURN=0x0D`.
+
+All three calls must succeed through the existing timeout wrapper. Missing, reordered, extra,
+wrong-handle, wrong-message, or wrong-`wParam` delivery fails closed with the existing
+`PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID`; the dialog is cancelled and the exact snapshot
+rollback remains mandatory. After the exact sequence, the editor must disappear within the existing
+bounded wait and the exact desired pending state must be reread before OK.
+
+No arbitrary character, text, key, retry, keyboard-layout inference, global input, SendKeys,
+Clipboard, focus/foreground mutation, or additional handle is authorized. All v20 editor identity,
+v19 icon geometry, v18 mouse queue, exact origin, persisted reread, idempotency run, live receipt,
+terminal/signer/PID boundary, verifier layers, Git operations, and canonical production command
+remain unchanged. No tracked path or dependency is added.
+
+### v21 RED -> GREEN additions
+
+Before changing commit delivery, add and observe RED constants and a pure sequence contract for
+exact messages `[WM_KEYDOWN, WM_CHAR, WM_KEYUP]` and exact parameters `[0x0D, 0x0D, 0x0D]`. Reject a
+missing, reordered, extra, wrong-message, or wrong-parameter sequence with the pinned editor-invalid
+error. Keep assertions frozen through GREEN. Kill and restore a mutant that drops or changes the
+`WM_CHAR` element.
+
+Then rerun all focused tests, the exact selected-host transaction, a second idempotency transaction,
+and the live nonce-bound WebRequest probe. Only after a GREEN checkpoint, clean local-master
+fast-forward, and one fresh all-pass execution of the complete 13-layer verifier may EVIDENCE claim
+production success.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v21
+```
+
+### v21 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v21`. No v21 implementation occurred
+before that approval.
+
+## Revision v22 - enter the exact origin through character messages (approval required)
+
+### Discovery during approved v21 execution
+
+V21 RED was observed as two failures because the Return character contract and execution boundary
+did not exist. GREEN passed 38/38 focused tests. A mutant dropping `WM_CHAR` from the execution
+boundary was killed with `PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID`; the helper was restored
+to SHA-256 `E915B0E18D3D194FCA6A4DD6951F0A2984E76AD0B271644645F2F5B390ECFEB6` and the targeted test
+returned GREEN.
+
+The selected-host transaction still failed closed and restored the prior state. An always-Cancel
+per-message trace proved `WM_KEYDOWN(Return)` left the editor open, `WM_CHAR(Return)` immediately
+closed and destroyed the editor, and the following `WM_KEYUP` failed because its exact handle no
+longer existed. The pending list contained two rows but both were empty, so no desired state was
+confirmed.
+
+A second always-Cancel shape-only trace repeated the result: checkbox enabled, two empty rows,
+zero non-empty rows, and no editor after `WM_CHAR(Return)`. This proves two independent v21 model
+errors: `WM_SETTEXT` changes the Edit window's displayed text but does not drive MT5's private
+per-character URL model, and a Return key-up cannot be sent to the editor after the character
+commit destroys it. The existing desired-state invariant already allows exactly one exact non-empty
+origin plus at most one empty Add URL placeholder, so it does not need to be weakened.
+
+No OK, persisted mutation, live receipt, protected host input, worker mutation, or production
+runner followed.
+
+### v22 exact character-entry boundary
+
+Revision v22 remains Tier 3 and replaces only v21's editor text/commit delivery after the exact
+ID `32954` editor is verified:
+
+1. clear only that editor with bounded `WM_SETTEXT` and the empty string;
+2. derive the UTF-16 code units only from the already pinned origin
+   `http://127.0.0.1:8790` and deliver exactly one bounded `WM_CHAR=0x0102` per code unit, in order,
+   to the same editor handle;
+3. use bounded `WM_GETTEXTLENGTH=0x000E` and `WM_GETTEXT=0x000D`, capped by the existing 2048
+   character limit, to reread the editor internally and require ordinal equality with the pinned
+   origin without printing it; and
+4. deliver exactly one bounded `WM_CHAR` with carriage return `0x0D` to the same editor as the
+   commit message.
+
+The commit succeeds only if that call returns and the editor then disappears within the existing
+bounded wait. Do not send `WM_KEYDOWN` or `WM_KEYUP` to the destroyed editor. The existing immediate
+pending reread must then require one exact non-empty origin and no more than one empty placeholder
+before OK; the reopened persisted reread retains the same invariant.
+
+Any clear, character, readback, equality, commit, editor-disappearance, pending, persisted, or
+rollback failure uses the existing pinned editor/state/rollback errors and fails closed. No other
+string, character stream, key, handle, control, encoding conversion, clipboard, SendKeys, global
+input, focus/foreground mutation, retry, or fallback is authorized. All v20 editor identity, v19
+icon geometry, v18 mouse queue, exact terminal/signer/PID boundary, idempotency run, live receipt,
+verifier layers, Git operations, and canonical production command remain unchanged. No tracked
+path or dependency is added.
+
+### v22 RED -> GREEN additions
+
+Before implementation, add and observe RED constants and pure contracts that map only the exact
+pinned origin to its exact ordered UTF-16 `WM_CHAR` values and reject a missing, reordered, extra,
+changed, empty, or NUL-containing stream. Add a mocked-boundary contract proving clear occurs first,
+every exact origin code unit is delivered once to the same handle, exact bounded readback occurs
+before one carriage-return `WM_CHAR`, and no post-commit key message is attempted. Keep assertions
+frozen through GREEN. Kill and restore a mutant that drops or changes one origin character.
+
+Then rerun all focused tests, the exact selected-host transaction, a second idempotency transaction,
+and the live nonce-bound WebRequest probe. Only after a GREEN checkpoint, clean local-master
+fast-forward, and one fresh all-pass execution of the complete 13-layer verifier may EVIDENCE claim
+production success.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v22
+```
+
+### v22 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v22`. No v22 implementation occurred
+before that approval.
+
+## Revision v23 - dispatch the exact character stream through MT5's UI queue (approval required)
+
+### Discovery during approved v22 execution
+
+V22 RED was observed as two failures because the exact character-stream and editor boundary did
+not exist. GREEN then passed 40/40 focused tests. A mutant dropping the first origin character was
+killed by the frozen event-order assertion, which observed `t` where the exact first character
+`h` was required. The helper was restored byte-for-byte to SHA-256
+`1326D58DA94C1541C8C2505CB69C55D6ED8220CC6E34DAF8B2ABFF1E5D3E71EB`, and the targeted test
+returned GREEN.
+
+The exact selected-host transaction nevertheless failed closed with
+`PROVISIONING_WEBREQUEST_ALLOWLIST_PENDING_FAILED` and completed the existing snapshot rollback.
+An always-Cancel, shape-only trace then repeated the v22 path without printing list contents. The
+editor's bounded readback had already matched the exact origin, but after the synchronous
+`WM_CHAR(Return)` closed the editor the pending state was checkbox `1` with two empty rows of
+lengths `[0, 0]`, zero exact rows, and `desired=false`. No OK, persisted desired setting, live
+receipt, protected host input, worker mutation, or production runner followed.
+
+This proves that calling the editor window procedure synchronously can update its displayed text
+but still bypasses the target thread's queued UI dispatch path that maintains MT5's private Add URL
+model. V18 already demonstrated and bounded `PostMessageW` for the exact mouse gesture; v23 narrows
+an additional use of that existing primitive to the already pinned editor and character stream.
+
+### v23 exact queued editor boundary
+
+Revision v23 remains Tier 3 and changes only v22's delivery mechanism after the same exact ID
+`32954`, class, visibility, enabled, terminal, signer, PID, geometry, and state checks pass:
+
+1. clear only the verified editor with the existing bounded `WM_SETTEXT` empty string;
+2. derive and validate only the exact ordered UTF-16 code units of
+   `http://127.0.0.1:8790` using v22's frozen pure contract;
+3. queue exactly one `WM_CHAR=0x0102` per code unit, in order, with zero `lParam`, to that same
+   editor handle through the existing private `PostMessageW` boundary, and require every queue call
+   to return success;
+4. poll only bounded `WM_GETTEXTLENGTH`/`WM_GETTEXT` on that same handle for at most the existing
+   25-by-100ms wait and require ordinal equality with the exact origin before commit; and
+5. queue exactly one final `WM_CHAR` carriage return `0x0D` to the same handle, then require the
+   editor to disappear within the existing bounded wait before rereading pending state.
+
+Queue success alone is never configuration evidence. The existing immediate pending reread must
+still contain exactly one non-empty ordinal-equal origin and at most one blank placeholder before
+OK; the reopened persisted reread, idempotency transaction, and nonce-bound live WebRequest receipt
+remain mandatory. A failed character queue, readback timeout/mismatch, Return queue, disappearance,
+pending/persisted reread, or rollback fails closed with the existing pinned editor/state/rollback
+errors. The mouse-only queue failure remains separately pinned.
+
+No synchronous production `WM_CHAR`, `WM_KEYDOWN`, `WM_KEYUP`, additional character, alternate
+handle, retry with changed input, arbitrary queued message, keyboard-layout inference, SendInput,
+SendKeys, Clipboard, cursor movement, focus/foreground mutation, window-title lookup, direct desired
+list insertion, or fallback is authorized. The v22 bounded readback, v20 identity, v19 icon
+geometry, v18 exact mouse queue, snapshot/rollback, exact origin and terminal boundary, verifier
+layers, Git operations, and canonical no-switch production command remain unchanged. No tracked
+path or dependency is added.
+
+### v23 RED -> GREEN additions
+
+Before changing production delivery, add and observe RED mocked-boundary contracts proving the
+exact same-handle order: clear, every queued origin `WM_CHAR`, bounded exact readback, one queued
+Return, and no synchronous or post-commit key message. A false queue result at any character or
+Return must abort without success; a readback that never becomes exact must exhaust only the
+bounded wait and abort before Return. Keep assertions frozen through GREEN. Kill and restore a
+mutant that drops or changes one queued origin character.
+
+Run the selected-host path first as an always-Cancel pending-only trace. Only if it rereads the
+exact desired pending shape may the no-argument transaction click OK. Then require its persisted
+result, rerun it for `UNCHANGED`, and immediately run the live nonce-bound WebRequest probe. Only
+after a GREEN checkpoint, clean local-master fast-forward, and one fresh all-pass execution of the
+complete 13-layer verifier may EVIDENCE claim production success.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v23
+```
+
+### v23 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v23`. No v23 implementation occurred
+before that approval.
+
+## Revision v24 - inject one guarded exact keyboard batch into the verified editor (approval required)
+
+### Discovery during approved v23 execution
+
+V23 RED was observed in both new tests: the exact queued boundary was absent, and its character,
+Return, and readback-timeout failure cases could not reach the pinned fail-closed path. GREEN then
+passed 42/42 focused tests. A mutant dropping the first queued character was killed when the frozen
+event assertion observed `t` instead of the required `h`; the helper was restored byte-for-byte to
+SHA-256 `3CE6FFA5FA72421CFD5F6C887FA7D9D5456BF25C341773122E5E89B5D76B3D69`, and the targeted test
+returned GREEN.
+
+The required always-Cancel selected-host trace still read checkbox `1`, two empty rows of lengths
+`[0, 0]`, zero exact rows, and `desired=false` after all exact `WM_CHAR` messages were dispatched
+through the editor's UI queue. The dialog was cancelled and the owned terminal was closed. No OK,
+persisted desired setting, live receipt, protected host input, worker mutation, or production
+runner followed.
+
+Together v22 and v23 prove that direct window messages can change and reread the Edit control but
+do not traverse the keyboard-input path MT5 uses to update its private Add URL model. The remaining
+agent-owned path is Windows `SendInput`; this is a materially broader capability than v23 and is
+therefore isolated and approval-gated here rather than introduced silently.
+
+### v24 exact guarded input boundary
+
+Revision v24 remains Tier 3 and replaces only production use of v23's editor character delivery.
+After all existing exact terminal, signer, PID, Options dialog, icon geometry, and editor ID/class/
+visible/enabled checks pass, the boundary must:
+
+1. query `GetForegroundWindow` and `GetGUIThreadInfo` immediately before injection and require the
+   foreground window to be the same exact Options dialog and the focused window to be the same
+   verified ID `32954` editor; independently resolve both windows to the already selected terminal
+   PID, otherwise send zero input and fail closed;
+2. derive only the frozen exact UTF-16 stream for `http://127.0.0.1:8790` and construct one fixed
+   keyboard `INPUT` batch: for each code unit, one `KEYEVENTF_UNICODE` down record and one
+   `KEYEVENTF_UNICODE|KEYEVENTF_KEYUP` record, followed by exactly one `VK_RETURN` down record and
+   one `VK_RETURN|KEYEVENTF_KEYUP` record;
+3. call `SendInput` exactly once and require its return count to equal the complete batch length;
+   zero or partial insertion fails with `PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID`;
+4. wait only the existing bounded interval for the exact editor to disappear, then rely on the
+   unchanged pending-state reread to require one exact non-empty origin and at most one blank
+   placeholder before OK.
+
+The boundary must not call `SetForegroundWindow`, `SetFocus`, `AttachThreadInput`, `BlockInput`,
+`keybd_event`, mouse injection, SendKeys, Clipboard, or any window-title/text lookup. It may not
+send input if the exact foreground/focus/PID guard is false, split the input into multiple calls,
+accept a partial count, use an arbitrary string/terminal/handle, or retry after focus changes. This
+does not eliminate the operating-system race between the final guard and `SendInput`; that residual
+risk must be recorded explicitly in EVIDENCE. Batching minimizes the interval but cannot make a
+global input API handle-addressed.
+
+The v23 queued function may remain only as frozen regression history; production must not call it.
+All bounded editor-disappearance, immediate pending, reopened persisted, idempotency, rollback,
+nonce-bound live probe, protected-host-input, verifier, Git, and canonical no-switch production
+requirements remain unchanged. No tracked path, package, download, or third-party dependency is
+added.
+
+### v24 RED -> GREEN additions
+
+Before adding native input code, add and observe RED pure construction tests for the exact record
+count, ordered Unicode down/up pairs, final Return down/up pair, and rejection of missing,
+reordered, extra, changed, empty, or NUL-containing streams. Add mocked-boundary tests proving the
+foreground/focus/PID guard runs before exactly one send, false guard sends zero input, and a partial
+send count fails closed. Keep assertions frozen through GREEN. Kill and restore mutants that remove
+one Unicode record and that accept a partial send count.
+
+Run the first selected-host attempt as always-Cancel pending-only evidence. Only an exact desired
+pending reread authorizes the no-argument transaction to click OK. Then require persisted `APPLIED`,
+a second `UNCHANGED` run, and the live nonce-bound WebRequest receipt. Only after the GREEN
+checkpoint, clean local-master fast-forward, and one fresh all-pass execution of the complete
+13-layer verifier may EVIDENCE claim production success.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v24
+```
+
+### v24 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v24`. No v24 implementation occurred
+before that approval.
+
+## Revision v25 - use fixed physical virtual keys with exact pre-commit readback (approval required)
+
+### Discovery during approved v24 execution
+
+V24 RED was observed because the native input APIs, exact keyboard plan, and guarded send boundary
+did not exist. GREEN passed all three new tests and then 45/45 focused tests after the v16
+whole-file `SendInput` prohibition was narrowed to its original geometry/mouse boundary; all other
+cursor and mouse-injection prohibitions remained global. A mutant removing one Unicode record was
+killed by the exact plan validator, and a mutant accepting a partial `SendInput` count was killed
+by the frozen partial-send case. The helper was restored byte-for-byte to SHA-256
+`F6F177E73FDEF610E332B7B72357507F2D8BA8B327FB78B73220F232E674F75F`.
+
+The first selected-host trace failed before input because editor visibility had not stabilized; it
+cancelled without sending. A subsequent no-input trace proved exactly one ID `32954` Edit candidate
+was visible/enabled and the Options/editor/PID foreground-focus guard was exact. The guarded v24
+pending-only trace then inserted the complete Unicode batch and returned the exact count, but after
+Return MT5 still reported checkbox `1`, two empty rows of lengths `[0, 0]`, and `desired=false`.
+The dialog was cancelled and the owned terminal was closed. No OK, persisted desired state, live
+receipt, protected host input, worker mutation, or production runner followed.
+
+This proves that MT5's private Add URL model ignores `KEYEVENTF_UNICODE`/`VK_PACKET`, just as it
+ignored direct `WM_CHAR`. The remaining keyboard path is the virtual-key sequence produced by
+physical keys. Because v24 authorized one Unicode batch only, the fixed virtual-key plan and
+pre-commit readback below require a new approval.
+
+### v25 fixed virtual-key boundary
+
+Revision v25 remains Tier 3 and replaces only production use of v24's Unicode input plan. It keeps
+the same exact terminal, signer, PID, Options, editor, foreground/focus guard, rollback, and
+postconditions. The boundary must:
+
+1. clear the exact editor and require `GetKeyState(VK_CAPITAL)` to show Caps Lock off; otherwise
+   send zero input and fail closed without changing toggle state;
+2. construct a fixed virtual-key plan only for the already pinned ASCII origin: lowercase letters
+   use their uppercase `VK_A..VK_Z` without Shift, digits use `VK_0..VK_9`, period uses
+   `VK_OEM_PERIOD=0xBE`, slash uses `VK_OEM_2=0xBF`, and colon uses exactly
+   `VK_SHIFT down, VK_OEM_1=0xBA down/up, VK_SHIFT up`; every other character is rejected;
+3. re-run the exact Options/editor/PID foreground-focus guard and call `SendInput` once with the
+   complete character key-down/key-up plan, requiring the exact full count;
+4. poll only bounded `WM_GETTEXTLENGTH`/`WM_GETTEXT` for the existing 25-by-100ms interval and
+   require ordinal equality with `http://127.0.0.1:8790`; mismatch fails before Return and the
+   dialog is cancelled;
+5. re-run the exact foreground-focus/PID guard, call `SendInput` a second and final time with only
+   `VK_RETURN` down/up, require count `2`, and then require bounded editor disappearance before the
+   unchanged pending-state reread.
+
+The two calls are purpose-separated and may not be merged, split further, retried, or sent after a
+failed guard/readback. The implementation must not infer or change keyboard layout, change Caps
+Lock, call `SetForegroundWindow`, `SetFocus`, `AttachThreadInput`, `BlockInput`, use scan-code,
+Unicode, packet, Clipboard, SendKeys, mouse input, or accept an arbitrary character/string. Exact
+editor readback is the positive defense against layout/key-state mismatch; it is still not evidence
+of configuration until pending, persisted, idempotency, and live WebRequest checks pass. The same
+residual operating-system race between each final guard and its global `SendInput` call remains an
+explicit EVIDENCE limitation.
+
+V24's Unicode plan may remain only as frozen regression history; production must not call it. No
+tracked path, dependency, download, third-party package, host policy, verifier layer, Git operation,
+or canonical production command changes.
+
+### v25 RED -> GREEN additions
+
+Before implementation, add and observe RED pure-plan tests for every exact character mapping,
+colon modifier ordering, Return isolation, Caps Lock rejection, and missing/reordered/extra/changed
+records. Add mocked-boundary tests proving exact order `clear -> caps guard -> focus guard -> one
+character send -> exact readback -> focus guard -> one Return send`, and proving any false guard,
+partial character/Return count, or readback mismatch prevents all later stages. Keep assertions
+frozen through GREEN. Kill and restore mutants that remove colon's Shift and that permit Return
+after a mismatched readback.
+
+Run the selected-host path first as always-Cancel pending-only evidence. Only an exact desired
+pending reread authorizes the no-argument transaction to click OK. Then require persisted `APPLIED`,
+a second `UNCHANGED` run, and the live nonce-bound WebRequest receipt. Only after the GREEN
+checkpoint, clean local-master fast-forward, and one fresh all-pass execution of the complete
+13-layer verifier may EVIDENCE claim production success.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v25
+```
+
+### v25 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v25`. No v25 implementation occurred
+before that approval.
+
+## Revision v26 - correct the frozen v25 character-plan count (approval required)
+
+During approved v25 GREEN, three of four new focused tests passed. The orchestration-order test
+failed because its newly frozen event label expected `send:48`, while the pure mapping assertion in
+the same test correctly enumerated 46 character records. The pinned origin
+`http://127.0.0.1:8790` has 21 UTF-16/ASCII characters and two colons. A normal character produces
+two records; each colon produces four instead of two. The exact approved mapping therefore yields
+`21 * 2 + 2 * 2 = 46` records.
+
+The two assertions are mutually inconsistent: adding two input records would violate v25's exact
+per-character mapping and the pure expected-record list. Revision v26 changes only the erroneous
+orchestration event assertion from `send:48` to `send:46`. It does not change implementation,
+origin, key mapping, modifiers, guards, batching, readback, rollback, live checks, files,
+dependencies, Git operations, verifier layers, or the canonical production command. After the
+one-line assertion correction, rerun all v25 focused tests before continuing GREEN, mutations, and
+live pending-only execution.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v26
+```
+
+### v26 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v26`. No v26 assertion correction occurred
+before that approval.
+
+## Revision v27 - atomically provision the pinned MT5 profile and prove it live (approval required)
+
+### Discovery during approved v26 execution
+
+The one-line v26 assertion correction was applied only after approval. All four new v25/v26 tests
+then passed, followed by all 49 focused terminal/bootstrap tests. A mutant that removed the
+required Shift around the colon virtual key was killed because `VK_SHIFT=16` disappeared from the
+frozen plan. A mutant that allowed Return after a mismatched editor readback was killed by the
+frozen `FAILED_OPEN` case. The helper was restored byte-for-byte to SHA-256
+`4706F235D31CB5AA9B10C401A3564F901F053C3EB76C4C96500D84DE979F77F9`, and both targeted tests
+returned GREEN after restoration.
+
+The required selected-host v25 pending-only trace still reported checkbox `1`, two empty rows,
+zero exact rows, and `desired=false`; it cancelled the dialog and closed the terminal owned by the
+trace. No OK, persisted desired state, live receipt, protected host input, worker mutation, or
+production runner followed. Exact physical keys therefore reach the verified Edit control but do
+not update MT5's private allowlist model.
+
+A subsequent read-only profile inspection found the authoritative persisted surface. The pinned
+profile
+`C:\Users\Duong\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075`
+has an `origin.txt` that resolves exactly to `C:\Program Files\MetaTrader 5`; its
+`config\common.ini` is a 1,814-byte UTF-16LE BOM file with one `[Experts]` section, one
+`WebRequest=0`, and one empty `WebRequestUrl=`. The inspection printed only file metadata, hashes,
+key names, value lengths, and equality booleans; it did not print any unrelated configuration
+value. The existing live probe independently pins the same terminal, profile, publisher, and
+origin, and reports MT5 error 4014 when this persisted allowlist is absent.
+
+### v27 failure model and exact transaction
+
+Revision v27 remains Tier 3. It replaces only the production allowlist driver's use of the UI
+transaction; all UI implementations and tests remain frozen regression history. The production
+driver continues to accept no terminal, profile, origin, or config path from the caller and must
+pin these exact values:
+
+- terminal `C:\Program Files\MetaTrader 5\terminal64.exe`;
+- publisher `CN=MetaQuotes Ltd., O=MetaQuotes Ltd., S=Lemesos, C=CY`;
+- profile root named above, whose non-reparse `origin.txt` must resolve ordinal-ignore-case to the
+  terminal installation directory; and
+- origin `http://127.0.0.1:8790`.
+
+Before mutation it must validate every existing path component against reparse traversal, require
+the exact terminal's valid Authenticode signer, require zero running processes whose executable
+path is the selected terminal, and read only the pinned `config\common.ini`. The file must be a
+bounded regular UTF-16LE BOM file containing exactly one `[Experts]` section and exactly one each
+of case-sensitive `WebRequest` and `WebRequestUrl`. The only accepted initial states are the
+observed `WebRequest=0` plus empty `WebRequestUrl=`, or the exact desired `WebRequest=1` plus exact
+origin. Missing/duplicate sections or keys, another encoding, another prior value, an oversized
+file, a reparse point, a running selected terminal, or an ambiguous process query fails before any
+write. No configuration value other than the two equality-bounded values may be emitted to stdout,
+stderr, exception text, evidence, or artifacts.
+
+For the observed initial state, the driver must transform only those two exact value spans, retain
+the BOM, line endings, and every other byte, and prove the reverse transformation hashes to the
+original bytes. It must write a same-directory, create-new temporary file, flush it, apply the
+original ACL, and use same-volume atomic replacement while retaining one fixed-name exact backup
+with the original ACL and SHA-256. It must immediately reread the destination, prove the exact
+desired keys, prove the reverse-transformed byte hash and ACL equal the snapshot, and invoke the
+same operation a second time; that second operation must return `UNCHANGED` and leave the file hash
+unchanged. Temporary paths must be cleaned on every handled exit and must never be followed through
+a reparse point.
+
+The backup is a crash-recovery journal, not success evidence. If it already exists on entry, the
+driver may resume only when the backup is a valid exact accepted prior file and the current file is
+its exact v27 desired transformation; every other combination fails without overwriting either
+file. Once the desired persisted state is present, the driver must invoke the existing exact
+repo-local `Invoke-MT5WebRequestProbe.ps1` in a separate PowerShell 5.1 process and require its
+nonce-bound HTTP receipt. It must then wait for the selected terminal to exit, reread
+`common.ini`, require the exact desired keys, and prove that reversing only those keys still yields
+the snapshot hash and ACL. A second verifier-owned probe may remain as independent repeat evidence.
+
+If atomic replacement, reread, idempotency, process shutdown, or the live probe fails, the driver
+must first ensure the exact selected terminal is absent using only bounded graceful close for a
+process proven to have the exact executable path. It must then atomically restore the fixed backup,
+require the restored bytes and ACL to equal the original snapshot, remove its failed replacement
+artifact, and throw the original failure. If restoration cannot be proven, the authoritative error
+is `PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED`, and the backup must remain for recovery.
+Only after a live PASS and all post-probe invariants pass may the driver remove the backup and emit
+a redacted `APPLIED` or `UNCHANGED` result. It may not use UI automation, SendInput, Clipboard,
+registry mutation, arbitrary INI parsing, an alternate terminal/profile/origin, force-kill,
+network download, or delete/replace any unrelated profile file.
+
+### v27 RED -> GREEN and gauntlet additions
+
+Before production implementation, add and observe RED tests against a temporary UTF-16LE fixture
+with unrelated sentinel bytes proving: exact two-value transformation; BOM/newline/unrelated-byte
+preservation; exact desired idempotency; rejection of missing, duplicate, reordered-section,
+wrong-encoding, wrong-prior-value, oversized, and backup/current mismatch states; no secret value
+in output; exact snapshot restoration after injected post-write and probe failures; and
+rollback-failure authority. Add a production source contract proving the fixed terminal, publisher,
+profile, origin, signer/reparse/process guards, atomic replace, exact probe entrypoint, and absence
+of UI-helper invocation or caller-controlled paths. Contract fixtures may exist only below a fresh
+system temporary directory and must be removed in `finally`; no tracked fixture or dependency is
+added. Keep assertions frozen through GREEN.
+
+Kill and restore at least four persisted manual mutants: accept a duplicate key, omit preservation
+of unrelated bytes, accept a changed hash on the idempotent pass, and report the original failure
+after rollback verification fails. Prove the driver contract gate's known-bad control and its
+unreadable-input failure path. Then run the selected-host driver: require first status `APPLIED` or
+recovery-resume, internal second status `UNCHANGED`, one nonce-bound live receipt, no remaining
+backup/temp file, and a fresh direct reread with exact desired equality booleans but no value dump.
+Run the driver a second time and require `UNCHANGED` plus another live receipt.
+
+Only after those host checks pass may implementation receive a GREEN checkpoint and the complete
+13-layer verifier run once from a clean, local-master-fast-forward source state. The verifier must
+then execute the canonical no-switch `powershell.exe -File .\run-backend-production.ps1`; local and
+public health must pass before EVIDENCE may claim the production backend is running. Existing
+dependencies, protected-host-input rules, generated artifact manifest, Git checkpoint cadence,
+verifier layers, and canonical production command otherwise remain unchanged.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v27
+```
+
+### v27 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v27`. No v27 implementation occurred
+before that approval.
+
+## Revision v28 - use MT5's standard HTTP port through an exact loopback proxy (approval required)
+
+### Discovery during approved v27 execution
+
+V27 RED was observed because the production driver still invoked the UI helper and lacked the
+pinned profile, signer, parser, atomic-replace, recovery, rollback, probe, and negative-control
+contracts. GREEN then passed the new focused contract and all 49 terminal/bootstrap tests in
+45.387 seconds. Four persisted manual mutants were killed: accepting a duplicate key, changing an
+unrelated sentinel byte, accepting an idempotency hash mismatch, and reporting the original probe
+failure after rollback verification failed. Each mutant changed the source hash, failed for the
+pinned reason, and the restored positive contracts passed; the final mutation result was 4/4.
+
+The selected-host v27 transaction wrote the exact desired legacy `common.ini` transformation and
+started the nonce-bound probe, but MT5 returned error 4014 and the transaction failed with
+`PROVISIONING_WEBREQUEST_ALLOWLIST_REQUIRED`. Rollback restored `common.ini` to its exact
+pre-run SHA-256
+`1A177F9FA04FE8B7B36362866D9562361F735EF2AED17F1218C1E67BE6BCFE9A` and original ACL. A fresh
+post-rollback check found `WebRequest=0`, empty `WebRequestUrl`, no backup, no v27 temporary
+file, and no selected terminal process.
+
+MetaQuotes' current WebRequest reference states that the port is selected from the protocol:
+HTTP uses port 80 and HTTPS uses port 443. The MQL5 Algo Book states that the client-side network
+allowlist must be set in the Expert Advisors options and cannot be edited programmatically from
+MQL. This explains both observed facts: every exact `:8790` UI attempt left blank pending rows,
+and editing the legacy text keys did not alter the effective client-side allowlist. The host
+currently has no listener on port 80, no IPv4 portproxy entry, and the IP Helper service is running.
+
+The repository already separates the EA and admin listeners: Rust remains bound to loopback
+`127.0.0.1:8790`, while managed EA topology carries its own validated `ea_gateway_origin`.
+Both the Rust gateway and agent validators already accept `http://127.0.0.1` without a port.
+Therefore v28 introduces no public relay, public token path, or non-loopback listener.
+
+### v28 exact standard-port topology
+
+Revision v28 remains Tier 3 and supersedes only the selected production origin and the failed v27
+direct-file production path:
+
+- MT5 allowed origin and managed EA `GatewayUrl`: `http://127.0.0.1`;
+- Windows listener: exact IPv4 `127.0.0.1:80`;
+- Windows connect target: exact IPv4 `127.0.0.1:8790`; and
+- Rust execution gateway continues to own `127.0.0.1:8790` and admin
+  `127.0.0.1:8791` unchanged.
+
+The production allowlist driver must again use the signed selected terminal and existing UI
+transaction; the v27 direct `common.ini` parser/replacer must not be called by production.
+Before any persistent host change, the driver must run one exact always-Cancel preflight using
+`http://127.0.0.1`: require the initial disabled/one-empty-row state, type only the exact origin
+through the already guarded physical-key boundary, require exactly one ordinal-equal non-empty
+pending row and at most one blank placeholder, cancel, reopen, and require the original state.
+Failure here blocks all portproxy, OK, worker, and production mutations.
+
+Only after that preflight passes may the driver inspect the exact IPv4 portproxy table and port 80.
+The only accepted initial states are no portproxy/no port-80 listener, or the exact v28 mapping
+already present with one loopback listener owned by the Windows portproxy service. Any wildcard,
+IPv6, different target, duplicate mapping, unrelated port-80 listener, unreadable netsh output, or
+stopped IP Helper service fails closed. For the empty state, add exactly:
+
+```text
+listenaddress=127.0.0.1 listenport=80 connectaddress=127.0.0.1 connectport=8790
+```
+
+and immediately require exactly that mapping, exactly one `127.0.0.1:80` listener, zero
+`0.0.0.0:80`/external port-80 listeners, and successful
+`http://127.0.0.1/health` content from the already signer/path-bound Rust gateway process on
+`127.0.0.1:8790`. No firewall rule, URL ACL, HTTP.sys binding, service installation, download,
+DNS/hosts change, public listener, alternate port, or force-kill is authorized.
+
+The driver may then apply the exact UI allowlist transaction, require persisted `APPLIED`, rerun
+it for `UNCHANGED`, and invoke a revised nonce-bound probe whose request URL is exactly
+`http://127.0.0.1/health`. The probe must independently prove the gateway binary still owns
+`127.0.0.1:8790`; a successful request through port 80 does not substitute for process ownership.
+The generated chart, settings, and attestation must carry exactly `http://127.0.0.1`. Managed
+worker install input and its validators must carry the same origin, while Go-to-Rust
+`EXECUTION_EA_URL` and Rust bind configuration remain `:8790`.
+
+If portproxy creation, loopback health, UI apply/persist/idempotency, live receipt, worker
+provisioning, or canonical production health fails, the transaction must restore the prior UI
+allowlist snapshot and remove only the exact v28 portproxy entry if this run created it. It must
+then prove the portproxy table and listener returned to the initial empty state. If either rollback
+cannot be proven, `PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED` is authoritative. An exact
+pre-existing v28 mapping is never removed by rollback. Success leaves the exact mapping installed
+as required production host state and records its netsh and listener attestations without secrets.
+
+### v28 RED -> GREEN and gauntlet additions
+
+Before implementation, add and observe RED tests proving:
+
+1. production wrapper, probe, chart, settings, attestation, managed worker input, and relevant
+   contracts use `http://127.0.0.1`, while gateway/admin binds and Go relay remain on
+   `:8790`/`:8791`;
+2. the pending-only UI preflight must pass before any portproxy mutation and always cancels;
+3. exact empty/existing portproxy states are accepted, while wildcard, IPv6, duplicate, wrong
+   target, stopped service, unreadable output, and unrelated listener states fail before mutation;
+4. creation is idempotent, verifies exact listener and forwarded health, and never emits a
+   firewall/URLACL/hosts/service-install command;
+5. every downstream injected failure removes only a mapping created by that run and restores the
+   exact UI snapshot, while a rollback verification failure is authoritative; and
+6. the live probe rejects a receipt not bound to the exact no-port URL and nonce.
+
+Keep assertions frozen through GREEN. Kill and restore at least four plausible mutants: permit a
+wildcard listen address, accept the wrong connect port, allow UI commit before pending preflight,
+and delete a pre-existing exact mapping during rollback. Add known-bad controls for malformed
+netsh output and an occupied port-80 fixture boundary. No new package or download is allowed.
+The existing verifier remains the single 13-layer entry point and must include these controls and
+mutants.
+
+Run the selected-host driver twice. The first run must produce pending-only PASS, exact portproxy
+attestation, UI `APPLIED`, internal `UNCHANGED`, and one nonce-bound live WebRequest receipt.
+The second must observe the existing exact mapping, return UI `UNCHANGED`, and produce a fresh
+receipt. Then provision the managed worker with the no-port origin, run the complete verifier from
+a clean source state, and execute the canonical no-switch
+`powershell.exe -File .\run-backend-production.ps1`. Local/public health and managed worker
+postconditions must pass before EVIDENCE may claim production is running.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v28
+```
+
+### v28 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v28`. No v28 implementation or host
+mutation occurred before that approval.
+
+## Revision v29 - guarded physical mouse activation for the MT5 URL editor (approval required)
+
+### Discovery during approved v28 execution
+
+V28 RED was committed before implementation. GREEN then passed the PowerShell parser, all 68
+focused terminal, probe, and managed-worker tests, and four persisted mutation controls. The
+mutants that permitted a wildcard listen address, accepted the wrong connect port, created the
+proxy before pending preflight, and deleted a pre-existing mapping during rollback were all killed;
+the original allowlist source was restored to its exact SHA-256 after every mutant.
+
+The first selected-host v28 run stopped with
+`PROVISIONING_WEBREQUEST_ALLOWLIST_PENDING_FAILED` before portproxy creation, UI confirmation, or
+probe execution. A fresh post-failure inspection found an empty IPv4 portproxy table, no port-80
+listener, no selected terminal process, and a clean source tree. A separate always-Cancel trace
+then observed the exact state transition:
+
+```text
+prior:   enabled=0 items=[""]
+pending: enabled=1 items=["", ""]
+```
+
+Thus MT5 accepted the checkbox transition and created an additional placeholder, but did not commit
+the URL text to its private options model. This repeats the v21-v25 result across synchronous
+`WM_CHAR`, queued `WM_CHAR`, Unicode `SendInput`, and fixed virtual-key `SendInput`; changing the
+origin from `http://127.0.0.1:8790` to the documented standard-port
+`http://127.0.0.1` did not change that behavior. The v28 topology remains valid, but the editor
+activation boundary does not.
+
+An always-Cancel Windows UI Automation discovery found zero descendant automation elements, so the
+dialog exposes no usable Value, Invoke, or SelectionItem pattern. Native enumeration still found
+the exact signed-terminal controls: enabled WebRequest checkbox `10322`, disabled
+`SysListView32` URL list `10191` before checkbox activation, OK `1`, Cancel `2`, and the Expert
+Advisors tab `12320`. The only editor path not yet exercised by the agent is a real guarded mouse
+activation. The current four posted mouse messages can create the edit window without reproducing
+the input/capture state MT5 uses to update its private model.
+
+### v29 exact guarded activation boundary
+
+Revision v29 remains Tier 3 and supersedes only the URL-list activation gesture. The v28 no-port
+origin, exact loopback portproxy topology, always-Cancel preflight, transaction order, rollback,
+probe, managed worker, verifier, and canonical production requirements remain unchanged.
+
+After enabling the WebRequest checkbox and before typing any character, the UI helper must:
+
+1. derive the exact first-item icon/label point from the existing bounded list rectangle and hit
+   test, convert that client point to one screen point, and require it to remain within both the
+   list client rectangle and the virtual-screen bounds;
+2. capture the current cursor position for restoration, require the options dialog to be the exact
+   foreground window owned by the selected terminal PID, and require the screen point to resolve
+   to the exact list handle through `WindowFromPoint`;
+3. move the cursor only to that exact validated point using one `SendInput` absolute-move record,
+   then recheck foreground window, selected PID, point-to-list hit, checkbox state, and list enabled
+   state before emitting any button record;
+4. submit exactly two left-button clicks as four `SendInput` records in the order down, up, down,
+   up, require the native return count to equal the full plan length, and wait only the existing
+   bounded interval for exactly one visible enabled `Edit` control `32954` owned by the same PID;
+5. restore the captured cursor position in `finally` whether activation, typing, Return, pending
+   reread, or later transaction work succeeds or fails; restoration failure is a hard
+   `PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED`, never a silent pass; and
+6. continue with the already approved physical virtual-key character plan, exact pre-Return
+   readback, isolated Return plan, editor disappearance, exact pending reread, and always-Cancel
+   preflight.
+
+The helper may add only the Win32 boundaries required for cursor position, client-to-screen,
+virtual-screen bounds, `WindowFromPoint`, foreground/PID revalidation, and `SendInput` mouse
+records. It may not use SendKeys, Clipboard, `mouse_event`, arbitrary coordinates, relative mouse
+movement, wheel/right/middle buttons, drag, more than two clicks, window-title matching, process
+termination, `BlockInput`, hooks, background services, downloads, or a retry with altered text.
+The move/click plan is allowed only inside the signed selected-terminal transaction and never as a
+general-purpose exported automation command. A residual operating-system race remains between the
+last guard and `SendInput`; EVIDENCE must disclose it.
+
+### v29 RED -> GREEN and gauntlet additions
+
+Before implementation, add and observe RED tests proving exact absolute move and double-click
+plans, exact point conversion and hit validation, foreground/PID/list/checkbox guards both before
+movement and immediately before button input, full native return counts, single-editor discovery,
+and cursor restoration on every injected failure boundary. Freeze those assertions through GREEN.
+Add a known-bad control whose point resolves to another handle and an injected cursor-restore
+failure whose exact authoritative code is pinned. Kill and restore at least four plausible mutants:
+drop the post-move hit guard, permit a partial double-click count, accept the wrong editor PID, and
+skip cursor restoration after successful activation. Persist these checks in the existing single
+13-layer verifier; add no dependency or download.
+
+Run one selected-host always-Cancel trace first. It must show pending enabled, exactly one
+ordinal-equal `http://127.0.0.1` row, at most one blank placeholder, and exact persisted restoration
+after Cancel; otherwise no portproxy or OK action is permitted. Only after that passes, run the full
+selected-host driver twice and complete every unchanged v28 production gate.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v29
+```
+
+### v29 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v29`. No v29 implementation or host
+mutation occurred before that approval.
+
+## Revision v30 - paced guarded MT5 double-click (approval required)
+
+### Discovery during approved v29 execution
+
+V29 reached GREEN with 72/72 focused regression tests, 4/4 allowlist mutants, and 4/4 physical
+mouse mutants killed. The selected-host pending-only entrypoint was then run twice. Both runs
+failed closed with `PROVISIONING_WEBREQUEST_ALLOWLIST_PENDING_FAILED`; each failure left the IPv4
+portproxy table empty, port 80 unbound, no selected terminal process, and no persisted UI change.
+An always-Cancel diagnostic again observed `enabled=1 items=["", ""]`, proving the single
+four-record `SendInput` batch did not open the URL editor.
+
+A second always-Cancel diagnostic kept the same validated point and the same down/up/down/up
+records, but sent the first down/up pair, waited 150 milliseconds for MT5 to process and redraw,
+revalidated the target, and then sent the second down/up pair. After the first pair the state was
+`enabled=1 items=[""]`; after the second pair exactly one visible editor was found. No URL was
+typed and Cancel restored the original state. The initial cursor position is therefore not the
+cause; MT5 requires paced processing between the two physical clicks.
+
+### v30 exact paced activation boundary
+
+Revision v30 remains Tier 3 and supersedes only v29 step 4's single-batch timing. Every other v29
+and v28 requirement remains unchanged. After the validated absolute move and post-move guard, the
+helper must:
+
+1. retain one frozen exact four-record plan ordered down, up, down, up;
+2. submit records 0 and 1 as the first `SendInput` batch and require the native return count to be
+   exactly 2;
+3. wait exactly 150 milliseconds, which is below the Windows double-click interval on the selected
+   host and is the value proven by the always-Cancel diagnostic;
+4. immediately recheck the exact foreground options window, selected terminal PID, point-to-list
+   identity, checked checkbox, and enabled list before the second batch;
+5. submit records 2 and 3 as the second `SendInput` batch and require the native return count to be
+   exactly 2; and
+6. wait only the existing bounded interval for exactly one visible enabled editor `32954` owned by
+   the selected terminal PID, then continue the unchanged guarded text/Return/pending/Cancel flow.
+
+The helper must fail before the second batch if the user moves the pointer, changes foreground,
+closes or replaces the dialog, changes PID, or changes checkbox/list state during the paced
+interval. It may not retry, emit a fifth button record, increase the delay, use an unbounded wait,
+or relax any v29 cursor-restoration or identity guard. The two-batch operation is still one
+transaction with authoritative cursor restoration in `finally`.
+
+### v30 RED -> GREEN and gauntlet additions
+
+Before implementation, add and observe RED tests proving one frozen four-record plan is sliced
+into two exact two-record batches, the 150 ms pause occurs between them, the full mid-click guard
+runs before batch two, and both native counts must equal 2. Freeze assertions through GREEN. Kill
+and restore at least three plausible timing mutants: combine all four records into one batch,
+remove the 150 ms pause, and omit the mid-click guard. Re-run all unchanged v29 controls and
+mutants, the 72 focused regressions, and the complete 13-layer verifier. Add no dependency or
+download.
+
+Run the selected-host pending-only entrypoint first and require its exact PASS/restoration marker.
+Only after that pass may the agent create the exact loopback portproxy and press OK. Then run the
+full driver twice, provision the managed worker, and execute the canonical no-switch
+`powershell.exe -File .\run-backend-production.ps1` through the complete verifier.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v30
+```
+
+### v30 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v30`. No v30 implementation or host
+mutation occurred before that approval.
+
+## Revision v31 - verify MT5 URL only after guarded dialog confirmation (approval required)
+
+### Discovery during approved v30 execution
+
+V30 passed 72/72 focused regressions, killed 7/7 physical-mouse mutants and 4/4 allowlist
+mutants, and opened the selected terminal's exact URL editor using the paced guarded double-click.
+The selected-host pending-only trace nevertheless failed closed. Repeated always-Cancel traces
+proved that the editor contained the exact ordinal URL `http://127.0.0.1`, while the list model
+continued to report only blank rows after physical Return, synchronous/queued Return, paced key
+pairs, `LVM_ENDEDITLABELNOW(FALSE)`, and a guarded click on the visible plus glyph. A captured
+diagnostic image confirmed that the selected control is MT5's URL entry row, not a normal inline
+list item. Every trace cancelled, closed the agent-owned terminal, and left portproxy and port 80
+empty.
+
+The v29-v30 requirement to prove the final list model before pressing dialog OK is therefore not
+implementable on this selected MT5 build. The URL entry remains exact and readable before OK, but
+MT5 does not expose the authoritative listed-URL state until the Options dialog is confirmed.
+
+### v31 exact guarded confirm-and-verify transaction
+
+Revision v31 remains Tier 3 and supersedes only the pending-only preflight and Return-based editor
+commit. All v28 loopback topology, signer/path/PID binding, rollback, probe, worker, verifier, and
+canonical production requirements remain unchanged. All v29 cursor/point/input guards and the v30
+paced double-click remain unchanged.
+
+Before any portproxy mutation, the selected-host driver must:
+
+1. snapshot the exact prior Options state and accept only the existing disabled/one-blank-row state
+   or the already persisted exact desired state;
+2. for the prior state, enable the checkbox, activate the exact URL entry using v30, type only
+   `http://127.0.0.1`, require exact editor focus/PID/visibility and ordinal readback, and deliberately
+   leave the editor active without Return, Tab, plus-click, or another text mutation;
+3. confirm the exact Options dialog through its already guarded OK boundary, reopen the exact
+   dialog, and require enabled state, exactly one ordinal-equal non-empty URL, and at most one blank
+   placeholder;
+4. if confirmation, reopen, or persisted verification fails, immediately restore the exact prior
+   checkbox/list snapshot through the existing bounded rollback path, reopen and prove exact
+   restoration, then throw the original failure; rollback failure remains the authoritative
+   `PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED`;
+5. expose a rerunnable commit-rollback trace mode that performs steps 1-3, restores the prior state
+   even after a successful persisted verification, reopens to prove restoration, and exits with one
+   exact PASS marker; this trace must pass while portproxy and port 80 are empty before the normal
+   production transaction may run; and
+6. in the normal transaction, keep the verified desired state, then create/verify the exact v28
+   loopback portproxy, run a second apply for `UNCHANGED`, and continue the nonce-bound live probe,
+   managed-worker provisioning, full verifier, and canonical no-switch production runner.
+
+The driver may not click OK unless editor readback and every existing foreground/PID/control guard
+has passed. It may not claim success from editor text alone, skip the persisted reopen, retain a
+failed experiment, create portproxy before persisted verification, or suppress rollback failure.
+No trade action, account mutation, firewall rule, download, dependency, or force termination is
+authorized.
+
+### v31 RED -> GREEN and gauntlet additions
+
+Before implementation, add and observe RED tests proving the editor remains active after exact
+readback, OK precedes persisted reread but follows every guard, persisted mismatch triggers exact
+rollback, a successful trace also rolls back, and no proxy action can run before persisted
+verification. Freeze assertions through GREEN. Kill and restore at least four plausible mutants:
+send Return before OK, accept editor readback as persisted proof, create proxy before reopen
+verification, and skip rollback after a successful trace. Re-run all v30/v29 controls and mutants,
+the focused regressions, then the complete 13-layer verifier. Add no dependency or download.
+
+Run commit-rollback trace first and require exact persisted-desired and restored-prior proofs. Only
+then run the full driver twice and the complete verifier, whose canonical production layer must
+execute `powershell.exe -File .\run-backend-production.ps1` with no switches.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v31
+```
+
+### v31 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v31`. No v31 implementation or retained
+host mutation occurred before that approval.
+
+## Revision v32 - guarded physical Options OK confirmation (approval required)
+
+### Discovery during approved v31 execution
+
+V31 reached GREEN with 57/57 MT5 regression tests, 5/5 allowlist mutants, and 9/9 UI/mouse
+mutants killed. Its selected-host commit-rollback trace typed and reread the exact editor text, but
+the existing message-based `BM_CLICK` OK boundary closed Options without persisting the URL. The
+transaction restored the prior disabled state and returned
+`PROVISIONING_WEBREQUEST_ALLOWLIST_PERSIST_FAILED`; portproxy and port 80 remained empty. During
+rollback hardening, the selected host exposed two blank list rows left by an earlier failed
+experiment. A bounded selected-item Delete path restored and reopened the exact prior
+`Enabled=0, Items=[""]` state successfully without retaining a terminal process.
+
+The selected MT5 build therefore requires the real mouse focus transition produced by clicking
+the visible OK button; programmatic `BM_CLICK` does not commit the active URL entry editor.
+
+### v32 exact guarded physical confirmation boundary
+
+Revision v32 remains Tier 3 and supersedes only v31 step 3's message-based Options confirmation.
+Every other v31/v30/v29/v28 requirement remains unchanged. After exact editor readback and its
+final focus/PID guard, the helper must:
+
+1. resolve exactly one visible, enabled `Button` with dialog control ID `1` under the exact Options
+   window and require the Options window, button, editor, and selected terminal to share the exact
+   expected PID;
+2. compute a bounded client-center point inside the OK button, convert it to screen coordinates,
+   require the exact Options window to be foreground and `WindowFromPoint` to equal that OK button;
+3. capture the cursor, submit exactly one physical left-down/left-up pair, require native return
+   count `2`, and restore the cursor in `finally`; no double-click, retry, keyboard focus command,
+   Return, Tab, plus-click, `SendKeys`, clipboard, or general-purpose automation API is allowed;
+4. require the Options dialog to become non-visible within the existing bounded interval, then
+   reopen and verify the exact persisted desired state as v31 requires; and
+5. fail closed on any identity, geometry, foreground, point, native-count, close-timeout, or cursor
+   restoration mismatch. Existing exact rollback remains mandatory and authoritative.
+
+Before implementation, add and observe RED tests for exact OK identity/geometry/point guards,
+single-click record/count, cursor restoration, and ordering after final editor readback but before
+persisted reopen. Kill and restore at least four plausible mutants: accept the wrong OK PID, accept
+a point resolving outside OK, permit one injected mouse record, and skip cursor restoration.
+Add no dependency or download.
+
+Run the commit-rollback trace first while portproxy and port 80 are empty. Require its exact
+persisted-desired/restored-prior PASS marker. Only then run the normal allowlist driver twice and
+the unchanged complete 13-layer verifier, including the canonical no-switch
+`powershell.exe -File .\run-backend-production.ps1` layer.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v32
+```
+
+### v32 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v32`. No v32 implementation or retained
+host mutation occurred before that approval.
+
+## Revision v33 - commit active MT5 URL editor before guarded OK (approval required)
+
+### Discovery during approved v32 execution
+
+V32 passed 60/60 MT5 regressions and killed 13/13 UI/mouse mutants. Its selected-host trace
+proved that the guarded physical click reached and closed the exact Options OK button, but reopening
+still did not contain the URL. Exact rollback succeeded, the trace returned
+`PROVISIONING_WEBREQUEST_ALLOWLIST_PERSIST_FAILED`, `common.ini` remained `WebRequest=0`, and
+portproxy, port 80, terminal processes, and the worktree remained clean.
+
+The physical OK focus transition alone therefore does not commit MT5's active URL entry. The
+selected control requires its standard Return editor-commit event before the physical dialog OK;
+as established in v30 diagnostics, the pre-OK list readback is not authoritative, so only the
+post-OK reopen may prove persistence.
+
+### v33 exact editor-commit then physical-confirm transaction
+
+Revision v33 remains Tier 3 and supersedes only v31 step 2's prohibition on Return. Every v32
+identity, foreground, point, mouse-count, cursor-restoration, reopen, exact rollback, no-proxy
+preflight, probe, worker, and production requirement remains unchanged.
+
+After typing and ordinally rereading exactly `http://127.0.0.1`, and after the final exact
+foreground/options/editor/PID guard, the helper must submit exactly one isolated Return key plan
+containing one key-down and one key-up record through the existing native keyboard boundary and
+require the native return count to equal `2`. It must not send Tab, plus-click, `WM_CHAR`, a second
+Return, text mutation, retry, `SendKeys`, or clipboard input. It must then run the unchanged v32
+guarded physical OK boundary. It may not treat editor disappearance or the pre-OK list model as
+proof; it must reopen Options and require the exact desired persisted state. Every failure must
+execute and prove exact rollback, with rollback failure authoritative.
+
+Before implementation, add and observe RED tests for exact ordering
+readback/final-guard→Return-down/up→physical-OK→reopen, exact Return count, no duplicate key plan,
+and cursor restoration through the later physical click. Kill and restore at least three plausible
+mutants: omit Return, permit a partial Return count, and send Return after physical OK. Add no
+dependency or download.
+
+Run commit-rollback trace first while portproxy and port 80 are empty. Require its exact
+persisted-desired/restored-prior PASS marker. Only then run the normal driver twice and the complete
+unchanged 13-layer verifier, including canonical no-switch backend production.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v33
+```
+
+### v33 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v33`. No v33 implementation or retained
+host mutation occurred before that approval.
+
+## Revision v34 - guard the committed MT5 row after Return (approval required)
+
+### Discovery during approved v33 execution
+
+V33 passed 60/60 MT5 regressions and killed 15/15 UI/mouse mutants. On the selected production
+host, the commit-rollback trace submitted the exact two-record Return plan and then failed closed
+with `PROVISIONING_WEBREQUEST_ALLOWLIST_OK_MOUSE_INVALID`. Exact rollback succeeded:
+`common.ini` contained `WebRequest=0` and an empty `WebRequestUrl`, no terminal remained, portproxy
+and port 80 remained empty, and the worktree remained clean.
+
+The selected MT5 control destroys its transient add-row editor when Return commits the row. The
+v32 OK guard still requires that destroyed editor to be the focused live child, so v33's
+requirement to use the unchanged v32 guard conflicts with the now-observed committed control
+state. The pre-Return editor guard remains valid; the post-Return OK guard must instead identify
+the committed row and stable Options controls.
+
+### v34 committed-row then physical-confirm transaction
+
+Revision v34 remains Tier 3 and supersedes only v33's requirement that the post-Return physical OK
+guard keep using the transient editor identity. All earlier exact input-plan, ordering, process,
+foreground, geometry, point-hit, click-count, cursor-restoration, reopen, rollback, no-proxy,
+probe, worker, and production requirements remain unchanged.
+
+After the exact Return key-down/key-up count succeeds, the helper must require the original editor
+handle to no longer be a live visible editor, resolve exactly one WebRequest list, checkbox, and OK
+button under the same still-visible foreground Options dialog, require every stable control to
+belong to the exact terminal PID and GUI thread, and require the current bounded list model to be
+enabled with exactly one non-empty item ordinally equal to `http://127.0.0.1`. This list check is
+only a pre-click identity/commit guard and is not persistence proof. The helper must then retain
+the v32 physical point identity, exact two-record single-click plan, dialog-close wait, and cursor
+restoration. Persistence is PASS only after reopening Options and reading the exact desired state.
+
+The guard must fail closed if the editor remains live or visible, any control count/class/PID/thread
+or foreground identity differs, the checkbox/list model differs, the cursor point does not hit the
+exact OK button, the click count is partial, the dialog remains open, or cursor restoration fails.
+Every failure must execute exact snapshot rollback, with rollback failure authoritative. No
+dependency, download, generated source, runner switch, force termination, clipboard, SendKeys,
+direct config write, or proxy relaxation is allowed.
+
+Before implementation, add and observe RED tests for the committed-row guard's positive ordering
+and every negative identity/state case. Keep v33 assertions frozen. Kill and restore at least three
+new plausible mutants: accept a still-live editor, skip the exact committed-row state check, and
+accept the wrong stable-control PID or foreground dialog. Persist them in the existing rerunnable
+mouse mutation entry point.
+
+Run the commit-rollback trace first while portproxy and port 80 are empty and require
+`PRODUCTION_WEBREQUEST_ALLOWLIST_COMMIT_ROLLBACK=PASS` with both `persisted_desired=True` and
+`restored_prior=True`. Only then run the normal allowlist driver twice and the complete unchanged
+13-layer verifier, which must invoke exactly `powershell.exe -File .\run-backend-production.ps1`
+without switches. Planned changed files are
+`backend/bridge/mt5_vm/Mt5VmTerminalUi.ps1`,
+`backend/bridge/mt5_vm/test_terminal_python_api_bootstrap.py`,
+`tools/verify-production-worker-host-provision.ps1`, this SPEC, and final `EVIDENCE.md`. Planned
+git operations are isolated RED, GREEN, mutation/evidence checkpoints and the already authorized
+canonical production execution; the fresh final verifier command is
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\verify-production-worker-host-provision.ps1`.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v34
+```
+
+### v34 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v34`. No v34 implementation or retained
+host mutation occurred before that approval.
+
+## Revision v35 - treat the post-Return list as opaque until reopen (approval required)
+
+### Discovery during approved v34 execution
+
+V34 passed 62/62 MT5 regressions and killed 18/18 UI/mouse mutants. Two selected-host traces
+failed closed at the committed-row guard. A temporary diagnostic, removed immediately after use,
+proved candidate resolution PASS, the original editor destroyed and invisible, native foreground /
+active dialog / stable-control PID-thread / OK-point identity PASS, but the bounded pre-OK model was
+`Enabled=1, Items=["",""]`. Exact rollback succeeded after every trace: `common.ini` returned to
+`WebRequest=0` with an empty `WebRequestUrl`, no terminal remained, portproxy and port 80 remained
+empty, and the tracked worktree remained clean.
+
+The MT5 owner-data list therefore does not expose the committed URL before Options OK even though
+the exact editor readback succeeded, Return retired the editor, and all stable native identities
+remain exact. V34's requirement for the pre-OK list to equal the desired persisted state is
+incompatible with the selected production terminal. Only the already-required post-OK reopen can
+prove persistence.
+
+### v35 opaque transition then reopened persistence proof
+
+Revision v35 remains Tier 3 and supersedes only v34's pre-click requirement that the transient
+owner-data list contain exactly `http://127.0.0.1`. All exact pre-Return character/readback/final
+editor guard, isolated Return count, editor retirement, foreground/active Options identity,
+stable-control PID/thread, OK geometry/point, click count, close wait, cursor restoration, exact
+rollback, no-proxy, probe, worker, and production requirements remain unchanged.
+
+After Return, the guard must not interpret `Items=["",""]`, any other transient list rendering, or
+editor disappearance as desired state or persistence proof. It must rely only on the already-proven
+exact editor transaction plus editor retirement and the unchanged native stable-control guard to
+authorize the physical OK click. It must then reopen Options and require the exact desired bounded
+state; a missing, blank, duplicate, wrong, or disabled reopened state must fail and execute exact
+rollback. Rollback failure remains authoritative.
+
+Before implementation, change the committed guard assertions and observe RED against the v34
+state-dependent signature. Preserve the existing post-reopen and v33 assertions. Keep at least
+18 killed/restored UI mutants, replacing the now-invalid `skip-committed-row-state-check` mutant
+with a plausible mutant that accepts a wrong committed native identity or bypasses editor
+retirement; retain the mutant that falsely accepts pre-OK/editor readback as persistence proof.
+Add no dependency, download, generated source, runner switch, force termination, clipboard,
+SendKeys, direct config write, or proxy relaxation.
+
+Run the commit-rollback trace first while portproxy and port 80 are empty and require
+`PRODUCTION_WEBREQUEST_ALLOWLIST_COMMIT_ROLLBACK=PASS` with both `persisted_desired=True` and
+`restored_prior=True`. Only then run the normal allowlist driver twice and the complete unchanged
+13-layer verifier, including exactly `powershell.exe -File .\run-backend-production.ps1` without
+switches. Planned changed files remain
+`backend/bridge/mt5_vm/Mt5VmTerminalUi.ps1`,
+`backend/bridge/mt5_vm/test_terminal_python_api_bootstrap.py`,
+`tools/verify-production-worker-host-provision.ps1`, this SPEC, and final `EVIDENCE.md`; planned git
+operations remain isolated RED/GREEN/mutation/evidence checkpoints. The fresh final verifier is
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\verify-production-worker-host-provision.ps1`.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v35
+```
+
+### v35 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v35`. No v35 implementation or retained
+host mutation occurred before that approval.
+
+## Revision v36 - combine atomic profile provisioning with standard-port topology (approval required)
+
+### Discovery during approved v35 execution
+
+V35 passed 63/63 MT5 regressions and killed/restored 18/18 UI/mouse mutants. Its selected-host
+trace passed editor retirement and every native OK guard, physically closed Options, reopened it,
+and still observed `Enabled=1, Items=["",""]`; it failed with
+`PROVISIONING_WEBREQUEST_ALLOWLIST_PERSIST_FAILED`. Exact rollback again restored
+`WebRequest=0`, an empty `WebRequestUrl`, no terminal, empty portproxy, empty port 80, and a clean
+tracked worktree.
+
+Repository history identifies the missing composition. Approved v27 implemented and tested an
+atomic, pinned, UTF-16LE `common.ini` transaction, but its live attempt wrote
+`http://127.0.0.1:8790` and MT5 returned 4014 because HTTP WebRequest selects port 80 from the
+protocol. Approved v28 corrected the topology to `http://127.0.0.1` plus exact loopback
+`127.0.0.1:80 -> 127.0.0.1:8790`, but replaced the atomic transaction with the UI path. The
+tested atomic profile mechanism and corrected standard-port topology have never been executed
+together.
+
+### v36 exact offline profile and loopback transaction
+
+Revision v36 remains Tier 3 and supersedes only v28-v35's requirement that production provision
+the allowlist through MT5 UI. UI helpers/tests remain frozen regression history. Production must
+reuse the v27 atomic transaction design from commits `1d71681` and `69c9d2e`, adapted only to the
+v28-v35 exact origin `http://127.0.0.1` and current driver interfaces.
+
+The driver must pin the existing selected terminal, signer, profile, `origin.txt`, and
+`config\common.ini`. It must require zero selected-terminal processes, non-reparse bounded paths,
+the exact valid Authenticode publisher, UTF-16LE BOM, exactly one `[Experts]` section, and exactly
+one case-sensitive `WebRequest` and `WebRequestUrl`. Accepted states are only
+`WebRequest=0` plus empty URL or `WebRequest=1` plus exact `http://127.0.0.1`. It must atomically
+transform only those two value spans, preserve every other byte/newline/BOM and the ACL, retain a
+validated fixed backup as a crash journal, prove reverse-transform hash equality, reread exact
+desired state, and prove a second application is `UNCHANGED` with identical hash.
+
+After the desired file is proven and while the terminal remains absent, the existing v28 exact
+portproxy transaction may create only `127.0.0.1:80 -> 127.0.0.1:8790` and must prove its exact
+listener/forwarded health invariants. The existing nonce-bound probe must then start only the
+signed selected terminal, call exactly `http://127.0.0.1/health`, and prove its receipt. After the
+probe-owned terminal exits, the driver must reread and prove the exact desired profile state and
+ACL/hash invariants. A second normal driver run must return `UNCHANGED` and produce a second live
+receipt.
+
+Any config, proxy, health, probe, shutdown, reread, worker, or later production failure must
+gracefully close only a process proven to use the selected executable, remove only a proxy created
+by that run, atomically restore only the validated backup when this run changed the profile, and
+prove original bytes/ACL plus original proxy/listener state. Rollback failure is authoritative and
+retains the backup for recovery. No UI action is part of the production path; no unrelated config
+value may be logged. No arbitrary INI parser, alternate path/origin, reparse traversal, registry,
+firewall, URLACL, service install, force termination, download, dependency, or runner switch is
+allowed.
+
+Before implementation, restore/adapt the frozen v27 fixture tests and observe RED against the
+current UI production driver. Prove exact no-port transformation, byte/ACL preservation,
+idempotency, backup recovery, hostile file rejection, probe-failure rollback, and rollback-failure
+authority. Preserve current standard-port/portproxy/probe tests and all 63 UI regressions. Kill and
+restore at least the four v27 config mutants (duplicate key, unrelated-byte change, idempotent hash
+mismatch, rollback authority), the current five portproxy/transaction mutants, and the current 18
+UI regression mutants. Add no dependency or generated source.
+
+First run an offline apply-rollback trace with no terminal, proxy, or port-80 listener and require
+exact desired-file then restored-original proofs. Then run the full driver twice and require live
+nonce receipts. Finally run the complete unchanged 13-layer verifier from a clean checkpoint; its
+canonical layer must execute exactly `powershell.exe -File .\run-backend-production.ps1` without
+switches, followed by local/public health and managed-worker readiness. Planned files are
+`tools/mt5-baremetal/Set-MT5WebRequestAllowlist.ps1`, its existing Python contract tests,
+`tools/verify-production-worker-host-provision.ps1`, this SPEC, and final `EVIDENCE.md`; UI source
+is not a v36 production implementation file. Planned git operations are isolated RED, GREEN,
+mutation/evidence checkpoints. The fresh final verifier is
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\verify-production-worker-host-provision.ps1`.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v36
+```
+
+### v36 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v36`. No v36 implementation or retained
+host mutation occurred before that approval.
+
+## Revision v37 - inherit the provisioned profile during the live probe (approval required)
+
+### Discovery during approved v36 execution
+
+V36's atomic profile trace passed with exact desired-file and restored-original proofs. Its
+standard-port listener was observed as the exact `127.0.0.1:80` endpoint owned by the `svchost`
+process hosting `iphlpsvc`, rather than by a process named `System`; the corrected service-identity
+contract passed 63/63 regressions and killed 9/9 allowlist mutants. The first live probe then
+compiled, loaded, and ran on signed terminal build 6140 but returned `status=-1 error=4014` twice.
+The second receipt proved that adding `WebRequest=1` and `WebRequestUrl=http://127.0.0.1` to the
+custom startup file does not authorize WebRequest. MetaQuotes documentation and selected-host
+execution agree that the URL must come from terminal Options/profile state, not the startup file.
+
+The first failed probe also exposed a rollback ownership defect: a proxy created inside a
+PowerShell scriptblock was not visible to the outer catch scope. The exact mapping was removed by
+a bounded emergency rollback only after its topology and the original config hash were proven;
+the subsequent state-holder implementation and contract now prove
+`ensure -> health -> probe -> rollback` and clear ownership after rollback. Every failed run ended
+with the original `common.ini` hash, no backup, no proxy/listener, and no terminal.
+
+### v37 minimal-startup probe and rollback ownership transaction
+
+Revision v37 remains Tier 3 and changes only the v36 live-probe launch boundary. The atomic
+desired `common.ini`, exact standard-port topology, nonce receipt, signed terminal boundary,
+two-run idempotency, worker provisioning, canonical runner, health gates, and every v36 rollback
+requirement remain unchanged.
+
+The probe startup file must contain only the bounded `[StartUp]` script/symbol/period/shutdown
+settings needed to run `MarketLensWebRequestProbe`; it must not contain an `[Experts]` section or
+attempt to set `WebRequest`/`WebRequestUrl`. The selected terminal must therefore inherit the
+already-proven desired profile state. A 4014 receipt remains a hard
+`PROVISIONING_WEBREQUEST_ALLOWLIST_REQUIRED` failure. The proxy ownership state-holder must remain
+visible across the nested probe action and must remove only a mapping created by that run on any
+health/probe failure, clear its ownership state, and prove the exact empty listener/proxy state.
+
+Before implementation, replace the now-refuted positive startup-key assertion with a RED negative
+contract requiring no `[Experts]` section in the startup here-string. Preserve the rollback
+state-holder regression, 63 MT5 regressions, 4 probe tests, 9/9 allowlist mutants, and 18/18 UI
+regression mutants. Add no dependency or download. Planned additional files are
+`tools/mt5-baremetal/Invoke-MT5WebRequestProbe.ps1`,
+`backend/bridge/mt5_vm/test_production_webrequest_probe.py`, this SPEC, and final `EVIDENCE.md`.
+
+After GREEN, start from the proven empty host state, run the normal allowlist driver twice through
+the approved UAC boundary, and require two live nonce receipts (`APPLIED`, then `UNCHANGED`). Then
+run the complete unchanged 13-layer verifier from a clean checkpoint; its canonical layer must
+execute `powershell.exe -File .\run-backend-production.ps1` without switches. The fresh final
+command remains
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\verify-production-worker-host-provision.ps1`.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v37
+```
+
+### v37 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v37`. No v37 implementation change was
+made after the revision was written and before this approval.
+
+## Revision v38 - run the probe from the default atomic configuration (approval required)
+
+### Discovery during approved v37 execution
+
+V37 passed 63/63 MT5 regressions, 4/4 probe tests, and 9/9 allowlist mutants. Its selected-host run
+started from the exact original config hash with no terminal, proxy, listener, or backup. The
+minimal custom file contained only `[StartUp]`, the signed terminal compiled and loaded the probe,
+and the receipt still returned `status=-1 error=4014`. Exact rollback restored the original config
+hash and empty proxy/listener/terminal state.
+
+MetaQuotes' official platform-start documentation defines `/config` as an alternative
+configuration file and states that the default configuration file is `common.ini`. Therefore even
+a minimal `/config` launch does not execute under the already-proven default profile allowlist.
+The probe must run from the default configuration itself; no documented command-line switch runs
+a script while retaining a separate default configuration.
+
+### v38 nested atomic startup transaction
+
+Revision v38 remains Tier 3 and changes only how the already-approved nonce probe is started. All
+v36-v37 terminal/signature/profile, exact allowlist, standard-port, no-trade probe, rollback,
+idempotency, worker, canonical runner, and health requirements remain unchanged.
+
+After the outer transaction proves desired `common.ini` and before terminal start, the probe must
+require no existing `[StartUp]` section and atomically create a nested, same-volume, ACL-preserving
+startup snapshot. It may append only one exact `[StartUp]` section containing
+`Script=MarketLensWebRequestProbe`, `Symbol=EURUSD`, `Period=M1`, and `ShutdownTerminal=1` to the
+desired UTF-16LE default `common.ini`. It must launch the signed selected terminal with no
+`/config`, `/profile`, or other switch, obtain and validate the nonce receipt, wait for the
+probe-owned terminal to exit, then atomically restore and prove the exact desired pre-startup
+bytes/hash/ACL before returning success. The nested backup name must be fixed and distinct from the
+outer crash journal; any pre-existing nested backup, existing startup section, ambiguous process,
+write, launch, receipt, shutdown, restore, hash, ACL, or cleanup failure must fail closed. Nested
+restore failure is authoritative and must retain recovery evidence; only after a successful nested
+restore may the outer transaction complete or restore its own prior snapshot.
+
+Before implementation, replace the v37 custom-startup assertion with RED contracts for exact
+UTF-16LE append/reverse equality, no existing startup section, no `/config` launch, nested backup
+recovery, and restore-on-probe-failure. Add at least three killed/restored mutants: accept an
+existing startup section, launch with `/config`, and skip exact startup restoration. Preserve the
+63 MT5 regressions, 4 probe tests, 9/9 allowlist mutants, and 18/18 UI regression mutants. Add no
+dependency, download, UI action, registry/firewall/URLACL change, service install, or alternate
+terminal/profile.
+
+Planned additional files are `tools/mt5-baremetal/Invoke-MT5WebRequestProbe.ps1`,
+`backend/bridge/mt5_vm/test_production_webrequest_probe.py`,
+`tools/verify-production-worker-host-provision.ps1`, this SPEC, and final `EVIDENCE.md`. After
+GREEN, run the allowlist driver twice through UAC and require live `APPLIED` then `UNCHANGED`
+receipts. Then run the unchanged complete 13-layer verifier from a clean checkpoint, including
+exactly `powershell.exe -File .\run-backend-production.ps1` without switches. The fresh final
+command remains
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\verify-production-worker-host-provision.ps1`.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v38
+```
+
+### v38 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v38`. No v38 implementation change was
+made after the revision was written and before this approval.
+
+## Revision v39 - launch from an exact full-profile alternative configuration (approval required)
+
+### Discovery during approved v38 execution
+
+V38 passed 64/64 MT5 regressions, 4/4 probe tests, 9/9 allowlist mutants, 3/3 new probe mutants,
+and 18/18 UI regression mutants. Its first elevated host run compiled the probe with zero errors
+and started signed terminal build 6140 from the selected data directory, but the terminal journal
+contained no `Startup` initialization and did not load the script. The receipt timed out. Exact
+rollback restored `common.ini` hash
+`1A177F9FA04FE8B7B36362866D9562361F735EF2AED17F1218C1E67BE6BCFE9A`; both journals, the exact
+proxy/listener, and the selected terminal were absent afterward.
+
+MetaQuotes' platform-start documentation requires a custom configuration based on the default
+`common.ini` and an explicit `/config:path` launch for `[StartUp]` automation. The selected-host
+journal confirms that the no-argument default-profile launch does not process an appended
+`[StartUp]` section. V38's no-switch startup assumption is therefore false.
+
+### v39 exact desired-profile custom launch
+
+Revision v39 remains Tier 3 and supersedes only v38's nested replacement of the default
+`common.ini` and its no-argument launch. All v36-v38 signed-terminal, exact persisted allowlist,
+standard-port topology, nonce receipt, no-trade, ownership, rollback, idempotency, worker,
+canonical runner, and health requirements remain unchanged.
+
+After the outer transaction proves the exact desired default `common.ini`, the probe must reread
+and validate those exact UTF-16LE bytes and ACL, append only the already-specified exact
+`[StartUp]` section in memory, and prove the original desired bytes are an exact prefix/reverse
+transform. It must create a fixed sibling file named `.marketlens-v39-probe.ini` with
+`FileMode.CreateNew`, the same ACL, the exact full desired-profile prefix, and the one appended
+startup section. Any pre-existing file must fail closed; the default `common.ini` must not be
+modified by this inner probe step.
+
+The selected terminal must be launched with exactly one argument,
+`/config:<absolute fixed sibling path>`, and no `/profile`, `/portable`, login override, alternate
+terminal, or additional switch. The driver must obtain the nonce-bound receipt, wait for the
+probe-owned terminal to exit, reread and prove the default desired bytes/hash/ACL unchanged, then
+delete only the exact owned custom file and prove it absent. Receipt, shutdown, default-profile
+drift, or cleanup failure is authoritative; failure cleanup must first quiesce the exact owned
+terminal, preserve the unchanged default profile, and delete only a custom file whose bytes/hash
+and ACL still match the run-owned snapshot. A mismatched recovery file must be retained and fail
+closed. No config contents, account material, or secrets may be logged.
+
+Before implementation, replace the v38 no-switch assertion with RED contracts for the exact full
+desired-profile prefix, exact one-switch launch, default-profile non-mutation, success cleanup,
+probe-failure cleanup, and hostile pre-existing/mismatched recovery files. Add at least three
+killed/restored mutants: omit the full desired-profile prefix, launch without the exact custom
+config, and skip owned custom-file cleanup. Preserve the 64 MT5 regressions, 4 probe tests, 9/9
+allowlist mutants, and 18/18 UI regression mutants. Add no dependency, download, UI action,
+registry/firewall/URLACL change, service install, force termination, or alternate profile.
+
+Planned changed files remain `tools/mt5-baremetal/Invoke-MT5WebRequestProbe.ps1`,
+`backend/bridge/mt5_vm/test_production_webrequest_probe.py`,
+`backend/bridge/mt5_vm/test_terminal_python_api_bootstrap.py`,
+`tools/verify-production-worker-host-provision.ps1`, this SPEC, and final `EVIDENCE.md`. After
+GREEN, run the allowlist driver twice through UAC and require live `APPLIED` then `UNCHANGED`
+receipts. Then run the unchanged complete 13-layer verifier from a clean checkpoint, including
+exactly `powershell.exe -File .\run-backend-production.ps1` without switches. The fresh final
+command remains
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\verify-production-worker-host-provision.ps1`.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v39
+```
+
+### v39 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v39`. No v39 implementation change was
+made after the revision was written and before this approval.

@@ -12,13 +12,17 @@ $terminalPath = 'C:\Program Files\MetaTrader 5\terminal64.exe'
 $stateRoot = 'C:\Users\Duong\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075'
 $metaEditorPath = 'C:\Program Files\MetaTrader 5\metaeditor64.exe'
 $gatewayPath = Join-Path $repoRoot 'backend\bin\execution-gateway.exe'
-$gatewayHealthUrl = 'http://127.0.0.1:8790/health'
-$gatewayOrigin = 'http://127.0.0.1:8790'
+$gatewayHealthUrl = 'http://127.0.0.1/health'
+$gatewayOrigin = 'http://127.0.0.1'
 $expectedPublisher = 'CN=MetaQuotes Ltd., O=MetaQuotes Ltd., S=Lemesos, C=CY'
 $probeSource = Join-Path $PSScriptRoot 'MarketLensWebRequestProbe.mq5'
 $reportRoot = Join-Path $repoRoot '.artifacts\production-worker-host-provision'
 $slotInputRoot = 'C:\ProgramData\MarketLens\slot-inputs\slot-01'
 $commonFilesRoot = Join-Path $env:APPDATA 'MetaQuotes\Terminal\Common\Files'
+$commonIniPath = Join-Path $stateRoot 'config\common.ini'
+$maximumCommonIniBytes = 1048576
+$probeConfigPath = Join-Path (Split-Path -Parent $commonIniPath) `
+  '.marketlens-v39-probe.ini'
 
 function Assert-ProbeTrue {
   param(
@@ -107,6 +111,337 @@ function Get-Sha256Hex {
   return Convert-BytesToLowerHex -Bytes $digest
 }
 
+function Test-ProbeByteArrayEqual {
+  param(
+    [Parameter(Mandatory = $true)][byte[]]$Left,
+    [Parameter(Mandatory = $true)][byte[]]$Right
+  )
+  if ($Left.Length -ne $Right.Length) { return $false }
+  for ($index = 0; $index -lt $Left.Length; $index++) {
+    if ($Left[$index] -ne $Right[$index]) { return $false }
+  }
+  return $true
+}
+
+function New-ProbeUtf16LeBomBytes {
+  param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text)
+  $encoding = New-Object Text.UnicodeEncoding($false, $true, $true)
+  $body = $encoding.GetBytes($Text)
+  $result = New-Object byte[] ($body.Length + 2)
+  $result[0] = 0xFF
+  $result[1] = 0xFE
+  [Array]::Copy($body, 0, $result, 2, $body.Length)
+  return ,$result
+}
+
+function Convert-ProbeDefaultConfigStartup {
+  param([Parameter(Mandatory = $true)][byte[]]$Bytes)
+  if ($Bytes.Length -lt 2 -or $Bytes.Length -gt $maximumCommonIniBytes -or
+      $Bytes[0] -ne 0xFF -or $Bytes[1] -ne 0xFE -or
+      (($Bytes.Length - 2) % 2) -ne 0) {
+    throw 'PROVISIONING_PROBE_DEFAULT_CONFIG_INVALID'
+  }
+  $encoding = New-Object Text.UnicodeEncoding($false, $true, $true)
+  try {
+    $text = $encoding.GetString($Bytes, 2, $Bytes.Length - 2)
+  } catch {
+    throw 'PROVISIONING_PROBE_DEFAULT_CONFIG_INVALID'
+  }
+  if (-not (Test-ProbeByteArrayEqual `
+      -Left $Bytes -Right (New-ProbeUtf16LeBomBytes -Text $text))) {
+    throw 'PROVISIONING_PROBE_DEFAULT_CONFIG_INVALID'
+  }
+  if ([regex]::Matches(
+      $text,
+      '^\[StartUp\](?:\r)?$',
+      [Text.RegularExpressions.RegexOptions]::Multiline
+    ).Count -ne 0) {
+    throw 'PROVISIONING_PROBE_STARTUP_STATE_INVALID'
+  }
+  if ([regex]::Matches(
+      $text,
+      '^WebRequest=1(?:\r)?$',
+      [Text.RegularExpressions.RegexOptions]::Multiline
+    ).Count -ne 1 -or
+      [regex]::Matches(
+        $text,
+        '^WebRequestUrl=http://127\.0\.0\.1(?:\r)?$',
+        [Text.RegularExpressions.RegexOptions]::Multiline
+      ).Count -ne 1) {
+    throw 'PROVISIONING_PROBE_DEFAULT_CONFIG_INVALID'
+  }
+  $separator = if ($text.EndsWith("`n", [StringComparison]::Ordinal)) {
+    ''
+  } else {
+    "`r`n"
+  }
+  $startupText = (
+    $separator + '[StartUp]' + "`r`n" +
+    'Script=MarketLensWebRequestProbe' + "`r`n" +
+    'Symbol=EURUSD' + "`r`n" +
+    'Period=M1' + "`r`n" +
+    'ShutdownTerminal=1' + "`r`n"
+  )
+  $desiredBytes = New-ProbeUtf16LeBomBytes -Text ($text + $startupText)
+  if ($desiredBytes.Length -le $Bytes.Length) {
+    throw 'PROVISIONING_PROBE_STARTUP_TRANSFORM_INVALID'
+  }
+  $reversedBytes = New-Object byte[] $Bytes.Length
+  [Array]::Copy($desiredBytes, 0, $reversedBytes, 0, $Bytes.Length)
+  if (-not (Test-ProbeByteArrayEqual -Left $Bytes -Right $reversedBytes)) {
+    throw 'PROVISIONING_PROBE_STARTUP_TRANSFORM_INVALID'
+  }
+  return [pscustomobject][ordered]@{
+    OriginalBytes = $Bytes
+    OriginalHash = Get-Sha256Hex -Bytes $Bytes
+    DesiredBytes = $desiredBytes
+    DesiredHash = Get-Sha256Hex -Bytes $desiredBytes
+  }
+}
+
+function Get-ProbeAclSddl {
+  param([Parameter(Mandatory = $true)][string]$Path)
+  try {
+    return [string](Get-Acl -LiteralPath $Path -ErrorAction Stop).Sddl
+  } catch {
+    throw 'PROVISIONING_PROBE_DEFAULT_CONFIG_ACL_INVALID'
+  }
+}
+
+function Write-ProbeCreateNewFile {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][byte[]]$Bytes,
+    [Parameter(Mandatory = $true)][object]$Acl
+  )
+  $stream = $null
+  try {
+    $stream = New-Object IO.FileStream(
+      $Path,
+      [IO.FileMode]::CreateNew,
+      [IO.FileAccess]::Write,
+      [IO.FileShare]::None
+    )
+    $stream.Write($Bytes, 0, $Bytes.Length)
+    $stream.Flush($true)
+  } finally {
+    if ($null -ne $stream) { $stream.Dispose() }
+  }
+  Set-Acl -LiteralPath $Path -AclObject $Acl
+}
+
+function New-ProbeCustomConfigSnapshot {
+  param(
+    [Parameter(Mandatory = $true)][string]$DefaultPath,
+    [Parameter(Mandatory = $true)][string]$CustomPath
+  )
+  if (Test-Path -LiteralPath $CustomPath) {
+    throw 'PROVISIONING_PROBE_CUSTOM_CONFIG_RECOVERY_STATE_INVALID'
+  }
+  $defaultBytes = [IO.File]::ReadAllBytes($DefaultPath)
+  $conversion = Convert-ProbeDefaultConfigStartup -Bytes $defaultBytes
+  $defaultAcl = Get-Acl -LiteralPath $DefaultPath -ErrorAction Stop
+  return [pscustomobject][ordered]@{
+    DefaultPath = $DefaultPath
+    DefaultBytes = $defaultBytes
+    DefaultHash = [string]$conversion.OriginalHash
+    DefaultSddl = [string]$defaultAcl.Sddl
+    CustomPath = $CustomPath
+    CustomBytes = [byte[]]$conversion.DesiredBytes
+    CustomHash = [string]$conversion.DesiredHash
+    CustomAcl = $defaultAcl
+    CustomSddl = [string]$defaultAcl.Sddl
+  }
+}
+
+function Assert-ProbeDefaultConfigUnchanged {
+  param([Parameter(Mandatory = $true)][object]$Snapshot)
+  if ((Get-Sha256Hex -Bytes ([IO.File]::ReadAllBytes($Snapshot.DefaultPath))) -cne
+        [string]$Snapshot.DefaultHash -or
+      (Get-ProbeAclSddl -Path $Snapshot.DefaultPath) -cne
+        [string]$Snapshot.DefaultSddl) {
+    throw 'PROVISIONING_PROBE_DEFAULT_CONFIG_DRIFTED'
+  }
+}
+
+function Assert-ProbeOwnedCustomConfig {
+  param([Parameter(Mandatory = $true)][object]$Snapshot)
+  if (-not (Test-Path -LiteralPath ([string]$Snapshot.CustomPath) -PathType Leaf) -or
+      (Get-Sha256Hex -Bytes ([IO.File]::ReadAllBytes($Snapshot.CustomPath))) -cne
+        [string]$Snapshot.CustomHash -or
+      (Get-ProbeAclSddl -Path $Snapshot.CustomPath) -cne
+        [string]$Snapshot.CustomSddl) {
+    throw 'PROVISIONING_PROBE_CUSTOM_CONFIG_OWNERSHIP_INVALID'
+  }
+}
+
+function Remove-ProbeOwnedCustomConfig {
+  param([Parameter(Mandatory = $true)][object]$Snapshot)
+  Assert-ProbeDefaultConfigUnchanged -Snapshot $Snapshot
+  if (-not (Test-Path -LiteralPath ([string]$Snapshot.CustomPath))) { return }
+  Assert-ProbeOwnedCustomConfig -Snapshot $Snapshot
+  Remove-Item -LiteralPath $Snapshot.CustomPath -Force
+  if (Test-Path -LiteralPath $Snapshot.CustomPath) {
+    throw 'PROVISIONING_PROBE_CUSTOM_CONFIG_CLEANUP_FAILED'
+  }
+}
+
+function Invoke-ProbeCustomConfigTransaction {
+  param(
+    [Parameter(Mandatory = $true)][string]$DefaultPath,
+    [Parameter(Mandatory = $true)][string]$CustomPath,
+    [Parameter(Mandatory = $true)][scriptblock]$RunAction,
+    [Parameter(Mandatory = $true)][scriptblock]$QuiesceAction
+  )
+  $snapshot = New-ProbeCustomConfigSnapshot `
+    -DefaultPath $DefaultPath -CustomPath $CustomPath
+  try {
+    Write-ProbeCreateNewFile `
+      -Path $CustomPath -Bytes ([byte[]]$snapshot.CustomBytes) -Acl $snapshot.CustomAcl
+    Assert-ProbeOwnedCustomConfig -Snapshot $snapshot
+    Assert-ProbeDefaultConfigUnchanged -Snapshot $snapshot
+    $result = & $RunAction $snapshot
+    & $QuiesceAction
+    Remove-ProbeOwnedCustomConfig -Snapshot $snapshot
+    return $result
+  } catch {
+    $originalFailure = [string]$_.Exception.Message
+    try {
+      & $QuiesceAction
+      Remove-ProbeOwnedCustomConfig -Snapshot $snapshot
+    } catch {
+      throw 'PROVISIONING_PROBE_CUSTOM_CONFIG_CLEANUP_FAILED'
+    }
+    throw $originalFailure
+  }
+}
+
+function Assert-ProbeContractFailure {
+  param(
+    [Parameter(Mandatory = $true)][string]$ExpectedCode,
+    [Parameter(Mandatory = $true)][scriptblock]$Action
+  )
+  try {
+    & $Action
+  } catch {
+    if ([string]$_.Exception.Message -ceq $ExpectedCode) { return }
+    throw
+  }
+  throw 'PROVISIONING_PROBE_CONTRACT_FAILED_OPEN'
+}
+
+function Invoke-ProbeCustomConfigStartupContractTests {
+  $contractRoot = Join-Path ([IO.Path]::GetTempPath()) (
+    'marketlens-v39-probe-' + [guid]::NewGuid().ToString('N')
+  )
+  $null = [IO.Directory]::CreateDirectory($contractRoot)
+  $path = Join-Path $contractRoot 'common.ini'
+  $customPath = Join-Path $contractRoot '.marketlens-v39-probe.ini'
+  try {
+    $baseText = (
+      '[General]' + "`r`n" + 'Untouched=prefix' + "`r`n" +
+      '[Experts]' + "`r`n" + 'WebRequest=1' + "`r`n" +
+      'WebRequestUrl=http://127.0.0.1' + "`r`n" +
+      '[Other]' + "`r`n" + 'Untouched=tail' + "`r`n"
+    )
+    $baseBytes = New-ProbeUtf16LeBomBytes -Text $baseText
+    $conversion = Convert-ProbeDefaultConfigStartup -Bytes $baseBytes
+    $desiredText = (New-Object Text.UnicodeEncoding($false, $true, $true)).GetString(
+      [byte[]]$conversion.DesiredBytes,
+      2,
+      ([byte[]]$conversion.DesiredBytes).Length - 2
+    )
+    Assert-ProbeTrue (
+      $desiredText.EndsWith(
+        "[StartUp]`r`nScript=MarketLensWebRequestProbe`r`nSymbol=EURUSD`r`nPeriod=M1`r`nShutdownTerminal=1`r`n",
+        [StringComparison]::Ordinal
+      ) -and
+      [string]$conversion.OriginalHash -ceq (Get-Sha256Hex -Bytes $baseBytes)
+    ) 'PROVISIONING_PROBE_DEFAULT_CONFIG_CONTRACT_FAILED'
+
+    Assert-ProbeContractFailure `
+      -ExpectedCode 'PROVISIONING_PROBE_STARTUP_STATE_INVALID' -Action {
+        Convert-ProbeDefaultConfigStartup `
+          -Bytes ([byte[]]$conversion.DesiredBytes)
+      }
+    Assert-ProbeContractFailure `
+      -ExpectedCode 'PROVISIONING_PROBE_DEFAULT_CONFIG_INVALID' -Action {
+        Convert-ProbeDefaultConfigStartup `
+          -Bytes ([Text.Encoding]::UTF8.GetBytes($baseText))
+      }
+
+    $events = [Collections.Generic.List[string]]::new()
+    [IO.File]::WriteAllBytes($path, $baseBytes)
+    $result = Invoke-ProbeCustomConfigTransaction `
+      -DefaultPath $path -CustomPath $customPath `
+      -RunAction { param($snapshot)
+        $events.Add('run')
+        Assert-ProbeTrue (
+          (Test-ProbeByteArrayEqual -Left $baseBytes `
+            -Right ([IO.File]::ReadAllBytes($path))) -and
+          (Test-ProbeByteArrayEqual -Left ([byte[]]$snapshot.CustomBytes) `
+            -Right ([IO.File]::ReadAllBytes($customPath)))
+        ) 'PROVISIONING_PROBE_DEFAULT_CONFIG_CONTRACT_FAILED'
+        return 'PASS'
+      } `
+      -QuiesceAction { $events.Add('quiesce') }
+    Assert-ProbeTrue (
+      [string]$result -ceq 'PASS' -and
+      ($events -join ',') -ceq 'run,quiesce' -and
+      (Test-ProbeByteArrayEqual `
+        -Left $baseBytes -Right ([IO.File]::ReadAllBytes($path))) -and
+      -not (Test-Path -LiteralPath $customPath)
+    ) 'PROVISIONING_PROBE_DEFAULT_CONFIG_CONTRACT_FAILED'
+
+    [IO.File]::WriteAllBytes($path, $baseBytes)
+    $failureEvents = [Collections.Generic.List[string]]::new()
+    Assert-ProbeContractFailure `
+      -ExpectedCode 'PROVISIONING_PROBE_CONTRACT_FAILURE' -Action {
+        Invoke-ProbeCustomConfigTransaction `
+          -DefaultPath $path -CustomPath $customPath `
+          -RunAction {
+            $failureEvents.Add('run')
+            throw 'PROVISIONING_PROBE_CONTRACT_FAILURE'
+          } `
+          -QuiesceAction { $failureEvents.Add('quiesce') }
+      }
+    Assert-ProbeTrue (
+      ($failureEvents -join ',') -ceq 'run,quiesce' -and
+      (Test-ProbeByteArrayEqual `
+        -Left $baseBytes -Right ([IO.File]::ReadAllBytes($path))) -and
+      -not (Test-Path -LiteralPath $customPath)
+    ) 'PROVISIONING_PROBE_DEFAULT_CONFIG_CONTRACT_FAILED'
+
+    [IO.File]::WriteAllBytes($customPath, $baseBytes)
+    Assert-ProbeContractFailure `
+      -ExpectedCode 'PROVISIONING_PROBE_CUSTOM_CONFIG_RECOVERY_STATE_INVALID' -Action {
+        Invoke-ProbeCustomConfigTransaction `
+          -DefaultPath $path -CustomPath $customPath `
+          -RunAction { return $true } -QuiesceAction {}
+      }
+    Remove-Item -LiteralPath $customPath -Force
+
+    $mismatchSnapshot = New-ProbeCustomConfigSnapshot `
+      -DefaultPath $path -CustomPath $customPath
+    Write-ProbeCreateNewFile `
+      -Path $customPath -Bytes ([byte[]]$mismatchSnapshot.CustomBytes) `
+      -Acl $mismatchSnapshot.CustomAcl
+    [IO.File]::WriteAllBytes($customPath, $baseBytes)
+    Assert-ProbeContractFailure `
+      -ExpectedCode 'PROVISIONING_PROBE_CUSTOM_CONFIG_OWNERSHIP_INVALID' -Action {
+        Remove-ProbeOwnedCustomConfig -Snapshot $mismatchSnapshot
+      }
+    Assert-ProbeTrue (Test-Path -LiteralPath $customPath -PathType Leaf) `
+      'PROVISIONING_PROBE_CUSTOM_CONFIG_CONTRACT_FAILED'
+    Remove-Item -LiteralPath $customPath -Force
+    Write-Output 'PRODUCTION_CUSTOM_CONFIG_STARTUP_CONTRACTS=PASS'
+  } finally {
+    if (Test-Path -LiteralPath $contractRoot -PathType Container) {
+      Remove-Item -LiteralPath $contractRoot -Recurse -Force
+    }
+  }
+}
+
 function Assert-ProbeReceipt {
   param(
     [Parameter(Mandatory = $true)][psobject]$Receipt,
@@ -142,6 +477,18 @@ function Assert-ProbeReceipt {
 }
 
 function Invoke-ProbeContractTests {
+  $driverText = Get-Content -LiteralPath $PSCommandPath -Raw
+  $exactLaunch = (
+    '$terminalState.Value = Start-' + 'Process -FilePath $terminalPath `' + "`n" +
+    '      -ArgumentList $probeConfigArgument `' + "`n" +
+    '      -WindowStyle Hidden -PassThru'
+  )
+  Assert-ProbeTrue (
+    [regex]::Matches($driverText, [regex]::Escape($exactLaunch)).Count -eq 1 -and
+    $driverText.Contains("`$probeConfigArgument = '/config:' + `$probeConfigPath") -and
+    -not $driverText.Contains(('/pro' + 'file:')) -and
+    -not $driverText.Contains(('/port' + 'able'))
+  ) 'PROVISIONING_PROBE_CUSTOM_CONFIG_LAUNCH_INVALID'
   $requestedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
   $nonce = '0123456789abcdef0123456789abcdef'
   $valid = [pscustomobject][ordered]@{
@@ -165,6 +512,7 @@ function Invoke-ProbeContractTests {
   }
   Assert-ProbeReceipt -Receipt $valid -ExpectedNonce $nonce `
     -ExpectedRequestedAtUnix $requestedAt -MaximumObservedAtUnix ($requestedAt + 1)
+  Invoke-ProbeCustomConfigStartupContractTests
   $cleanCompileLog = "Result: 0 errors, 0 warnings, 1 ms elapsed, cpu='X64 Regular'"
   Assert-ProbeCompileResult -ExitCode 1 -BinaryExists $true -CompileText $cleanCompileLog
   Assert-ProbeCompileFixtureRejected -ExitCode 0 -BinaryExists $true `
@@ -279,8 +627,8 @@ function Assert-ExactGatewayHealth {
   }
 }
 
-function Stop-ExactSelectedTerminal {
-  $matches = @(
+function Get-ExactSelectedTerminalProcesses {
+  return @(
     Get-CimInstance Win32_Process -Filter "Name = 'terminal64.exe'" |
       Where-Object {
         $_.ExecutablePath -and [string]::Equals(
@@ -290,15 +638,30 @@ function Stop-ExactSelectedTerminal {
         )
       }
   )
+}
+
+function Assert-ExactSelectedTerminalAbsent {
+  $matches = @(Get-ExactSelectedTerminalProcesses)
   Assert-ProbeTrue ($matches.Count -le 1) 'PROVISIONING_SELECTED_TERMINAL_PROCESS_AMBIGUOUS'
-  if ($matches.Count -eq 0) { return }
-  $process = Get-Process -Id $matches[0].ProcessId -ErrorAction Stop
-  $null = $process.CloseMainWindow()
-  if (-not $process.WaitForExit(15000)) {
-    Stop-Process -Id $process.Id -Force -ErrorAction Stop
-    $process.WaitForExit(5000)
+  Assert-ProbeTrue ($matches.Count -eq 0) 'PROVISIONING_SELECTED_TERMINAL_ALREADY_RUNNING'
+}
+
+function Wait-ProbeOwnedTerminalExit {
+  param([Parameter(Mandatory = $true)][object]$State)
+  if ($null -eq $State.Value) { return }
+  $process = $State.Value
+  $matches = @(Get-ExactSelectedTerminalProcesses)
+  Assert-ProbeTrue (
+    $matches.Count -le 1 -and
+    ($matches.Count -eq 0 -or [int]$matches[0].ProcessId -eq [int]$process.Id)
+  ) 'PROVISIONING_SELECTED_TERMINAL_PROCESS_AMBIGUOUS'
+  if (-not $process.HasExited -and -not $process.WaitForExit(30000)) {
+    $null = $process.CloseMainWindow()
+    Assert-ProbeTrue ($process.WaitForExit(15000)) `
+      'PROVISIONING_SELECTED_TERMINAL_STOP_FAILED'
   }
   Assert-ProbeTrue ($process.HasExited) 'PROVISIONING_SELECTED_TERMINAL_STOP_FAILED'
+  $State.Value = $null
 }
 
 function Write-Utf8NoBomFile {
@@ -418,46 +781,42 @@ if (Test-Path -LiteralPath $receiptPath) {
   Remove-Item -LiteralPath $receiptPath -Force
 }
 
-$startupConfig = Join-Path $reportRoot 'webrequest-probe-startup.ini'
-$startup = @"
-[Experts]
-AllowLiveTrading=0
-AllowDllImport=0
-Enabled=1
-Account=0
-Profile=0
-
-[StartUp]
-Script=MarketLensWebRequestProbe
-Symbol=EURUSD
-Period=M1
-ShutdownTerminal=1
-"@
-Write-Utf8NoBomFile -Path $startupConfig -Contents $startup
-
-Stop-ExactSelectedTerminal
-$terminal = Start-Process -FilePath $terminalPath `
-  -ArgumentList "/config:`"$startupConfig`"" -WindowStyle Hidden -PassThru
-$deadline = [DateTime]::UtcNow.AddSeconds(60)
-while (-not (Test-Path -LiteralPath $receiptPath -PathType Leaf) -and
-       [DateTime]::UtcNow -lt $deadline) {
-  Start-Sleep -Milliseconds 250
-}
-if (-not (Test-Path -LiteralPath $receiptPath -PathType Leaf)) {
-  if (-not $terminal.HasExited) { Stop-ExactSelectedTerminal }
-  throw 'PROVISIONING_PROBE_RECEIPT_TIMEOUT'
-}
-try {
-  $receipt = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json -ErrorAction Stop
-} catch {
-  throw 'PROVISIONING_PROBE_RECEIPT_INVALID'
-}
-if ([int]$receipt.httpStatus -eq -1 -and [int]$receipt.mt5Error -eq 4014) {
-  throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_REQUIRED'
-}
-$maximumObservedAt = [DateTimeOffset]::UtcNow.AddSeconds(5).ToUnixTimeSeconds()
-Assert-ProbeReceipt -Receipt $receipt -ExpectedNonce $nonce `
-  -ExpectedRequestedAtUnix $requestedAt -MaximumObservedAtUnix $maximumObservedAt
+Assert-ProbeTrue (Test-Path -LiteralPath $commonIniPath -PathType Leaf) `
+  'PROVISIONING_PROBE_DEFAULT_CONFIG_INVALID'
+Assert-NoReparseComponent -Path $commonIniPath
+Assert-ExactSelectedTerminalAbsent
+$terminalState = [pscustomobject]@{ Value = $null }
+$probeConfigArgument = '/config:' + $probeConfigPath
+$receipt = Invoke-ProbeCustomConfigTransaction `
+  -DefaultPath $commonIniPath -CustomPath $probeConfigPath `
+  -RunAction { param($snapshot)
+    $terminalState.Value = Start-Process -FilePath $terminalPath `
+      -ArgumentList $probeConfigArgument `
+      -WindowStyle Hidden -PassThru
+    $deadline = [DateTime]::UtcNow.AddSeconds(60)
+    while (-not (Test-Path -LiteralPath $receiptPath -PathType Leaf) -and
+           [DateTime]::UtcNow -lt $deadline) {
+      Start-Sleep -Milliseconds 250
+    }
+    if (-not (Test-Path -LiteralPath $receiptPath -PathType Leaf)) {
+      throw 'PROVISIONING_PROBE_RECEIPT_TIMEOUT'
+    }
+    try {
+      $observedReceipt = Get-Content -LiteralPath $receiptPath -Raw |
+        ConvertFrom-Json -ErrorAction Stop
+    } catch {
+      throw 'PROVISIONING_PROBE_RECEIPT_INVALID'
+    }
+    if ([int]$observedReceipt.httpStatus -eq -1 -and
+        [int]$observedReceipt.mt5Error -eq 4014) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_REQUIRED'
+    }
+    $maximumObservedAt = [DateTimeOffset]::UtcNow.AddSeconds(5).ToUnixTimeSeconds()
+    Assert-ProbeReceipt -Receipt $observedReceipt -ExpectedNonce $nonce `
+      -ExpectedRequestedAtUnix $requestedAt -MaximumObservedAtUnix $maximumObservedAt
+    return $observedReceipt
+  } `
+  -QuiesceAction { Wait-ProbeOwnedTerminalExit -State $terminalState }
 $inputs = Write-ProvenTopologyInputs
 
 $proof = [ordered]@{

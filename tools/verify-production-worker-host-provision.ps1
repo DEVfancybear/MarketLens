@@ -1,7 +1,10 @@
 [CmdletBinding()]
 param(
   [switch]$ContractTestsOnly,
-  [switch]$KnownBadControl
+  [switch]$KnownBadControl,
+  [switch]$AllowlistMutationTestsOnly,
+  [switch]$ProbeMutationTestsOnly,
+  [switch]$MouseMutationTestsOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,6 +17,8 @@ $executionRoot = Join-Path $backendRoot 'execution'
 $reportRoot = Join-Path $repoRoot '.artifacts\production-worker-host-provision'
 $reportPath = Join-Path $reportRoot 'gauntlet-report.json'
 $probeDriver = Join-Path $repoRoot 'tools\mt5-baremetal\Invoke-MT5WebRequestProbe.ps1'
+$allowlistDriver = Join-Path $repoRoot 'tools\mt5-baremetal\Set-MT5WebRequestAllowlist.ps1'
+$uiHelper = Join-Path $repoRoot 'backend\bridge\mt5_vm\Mt5VmTerminalUi.ps1'
 $backendEnvPath = Join-Path $backendRoot '.env'
 $installInputPath = 'C:\ProgramData\MarketLens\managed-worker-install-input.json'
 $bootstrapTokenPath = 'C:\ProgramData\MarketLens\secrets\worker-bootstrap.token'
@@ -23,7 +28,7 @@ $selectedIdentity = 'DESKTOP-MDC339G\Duong'
 $selectedTerminal = 'C:\Program Files\MetaTrader 5\terminal64.exe'
 $selectedStateRoot = 'C:\Users\Duong\AppData\Roaming\MetaQuotes\Terminal\D0E8209F77C8CF37AD8BF550E51FF075'
 $slotInputRoot = 'C:\ProgramData\MarketLens\slot-inputs\slot-01'
-$expectedOrigin = 'http://127.0.0.1:8790'
+$expectedOrigin = 'http://127.0.0.1'
 $taskName = 'MarketLens MT5 Worker'
 $workerId = 'marketlens-baremetal-01'
 $baselineCommit = '097bcf7f523b1327b2c970036d24d1542740fd8b'
@@ -147,11 +152,553 @@ function Invoke-ContractTests {
   Assert-SelectedTerminalBoundary -Path $selectedTerminal
   Assert-PowerShellParses -Path $PSCommandPath
   Assert-PowerShellParses -Path $probeDriver
+  Assert-PowerShellParses -Path $allowlistDriver
   if ($KnownBadControl) {
     Assert-SelectedTerminalBoundary -Path 'C:\Program Files\FTMO Global Markets MT5 Terminal\terminal64.exe'
     throw 'PROVISIONING_KNOWN_BAD_CONTROL_FAILED_OPEN'
   }
   Write-Output 'PRODUCTION_WORKER_HOST_PROVISION_CONTRACTS=PASS'
+}
+
+function Invoke-AllowlistMutationTests {
+  $originalBytes = [IO.File]::ReadAllBytes($allowlistDriver)
+  $originalHash = (Get-FileHash -LiteralPath $allowlistDriver -Algorithm SHA256).Hash
+  $originalText = [Text.Encoding]::UTF8.GetString($originalBytes)
+  $mutants = @(
+    [pscustomobject]@{
+      name = 'accept-duplicate-key'
+      search = @'
+if ($webMatches.Count -ne 1 -or $urlMatches.Count -ne 1 -or
+      $allWebMatches.Count -ne 1 -or $allUrlMatches.Count -ne 1) {
+'@
+      replace = @'
+if ($webMatches.Count -lt 1 -or $urlMatches.Count -lt 1 -or
+      $allWebMatches.Count -lt 1 -or $allUrlMatches.Count -lt 1) {
+'@
+      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_FAILED_OPEN'
+    },
+    [pscustomobject]@{
+      name = 'change-unrelated-bytes'
+      search = '$desiredText = Set-ProductionCommonIniValueSpans -Model $model -WebValue ''1'' -UrlValue $ExpectedOrigin'
+      replace = '$desiredText = (Set-ProductionCommonIniValueSpans -Model $model -WebValue ''1'' -UrlValue $ExpectedOrigin).Replace(''Untouched=tail'', ''Untouched=mutant'')'
+      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_UNRELATED_BYTES_CHANGED'
+    },
+    [pscustomobject]@{
+      name = 'accept-idempotency-hash-change'
+      search = 'DesiredHash = $sameHash'
+      replace = 'DesiredHash = ''PROVISIONING_IDEMPOTENCY_MUTANT'''
+      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_IDEMPOTENCY_INVALID'
+    },
+    [pscustomobject]@{
+      name = 'report-original-after-rollback-failure'
+      search = 'if ($rollbackResult -ne $true) {'
+      replace = 'if ($false) {'
+      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_PROBE_FAILED'
+    },
+    [pscustomobject]@{
+      name = 'permit-wildcard-listen-address'
+      search = '[string]$entry.listen_address -cne $listenAddress -or'
+      replace = '$false -or'
+      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_FAILED_OPEN'
+    },
+    [pscustomobject]@{
+      name = 'accept-wrong-connect-port'
+      search = '[int]$entry.connect_port -ne $connectPort) {'
+      replace = '$false) {'
+      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_FAILED_OPEN'
+    },
+    [pscustomobject]@{
+      name = 'create-proxy-before-persisted-preflight'
+      search = @'
+$preflight = & $PreflightAction
+    $proxy = & $EnsureProxyAction
+'@
+      replace = @'
+$proxy = & $EnsureProxyAction
+    $preflight = & $PreflightAction
+'@
+      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_FAILED'
+    },
+    [pscustomobject]@{
+      name = 'delete-preexisting-mapping-during-rollback'
+      search = 'if ($null -ne $proxy -and [bool]$proxy.created) {'
+      replace = 'if ($null -ne $proxy) {'
+      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_FAILED'
+    },
+    [pscustomobject]@{
+      name = 'skip-successful-trace-rollback'
+      search = @'
+  if ((& $RollbackUiAction $preflight.prior) -ne $true) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED'
+  }
+  return [pscustomobject][ordered]@{
+'@
+      replace = @'
+  $null = $preflight.prior
+  return [pscustomobject][ordered]@{
+'@
+      expected = 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_FAILED'
+    }
+  )
+  $killed = 0
+  try {
+    foreach ($mutant in $mutants) {
+      Write-Output ('PRODUCTION_WEBREQUEST_ALLOWLIST_MUTANT_START=' + [string]$mutant.name)
+      $matchCount = [regex]::Matches(
+        $originalText,
+        [regex]::Escape([string]$mutant.search)
+      ).Count
+      Assert-Gate ($matchCount -eq 1) 'PROVISIONING_ALLOWLIST_MUTANT_SOURCE_UNEXPECTED'
+      $mutantText = $originalText.Replace(
+        [string]$mutant.search,
+        [string]$mutant.replace
+      )
+      [IO.File]::WriteAllText(
+        $allowlistDriver,
+        $mutantText,
+        (New-Object Text.UTF8Encoding($false))
+      )
+      $mutantHash = (Get-FileHash -LiteralPath $allowlistDriver -Algorithm SHA256).Hash
+      Assert-Gate ($mutantHash -cne $originalHash) 'PROVISIONING_ALLOWLIST_MUTANT_NOT_APPLIED'
+      $savedErrorActionPreference = $ErrorActionPreference
+      try {
+        $ErrorActionPreference = 'Continue'
+        $mutantOutput = @(& powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $allowlistDriver -ContractTestsOnly 2>&1)
+        $mutantExitCode = $LASTEXITCODE
+      } finally {
+        $ErrorActionPreference = $savedErrorActionPreference
+      }
+      Assert-Gate ($mutantExitCode -ne 0) 'PROVISIONING_ALLOWLIST_MUTANT_SURVIVED'
+      Assert-Gate (
+        ($mutantOutput -join "`n").Contains([string]$mutant.expected)
+      ) 'PROVISIONING_ALLOWLIST_MUTANT_WRONG_REASON'
+      $killed += 1
+      [IO.File]::WriteAllBytes($allowlistDriver, $originalBytes)
+      Assert-Gate (
+        (Get-FileHash -LiteralPath $allowlistDriver -Algorithm SHA256).Hash -ceq
+          $originalHash
+      ) 'PROVISIONING_ALLOWLIST_MUTANT_RESTORE_FAILED'
+    }
+  } finally {
+    [IO.File]::WriteAllBytes($allowlistDriver, $originalBytes)
+  }
+  Assert-Gate ($killed -eq $mutants.Count) 'PROVISIONING_ALLOWLIST_MUTATION_SCORE_INVALID'
+  Assert-Gate (
+    (Get-FileHash -LiteralPath $allowlistDriver -Algorithm SHA256).Hash -ceq
+      $originalHash
+  ) 'PROVISIONING_ALLOWLIST_MUTANT_RESTORE_FAILED'
+  & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $allowlistDriver -ContractTestsOnly
+  Assert-NativeSuccess 'PROVISIONING_ALLOWLIST_MUTATION_RESTORED_TEST_FAILED'
+  Assert-Gate ($mutants.Count -eq 9) 'PROVISIONING_ALLOWLIST_MUTATION_MANIFEST_INVALID'
+  Write-Output 'PRODUCTION_WEBREQUEST_ALLOWLIST_MUTATION=9/9'
+}
+
+function Invoke-ProbeMutationTests {
+  $originalBytes = [IO.File]::ReadAllBytes($probeDriver)
+  $originalHash = (Get-FileHash -LiteralPath $probeDriver -Algorithm SHA256).Hash
+  $originalText = [Text.Encoding]::UTF8.GetString($originalBytes)
+  $mutants = @(
+    [pscustomobject]@{
+      name = 'omit-full-desired-profile-prefix'
+      search = '$desiredBytes = New-ProbeUtf16LeBomBytes -Text ($text + $startupText)'
+      replace = '$desiredBytes = New-ProbeUtf16LeBomBytes -Text $startupText'
+      expected = 'PROVISIONING_PROBE_STARTUP_TRANSFORM_INVALID'
+    },
+    [pscustomobject]@{
+      name = 'launch-probe-without-exact-custom-config'
+      search = '$probeConfigArgument = ''/config:'' + $probeConfigPath'
+      replace = '$probeConfigArgument = $probeConfigPath'
+      expected = 'PROVISIONING_PROBE_CUSTOM_CONFIG_LAUNCH_INVALID'
+    },
+    [pscustomobject]@{
+      name = 'skip-owned-custom-config-cleanup'
+      search = @'
+    & $QuiesceAction
+    Remove-ProbeOwnedCustomConfig -Snapshot $snapshot
+    return $result
+'@
+      replace = @'
+    & $QuiesceAction
+    return $result
+'@
+      expected = 'PROVISIONING_PROBE_DEFAULT_CONFIG_CONTRACT_FAILED'
+    }
+  )
+  $killed = 0
+  try {
+    foreach ($mutant in $mutants) {
+      Write-Output ('PRODUCTION_WEBREQUEST_PROBE_MUTANT_START=' + [string]$mutant.name)
+      $matchCount = [regex]::Matches(
+        $originalText,
+        [regex]::Escape([string]$mutant.search)
+      ).Count
+      Assert-Gate ($matchCount -eq 1) 'PROVISIONING_PROBE_MUTANT_SOURCE_UNEXPECTED'
+      $mutantText = $originalText.Replace(
+        [string]$mutant.search,
+        [string]$mutant.replace
+      )
+      [IO.File]::WriteAllText(
+        $probeDriver,
+        $mutantText,
+        (New-Object Text.UTF8Encoding($false))
+      )
+      $mutantHash = (Get-FileHash -LiteralPath $probeDriver -Algorithm SHA256).Hash
+      Assert-Gate ($mutantHash -cne $originalHash) 'PROVISIONING_PROBE_MUTANT_NOT_APPLIED'
+      $savedErrorActionPreference = $ErrorActionPreference
+      try {
+        $ErrorActionPreference = 'Continue'
+        $mutantOutput = @(& powershell.exe -NoProfile -NonInteractive `
+          -ExecutionPolicy Bypass -File $probeDriver -ContractTestsOnly 2>&1)
+        $mutantExitCode = $LASTEXITCODE
+      } finally {
+        $ErrorActionPreference = $savedErrorActionPreference
+      }
+      Assert-Gate ($mutantExitCode -ne 0) 'PROVISIONING_PROBE_MUTANT_SURVIVED'
+      Assert-Gate (
+        ($mutantOutput -join "`n").Contains([string]$mutant.expected)
+      ) 'PROVISIONING_PROBE_MUTANT_WRONG_REASON'
+      $killed += 1
+      [IO.File]::WriteAllBytes($probeDriver, $originalBytes)
+      Assert-Gate (
+        (Get-FileHash -LiteralPath $probeDriver -Algorithm SHA256).Hash -ceq
+          $originalHash
+      ) 'PROVISIONING_PROBE_MUTANT_RESTORE_FAILED'
+    }
+  } finally {
+    [IO.File]::WriteAllBytes($probeDriver, $originalBytes)
+  }
+  Assert-Gate ($killed -eq $mutants.Count) 'PROVISIONING_PROBE_MUTATION_SCORE_INVALID'
+  Assert-Gate (
+    (Get-FileHash -LiteralPath $probeDriver -Algorithm SHA256).Hash -ceq $originalHash
+  ) 'PROVISIONING_PROBE_MUTANT_RESTORE_FAILED'
+  & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+    -File $probeDriver -ContractTestsOnly
+  Assert-NativeSuccess 'PROVISIONING_PROBE_MUTATION_RESTORED_TEST_FAILED'
+  Assert-Gate ($mutants.Count -eq 3) 'PROVISIONING_PROBE_MUTATION_MANIFEST_INVALID'
+  Write-Output 'PRODUCTION_WEBREQUEST_PROBE_MUTATION=3/3'
+}
+
+function Invoke-MouseMutationTests {
+  $originalBytes = [IO.File]::ReadAllBytes($uiHelper)
+  $originalHash = (Get-FileHash -LiteralPath $uiHelper -Algorithm SHA256).Hash
+  $originalText = [Text.Encoding]::UTF8.GetString($originalBytes)
+  $mutants = @(
+    [pscustomobject]@{
+      name = 'drop-post-move-hit-guard'
+      search = @'
+if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $move) -ne $move.Count) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+  if (-not (Test-MT5VmPhysicalMouseActivationGuardBoundary `
+'@
+      replace = @'
+if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $move) -ne $move.Count) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+  if ($false -and -not (Test-MT5VmPhysicalMouseActivationGuardBoundary `
+'@
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_activation_rechecks_guard_and_counts'
+    },
+    [pscustomobject]@{
+      name = 'permit-partial-double-click-count'
+      search = 'if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $firstClick) -ne 2) {'
+      replace = 'if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $firstClick) -gt 2) {'
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_activation_rechecks_guard_and_counts'
+    },
+    [pscustomobject]@{
+      name = 'combine-click-batches'
+      search = @'
+$firstClick = @($clicks[0], $clicks[1])
+  if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $firstClick) -ne 2) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+  Start-Sleep -Milliseconds 150
+  if (-not (Test-MT5VmPhysicalMouseActivationGuardBoundary `
+      -OptionsHandle $OptionsHandle -ListHandle $ListHandle `
+      -CheckboxHandle $CheckboxHandle -ProcessId $ProcessId `
+      -ScreenX ([int]$point.x) -ScreenY ([int]$point.y)
+    )) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+  $secondClick = @($clicks[2], $clicks[3])
+  if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $secondClick) -ne 2) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+'@
+      replace = @'
+if ((Invoke-MT5VmNativeMouseInputBoundary -Plan $clicks) -ne 4) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID'
+  }
+'@
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_activation_rechecks_guard_and_counts'
+    },
+    [pscustomobject]@{
+      name = 'remove-paced-click-delay'
+      search = 'Start-Sleep -Milliseconds 150'
+      replace = '$null = $true'
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_activation_rechecks_guard_and_counts'
+    },
+    [pscustomobject]@{
+      name = 'drop-mid-click-guard'
+      search = @'
+Start-Sleep -Milliseconds 150
+  if (-not (Test-MT5VmPhysicalMouseActivationGuardBoundary `
+'@
+      replace = @'
+Start-Sleep -Milliseconds 150
+  if ($false -and -not (Test-MT5VmPhysicalMouseActivationGuardBoundary `
+'@
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_activation_rechecks_guard_and_counts'
+    },
+    [pscustomobject]@{
+      name = 'accept-wrong-editor-pid'
+      search = '$ExpectedProcessId -lt 1 -or $ObservedProcessId -ne $ExpectedProcessId) {'
+      replace = '$ExpectedProcessId -lt 1 -or $false) {'
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_add_editor_identity_is_exact_and_fail_closed'
+    },
+    [pscustomobject]@{
+      name = 'skip-cursor-restoration'
+      search = @'
+    $result = & $ContinuationAction
+  } catch {
+    $originalFailure = $_.Exception
+  }
+  try {
+    if ((& $RestoreCursorAction $cursor) -ne $true) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED'
+    }
+'@
+      replace = @'
+    $result = & $ContinuationAction
+  } catch {
+    $originalFailure = $_.Exception
+  }
+  try {
+    if ($false) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED'
+    }
+'@
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_transaction_always_restores_cursor'
+    },
+    [pscustomobject]@{
+      name = 'omit-editor-return-commit'
+      search = @'
+  $returnPlan = @(New-MT5VmReturnKeyInputPlan)
+  $insertedReturn = Invoke-MT5VmNativeKeyboardInputBoundary -Plan $returnPlan
+  if ([int]$insertedReturn -ne $returnPlan.Count) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+'@
+      replace = @'
+'@
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_virtual_key_stage_commits_once_after_readback'
+    },
+    [pscustomobject]@{
+      name = 'permit-partial-editor-return-count'
+      search = 'if ([int]$insertedReturn -ne $returnPlan.Count) {'
+      replace = 'if ([int]$insertedReturn -gt $returnPlan.Count) {'
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_virtual_key_stage_fails_before_later_stages'
+    },
+    [pscustomobject]@{
+      name = 'send-editor-return-after-physical-ok'
+      search = @'
+  $returnPlan = @(New-MT5VmReturnKeyInputPlan)
+  $insertedReturn = Invoke-MT5VmNativeKeyboardInputBoundary -Plan $returnPlan
+  if ([int]$insertedReturn -ne $returnPlan.Count) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+  }
+'@
+      replace = @'
+'@
+      search2 = @'
+    Confirm-MT5VmOptionsDialogWithActiveEditorBoundary `
+      -OptionsHandle $activeDialog `
+      -EditorHandle $activeEditor `
+      -ProcessId $ProcessId
+    $activeDialog = [IntPtr]::Zero
+'@
+      replace2 = @'
+    Confirm-MT5VmOptionsDialogWithActiveEditorBoundary `
+      -OptionsHandle $activeDialog `
+      -EditorHandle $activeEditor `
+      -ProcessId $ProcessId
+    $returnPlan = @(New-MT5VmReturnKeyInputPlan)
+    $insertedReturn = Invoke-MT5VmNativeKeyboardInputBoundary -Plan $returnPlan
+    if ([int]$insertedReturn -ne $returnPlan.Count) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_EDITOR_INVALID'
+    }
+    $activeDialog = [IntPtr]::Zero
+'@
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_virtual_key_stage_commits_once_after_readback'
+    },
+    [pscustomobject]@{
+      name = 'accept-live-committed-editor'
+      search = 'if ($EditorIsWindow -or $EditorVisible -or -not $NativeIdentityValid) {'
+      replace = 'if ($false -or $false -or -not $NativeIdentityValid) {'
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_committed_row_guard_accepts_only_retired_editor_exact_state_and_identity'
+    },
+    [pscustomobject]@{
+      name = 'accept-visible-committed-editor'
+      search = 'if ($EditorIsWindow -or $EditorVisible -or -not $NativeIdentityValid) {'
+      replace = 'if ($EditorIsWindow -or $false -or -not $NativeIdentityValid) {'
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_committed_row_guard_accepts_only_retired_editor_exact_state_and_identity'
+    },
+    [pscustomobject]@{
+      name = 'accept-wrong-committed-control-identity'
+      search = 'if ($EditorIsWindow -or $EditorVisible -or -not $NativeIdentityValid) {'
+      replace = 'if ($EditorIsWindow -or $EditorVisible -or $false) {'
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_committed_row_guard_accepts_only_retired_editor_exact_state_and_identity'
+    },
+    [pscustomobject]@{
+      name = 'accept-editor-readback-as-persisted-proof'
+      search = @'
+    $persisted = Read-MT5VmWebRequestStateBoundary -OptionsHandle $activeDialog
+    Cancel-MT5VmOptionsDialogBoundary -OptionsHandle $activeDialog
+    $activeDialog = [IntPtr]::Zero
+    if (-not (Test-MT5VmDesiredWebRequestState -State $persisted -ExpectedOrigin $Origin)) {
+'@
+      replace = @'
+    $persisted = $desired
+    Cancel-MT5VmOptionsDialogBoundary -OptionsHandle $activeDialog
+    $activeDialog = [IntPtr]::Zero
+    if (-not (Test-MT5VmDesiredWebRequestState -State $persisted -ExpectedOrigin $Origin)) {
+'@
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_allowlist_mismatch_restores_snapshot_before_rethrow'
+    },
+    [pscustomobject]@{
+      name = 'accept-wrong-options-ok-pid'
+      search = @'
+$ButtonProcessId -ne $ExpectedProcessId -or
+      $EditorProcessId -ne $ExpectedProcessId) {
+'@
+      replace = @'
+$false -or
+      $EditorProcessId -ne $ExpectedProcessId) {
+'@
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_ok_identity_point_and_click_plan_are_exact'
+    },
+    [pscustomobject]@{
+      name = 'accept-wrong-options-ok-point'
+      search = '$ObservedPointHandle -ne $ExpectedButtonHandle) {'
+      replace = '$false) {'
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_ok_identity_point_and_click_plan_are_exact'
+    },
+    [pscustomobject]@{
+      name = 'permit-partial-options-ok-click'
+      search = 'if ([int](& $ClickAction $plan) -ne 2 -or (& $WaitAction) -ne $true) {'
+      replace = 'if ([int](& $ClickAction $plan) -gt 2 -or (& $WaitAction) -ne $true) {'
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_ok_confirm_fails_closed_and_restores_cursor'
+    },
+    [pscustomobject]@{
+      name = 'skip-options-ok-cursor-restoration'
+      search = @'
+  try {
+    if ((& $RestoreCursorAction $cursor) -ne $true) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED'
+    }
+  } catch {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED'
+  }
+  if ($null -ne $originalFailure) { throw $originalFailure }
+'@
+      replace = @'
+  try {
+    if ($false) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED'
+    }
+  } catch {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED'
+  }
+  if ($null -ne $originalFailure) { throw $originalFailure }
+'@
+      test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_ok_confirm_fails_closed_and_restores_cursor'
+    }
+  )
+  $killed = 0
+  try {
+    foreach ($mutant in $mutants) {
+      Write-Output ('PRODUCTION_WEBREQUEST_MOUSE_MUTANT_START=' + [string]$mutant.name)
+      $matchCount = [regex]::Matches(
+        $originalText,
+        [regex]::Escape([string]$mutant.search)
+      ).Count
+      Assert-Gate ($matchCount -eq 1) 'PROVISIONING_MOUSE_MUTANT_SOURCE_UNEXPECTED'
+      $mutantText = $originalText.Replace(
+        [string]$mutant.search,
+        [string]$mutant.replace
+      )
+      if ($null -ne $mutant.PSObject.Properties['search2']) {
+        $secondMatchCount = [regex]::Matches(
+          $mutantText,
+          [regex]::Escape([string]$mutant.search2)
+        ).Count
+        Assert-Gate ($secondMatchCount -eq 1) 'PROVISIONING_MOUSE_MUTANT_SOURCE_UNEXPECTED'
+        $mutantText = $mutantText.Replace(
+          [string]$mutant.search2,
+          [string]$mutant.replace2
+        )
+      }
+      [IO.File]::WriteAllText(
+        $uiHelper,
+        $mutantText,
+        (New-Object Text.UTF8Encoding($false))
+      )
+      Assert-Gate (
+        (Get-FileHash -LiteralPath $uiHelper -Algorithm SHA256).Hash -cne $originalHash
+      ) 'PROVISIONING_MOUSE_MUTANT_NOT_APPLIED'
+      $savedErrorActionPreference = $ErrorActionPreference
+      try {
+        $ErrorActionPreference = 'Continue'
+        $mutantOutput = @(& python.exe -m unittest -v ([string]$mutant.test) 2>&1)
+        $mutantExitCode = $LASTEXITCODE
+      } finally {
+        $ErrorActionPreference = $savedErrorActionPreference
+      }
+      Assert-Gate ($mutantExitCode -ne 0) 'PROVISIONING_MOUSE_MUTANT_SURVIVED'
+      $expectedTestName = ([string]$mutant.test).Split('.')[-1]
+      Assert-Gate (
+        ($mutantOutput -join "`n").Contains($expectedTestName)
+      ) 'PROVISIONING_MOUSE_MUTANT_WRONG_TEST'
+      $killed += 1
+      [IO.File]::WriteAllBytes($uiHelper, $originalBytes)
+      Assert-Gate (
+        (Get-FileHash -LiteralPath $uiHelper -Algorithm SHA256).Hash -ceq $originalHash
+      ) 'PROVISIONING_MOUSE_MUTANT_RESTORE_FAILED'
+    }
+  } finally {
+    [IO.File]::WriteAllBytes($uiHelper, $originalBytes)
+  }
+  Assert-Gate ($killed -eq $mutants.Count) 'PROVISIONING_MOUSE_MUTATION_SCORE_INVALID'
+  Assert-Gate (
+    (Get-FileHash -LiteralPath $uiHelper -Algorithm SHA256).Hash -ceq $originalHash
+  ) 'PROVISIONING_MOUSE_MUTANT_RESTORE_FAILED'
+  & python.exe -m unittest -v `
+    backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_activation_rechecks_guard_and_counts `
+    backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_add_editor_identity_is_exact_and_fail_closed `
+    backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_mouse_transaction_always_restores_cursor `
+    backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_virtual_key_stage_commits_once_after_readback `
+    backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_allowlist_mismatch_restores_snapshot_before_rethrow `
+    backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_ok_identity_point_and_click_plan_are_exact `
+    backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_physical_ok_confirm_fails_closed_and_restores_cursor `
+    backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_committed_row_guard_accepts_only_retired_editor_exact_state_and_identity
+  Assert-NativeSuccess 'PROVISIONING_MOUSE_MUTATION_RESTORED_TEST_FAILED'
+  Assert-Gate ($mutants.Count -eq 18) 'PROVISIONING_MOUSE_MUTATION_MANIFEST_INVALID'
+  Write-Output 'PRODUCTION_WEBREQUEST_MOUSE_MUTATION=18/18'
+}
+
+if ($AllowlistMutationTestsOnly) {
+  Invoke-AllowlistMutationTests
+  exit 0
+}
+
+if ($ProbeMutationTestsOnly) {
+  Invoke-ProbeMutationTests
+  exit 0
+}
+
+if ($MouseMutationTestsOnly) {
+  Invoke-MouseMutationTests
+  exit 0
 }
 
 if ($ContractTestsOnly) {
@@ -420,6 +967,8 @@ function Assert-ApprovedSourceState {
     '.gitignore',
     'backend/bridge/mt5_vm/test_baremetal_worker_install.py',
     'backend/bridge/mt5_vm/test_production_webrequest_probe.py',
+    'backend/bridge/mt5_vm/test_terminal_python_api_bootstrap.py',
+    'backend/bridge/mt5_vm/Mt5VmTerminalUi.ps1',
     'backend/cmd/mt5-migration-gate/main_test.go',
     'backend/docs/CONFIGURATION.md',
     'backend/execution/crates/mt5-vm-agent/src/process.rs',
@@ -431,6 +980,7 @@ function Assert-ApprovedSourceState {
     'frontend/tsconfig.test.json',
     'tools/mt5-baremetal/Invoke-MT5WebRequestProbe.ps1',
     'tools/mt5-baremetal/MarketLensWebRequestProbe.mq5',
+    'tools/mt5-baremetal/Set-MT5WebRequestAllowlist.ps1',
     'tools/verify-production-worker-host-provision.ps1'
   )
   $changed = @(& git -C $repoRoot diff --name-only "$baselineCommit..HEAD")
@@ -462,6 +1012,7 @@ try {
   Invoke-GauntletLayer 'tool-contracts' {
     Assert-PowerShellParses -Path $PSCommandPath
     Assert-PowerShellParses -Path $probeDriver
+    Assert-PowerShellParses -Path $allowlistDriver
     & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $PSCommandPath -ContractTestsOnly
     Assert-NativeSuccess 'PROVISIONING_CONTRACT_POSITIVE_FAILED'
     Assert-PowerShellKnownBad `
@@ -476,6 +1027,36 @@ try {
       -ExpectedCode 'PROVISIONING_PROBE_RECEIPT_INVALID' `
       -FailedOpenCode 'PROVISIONING_PROBE_CONTRACT_NEGATIVE_FAILED_OPEN' `
       -WrongReasonCode 'PROVISIONING_PROBE_CONTRACT_NEGATIVE_WRONG_REASON'
+    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $allowlistDriver -ContractTestsOnly
+    Assert-NativeSuccess 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_POSITIVE_FAILED'
+    Assert-PowerShellKnownBad `
+      -Arguments @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $allowlistDriver, '-ContractTestsOnly', '-KnownBadControl') `
+      -ExpectedCode 'PROVISIONING_WEBREQUEST_PORTPROXY_STATE_INVALID' `
+      -FailedOpenCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_NEGATIVE_FAILED_OPEN' `
+      -WrongReasonCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_NEGATIVE_WRONG_REASON'
+    Assert-PowerShellKnownBad `
+      -Arguments @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $allowlistDriver, '-ContractTestsOnly', '-UnreadableInputControl') `
+      -ExpectedCode 'PROVISIONING_WEBREQUEST_PORTPROXY_OUTPUT_INVALID' `
+      -FailedOpenCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_UNREADABLE_CONTROL_FAILED_OPEN' `
+      -WrongReasonCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_UNREADABLE_CONTROL_WRONG_REASON'
+    Assert-PowerShellKnownBad `
+      -Arguments @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $allowlistDriver, '-ContractTestsOnly', '-OccupiedPortControl') `
+      -ExpectedCode 'PROVISIONING_WEBREQUEST_PORT80_OCCUPIED' `
+      -FailedOpenCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_OCCUPIED_CONTROL_FAILED_OPEN' `
+      -WrongReasonCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_OCCUPIED_CONTROL_WRONG_REASON'
+    Assert-PowerShellKnownBad `
+      -Arguments @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $allowlistDriver, '-ContractTestsOnly', '-MouseHitControl') `
+      -ExpectedCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_INVALID' `
+      -FailedOpenCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_CONTROL_FAILED_OPEN' `
+      -WrongReasonCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_MOUSE_CONTROL_WRONG_REASON'
+    Assert-PowerShellKnownBad `
+      -Arguments @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $allowlistDriver, '-ContractTestsOnly', '-CursorRestoreControl') `
+      -ExpectedCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_RESTORE_FAILED' `
+      -FailedOpenCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_CONTROL_FAILED_OPEN' `
+      -WrongReasonCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_CONTROL_WRONG_REASON'
+    Invoke-AllowlistMutationTests
+    Invoke-ProbeMutationTests
+    Invoke-MouseMutationTests
   }
 
   Invoke-GauntletLayer 'go-quality' {
@@ -623,6 +1204,8 @@ try {
   }
 
   Invoke-GauntletLayer 'live-webrequest-and-host-inputs' {
+    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $allowlistDriver
+    Assert-NativeSuccess 'PROVISIONING_WEBREQUEST_ALLOWLIST_FAILED'
     & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $probeDriver
     Assert-NativeSuccess 'PROVISIONING_LIVE_WEBREQUEST_PROBE_FAILED'
     $secret = Prepare-BootstrapSecret

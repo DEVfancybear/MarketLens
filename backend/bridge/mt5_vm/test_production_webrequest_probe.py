@@ -37,7 +37,8 @@ class ProductionWebRequestProbeTests(unittest.TestCase):
 
         self.assertIn("void OnStart()", source)
         self.assertIn('WebRequest("GET", PROBE_URL', source)
-        self.assertIn('http://127.0.0.1:8790/health', source)
+        self.assertIn('http://127.0.0.1/health', source)
+        self.assertNotIn('http://127.0.0.1:8790/health', source)
         self.assertIn("FILE_COMMON", source)
         self.assertIn("TERMINAL_BUILD", source)
         self.assertIn("requestedAtUnix", source)
@@ -64,12 +65,26 @@ class ProductionWebRequestProbeTests(unittest.TestCase):
             "PROVISIONING_WEBREQUEST_ALLOWLIST_REQUIRED",
             "PROVISIONING_GATEWAY_LISTENER_MISMATCH",
             "PROVISIONING_PROBE_RECEIPT_INVALID",
+            "$gatewayOrigin = 'http://127.0.0.1'",
+            "$gatewayHealthUrl = 'http://127.0.0.1/health'",
             "WindowStyle Hidden",
-            "/config:",
+            "Invoke-ProbeCustomConfigTransaction",
+            "Remove-ProbeOwnedCustomConfig",
+            ".marketlens-v39-probe.ini",
+            "[IO.FileMode]::CreateNew",
+            "PRODUCTION_CUSTOM_CONFIG_STARTUP_CONTRACTS=PASS",
         ):
             self.assertIn(required, source)
         self.assertNotIn("SendKeys", source)
         self.assertNotIn("Clipboard", source)
+        self.assertNotIn("/profile:", source)
+        self.assertNotIn("/portable", source)
+        self.assertIn(
+            "$terminalState.Value = Start-Process -FilePath $terminalPath `\n"
+            "      -ArgumentList $probeConfigArgument `\n"
+            "      -WindowStyle Hidden -PassThru",
+            source,
+        )
 
     def test_driver_crypto_is_compatible_with_windows_powershell_51(self) -> None:
         source = DRIVER.read_text(encoding="utf-8")
