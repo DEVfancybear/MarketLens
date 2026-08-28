@@ -424,6 +424,8 @@ $startup = @"
 AllowLiveTrading=0
 AllowDllImport=0
 Enabled=1
+WebRequest=1
+WebRequestUrl=$gatewayOrigin
 Account=0
 Profile=0
 

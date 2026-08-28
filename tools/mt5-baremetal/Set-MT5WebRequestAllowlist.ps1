@@ -1051,6 +1051,41 @@ function Remove-ProductionOwnedLoopbackPortProxy {
   return $true
 }
 
+function Invoke-ProductionOwnedProxyProbe {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][object]$State,
+    [Parameter(Mandatory = $true)][scriptblock]$EnsureProxyAction,
+    [Parameter(Mandatory = $true)][scriptblock]$HealthAction,
+    [Parameter(Mandatory = $true)][scriptblock]$ProbeAction,
+    [Parameter(Mandatory = $true)][scriptblock]$RollbackProxyAction
+  )
+  $State.Value = $null
+  try {
+    $State.Value = & $EnsureProxyAction
+    if ((& $HealthAction) -ne $true) {
+      throw 'PROVISIONING_WEBREQUEST_PORTPROXY_HEALTH_FAILED'
+    }
+    if ((& $ProbeAction) -ne $true) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_PROBE_FAILED'
+    }
+    return $true
+  } catch {
+    $originalFailure = [string]$_.Exception.Message
+    if ($null -ne $State.Value -and [bool]$State.Value.created) {
+      try {
+        if ((& $RollbackProxyAction) -ne $true) {
+          throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED'
+        }
+        $State.Value = $null
+      } catch {
+        throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED'
+      }
+    }
+    throw $originalFailure
+  }
+}
+
 function Assert-ProductionForwardedGatewayHealth {
   [CmdletBinding()]
   param()
@@ -1356,6 +1391,27 @@ Address         Port        Address         Port
       service_names = @('iphlpsvc')
     }
   ) -ExpectPresent $true
+  $proxyState = [pscustomobject]@{ Value = $null }
+  $proxyEvents = [Collections.Generic.List[string]]::new()
+  Assert-ContractFailure `
+    -ExpectedCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_PROBE_FAILED' -Action {
+      Invoke-ProductionOwnedProxyProbe `
+        -State $proxyState `
+        -EnsureProxyAction {
+          $proxyEvents.Add('ensure')
+          return [pscustomobject]@{ created = $true }
+        } `
+        -HealthAction { $proxyEvents.Add('health'); return $true } `
+        -ProbeAction {
+          $proxyEvents.Add('probe')
+          throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_PROBE_FAILED'
+        } `
+        -RollbackProxyAction { $proxyEvents.Add('rollback'); return $true }
+    }
+  Assert-ProductionAllowlistTrue (
+    $null -eq $proxyState.Value -and
+    ($proxyEvents -join ',') -ceq 'ensure,health,probe,rollback'
+  ) 'PROVISIONING_WEBREQUEST_ALLOWLIST_CONTRACT_FAILED'
   Write-Output 'PRODUCTION_WEBREQUEST_ALLOWLIST_PORTPROXY_CONTRACTS=PASS'
 
   $script:contractPrior = [pscustomobject][ordered]@{ Enabled = 0; Items = @('') }
@@ -1630,7 +1686,7 @@ if ($ContractTestsOnly) {
 }
 
 $commonIniPath = Join-Path $selectedProfile $commonIniRelativePath
-$ownedProxy = $null
+$ownedProxyState = [pscustomobject]@{ Value = $null }
 $productionRollback = {
   param($target, $backup, $bytes, $hash, $sddl)
   Restore-ProductionWebRequestCommonIniSnapshot `
@@ -1672,15 +1728,18 @@ try {
     -ExpectedOrigin $expectedOrigin `
     -PreconditionAction { Assert-ProductionSelectedTerminalAbsent } `
     -ProbeAction {
-      $ownedProxy = Ensure-ProductionLoopbackPortProxy
-      $null = Assert-ProductionForwardedGatewayHealth
-      return [bool](Invoke-ProductionAllowlistProbe)
+      return [bool](Invoke-ProductionOwnedProxyProbe `
+        -State $ownedProxyState `
+        -EnsureProxyAction { Ensure-ProductionLoopbackPortProxy } `
+        -HealthAction { Assert-ProductionForwardedGatewayHealth } `
+        -ProbeAction { Invoke-ProductionAllowlistProbe } `
+        -RollbackProxyAction { Remove-ProductionOwnedLoopbackPortProxy })
     } `
     -QuiesceAction { Wait-ProductionSelectedTerminalAbsent } `
     -RollbackAction $productionRollback
   Write-Output (
     'PRODUCTION_WEBREQUEST_ALLOWLIST=PASS proxy_created={0} status={1} enabled={2} non_empty_count={3} probe_verified={4}' -f
-      [bool]$ownedProxy.created,
+      [bool]$ownedProxyState.Value.created,
       [string]$result.status,
       [bool]$result.enabled,
       [int]$result.non_empty_count,
@@ -1688,11 +1747,12 @@ try {
   )
 } catch {
   $originalFailure = [string]$_.Exception.Message
-  if ($null -ne $ownedProxy -and [bool]$ownedProxy.created) {
+  if ($null -ne $ownedProxyState.Value -and [bool]$ownedProxyState.Value.created) {
     try {
       if (-not (Remove-ProductionOwnedLoopbackPortProxy)) {
         throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED'
       }
+      $ownedProxyState.Value = $null
     } catch {
       throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED'
     }

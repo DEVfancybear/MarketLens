@@ -67,12 +67,23 @@ class ProductionWebRequestProbeTests(unittest.TestCase):
             "PROVISIONING_PROBE_RECEIPT_INVALID",
             "$gatewayOrigin = 'http://127.0.0.1'",
             "$gatewayHealthUrl = 'http://127.0.0.1/health'",
+            "WebRequest=1",
+            "WebRequestUrl=$gatewayOrigin",
             "WindowStyle Hidden",
             "/config:",
         ):
             self.assertIn(required, source)
         self.assertNotIn("SendKeys", source)
         self.assertNotIn("Clipboard", source)
+        self.assertIn(
+            "[Experts]\n"
+            "AllowLiveTrading=0\n"
+            "AllowDllImport=0\n"
+            "Enabled=1\n"
+            "WebRequest=1\n"
+            "WebRequestUrl=$gatewayOrigin\n",
+            source,
+        )
 
     def test_driver_crypto_is_compatible_with_windows_powershell_51(self) -> None:
         source = DRIVER.read_text(encoding="utf-8")
