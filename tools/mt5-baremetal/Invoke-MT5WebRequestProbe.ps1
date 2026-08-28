@@ -21,7 +21,8 @@ $slotInputRoot = 'C:\ProgramData\MarketLens\slot-inputs\slot-01'
 $commonFilesRoot = Join-Path $env:APPDATA 'MetaQuotes\Terminal\Common\Files'
 $commonIniPath = Join-Path $stateRoot 'config\common.ini'
 $maximumCommonIniBytes = 1048576
-$startupBackupSuffix = '.marketlens-v38-startup.bak'
+$probeConfigPath = Join-Path (Split-Path -Parent $commonIniPath) `
+  '.marketlens-v39-probe.ini'
 
 function Assert-ProbeTrue {
   param(
@@ -182,6 +183,9 @@ function Convert-ProbeDefaultConfigStartup {
     'ShutdownTerminal=1' + "`r`n"
   )
   $desiredBytes = New-ProbeUtf16LeBomBytes -Text ($text + $startupText)
+  if ($desiredBytes.Length -le $Bytes.Length) {
+    throw 'PROVISIONING_PROBE_STARTUP_TRANSFORM_INVALID'
+  }
   $reversedBytes = New-Object byte[] $Bytes.Length
   [Array]::Copy($desiredBytes, 0, $reversedBytes, 0, $Bytes.Length)
   if (-not (Test-ProbeByteArrayEqual -Left $Bytes -Right $reversedBytes)) {
@@ -226,147 +230,87 @@ function Write-ProbeCreateNewFile {
   Set-Acl -LiteralPath $Path -AclObject $Acl
 }
 
-function Invoke-ProbeAtomicDefaultConfigStartup {
-  param([Parameter(Mandatory = $true)][string]$Path)
-  $backupPath = $Path + $startupBackupSuffix
-  if (Test-Path -LiteralPath $backupPath) {
-    throw 'PROVISIONING_PROBE_STARTUP_RECOVERY_STATE_INVALID'
-  }
-  $parent = Split-Path -Parent $Path
-  $temporaryPath = Join-Path $parent (
-    '.marketlens-v38-startup-' + [guid]::NewGuid().ToString('N') + '.tmp'
+function New-ProbeCustomConfigSnapshot {
+  param(
+    [Parameter(Mandatory = $true)][string]$DefaultPath,
+    [Parameter(Mandatory = $true)][string]$CustomPath
   )
-  $originalBytes = [IO.File]::ReadAllBytes($Path)
-  $conversion = Convert-ProbeDefaultConfigStartup -Bytes $originalBytes
-  $originalAcl = Get-Acl -LiteralPath $Path -ErrorAction Stop
-  $originalSddl = [string]$originalAcl.Sddl
-  try {
-    Write-ProbeCreateNewFile `
-      -Path $temporaryPath -Bytes ([byte[]]$conversion.DesiredBytes) -Acl $originalAcl
-    [IO.File]::Replace($temporaryPath, $Path, $backupPath, $true)
-    if ((Get-Sha256Hex -Bytes ([IO.File]::ReadAllBytes($backupPath))) -cne
-          [string]$conversion.OriginalHash -or
-        (Get-ProbeAclSddl -Path $backupPath) -cne $originalSddl -or
-        (Get-ProbeAclSddl -Path $Path) -cne $originalSddl -or
-        (Get-Sha256Hex -Bytes ([IO.File]::ReadAllBytes($Path))) -cne
-          [string]$conversion.DesiredHash) {
-      throw 'PROVISIONING_PROBE_STARTUP_ATOMIC_REPLACE_INVALID'
-    }
-    return [pscustomobject][ordered]@{
-      BackupPath = $backupPath
-      SnapshotBytes = [byte[]]$conversion.OriginalBytes
-      SnapshotHash = [string]$conversion.OriginalHash
-      SnapshotSddl = $originalSddl
-    }
-  } finally {
-    if (Test-Path -LiteralPath $temporaryPath -PathType Leaf) {
-      Remove-Item -LiteralPath $temporaryPath -Force
-    }
+  if (Test-Path -LiteralPath $CustomPath) {
+    throw 'PROVISIONING_PROBE_CUSTOM_CONFIG_RECOVERY_STATE_INVALID'
+  }
+  $defaultBytes = [IO.File]::ReadAllBytes($DefaultPath)
+  $conversion = Convert-ProbeDefaultConfigStartup -Bytes $defaultBytes
+  $defaultAcl = Get-Acl -LiteralPath $DefaultPath -ErrorAction Stop
+  return [pscustomobject][ordered]@{
+    DefaultPath = $DefaultPath
+    DefaultBytes = $defaultBytes
+    DefaultHash = [string]$conversion.OriginalHash
+    DefaultSddl = [string]$defaultAcl.Sddl
+    CustomPath = $CustomPath
+    CustomBytes = [byte[]]$conversion.DesiredBytes
+    CustomHash = [string]$conversion.DesiredHash
+    CustomAcl = $defaultAcl
+    CustomSddl = [string]$defaultAcl.Sddl
   }
 }
 
-function Get-ProbeEmergencyStartupSnapshot {
-  param(
-    [Parameter(Mandatory = $true)][string]$Path,
-    [Parameter(Mandatory = $true)][string]$BackupPath
-  )
-  try {
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf) -or
-        -not (Test-Path -LiteralPath $BackupPath -PathType Leaf)) {
-      throw 'PROVISIONING_PROBE_STARTUP_ROLLBACK_FAILED'
-    }
-    $snapshotBytes = [IO.File]::ReadAllBytes($BackupPath)
-    $conversion = Convert-ProbeDefaultConfigStartup -Bytes $snapshotBytes
-    $snapshotSddl = Get-ProbeAclSddl -Path $BackupPath
-    if ((Get-Sha256Hex -Bytes ([IO.File]::ReadAllBytes($Path))) -cne
-          [string]$conversion.DesiredHash -or
-        (Get-ProbeAclSddl -Path $Path) -cne $snapshotSddl) {
-      throw 'PROVISIONING_PROBE_STARTUP_ROLLBACK_FAILED'
-    }
-    return [pscustomobject][ordered]@{
-      BackupPath = $BackupPath
-      SnapshotBytes = $snapshotBytes
-      SnapshotHash = [string]$conversion.OriginalHash
-      SnapshotSddl = $snapshotSddl
-    }
-  } catch {
-    throw 'PROVISIONING_PROBE_STARTUP_ROLLBACK_FAILED'
+function Assert-ProbeDefaultConfigUnchanged {
+  param([Parameter(Mandatory = $true)][object]$Snapshot)
+  if ((Get-Sha256Hex -Bytes ([IO.File]::ReadAllBytes($Snapshot.DefaultPath))) -cne
+        [string]$Snapshot.DefaultHash -or
+      (Get-ProbeAclSddl -Path $Snapshot.DefaultPath) -cne
+        [string]$Snapshot.DefaultSddl) {
+    throw 'PROVISIONING_PROBE_DEFAULT_CONFIG_DRIFTED'
   }
 }
 
-function Restore-ProbeDefaultConfigStartup {
-  param(
-    [Parameter(Mandatory = $true)][string]$Path,
-    [Parameter(Mandatory = $true)][object]$Snapshot
-  )
-  $parent = Split-Path -Parent $Path
-  $temporaryPath = Join-Path $parent (
-    '.marketlens-v38-startup-restore-' + [guid]::NewGuid().ToString('N') + '.tmp'
-  )
-  $failedPath = Join-Path $parent (
-    '.marketlens-v38-startup-failed-' + [guid]::NewGuid().ToString('N') + '.tmp'
-  )
-  try {
-    if (-not (Test-Path -LiteralPath ([string]$Snapshot.BackupPath) -PathType Leaf) -or
-        (Get-Sha256Hex -Bytes ([IO.File]::ReadAllBytes($Snapshot.BackupPath))) -cne
-          [string]$Snapshot.SnapshotHash -or
-        (Get-ProbeAclSddl -Path $Snapshot.BackupPath) -cne
-          [string]$Snapshot.SnapshotSddl) {
-      throw 'PROVISIONING_PROBE_STARTUP_ROLLBACK_FAILED'
-    }
-    $snapshotAcl = Get-Acl -LiteralPath $Snapshot.BackupPath -ErrorAction Stop
-    Write-ProbeCreateNewFile `
-      -Path $temporaryPath -Bytes ([byte[]]$Snapshot.SnapshotBytes) -Acl $snapshotAcl
-    [IO.File]::Replace($temporaryPath, $Path, $failedPath, $true)
-    if ((Get-Sha256Hex -Bytes ([IO.File]::ReadAllBytes($Path))) -cne
-          [string]$Snapshot.SnapshotHash -or
-        (Get-ProbeAclSddl -Path $Path) -cne [string]$Snapshot.SnapshotSddl) {
-      throw 'PROVISIONING_PROBE_STARTUP_ROLLBACK_FAILED'
-    }
-    if (Test-Path -LiteralPath $failedPath -PathType Leaf) {
-      Remove-Item -LiteralPath $failedPath -Force
-    }
-    Remove-Item -LiteralPath $Snapshot.BackupPath -Force
-  } catch {
-    throw 'PROVISIONING_PROBE_STARTUP_ROLLBACK_FAILED'
-  } finally {
-    if (Test-Path -LiteralPath $temporaryPath -PathType Leaf) {
-      Remove-Item -LiteralPath $temporaryPath -Force
-    }
+function Assert-ProbeOwnedCustomConfig {
+  param([Parameter(Mandatory = $true)][object]$Snapshot)
+  if (-not (Test-Path -LiteralPath ([string]$Snapshot.CustomPath) -PathType Leaf) -or
+      (Get-Sha256Hex -Bytes ([IO.File]::ReadAllBytes($Snapshot.CustomPath))) -cne
+        [string]$Snapshot.CustomHash -or
+      (Get-ProbeAclSddl -Path $Snapshot.CustomPath) -cne
+        [string]$Snapshot.CustomSddl) {
+    throw 'PROVISIONING_PROBE_CUSTOM_CONFIG_OWNERSHIP_INVALID'
   }
 }
 
-function Invoke-ProbeDefaultConfigStartupTransaction {
+function Remove-ProbeOwnedCustomConfig {
+  param([Parameter(Mandatory = $true)][object]$Snapshot)
+  Assert-ProbeDefaultConfigUnchanged -Snapshot $Snapshot
+  if (-not (Test-Path -LiteralPath ([string]$Snapshot.CustomPath))) { return }
+  Assert-ProbeOwnedCustomConfig -Snapshot $Snapshot
+  Remove-Item -LiteralPath $Snapshot.CustomPath -Force
+  if (Test-Path -LiteralPath $Snapshot.CustomPath) {
+    throw 'PROVISIONING_PROBE_CUSTOM_CONFIG_CLEANUP_FAILED'
+  }
+}
+
+function Invoke-ProbeCustomConfigTransaction {
   param(
-    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$DefaultPath,
+    [Parameter(Mandatory = $true)][string]$CustomPath,
     [Parameter(Mandatory = $true)][scriptblock]$RunAction,
     [Parameter(Mandatory = $true)][scriptblock]$QuiesceAction
   )
-  $snapshot = $null
-  $backupPath = $Path + $startupBackupSuffix
-  $backupExistedOnEntry = Test-Path -LiteralPath $backupPath
+  $snapshot = New-ProbeCustomConfigSnapshot `
+    -DefaultPath $DefaultPath -CustomPath $CustomPath
   try {
-    $snapshot = Invoke-ProbeAtomicDefaultConfigStartup -Path $Path
-    $result = & $RunAction
+    Write-ProbeCreateNewFile `
+      -Path $CustomPath -Bytes ([byte[]]$snapshot.CustomBytes) -Acl $snapshot.CustomAcl
+    Assert-ProbeOwnedCustomConfig -Snapshot $snapshot
+    Assert-ProbeDefaultConfigUnchanged -Snapshot $snapshot
+    $result = & $RunAction $snapshot
     & $QuiesceAction
-    Restore-ProbeDefaultConfigStartup -Path $Path -Snapshot $snapshot
-    $snapshot = $null
+    Remove-ProbeOwnedCustomConfig -Snapshot $snapshot
     return $result
   } catch {
     $originalFailure = [string]$_.Exception.Message
-    if ($null -eq $snapshot -and -not $backupExistedOnEntry -and
-        (Test-Path -LiteralPath $backupPath -PathType Leaf)) {
-      $snapshot = Get-ProbeEmergencyStartupSnapshot `
-        -Path $Path -BackupPath $backupPath
-    }
-    if ($null -ne $snapshot) {
-      try {
-        & $QuiesceAction
-        Restore-ProbeDefaultConfigStartup -Path $Path -Snapshot $snapshot
-        $snapshot = $null
-      } catch {
-        throw 'PROVISIONING_PROBE_STARTUP_ROLLBACK_FAILED'
-      }
+    try {
+      & $QuiesceAction
+      Remove-ProbeOwnedCustomConfig -Snapshot $snapshot
+    } catch {
+      throw 'PROVISIONING_PROBE_CUSTOM_CONFIG_CLEANUP_FAILED'
     }
     throw $originalFailure
   }
@@ -386,12 +330,13 @@ function Assert-ProbeContractFailure {
   throw 'PROVISIONING_PROBE_CONTRACT_FAILED_OPEN'
 }
 
-function Invoke-ProbeDefaultConfigStartupContractTests {
+function Invoke-ProbeCustomConfigStartupContractTests {
   $contractRoot = Join-Path ([IO.Path]::GetTempPath()) (
-    'marketlens-v38-probe-' + [guid]::NewGuid().ToString('N')
+    'marketlens-v39-probe-' + [guid]::NewGuid().ToString('N')
   )
   $null = [IO.Directory]::CreateDirectory($contractRoot)
   $path = Join-Path $contractRoot 'common.ini'
+  $customPath = Join-Path $contractRoot '.marketlens-v39-probe.ini'
   try {
     $baseText = (
       '[General]' + "`r`n" + 'Untouched=prefix' + "`r`n" +
@@ -425,15 +370,17 @@ function Invoke-ProbeDefaultConfigStartupContractTests {
           -Bytes ([Text.Encoding]::UTF8.GetBytes($baseText))
       }
 
-    [IO.File]::WriteAllBytes($path, $baseBytes)
     $events = [Collections.Generic.List[string]]::new()
-    $result = Invoke-ProbeDefaultConfigStartupTransaction `
-      -Path $path `
-      -RunAction {
+    [IO.File]::WriteAllBytes($path, $baseBytes)
+    $result = Invoke-ProbeCustomConfigTransaction `
+      -DefaultPath $path -CustomPath $customPath `
+      -RunAction { param($snapshot)
         $events.Add('run')
-        $runningBytes = [IO.File]::ReadAllBytes($path)
         Assert-ProbeTrue (
-          (Get-Sha256Hex -Bytes $runningBytes) -ceq [string]$conversion.DesiredHash
+          (Test-ProbeByteArrayEqual -Left $baseBytes `
+            -Right ([IO.File]::ReadAllBytes($path))) -and
+          (Test-ProbeByteArrayEqual -Left ([byte[]]$snapshot.CustomBytes) `
+            -Right ([IO.File]::ReadAllBytes($customPath)))
         ) 'PROVISIONING_PROBE_DEFAULT_CONFIG_CONTRACT_FAILED'
         return 'PASS'
       } `
@@ -443,15 +390,15 @@ function Invoke-ProbeDefaultConfigStartupContractTests {
       ($events -join ',') -ceq 'run,quiesce' -and
       (Test-ProbeByteArrayEqual `
         -Left $baseBytes -Right ([IO.File]::ReadAllBytes($path))) -and
-      -not (Test-Path -LiteralPath ($path + $startupBackupSuffix))
+      -not (Test-Path -LiteralPath $customPath)
     ) 'PROVISIONING_PROBE_DEFAULT_CONFIG_CONTRACT_FAILED'
 
     [IO.File]::WriteAllBytes($path, $baseBytes)
     $failureEvents = [Collections.Generic.List[string]]::new()
     Assert-ProbeContractFailure `
       -ExpectedCode 'PROVISIONING_PROBE_CONTRACT_FAILURE' -Action {
-        Invoke-ProbeDefaultConfigStartupTransaction `
-          -Path $path `
+        Invoke-ProbeCustomConfigTransaction `
+          -DefaultPath $path -CustomPath $customPath `
           -RunAction {
             $failureEvents.Add('run')
             throw 'PROVISIONING_PROBE_CONTRACT_FAILURE'
@@ -462,28 +409,32 @@ function Invoke-ProbeDefaultConfigStartupContractTests {
       ($failureEvents -join ',') -ceq 'run,quiesce' -and
       (Test-ProbeByteArrayEqual `
         -Left $baseBytes -Right ([IO.File]::ReadAllBytes($path))) -and
-      -not (Test-Path -LiteralPath ($path + $startupBackupSuffix))
+      -not (Test-Path -LiteralPath $customPath)
     ) 'PROVISIONING_PROBE_DEFAULT_CONFIG_CONTRACT_FAILED'
 
-    [IO.File]::WriteAllBytes($path, ([byte[]]$conversion.DesiredBytes))
-    [IO.File]::WriteAllBytes(($path + $startupBackupSuffix), $baseBytes)
-    $emergencySnapshot = Get-ProbeEmergencyStartupSnapshot `
-      -Path $path -BackupPath ($path + $startupBackupSuffix)
-    Restore-ProbeDefaultConfigStartup -Path $path -Snapshot $emergencySnapshot
-    Assert-ProbeTrue (
-      (Test-ProbeByteArrayEqual `
-        -Left $baseBytes -Right ([IO.File]::ReadAllBytes($path))) -and
-      -not (Test-Path -LiteralPath ($path + $startupBackupSuffix))
-    ) 'PROVISIONING_PROBE_DEFAULT_CONFIG_CONTRACT_FAILED'
-
-    [IO.File]::WriteAllBytes(($path + $startupBackupSuffix), $baseBytes)
+    [IO.File]::WriteAllBytes($customPath, $baseBytes)
     Assert-ProbeContractFailure `
-      -ExpectedCode 'PROVISIONING_PROBE_STARTUP_RECOVERY_STATE_INVALID' -Action {
-        Invoke-ProbeDefaultConfigStartupTransaction `
-          -Path $path -RunAction { return $true } -QuiesceAction {}
+      -ExpectedCode 'PROVISIONING_PROBE_CUSTOM_CONFIG_RECOVERY_STATE_INVALID' -Action {
+        Invoke-ProbeCustomConfigTransaction `
+          -DefaultPath $path -CustomPath $customPath `
+          -RunAction { return $true } -QuiesceAction {}
       }
-    Remove-Item -LiteralPath ($path + $startupBackupSuffix) -Force
-    Write-Output 'PRODUCTION_DEFAULT_CONFIG_STARTUP_CONTRACTS=PASS'
+    Remove-Item -LiteralPath $customPath -Force
+
+    $mismatchSnapshot = New-ProbeCustomConfigSnapshot `
+      -DefaultPath $path -CustomPath $customPath
+    Write-ProbeCreateNewFile `
+      -Path $customPath -Bytes ([byte[]]$mismatchSnapshot.CustomBytes) `
+      -Acl $mismatchSnapshot.CustomAcl
+    [IO.File]::WriteAllBytes($customPath, $baseBytes)
+    Assert-ProbeContractFailure `
+      -ExpectedCode 'PROVISIONING_PROBE_CUSTOM_CONFIG_OWNERSHIP_INVALID' -Action {
+        Remove-ProbeOwnedCustomConfig -Snapshot $mismatchSnapshot
+      }
+    Assert-ProbeTrue (Test-Path -LiteralPath $customPath -PathType Leaf) `
+      'PROVISIONING_PROBE_CUSTOM_CONFIG_CONTRACT_FAILED'
+    Remove-Item -LiteralPath $customPath -Force
+    Write-Output 'PRODUCTION_CUSTOM_CONFIG_STARTUP_CONTRACTS=PASS'
   } finally {
     if (Test-Path -LiteralPath $contractRoot -PathType Container) {
       Remove-Item -LiteralPath $contractRoot -Recurse -Force
@@ -527,10 +478,17 @@ function Assert-ProbeReceipt {
 
 function Invoke-ProbeContractTests {
   $driverText = Get-Content -LiteralPath $PSCommandPath -Raw
+  $exactLaunch = (
+    '$terminalState.Value = Start-' + 'Process -FilePath $terminalPath `' + "`n" +
+    '      -ArgumentList $probeConfigArgument `' + "`n" +
+    '      -WindowStyle Hidden -PassThru'
+  )
   Assert-ProbeTrue (
-    -not $driverText.Contains(('/con' + 'fig:')) -and
-    -not $driverText.Contains(('/pro' + 'file:'))
-  ) 'PROVISIONING_PROBE_DEFAULT_CONFIG_LAUNCH_INVALID'
+    [regex]::Matches($driverText, [regex]::Escape($exactLaunch)).Count -eq 1 -and
+    $driverText.Contains("`$probeConfigArgument = '/config:' + `$probeConfigPath") -and
+    -not $driverText.Contains(('/pro' + 'file:')) -and
+    -not $driverText.Contains(('/port' + 'able'))
+  ) 'PROVISIONING_PROBE_CUSTOM_CONFIG_LAUNCH_INVALID'
   $requestedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
   $nonce = '0123456789abcdef0123456789abcdef'
   $valid = [pscustomobject][ordered]@{
@@ -554,7 +512,7 @@ function Invoke-ProbeContractTests {
   }
   Assert-ProbeReceipt -Receipt $valid -ExpectedNonce $nonce `
     -ExpectedRequestedAtUnix $requestedAt -MaximumObservedAtUnix ($requestedAt + 1)
-  Invoke-ProbeDefaultConfigStartupContractTests
+  Invoke-ProbeCustomConfigStartupContractTests
   $cleanCompileLog = "Result: 0 errors, 0 warnings, 1 ms elapsed, cpu='X64 Regular'"
   Assert-ProbeCompileResult -ExitCode 1 -BinaryExists $true -CompileText $cleanCompileLog
   Assert-ProbeCompileFixtureRejected -ExitCode 0 -BinaryExists $true `
@@ -828,10 +786,12 @@ Assert-ProbeTrue (Test-Path -LiteralPath $commonIniPath -PathType Leaf) `
 Assert-NoReparseComponent -Path $commonIniPath
 Assert-ExactSelectedTerminalAbsent
 $terminalState = [pscustomobject]@{ Value = $null }
-$receipt = Invoke-ProbeDefaultConfigStartupTransaction `
-  -Path $commonIniPath `
-  -RunAction {
+$probeConfigArgument = '/config:' + $probeConfigPath
+$receipt = Invoke-ProbeCustomConfigTransaction `
+  -DefaultPath $commonIniPath -CustomPath $probeConfigPath `
+  -RunAction { param($snapshot)
     $terminalState.Value = Start-Process -FilePath $terminalPath `
+      -ArgumentList $probeConfigArgument `
       -WindowStyle Hidden -PassThru
     $deadline = [DateTime]::UtcNow.AddSeconds(60)
     while (-not (Test-Path -LiteralPath $receiptPath -PathType Leaf) -and

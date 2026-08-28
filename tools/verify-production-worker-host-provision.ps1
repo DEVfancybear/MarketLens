@@ -299,45 +299,26 @@ function Invoke-ProbeMutationTests {
   $originalText = [Text.Encoding]::UTF8.GetString($originalBytes)
   $mutants = @(
     [pscustomobject]@{
-      name = 'accept-existing-startup-section'
-      search = @'
-if ([regex]::Matches(
-      $text,
-      '^\[StartUp\](?:\r)?$',
-      [Text.RegularExpressions.RegexOptions]::Multiline
-    ).Count -ne 0) {
-'@
-      replace = @'
-if ([regex]::Matches(
-      $text,
-      '^\[StartUp\](?:\r)?$',
-      [Text.RegularExpressions.RegexOptions]::Multiline
-    ).Count -lt 0) {
-'@
-      expected = 'PROVISIONING_PROBE_CONTRACT_FAILED_OPEN'
+      name = 'omit-full-desired-profile-prefix'
+      search = '$desiredBytes = New-ProbeUtf16LeBomBytes -Text ($text + $startupText)'
+      replace = '$desiredBytes = New-ProbeUtf16LeBomBytes -Text $startupText'
+      expected = 'PROVISIONING_PROBE_STARTUP_TRANSFORM_INVALID'
     },
     [pscustomobject]@{
-      name = 'launch-probe-with-config-switch'
-      search = @'
-$terminalState.Value = Start-Process -FilePath $terminalPath `
-      -WindowStyle Hidden -PassThru
-'@
-      replace = @'
-$terminalState.Value = Start-Process -FilePath $terminalPath `
-      -ArgumentList '/config:v38-mutant.ini' `
-      -WindowStyle Hidden -PassThru
-'@
-      expected = 'PROVISIONING_PROBE_DEFAULT_CONFIG_LAUNCH_INVALID'
+      name = 'launch-probe-without-exact-custom-config'
+      search = '$probeConfigArgument = ''/config:'' + $probeConfigPath'
+      replace = '$probeConfigArgument = $probeConfigPath'
+      expected = 'PROVISIONING_PROBE_CUSTOM_CONFIG_LAUNCH_INVALID'
     },
     [pscustomobject]@{
-      name = 'skip-exact-startup-restoration'
+      name = 'skip-owned-custom-config-cleanup'
       search = @'
-    Restore-ProbeDefaultConfigStartup -Path $Path -Snapshot $snapshot
-    $snapshot = $null
+    & $QuiesceAction
+    Remove-ProbeOwnedCustomConfig -Snapshot $snapshot
     return $result
 '@
       replace = @'
-    $snapshot = $null
+    & $QuiesceAction
     return $result
 '@
       expected = 'PROVISIONING_PROBE_DEFAULT_CONFIG_CONTRACT_FAILED'

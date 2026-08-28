@@ -68,19 +68,20 @@ class ProductionWebRequestProbeTests(unittest.TestCase):
             "$gatewayOrigin = 'http://127.0.0.1'",
             "$gatewayHealthUrl = 'http://127.0.0.1/health'",
             "WindowStyle Hidden",
-            "Invoke-ProbeDefaultConfigStartupTransaction",
-            "Get-ProbeEmergencyStartupSnapshot",
-            "$backupExistedOnEntry",
-            ".marketlens-v38-startup.bak",
-            "[IO.File]::Replace",
-            "PRODUCTION_DEFAULT_CONFIG_STARTUP_CONTRACTS=PASS",
+            "Invoke-ProbeCustomConfigTransaction",
+            "Remove-ProbeOwnedCustomConfig",
+            ".marketlens-v39-probe.ini",
+            "[IO.FileMode]::CreateNew",
+            "PRODUCTION_CUSTOM_CONFIG_STARTUP_CONTRACTS=PASS",
         ):
             self.assertIn(required, source)
         self.assertNotIn("SendKeys", source)
         self.assertNotIn("Clipboard", source)
-        self.assertNotIn("/config:", source)
+        self.assertNotIn("/profile:", source)
+        self.assertNotIn("/portable", source)
         self.assertIn(
             "$terminalState.Value = Start-Process -FilePath $terminalPath `\n"
+            "      -ArgumentList $probeConfigArgument `\n"
             "      -WindowStyle Hidden -PassThru",
             source,
         )
