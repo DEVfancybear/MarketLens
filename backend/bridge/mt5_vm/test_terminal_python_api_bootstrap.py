@@ -1973,6 +1973,18 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
         ):
             self.assertIn(required, source, required)
 
+    def test_webrequest_default_config_startup_gauntlet_persists_v38_mutants(self) -> None:
+        source = HOST_VERIFIER.read_text(encoding="utf-8")
+        for required in (
+            "[switch]$ProbeMutationTestsOnly",
+            "Invoke-ProbeMutationTests",
+            "accept-existing-startup-section",
+            "launch-probe-with-config-switch",
+            "skip-exact-startup-restoration",
+            "PRODUCTION_WEBREQUEST_PROBE_MUTATION=3/3",
+        ):
+            self.assertIn(required, source, required)
+
     def test_webrequest_queue_sequence_aborts_at_each_failed_position(self) -> None:
         body = (
             "$c=Get-MT5VmTerminalUiConstants;$point=655410;"

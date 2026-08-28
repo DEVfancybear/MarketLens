@@ -3,6 +3,7 @@ param(
   [switch]$ContractTestsOnly,
   [switch]$KnownBadControl,
   [switch]$AllowlistMutationTestsOnly,
+  [switch]$ProbeMutationTestsOnly,
   [switch]$MouseMutationTestsOnly
 )
 
@@ -290,6 +291,110 @@ $proxy = & $EnsureProxyAction
   Assert-NativeSuccess 'PROVISIONING_ALLOWLIST_MUTATION_RESTORED_TEST_FAILED'
   Assert-Gate ($mutants.Count -eq 9) 'PROVISIONING_ALLOWLIST_MUTATION_MANIFEST_INVALID'
   Write-Output 'PRODUCTION_WEBREQUEST_ALLOWLIST_MUTATION=9/9'
+}
+
+function Invoke-ProbeMutationTests {
+  $originalBytes = [IO.File]::ReadAllBytes($probeDriver)
+  $originalHash = (Get-FileHash -LiteralPath $probeDriver -Algorithm SHA256).Hash
+  $originalText = [Text.Encoding]::UTF8.GetString($originalBytes)
+  $mutants = @(
+    [pscustomobject]@{
+      name = 'accept-existing-startup-section'
+      search = @'
+if ([regex]::Matches(
+      $text,
+      '^\[StartUp\](?:\r)?$',
+      [Text.RegularExpressions.RegexOptions]::Multiline
+    ).Count -ne 0) {
+'@
+      replace = @'
+if ([regex]::Matches(
+      $text,
+      '^\[StartUp\](?:\r)?$',
+      [Text.RegularExpressions.RegexOptions]::Multiline
+    ).Count -lt 0) {
+'@
+      expected = 'PROVISIONING_PROBE_CONTRACT_FAILED_OPEN'
+    },
+    [pscustomobject]@{
+      name = 'launch-probe-with-config-switch'
+      search = @'
+$terminalState.Value = Start-Process -FilePath $terminalPath `
+      -WindowStyle Hidden -PassThru
+'@
+      replace = @'
+$terminalState.Value = Start-Process -FilePath $terminalPath `
+      -ArgumentList '/config:v38-mutant.ini' `
+      -WindowStyle Hidden -PassThru
+'@
+      expected = 'PROVISIONING_PROBE_DEFAULT_CONFIG_LAUNCH_INVALID'
+    },
+    [pscustomobject]@{
+      name = 'skip-exact-startup-restoration'
+      search = @'
+    Restore-ProbeDefaultConfigStartup -Path $Path -Snapshot $snapshot
+    $snapshot = $null
+    return $result
+'@
+      replace = @'
+    $snapshot = $null
+    return $result
+'@
+      expected = 'PROVISIONING_PROBE_DEFAULT_CONFIG_CONTRACT_FAILED'
+    }
+  )
+  $killed = 0
+  try {
+    foreach ($mutant in $mutants) {
+      Write-Output ('PRODUCTION_WEBREQUEST_PROBE_MUTANT_START=' + [string]$mutant.name)
+      $matchCount = [regex]::Matches(
+        $originalText,
+        [regex]::Escape([string]$mutant.search)
+      ).Count
+      Assert-Gate ($matchCount -eq 1) 'PROVISIONING_PROBE_MUTANT_SOURCE_UNEXPECTED'
+      $mutantText = $originalText.Replace(
+        [string]$mutant.search,
+        [string]$mutant.replace
+      )
+      [IO.File]::WriteAllText(
+        $probeDriver,
+        $mutantText,
+        (New-Object Text.UTF8Encoding($false))
+      )
+      $mutantHash = (Get-FileHash -LiteralPath $probeDriver -Algorithm SHA256).Hash
+      Assert-Gate ($mutantHash -cne $originalHash) 'PROVISIONING_PROBE_MUTANT_NOT_APPLIED'
+      $savedErrorActionPreference = $ErrorActionPreference
+      try {
+        $ErrorActionPreference = 'Continue'
+        $mutantOutput = @(& powershell.exe -NoProfile -NonInteractive `
+          -ExecutionPolicy Bypass -File $probeDriver -ContractTestsOnly 2>&1)
+        $mutantExitCode = $LASTEXITCODE
+      } finally {
+        $ErrorActionPreference = $savedErrorActionPreference
+      }
+      Assert-Gate ($mutantExitCode -ne 0) 'PROVISIONING_PROBE_MUTANT_SURVIVED'
+      Assert-Gate (
+        ($mutantOutput -join "`n").Contains([string]$mutant.expected)
+      ) 'PROVISIONING_PROBE_MUTANT_WRONG_REASON'
+      $killed += 1
+      [IO.File]::WriteAllBytes($probeDriver, $originalBytes)
+      Assert-Gate (
+        (Get-FileHash -LiteralPath $probeDriver -Algorithm SHA256).Hash -ceq
+          $originalHash
+      ) 'PROVISIONING_PROBE_MUTANT_RESTORE_FAILED'
+    }
+  } finally {
+    [IO.File]::WriteAllBytes($probeDriver, $originalBytes)
+  }
+  Assert-Gate ($killed -eq $mutants.Count) 'PROVISIONING_PROBE_MUTATION_SCORE_INVALID'
+  Assert-Gate (
+    (Get-FileHash -LiteralPath $probeDriver -Algorithm SHA256).Hash -ceq $originalHash
+  ) 'PROVISIONING_PROBE_MUTANT_RESTORE_FAILED'
+  & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+    -File $probeDriver -ContractTestsOnly
+  Assert-NativeSuccess 'PROVISIONING_PROBE_MUTATION_RESTORED_TEST_FAILED'
+  Assert-Gate ($mutants.Count -eq 3) 'PROVISIONING_PROBE_MUTATION_MANIFEST_INVALID'
+  Write-Output 'PRODUCTION_WEBREQUEST_PROBE_MUTATION=3/3'
 }
 
 function Invoke-MouseMutationTests {
@@ -602,6 +707,11 @@ $false -or
 
 if ($AllowlistMutationTestsOnly) {
   Invoke-AllowlistMutationTests
+  exit 0
+}
+
+if ($ProbeMutationTestsOnly) {
+  Invoke-ProbeMutationTests
   exit 0
 }
 
@@ -964,6 +1074,7 @@ try {
       -FailedOpenCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_CONTROL_FAILED_OPEN' `
       -WrongReasonCode 'PROVISIONING_WEBREQUEST_ALLOWLIST_CURSOR_CONTROL_WRONG_REASON'
     Invoke-AllowlistMutationTests
+    Invoke-ProbeMutationTests
     Invoke-MouseMutationTests
   }
 

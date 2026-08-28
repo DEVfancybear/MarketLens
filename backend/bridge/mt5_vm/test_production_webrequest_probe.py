@@ -69,6 +69,8 @@ class ProductionWebRequestProbeTests(unittest.TestCase):
             "$gatewayHealthUrl = 'http://127.0.0.1/health'",
             "WindowStyle Hidden",
             "Invoke-ProbeDefaultConfigStartupTransaction",
+            "Get-ProbeEmergencyStartupSnapshot",
+            "$backupExistedOnEntry",
             ".marketlens-v38-startup.bak",
             "[IO.File]::Replace",
             "PRODUCTION_DEFAULT_CONFIG_STARTUP_CONTRACTS=PASS",
@@ -78,8 +80,8 @@ class ProductionWebRequestProbeTests(unittest.TestCase):
         self.assertNotIn("Clipboard", source)
         self.assertNotIn("/config:", source)
         self.assertIn(
-            "$terminal = Start-Process -FilePath $terminalPath `\n"
-            "    -WindowStyle Hidden -PassThru",
+            "$terminalState.Value = Start-Process -FilePath $terminalPath `\n"
+            "      -WindowStyle Hidden -PassThru",
             source,
         )
 
