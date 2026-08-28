@@ -31,7 +31,7 @@
     "test:architecture": "npm run test:build && node --test .test-build/tests/architecture/*.test.js",
     "test:replay": "npm run test:build && node --test .test-build/tests/replay/*.test.js .test-build/tests/chart/replayViewport.test.js",
     "test:position": "npm run test:build && node --test .test-build/tests/position/*.test.js",
-    "test:trade": "npm run test:build && node --require ./.test-build/tests/shims/ky.js --test .test-build/tests/trade",
+    "test:trade": "npm run test:build && node -e \"const fs=require('node:fs'),cp=require('node:child_process'),dir='.test-build/tests/trade',files=fs.readdirSync(dir).filter(f=>f.endsWith('.test.js')).sort().map(f=>dir+'/'+f); if(files.length===0) process.exit(1); const result=cp.spawnSync(process.execPath,['--require','./.test-build/tests/shims/ky.js','--test',...files],{stdio:'inherit'}); process.exit(result.status??1)\"",
     "test:drawing": "npm run test:build && node --test .test-build/tests/drawing/*.test.js",
     "test:drawing-persistence": "npm run test:build && node --test .test-build/tests/drawing/clipboardValidation.test.js .test-build/tests/drawing/drawingCodec.test.js .test-build/tests/drawing/drawingConflictPolicy.test.js .test-build/tests/drawing/drawingLoadGuard.test.js .test-build/tests/drawing/drawingPersistenceMetrics.test.js .test-build/tests/drawing/drawingSyncQueue.test.js",
     "test:indicator-catalog": "npm run test:build && node --test .test-build/tests/indicatorCatalog/*.test.js",
