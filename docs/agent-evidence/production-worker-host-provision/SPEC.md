@@ -3033,3 +3033,75 @@ APPROVE SPEC REVISION: production-worker-host-provision v38
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v38`. No v38 implementation change was
 made after the revision was written and before this approval.
+
+## Revision v39 - launch from an exact full-profile alternative configuration (approval required)
+
+### Discovery during approved v38 execution
+
+V38 passed 64/64 MT5 regressions, 4/4 probe tests, 9/9 allowlist mutants, 3/3 new probe mutants,
+and 18/18 UI regression mutants. Its first elevated host run compiled the probe with zero errors
+and started signed terminal build 6140 from the selected data directory, but the terminal journal
+contained no `Startup` initialization and did not load the script. The receipt timed out. Exact
+rollback restored `common.ini` hash
+`1A177F9FA04FE8B7B36362866D9562361F735EF2AED17F1218C1E67BE6BCFE9A`; both journals, the exact
+proxy/listener, and the selected terminal were absent afterward.
+
+MetaQuotes' platform-start documentation requires a custom configuration based on the default
+`common.ini` and an explicit `/config:path` launch for `[StartUp]` automation. The selected-host
+journal confirms that the no-argument default-profile launch does not process an appended
+`[StartUp]` section. V38's no-switch startup assumption is therefore false.
+
+### v39 exact desired-profile custom launch
+
+Revision v39 remains Tier 3 and supersedes only v38's nested replacement of the default
+`common.ini` and its no-argument launch. All v36-v38 signed-terminal, exact persisted allowlist,
+standard-port topology, nonce receipt, no-trade, ownership, rollback, idempotency, worker,
+canonical runner, and health requirements remain unchanged.
+
+After the outer transaction proves the exact desired default `common.ini`, the probe must reread
+and validate those exact UTF-16LE bytes and ACL, append only the already-specified exact
+`[StartUp]` section in memory, and prove the original desired bytes are an exact prefix/reverse
+transform. It must create a fixed sibling file named `.marketlens-v39-probe.ini` with
+`FileMode.CreateNew`, the same ACL, the exact full desired-profile prefix, and the one appended
+startup section. Any pre-existing file must fail closed; the default `common.ini` must not be
+modified by this inner probe step.
+
+The selected terminal must be launched with exactly one argument,
+`/config:<absolute fixed sibling path>`, and no `/profile`, `/portable`, login override, alternate
+terminal, or additional switch. The driver must obtain the nonce-bound receipt, wait for the
+probe-owned terminal to exit, reread and prove the default desired bytes/hash/ACL unchanged, then
+delete only the exact owned custom file and prove it absent. Receipt, shutdown, default-profile
+drift, or cleanup failure is authoritative; failure cleanup must first quiesce the exact owned
+terminal, preserve the unchanged default profile, and delete only a custom file whose bytes/hash
+and ACL still match the run-owned snapshot. A mismatched recovery file must be retained and fail
+closed. No config contents, account material, or secrets may be logged.
+
+Before implementation, replace the v38 no-switch assertion with RED contracts for the exact full
+desired-profile prefix, exact one-switch launch, default-profile non-mutation, success cleanup,
+probe-failure cleanup, and hostile pre-existing/mismatched recovery files. Add at least three
+killed/restored mutants: omit the full desired-profile prefix, launch without the exact custom
+config, and skip owned custom-file cleanup. Preserve the 64 MT5 regressions, 4 probe tests, 9/9
+allowlist mutants, and 18/18 UI regression mutants. Add no dependency, download, UI action,
+registry/firewall/URLACL change, service install, force termination, or alternate profile.
+
+Planned changed files remain `tools/mt5-baremetal/Invoke-MT5WebRequestProbe.ps1`,
+`backend/bridge/mt5_vm/test_production_webrequest_probe.py`,
+`backend/bridge/mt5_vm/test_terminal_python_api_bootstrap.py`,
+`tools/verify-production-worker-host-provision.ps1`, this SPEC, and final `EVIDENCE.md`. After
+GREEN, run the allowlist driver twice through UAC and require live `APPLIED` then `UNCHANGED`
+receipts. Then run the unchanged complete 13-layer verifier from a clean checkpoint, including
+exactly `powershell.exe -File .\run-backend-production.ps1` without switches. The fresh final
+command remains
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\verify-production-worker-host-provision.ps1`.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v39
+```
+
+### v39 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v39`. No v39 implementation change was
+made after the revision was written and before this approval.
