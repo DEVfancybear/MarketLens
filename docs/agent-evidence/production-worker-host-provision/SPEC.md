@@ -2969,3 +2969,67 @@ APPROVE SPEC REVISION: production-worker-host-provision v37
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v37`. No v37 implementation change was
 made after the revision was written and before this approval.
+
+## Revision v38 - run the probe from the default atomic configuration (approval required)
+
+### Discovery during approved v37 execution
+
+V37 passed 63/63 MT5 regressions, 4/4 probe tests, and 9/9 allowlist mutants. Its selected-host run
+started from the exact original config hash with no terminal, proxy, listener, or backup. The
+minimal custom file contained only `[StartUp]`, the signed terminal compiled and loaded the probe,
+and the receipt still returned `status=-1 error=4014`. Exact rollback restored the original config
+hash and empty proxy/listener/terminal state.
+
+MetaQuotes' official platform-start documentation defines `/config` as an alternative
+configuration file and states that the default configuration file is `common.ini`. Therefore even
+a minimal `/config` launch does not execute under the already-proven default profile allowlist.
+The probe must run from the default configuration itself; no documented command-line switch runs
+a script while retaining a separate default configuration.
+
+### v38 nested atomic startup transaction
+
+Revision v38 remains Tier 3 and changes only how the already-approved nonce probe is started. All
+v36-v37 terminal/signature/profile, exact allowlist, standard-port, no-trade probe, rollback,
+idempotency, worker, canonical runner, and health requirements remain unchanged.
+
+After the outer transaction proves desired `common.ini` and before terminal start, the probe must
+require no existing `[StartUp]` section and atomically create a nested, same-volume, ACL-preserving
+startup snapshot. It may append only one exact `[StartUp]` section containing
+`Script=MarketLensWebRequestProbe`, `Symbol=EURUSD`, `Period=M1`, and `ShutdownTerminal=1` to the
+desired UTF-16LE default `common.ini`. It must launch the signed selected terminal with no
+`/config`, `/profile`, or other switch, obtain and validate the nonce receipt, wait for the
+probe-owned terminal to exit, then atomically restore and prove the exact desired pre-startup
+bytes/hash/ACL before returning success. The nested backup name must be fixed and distinct from the
+outer crash journal; any pre-existing nested backup, existing startup section, ambiguous process,
+write, launch, receipt, shutdown, restore, hash, ACL, or cleanup failure must fail closed. Nested
+restore failure is authoritative and must retain recovery evidence; only after a successful nested
+restore may the outer transaction complete or restore its own prior snapshot.
+
+Before implementation, replace the v37 custom-startup assertion with RED contracts for exact
+UTF-16LE append/reverse equality, no existing startup section, no `/config` launch, nested backup
+recovery, and restore-on-probe-failure. Add at least three killed/restored mutants: accept an
+existing startup section, launch with `/config`, and skip exact startup restoration. Preserve the
+63 MT5 regressions, 4 probe tests, 9/9 allowlist mutants, and 18/18 UI regression mutants. Add no
+dependency, download, UI action, registry/firewall/URLACL change, service install, or alternate
+terminal/profile.
+
+Planned additional files are `tools/mt5-baremetal/Invoke-MT5WebRequestProbe.ps1`,
+`backend/bridge/mt5_vm/test_production_webrequest_probe.py`,
+`tools/verify-production-worker-host-provision.ps1`, this SPEC, and final `EVIDENCE.md`. After
+GREEN, run the allowlist driver twice through UAC and require live `APPLIED` then `UNCHANGED`
+receipts. Then run the unchanged complete 13-layer verifier from a clean checkpoint, including
+exactly `powershell.exe -File .\run-backend-production.ps1` without switches. The fresh final
+command remains
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\verify-production-worker-host-provision.ps1`.
+
+Approval token:
+
+```text
+APPROVE SPEC REVISION: production-worker-host-provision v38
+```
+
+### v38 approval record
+
+The user approved this exact revision verbatim as
+`APPROVE SPEC REVISION: production-worker-host-provision v38`. No v38 implementation change was
+made after the revision was written and before this approval.
