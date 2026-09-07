@@ -165,7 +165,7 @@ function Convert-ProbeDefaultConfigStartup {
     ).Count -ne 1 -or
       [regex]::Matches(
         $text,
-        '^WebRequestUrl=http://127\.0\.0\.1(?:\r)?$',
+        '^WebRequestUrl=[^\r\n\x00]{1,16384}(?:\r)?$',
         [Text.RegularExpressions.RegexOptions]::Multiline
       ).Count -ne 1) {
     throw 'PROVISIONING_PROBE_DEFAULT_CONFIG_INVALID'
@@ -219,15 +219,20 @@ function Write-ProbeCreateNewFile {
     $stream = New-Object IO.FileStream(
       $Path,
       [IO.FileMode]::CreateNew,
-      [IO.FileAccess]::Write,
-      [IO.FileShare]::None
+      [Security.AccessControl.FileSystemRights]::Write,
+      [IO.FileShare]::None,
+      4096,
+      [IO.FileOptions]::WriteThrough,
+      $Acl
     )
     $stream.Write($Bytes, 0, $Bytes.Length)
     $stream.Flush($true)
   } finally {
     if ($null -ne $stream) { $stream.Dispose() }
   }
-  Set-Acl -LiteralPath $Path -AclObject $Acl
+  if ([string](Get-Acl -LiteralPath $Path -ErrorAction Stop).Sddl -cne [string]$Acl.Sddl) {
+    Set-Acl -LiteralPath $Path -AclObject $Acl -ErrorAction Stop
+  }
 }
 
 function New-ProbeCustomConfigSnapshot {
@@ -447,7 +452,8 @@ function Assert-ProbeReceipt {
     [Parameter(Mandatory = $true)][psobject]$Receipt,
     [Parameter(Mandatory = $true)][string]$ExpectedNonce,
     [Parameter(Mandatory = $true)][long]$ExpectedRequestedAtUnix,
-    [Parameter(Mandatory = $true)][long]$MaximumObservedAtUnix
+    [Parameter(Mandatory = $true)][long]$MaximumObservedAtUnix,
+    [switch]$AllowPermissionFailure
   )
   $required = @(
     'schemaVersion', 'nonce', 'url', 'httpStatus', 'mt5Error', 'terminalBuild',
@@ -461,8 +467,6 @@ function Assert-ProbeReceipt {
   Assert-ProbeTrue ([int]$Receipt.schemaVersion -eq 1) 'PROVISIONING_PROBE_RECEIPT_INVALID'
   Assert-ProbeTrue ([string]$Receipt.nonce -ceq $ExpectedNonce) 'PROVISIONING_PROBE_RECEIPT_INVALID'
   Assert-ProbeTrue ([string]$Receipt.url -ceq $gatewayHealthUrl) 'PROVISIONING_PROBE_RECEIPT_INVALID'
-  Assert-ProbeTrue ([int]$Receipt.httpStatus -eq 200) 'PROVISIONING_PROBE_RECEIPT_INVALID'
-  Assert-ProbeTrue ([int]$Receipt.mt5Error -eq 0) 'PROVISIONING_PROBE_RECEIPT_INVALID'
   Assert-ProbeTrue ([int]$Receipt.terminalBuild -gt 0) 'PROVISIONING_PROBE_RECEIPT_INVALID'
   Assert-ProbeTrue ([long]$Receipt.requestedAtUnix -eq $ExpectedRequestedAtUnix) `
     'PROVISIONING_PROBE_RECEIPT_INVALID'
@@ -470,6 +474,15 @@ function Assert-ProbeReceipt {
     [long]$Receipt.observedAtUnix -ge $ExpectedRequestedAtUnix -and
     [long]$Receipt.observedAtUnix -le $MaximumObservedAtUnix
   ) 'PROVISIONING_PROBE_RECEIPT_INVALID'
+  if ($AllowPermissionFailure -and [int]$Receipt.httpStatus -eq -1 -and [int]$Receipt.mt5Error -eq 4014) {
+    foreach ($property in @('responseOk', 'responseService', 'responseProtocol', 'probeSucceeded')) {
+      Assert-ProbeTrue ($Receipt.$property -is [bool] -and -not [bool]$Receipt.$property) `
+        'PROVISIONING_PROBE_RECEIPT_INVALID'
+    }
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_REQUIRED'
+  }
+  Assert-ProbeTrue ([int]$Receipt.httpStatus -eq 200) 'PROVISIONING_PROBE_RECEIPT_INVALID'
+  Assert-ProbeTrue ([int]$Receipt.mt5Error -eq 0) 'PROVISIONING_PROBE_RECEIPT_INVALID'
   foreach ($property in @('responseOk', 'responseService', 'responseProtocol', 'probeSucceeded')) {
     Assert-ProbeTrue ($Receipt.$property -is [bool] -and [bool]$Receipt.$property) `
       'PROVISIONING_PROBE_RECEIPT_INVALID'
@@ -477,7 +490,7 @@ function Assert-ProbeReceipt {
 }
 
 function Invoke-ProbeContractTests {
-  $driverText = Get-Content -LiteralPath $PSCommandPath -Raw
+  $driverText = (Get-Content -LiteralPath $PSCommandPath -Raw).Replace("`r`n", "`n")
   $exactLaunch = (
     '$terminalState.Value = Start-' + 'Process -FilePath $terminalPath `' + "`n" +
     '      -ArgumentList $probeConfigArgument `' + "`n" +
@@ -807,13 +820,9 @@ $receipt = Invoke-ProbeCustomConfigTransaction `
     } catch {
       throw 'PROVISIONING_PROBE_RECEIPT_INVALID'
     }
-    if ([int]$observedReceipt.httpStatus -eq -1 -and
-        [int]$observedReceipt.mt5Error -eq 4014) {
-      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_REQUIRED'
-    }
     $maximumObservedAt = [DateTimeOffset]::UtcNow.AddSeconds(5).ToUnixTimeSeconds()
     Assert-ProbeReceipt -Receipt $observedReceipt -ExpectedNonce $nonce `
-      -ExpectedRequestedAtUnix $requestedAt -MaximumObservedAtUnix $maximumObservedAt
+      -ExpectedRequestedAtUnix $requestedAt -MaximumObservedAtUnix $maximumObservedAt -AllowPermissionFailure
     return $observedReceipt
   } `
   -QuiesceAction { Wait-ProbeOwnedTerminalExit -State $terminalState }

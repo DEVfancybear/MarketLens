@@ -116,7 +116,7 @@ void OnStart()
    bool response_protocol=(StringFind(body,"\"protocolVersion\":1")>=0);
    bool probe_succeeded=(http_status==200 && response_ok &&
                          response_service && response_protocol);
-   long observed_at_unix=(long)TimeLocal();
+   long observed_at_unix=(long)TimeGMT();
    int terminal_build=(int)TerminalInfoInteger(TERMINAL_BUILD);
 
    if(!WriteProbeReceipt(nonce,requested_at_unix,http_status,mt5_error,

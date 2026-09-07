@@ -76,7 +76,8 @@ function Get-ProductionCommonIniModel {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory = $true)][byte[]]$Bytes,
-    [Parameter(Mandatory = $true)][string]$ExpectedOrigin
+    [Parameter(Mandatory = $true)][string]$ExpectedOrigin,
+    [switch]$PreserveNativeValue
   )
   if ($Bytes.Length -lt 2 -or $Bytes.Length -gt $maximumCommonIniBytes -or
       $Bytes[0] -ne 0xFF -or $Bytes[1] -ne 0xFE -or
@@ -164,7 +165,14 @@ function Get-ProductionCommonIniModel {
     [string]::Equals($webGroup.Value, '1', [StringComparison]::Ordinal) -and
     [string]::Equals($urlGroup.Value, $ExpectedOrigin, [StringComparison]::Ordinal)
   )
-  if (-not $isPrior -and -not $isDesired) {
+  if ($PreserveNativeValue) {
+    if ($webGroup.Value -cnotin @('0', '1') -or
+        $urlGroup.Value.Length -gt 16384 -or $urlGroup.Value.Contains([string][char]0)) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_SCHEMA_INVALID'
+    }
+    # Native serialization is opaque. Its presence never proves URL permission.
+    $isDesired = $false
+  } elseif (-not $isPrior -and -not $isDesired) {
     throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_PRIOR_STATE_INVALID'
   }
   return [pscustomobject][ordered]@{
@@ -172,6 +180,7 @@ function Get-ProductionCommonIniModel {
     Text = $text
     IsPrior = $isPrior
     IsDesired = $isDesired
+    Enabled = ($webGroup.Value -ceq '1')
     WebValueIndex = $absoluteWebIndex
     WebValueLength = $webGroup.Length
     UrlValueIndex = $absoluteUrlIndex
@@ -433,15 +442,20 @@ function Write-ProductionCreateNewFile {
     $stream = New-Object IO.FileStream(
       $Path,
       [IO.FileMode]::CreateNew,
-      [IO.FileAccess]::Write,
-      [IO.FileShare]::None
+      [Security.AccessControl.FileSystemRights]::Write,
+      [IO.FileShare]::None,
+      4096,
+      [IO.FileOptions]::WriteThrough,
+      $Acl
     )
     $stream.Write($Bytes, 0, $Bytes.Length)
     $stream.Flush($true)
   } finally {
     if ($null -ne $stream) { $stream.Dispose() }
   }
-  Set-Acl -LiteralPath $Path -AclObject $Acl
+  if ([string](Get-Acl -LiteralPath $Path -ErrorAction Stop).Sddl -cne [string]$Acl.Sddl) {
+    Set-Acl -LiteralPath $Path -AclObject $Acl -ErrorAction Stop
+  }
 }
 
 function Invoke-ProductionAtomicCommonIniReplace {
@@ -485,6 +499,27 @@ function Invoke-ProductionAtomicCommonIniReplace {
   }
 }
 
+function Move-ProductionNativeSnapshot {
+  param([Parameter(Mandatory = $true)][string]$Source, [Parameter(Mandatory = $true)][string]$Target)
+  if ($null -eq ('MarketLensNativeSnapshotMove' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class MarketLensNativeSnapshotMove {
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  public static extern bool MoveFileEx(string source, string target, uint flags);
+}
+'@ -ErrorAction Stop
+  }
+  # Same-directory replacement retains the snapshot descriptor; File.Replace merges ACLs.
+  if (-not [string]::Equals([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($Source)),
+      [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($Target)), [StringComparison]::OrdinalIgnoreCase) -or
+      -not [MarketLensNativeSnapshotMove]::MoveFileEx($Source, $Target, 9)) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED'
+  }
+}
+
 function Restore-ProductionWebRequestCommonIniSnapshot {
   [CmdletBinding()]
   param(
@@ -492,7 +527,8 @@ function Restore-ProductionWebRequestCommonIniSnapshot {
     [Parameter(Mandatory = $true)][string]$BackupPath,
     [Parameter(Mandatory = $true)][byte[]]$SnapshotBytes,
     [Parameter(Mandatory = $true)][string]$SnapshotHash,
-    [Parameter(Mandatory = $true)][string]$SnapshotSddl
+    [Parameter(Mandatory = $true)][string]$SnapshotSddl,
+    [switch]$PreserveNativeAcl
   )
   $parent = Split-Path -Parent $CommonIniPath
   $temporaryPath = Join-Path $parent (
@@ -510,7 +546,11 @@ function Restore-ProductionWebRequestCommonIniSnapshot {
     $snapshotAcl = Get-Acl -LiteralPath $BackupPath -ErrorAction Stop
     Write-ProductionCreateNewFile `
       -Path $temporaryPath -Bytes $SnapshotBytes -Acl $snapshotAcl
-    [IO.File]::Replace($temporaryPath, $CommonIniPath, $failedPath, $true)
+    if ($PreserveNativeAcl) {
+      Move-ProductionNativeSnapshot -Source $temporaryPath -Target $CommonIniPath
+    } else {
+      [IO.File]::Replace($temporaryPath, $CommonIniPath, $failedPath, $true)
+    }
     $restoredBytes = [IO.File]::ReadAllBytes($CommonIniPath)
     if ((Get-ProductionSha256Hex -Bytes $restoredBytes) -cne $SnapshotHash -or
         (Get-ProductionAclSddl -Path $CommonIniPath) -cne $SnapshotSddl) {
@@ -526,6 +566,128 @@ function Restore-ProductionWebRequestCommonIniSnapshot {
     if (Test-Path -LiteralPath $temporaryPath -PathType Leaf) {
       Remove-Item -LiteralPath $temporaryPath -Force
     }
+  }
+}
+
+function Read-ProductionNativeConfig {
+  param([Parameter(Mandatory = $true)][string]$Path)
+  Assert-ProductionNoReparseComponent -Path $Path
+  $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+  if ($item -isnot [IO.FileInfo] -or $item.Length -gt $maximumCommonIniBytes) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_SCHEMA_INVALID'
+  }
+  return Get-ProductionCommonIniModel -Bytes ([IO.File]::ReadAllBytes($Path)) `
+    -ExpectedOrigin 'http://127.0.0.1' -PreserveNativeValue
+}
+
+function Assert-ProductionNativeConfigUnchanged {
+  param([string]$Path, [byte[]]$Bytes, [string]$Sddl)
+  Assert-ProductionNoReparseComponent -Path $Path
+  if (-not (Test-ProductionByteArrayEqual $Bytes ([IO.File]::ReadAllBytes($Path))) -or
+      (Get-ProductionAclSddl $Path) -cne $Sddl) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_PERSIST_FAILED'
+  }
+}
+
+function Invoke-ProductionNativeAllowlistTransaction {
+  param(
+    [Parameter(Mandatory = $true)][string]$CommonIniPath,
+    [Parameter(Mandatory = $true)][scriptblock]$PreconditionAction,
+    [Parameter(Mandatory = $true)][scriptblock]$ProbeAction,
+    [Parameter(Mandatory = $true)][scriptblock]$ApplyAction,
+    [Parameter(Mandatory = $true)][scriptblock]$QuiesceAction,
+    [switch]$RollbackOnSuccess
+  )
+  & $PreconditionAction
+  $original = Read-ProductionNativeConfig -Path $CommonIniPath
+  $acl = Get-Acl -LiteralPath $CommonIniPath -ErrorAction Stop
+  $sddl = [string]$acl.Sddl
+  $backup = $CommonIniPath + '.marketlens-native.bak'
+  foreach ($recovery in @($backup, ($CommonIniPath + '.marketlens-v36.bak'),
+      (Join-Path (Split-Path -Parent $CommonIniPath) '.marketlens-v39-probe.ini'))) {
+    if (Test-Path -LiteralPath $recovery) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_RECOVERY_STATE_INVALID'
+    }
+  }
+  # Capture exact bytes before any terminal launch, including the initial probe.
+  Write-ProductionCreateNewFile -Path $backup -Bytes $original.Bytes -Acl $acl
+  try {
+    Assert-ProductionNativeConfigUnchanged -Path $backup -Bytes $original.Bytes -Sddl $sddl
+    $verified = $false
+    if ($original.Enabled) {
+      try {
+        $verified = ((& $ProbeAction) -eq $true)
+        if (-not $verified) { throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_PROBE_FAILED' }
+      } catch {
+        if ($_.Exception.Message -cne 'PROVISIONING_WEBREQUEST_ALLOWLIST_REQUIRED') { throw }
+        & $QuiesceAction
+        Assert-ProductionNativeConfigUnchanged -Path $CommonIniPath -Bytes $original.Bytes -Sddl $sddl
+      }
+    }
+    $status = 'UNCHANGED'
+    $expectedBytes = $original.Bytes
+    if (-not $verified) {
+      & $ApplyAction | Out-Null
+      & $QuiesceAction
+      $configured = Read-ProductionNativeConfig -Path $CommonIniPath
+      $priorRest = Set-ProductionCommonIniValueSpans -Model $original -WebValue '' -UrlValue ''
+      $afterRest = Set-ProductionCommonIniValueSpans -Model $configured -WebValue '' -UrlValue ''
+      if (-not $configured.Enabled -or $configured.UrlValueLength -eq 0 -or
+          $priorRest -cne $afterRest -or (Get-ProductionAclSddl $CommonIniPath) -cne $sddl) {
+        throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_PERSIST_FAILED'
+      }
+      $expectedBytes = $configured.Bytes
+      if ((& $ProbeAction) -ne $true) { throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_PROBE_FAILED' }
+      $status = 'APPLIED'
+    }
+    & $QuiesceAction
+    Assert-ProductionNativeConfigUnchanged -Path $CommonIniPath -Bytes $expectedBytes -Sddl $sddl
+    Assert-ProductionNativeConfigUnchanged -Path $backup -Bytes $original.Bytes -Sddl $sddl
+    if ($RollbackOnSuccess) {
+      Restore-ProductionWebRequestCommonIniSnapshot -CommonIniPath $CommonIniPath `
+        -BackupPath $backup -SnapshotBytes $original.Bytes `
+        -SnapshotHash (Get-ProductionSha256Hex $original.Bytes) -SnapshotSddl $sddl -PreserveNativeAcl
+    } else {
+      Remove-Item -LiteralPath $backup -Force -ErrorAction Stop
+    }
+    if (Test-Path -LiteralPath $backup) { throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_CLEANUP_FAILED' }
+    return [pscustomobject]@{
+      status = $status; enabled = $true; probe_verified = $true; restored_prior = [bool]$RollbackOnSuccess
+    }
+  } catch {
+    $originalFailure = $_.Exception.Message
+    try {
+      & $QuiesceAction
+      Assert-ProductionNoReparseComponent -Path $CommonIniPath
+      Assert-ProductionNoReparseComponent -Path $backup
+      Restore-ProductionWebRequestCommonIniSnapshot -CommonIniPath $CommonIniPath `
+        -BackupPath $backup -SnapshotBytes $original.Bytes `
+        -SnapshotHash (Get-ProductionSha256Hex $original.Bytes) -SnapshotSddl $sddl -PreserveNativeAcl
+    } catch {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED'
+    }
+    throw $originalFailure
+  }
+}
+
+function Invoke-ProductionNativeSettings {
+  Assert-ProductionSelectedTerminalAbsent
+  . $uiHelper
+  $owned = Start-Process -FilePath $selectedTerminal -WindowStyle Hidden -PassThru
+  try {
+    $null = Wait-MT5VmTerminalProcessBoundary -TerminalPath $selectedTerminal -ProcessId $owned.Id
+    return Set-MT5VmTerminalWebRequestAllowlist -ProcessId $owned.Id -Origin $expectedOrigin -DeferPermissionProof
+  } finally {
+    $matches = @(Get-ProductionSelectedTerminalProcesses)
+    if ($matches.Count -gt 1 -or
+        ($matches.Count -eq 1 -and [int]$matches[0].ProcessId -ne $owned.Id)) {
+      throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_PROCESS_AMBIGUOUS'
+    }
+    if (-not $owned.HasExited) {
+      $null = $owned.CloseMainWindow()
+      if (-not $owned.WaitForExit(15000)) { throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_TERMINAL_STOP_FAILED' }
+    }
+    Assert-ProductionSelectedTerminalAbsent
   }
 }
 
@@ -1134,6 +1296,11 @@ function Invoke-ProductionAllowlistProbe {
   } finally {
     $ErrorActionPreference = $savedPreference
   }
+  if ($exitCode -ne 0 -and @($output | Where-Object {
+      [string]$_ -cmatch '^PROVISIONING_WEBREQUEST_ALLOWLIST_REQUIRED\s*$'
+    }).Count -eq 1) {
+    throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_REQUIRED'
+  }
   if ($exitCode -ne 0 -or
       @($output | Where-Object {
           [string]$_ -match '^PRODUCTION_WEBREQUEST_PROBE=PASS proof=.+$'
@@ -1687,46 +1854,15 @@ if ($ContractTestsOnly) {
 
 $commonIniPath = Join-Path $selectedProfile $commonIniRelativePath
 $ownedProxyState = [pscustomobject]@{ Value = $null }
-$productionRollback = {
-  param($target, $backup, $bytes, $hash, $sddl)
-  Restore-ProductionWebRequestCommonIniSnapshot `
-    -CommonIniPath $target -BackupPath $backup `
-    -SnapshotBytes $bytes -SnapshotHash $hash -SnapshotSddl $sddl
-  return $true
-}
 
 Assert-ProductionSelectedTerminalAndProfile
 Assert-ProductionSelectedTerminalAbsent
 
-if ($CommitRollbackTrace) {
-  $initialProxy = Get-ProductionLoopbackPortProxyState
-  if ([string]$initialProxy.status -cne 'EMPTY') {
-    throw 'PROVISIONING_WEBREQUEST_COMMIT_ROLLBACK_TRACE_PROXY_PRESENT'
-  }
-  $null = Assert-ProductionPort80ListenerState `
-    -Listeners @(Get-ProductionPort80Listeners) -ExpectPresent $false
-  $trace = Invoke-ProductionWebRequestCommonIniTransaction `
-    -CommonIniPath $commonIniPath `
-    -ExpectedOrigin $expectedOrigin `
-    -PreconditionAction { Assert-ProductionSelectedTerminalAbsent } `
-    -ProbeAction { return $true } `
-    -QuiesceAction { Assert-ProductionSelectedTerminalAbsent } `
-    -RollbackAction $productionRollback `
-    -RollbackOnSuccess
-  Write-Output (
-    'PRODUCTION_WEBREQUEST_ALLOWLIST_COMMIT_ROLLBACK=PASS status={0} persisted_desired={1} restored_prior={2}' -f
-      [string]$trace.status,
-      [bool]$trace.persisted_desired,
-      [bool]$trace.restored_prior
-  )
-  return
-}
-
 try {
-  $result = Invoke-ProductionWebRequestCommonIniTransaction `
+  $result = Invoke-ProductionNativeAllowlistTransaction `
     -CommonIniPath $commonIniPath `
-    -ExpectedOrigin $expectedOrigin `
     -PreconditionAction { Assert-ProductionSelectedTerminalAbsent } `
+    -ApplyAction { Invoke-ProductionNativeSettings } `
     -ProbeAction {
       return [bool](Invoke-ProductionOwnedProxyProbe `
         -State $ownedProxyState `
@@ -1735,14 +1871,24 @@ try {
         -ProbeAction { Invoke-ProductionAllowlistProbe } `
         -RollbackProxyAction { Remove-ProductionOwnedLoopbackPortProxy })
     } `
-    -QuiesceAction { Wait-ProductionSelectedTerminalAbsent } `
-    -RollbackAction $productionRollback
+    -QuiesceAction { Assert-ProductionSelectedTerminalAbsent } `
+    -RollbackOnSuccess:$CommitRollbackTrace
+  if ($CommitRollbackTrace) {
+    if ($null -ne $ownedProxyState.Value -and [bool]$ownedProxyState.Value.created) {
+      if (-not (Remove-ProductionOwnedLoopbackPortProxy)) {
+        throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED'
+      }
+      $ownedProxyState.Value = $null
+    }
+    Write-Output ('PRODUCTION_WEBREQUEST_ALLOWLIST_COMMIT_ROLLBACK=PASS probe_verified={0} restored_prior={1}' -f
+      [bool]$result.probe_verified, [bool]$result.restored_prior)
+    return
+  }
   Write-Output (
-    'PRODUCTION_WEBREQUEST_ALLOWLIST=PASS proxy_created={0} status={1} enabled={2} non_empty_count={3} probe_verified={4}' -f
+    'PRODUCTION_WEBREQUEST_ALLOWLIST=PASS proxy_created={0} status={1} enabled={2} probe_verified={3}' -f
       [bool]$ownedProxyState.Value.created,
       [string]$result.status,
       [bool]$result.enabled,
-      [int]$result.non_empty_count,
       [bool]$result.probe_verified
   )
 } catch {

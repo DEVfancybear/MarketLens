@@ -31,7 +31,7 @@ $slotInputRoot = 'C:\ProgramData\MarketLens\slot-inputs\slot-01'
 $expectedOrigin = 'http://127.0.0.1'
 $taskName = 'MarketLens MT5 Worker'
 $workerId = 'marketlens-baremetal-01'
-$baselineCommit = '097bcf7f523b1327b2c970036d24d1542740fd8b'
+$baselineCommit = '7bcfeb891c6b76048c471af8c8dd0738177b2b56'
 $script:layerResults = [Collections.Generic.List[object]]::new()
 
 $expectedLayers = @(
@@ -163,7 +163,7 @@ function Invoke-ContractTests {
 function Invoke-AllowlistMutationTests {
   $originalBytes = [IO.File]::ReadAllBytes($allowlistDriver)
   $originalHash = (Get-FileHash -LiteralPath $allowlistDriver -Algorithm SHA256).Hash
-  $originalText = [Text.Encoding]::UTF8.GetString($originalBytes)
+  $originalText = ([Text.Encoding]::UTF8.GetString($originalBytes)).Replace("`r`n", "`n")
   $mutants = @(
     [pscustomobject]@{
       name = 'accept-duplicate-key'
@@ -243,6 +243,11 @@ $proxy = & $EnsureProxyAction
   $killed = 0
   try {
     foreach ($mutant in $mutants) {
+      foreach ($field in @('search', 'replace', 'search2', 'replace2')) {
+        if ($null -ne $mutant.PSObject.Properties[$field]) {
+          $mutant.$field = ([string]$mutant.$field).Replace("`r`n", "`n")
+        }
+      }
       Write-Output ('PRODUCTION_WEBREQUEST_ALLOWLIST_MUTANT_START=' + [string]$mutant.name)
       $matchCount = [regex]::Matches(
         $originalText,
@@ -296,7 +301,7 @@ $proxy = & $EnsureProxyAction
 function Invoke-ProbeMutationTests {
   $originalBytes = [IO.File]::ReadAllBytes($probeDriver)
   $originalHash = (Get-FileHash -LiteralPath $probeDriver -Algorithm SHA256).Hash
-  $originalText = [Text.Encoding]::UTF8.GetString($originalBytes)
+  $originalText = ([Text.Encoding]::UTF8.GetString($originalBytes)).Replace("`r`n", "`n")
   $mutants = @(
     [pscustomobject]@{
       name = 'omit-full-desired-profile-prefix'
@@ -327,6 +332,11 @@ function Invoke-ProbeMutationTests {
   $killed = 0
   try {
     foreach ($mutant in $mutants) {
+      foreach ($field in @('search', 'replace', 'search2', 'replace2')) {
+        if ($null -ne $mutant.PSObject.Properties[$field]) {
+          $mutant.$field = ([string]$mutant.$field).Replace("`r`n", "`n")
+        }
+      }
       Write-Output ('PRODUCTION_WEBREQUEST_PROBE_MUTANT_START=' + [string]$mutant.name)
       $matchCount = [regex]::Matches(
         $originalText,
@@ -381,7 +391,7 @@ function Invoke-ProbeMutationTests {
 function Invoke-MouseMutationTests {
   $originalBytes = [IO.File]::ReadAllBytes($uiHelper)
   $originalHash = (Get-FileHash -LiteralPath $uiHelper -Algorithm SHA256).Hash
-  $originalText = [Text.Encoding]::UTF8.GetString($originalBytes)
+  $originalText = ([Text.Encoding]::UTF8.GetString($originalBytes)).Replace("`r`n", "`n")
   $mutants = @(
     [pscustomobject]@{
       name = 'drop-post-move-hit-guard'
@@ -555,13 +565,13 @@ Start-Sleep -Milliseconds 150
     $persisted = Read-MT5VmWebRequestStateBoundary -OptionsHandle $activeDialog
     Cancel-MT5VmOptionsDialogBoundary -OptionsHandle $activeDialog
     $activeDialog = [IntPtr]::Zero
-    if (-not (Test-MT5VmDesiredWebRequestState -State $persisted -ExpectedOrigin $Origin)) {
+    if ($DeferPermissionProof -and $persisted.Enabled -eq 1 -and
 '@
       replace = @'
     $persisted = $desired
     Cancel-MT5VmOptionsDialogBoundary -OptionsHandle $activeDialog
     $activeDialog = [IntPtr]::Zero
-    if (-not (Test-MT5VmDesiredWebRequestState -State $persisted -ExpectedOrigin $Origin)) {
+    if ($DeferPermissionProof -and $persisted.Enabled -eq 1 -and
 '@
       test = 'backend.bridge.mt5_vm.test_terminal_python_api_bootstrap.TerminalPythonApiBootstrapTests.test_webrequest_allowlist_mismatch_restores_snapshot_before_rethrow'
     },
@@ -617,6 +627,11 @@ $false -or
   $killed = 0
   try {
     foreach ($mutant in $mutants) {
+      foreach ($field in @('search', 'replace', 'search2', 'replace2')) {
+        if ($null -ne $mutant.PSObject.Properties[$field]) {
+          $mutant.$field = ([string]$mutant.$field).Replace("`r`n", "`n")
+        }
+      }
       Write-Output ('PRODUCTION_WEBREQUEST_MOUSE_MUTANT_START=' + [string]$mutant.name)
       $matchCount = [regex]::Matches(
         $originalText,
@@ -964,25 +979,19 @@ function Assert-ProductionHealth {
 
 function Assert-ApprovedSourceState {
   $allowed = @(
-    '.gitignore',
-    'backend/bridge/mt5_vm/test_baremetal_worker_install.py',
     'backend/bridge/mt5_vm/test_production_webrequest_probe.py',
     'backend/bridge/mt5_vm/test_terminal_python_api_bootstrap.py',
     'backend/bridge/mt5_vm/Mt5VmTerminalUi.ps1',
-    'backend/cmd/mt5-migration-gate/main_test.go',
-    'backend/docs/CONFIGURATION.md',
-    'backend/execution/crates/mt5-vm-agent/src/process.rs',
-    'backend/internal/httpserver/server.go',
-    'backend/internal/simtrading/model_test.go',
-    'docs/agent-evidence/production-worker-host-provision/EVIDENCE.md',
-    'docs/agent-evidence/production-worker-host-provision/SPEC.md',
-    'frontend/package.json',
-    'frontend/tsconfig.test.json',
+    'docs/agent-evidence/mt5-production-repair/EVIDENCE.md',
+    'docs/agent-evidence/mt5-production-repair/SPEC.md',
     'tools/mt5-baremetal/Invoke-MT5WebRequestProbe.ps1',
     'tools/mt5-baremetal/MarketLensWebRequestProbe.mq5',
     'tools/mt5-baremetal/Set-MT5WebRequestAllowlist.ps1',
-    'tools/verify-production-worker-host-provision.ps1'
+    'tools/verify-production-worker-host-provision.ps1',
+    'tools/verify-mt5-production-repair.ps1'
   )
+  & git -C $repoRoot merge-base --is-ancestor $baselineCommit HEAD
+  Assert-NativeSuccess 'PROVISIONING_BASELINE_NOT_ANCESTOR'
   $changed = @(& git -C $repoRoot diff --name-only "$baselineCommit..HEAD")
   Assert-NativeSuccess 'PROVISIONING_GIT_DIFF_FAILED'
   foreach ($path in $changed) {
@@ -1079,7 +1088,7 @@ try {
     $mainPath = Join-Path $backendRoot 'cmd\mt5-migration-gate\main.go'
     $originalBytes = [IO.File]::ReadAllBytes($mainPath)
     $originalHash = (Get-FileHash -LiteralPath $mainPath -Algorithm SHA256).Hash
-    $originalText = [Text.Encoding]::UTF8.GetString($originalBytes)
+    $originalText = ([Text.Encoding]::UTF8.GetString($originalBytes)).Replace("`r`n", "`n")
     Assert-Gate (
       [regex]::Matches($originalText, '(?m)^func main\(\) \{\}$').Count -eq 1
     ) 'PROVISIONING_GO_MAIN_SOURCE_UNEXPECTED'

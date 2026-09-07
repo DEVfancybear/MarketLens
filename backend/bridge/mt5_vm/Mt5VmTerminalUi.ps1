@@ -3452,7 +3452,8 @@ function Set-MT5VmTerminalWebRequestAllowlist {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory = $true)][int]$ProcessId,
-    [Parameter(Mandatory = $true)][string]$Origin
+    [Parameter(Mandatory = $true)][string]$Origin,
+    [switch]$DeferPermissionProof
   )
 
   $desired = Assert-MT5VmDesiredWebRequestState `
@@ -3493,6 +3494,16 @@ function Set-MT5VmTerminalWebRequestAllowlist {
     $persisted = Read-MT5VmWebRequestStateBoundary -OptionsHandle $activeDialog
     Cancel-MT5VmOptionsDialogBoundary -OptionsHandle $activeDialog
     $activeDialog = [IntPtr]::Zero
+    if ($DeferPermissionProof -and $persisted.Enabled -eq 1 -and
+        @($persisted.Items).Count -eq 2 -and
+        @($persisted.Items | Where-Object { -not [string]::IsNullOrEmpty([string]$_) }).Count -eq 0) {
+      # Owner-drawn rows can remain unreadable after reopen. Only the caller's
+      # subsequent terminal WebRequest receipt may establish permission.
+      return [pscustomobject][ordered]@{
+        status = 'APPLIED_PENDING_PROBE'
+        probe_verified = $false
+      }
+    }
     if (-not (Test-MT5VmDesiredWebRequestState -State $persisted -ExpectedOrigin $Origin)) {
       throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_PERSIST_FAILED'
     }

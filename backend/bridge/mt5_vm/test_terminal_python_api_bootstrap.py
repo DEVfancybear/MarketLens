@@ -155,6 +155,55 @@ class TerminalPythonApiBootstrapTests(unittest.TestCase):
             "$script:pending=$null};"
         )
 
+    def test_opaque_reopened_url_rows_remain_pending_until_external_probe(self) -> None:
+        completed = self._run_module(
+            self._webrequest_ui_boundaries()
+            + "function Confirm-MT5VmOptionsDialogWithActiveEditorBoundary {"
+            "param([IntPtr]$OptionsHandle,[IntPtr]$EditorHandle,[int]$ProcessId);"
+            "$script:confirmCalls+=1;$script:persisted=[ordered]@{Enabled=1;Items=@('','')};"
+            "$script:pending=$null};"
+            "$result=Set-MT5VmTerminalWebRequestAllowlist -ProcessId 701 "
+            "-Origin 'http://127.0.0.1' -DeferPermissionProof;"
+            "[pscustomobject]@{result=$result;opens=$script:openCalls;confirms=$script:confirmCalls}|"
+            "ConvertTo-Json -Compress -Depth 4"
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertEqual("APPLIED_PENDING_PROBE", observed["result"]["status"])
+        self.assertFalse(observed["result"]["probe_verified"])
+        self.assertEqual(2, observed["opens"])
+        self.assertEqual(1, observed["confirms"])
+
+    def test_opaque_reopened_rows_require_explicit_probe_opt_in(self) -> None:
+        completed = self._run_module(
+            self._webrequest_ui_boundaries()
+            + "function Confirm-MT5VmOptionsDialogWithActiveEditorBoundary {"
+            "param([IntPtr]$OptionsHandle,[IntPtr]$EditorHandle,[int]$ProcessId);"
+            "$script:confirmCalls+=1;$script:persisted=[ordered]@{Enabled=1;Items=@('','')};"
+            "$script:pending=$null};"
+            "try { Set-MT5VmTerminalWebRequestAllowlist -ProcessId 701 "
+            "-Origin 'http://127.0.0.1' | Out-Null;exit 9 }"
+            "catch { [pscustomobject]@{caught=$_.Exception.Message;state=$script:persisted}|"
+            "ConvertTo-Json -Compress -Depth 4 }"
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertEqual("PROVISIONING_WEBREQUEST_ALLOWLIST_PERSIST_FAILED", observed["caught"])
+        self.assertEqual({"Enabled": 0, "Items": [""]}, observed["state"])
+
+    def test_deferred_probe_does_not_accept_readable_wrong_url(self) -> None:
+        completed = self._run_module(
+            self._webrequest_ui_boundaries(mismatch_apply=True)
+            + "try { Set-MT5VmTerminalWebRequestAllowlist -ProcessId 701 "
+            "-Origin 'http://127.0.0.1' -DeferPermissionProof | Out-Null;exit 9 }"
+            "catch { [pscustomobject]@{caught=$_.Exception.Message;state=$script:persisted}|"
+            "ConvertTo-Json -Compress -Depth 4 }"
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        observed = json.loads(completed.stdout)
+        self.assertEqual("PROVISIONING_WEBREQUEST_ALLOWLIST_PERSIST_FAILED", observed["caught"])
+        self.assertEqual({"Enabled": 0, "Items": [""]}, observed["state"])
+
     def _terminal_env(self, name: str = "Broker Alpha Unicode") -> dict[str, str]:
         return {
             "MT5_TEST_TERMINAL": rf"C:\Program Files\{name} Ω\terminal64.exe"
