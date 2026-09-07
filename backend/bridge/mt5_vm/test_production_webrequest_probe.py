@@ -207,7 +207,7 @@ foreach ($offset in @(0, 25200, -18000)) {
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("UTC_RECEIPT=PASS", result.stdout)
 
-    def test_native_commit_rollback_trace_requires_probe_and_restores(self) -> None:
+    def test_native_commit_rollback_trace_is_offline_and_restores(self) -> None:
         result = self.run_native_contract(r'''
 $bytes = Fixture '0' ''
 [IO.File]::WriteAllBytes($path, $bytes)
@@ -216,7 +216,7 @@ $result = Invoke-ProductionNativeAllowlistTransaction -CommonIniPath $path `
   -PreconditionAction {} -QuiesceAction {} -RollbackOnSuccess `
   -ApplyAction { [IO.File]::WriteAllBytes($path, (Fixture '1' 'AABBCC')) } `
   -ProbeAction { $state.probes++; return $true }
-Require ($state.probes -eq 1 -and $result.probe_verified -eq $true -and $result.restored_prior -eq $true)
+Require ($state.probes -eq 0 -and $result.permission_verified -eq $false -and $result.restored_prior -eq $true)
 Require (Test-ProductionByteArrayEqual $bytes ([IO.File]::ReadAllBytes($path)))
 Require (-not (Test-Path -LiteralPath $backup))
 'NATIVE_TRACE=PASS'
@@ -270,7 +270,7 @@ foreach ($kind in @('duplicate', 'encoding', 'oversized', 'invalid_switch', 'nul
   $caught = ''
   try {
     $null = Invoke-ProductionNativeAllowlistTransaction -CommonIniPath $path `
-      -PreconditionAction {} -ProbeAction {throw 'UNEXPECTED_ACTION'} `
+      -ProvenanceAction {} -PreconditionAction {} -ProbeAction {throw 'UNEXPECTED_ACTION'} `
       -ApplyAction {throw 'UNEXPECTED_ACTION'} -QuiesceAction {throw 'UNEXPECTED_ACTION'}
   } catch { $caught = $_.Exception.Message }
   $expected = if ($kind -ceq 'recovery') { 'PROVISIONING_WEBREQUEST_ALLOWLIST_RECOVERY_STATE_INVALID' } else { 'PROVISIONING_WEBREQUEST_ALLOWLIST_SCHEMA_INVALID' }
@@ -373,7 +373,7 @@ foreach ($length in @(2, 16, 70, 128)) {
   $sddl = Get-ProductionAclSddl $path
   $events = [Collections.Generic.List[string]]::new()
   $result = Invoke-ProductionNativeAllowlistTransaction -CommonIniPath $path `
-    -PreconditionAction { $events.Add('precondition') } `
+    -ProvenanceAction {} -PreconditionAction { $events.Add('precondition') } `
     -ProbeAction { $events.Add('probe'); return $true } `
     -ApplyAction { throw 'MUST_NOT_APPLY_WORKING_PROFILE' } `
     -QuiesceAction { $events.Add('quiesce') }
@@ -391,15 +391,15 @@ foreach ($length in @(2, 16, 70, 128)) {
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("OPAQUE_PROFILE=PASS", result.stdout)
 
-    def test_native_allowlist_applies_only_after_permission_failure_or_disabled(self) -> None:
+    def test_native_allowlist_applies_only_in_explicit_empty_configuration_mode(self) -> None:
         result = self.run_native_contract(r'''
-foreach ($enabled in @('0', '1')) {
-  $bytes = Fixture $enabled 'AABBCC'
+foreach ($enabled in @('0')) {
+  $bytes = Fixture $enabled ''
   [IO.File]::WriteAllBytes($path, $bytes)
   $events = [Collections.Generic.List[string]]::new()
   $state = [pscustomobject]@{ applied = $false }
   $result = Invoke-ProductionNativeAllowlistTransaction -CommonIniPath $path `
-    -PreconditionAction {} -QuiesceAction {} `
+    -ConfigureNativeAllowlist -PreconditionAction {} -QuiesceAction {} `
     -ProbeAction {
       $events.Add('probe')
       if (-not $state.applied) { throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_REQUIRED' }
@@ -429,7 +429,7 @@ foreach ($failure in @('launch', 'receipt', 'false', 'shutdown', 'settings', 'dr
   $caught = ''
   try {
     $null = Invoke-ProductionNativeAllowlistTransaction -CommonIniPath $path `
-      -PreconditionAction {} -ApplyAction {
+      -ConfigureNativeAllowlist -PreconditionAction {} -ApplyAction {
         [IO.File]::WriteAllBytes($path, (Fixture '1' 'AABBCC'))
         if ($failure -ceq 'settings') { throw 'INJECTED_SETTINGS_FAILURE' }
       } -ProbeAction {
@@ -469,7 +469,7 @@ $bytes = Fixture '0' ''
 $caught = ''
 try {
   $null = Invoke-ProductionNativeAllowlistTransaction -CommonIniPath $path `
-    -PreconditionAction {} -ApplyAction { throw 'INJECTED_SETTINGS_FAILURE' } `
+    -ConfigureNativeAllowlist -PreconditionAction {} -ApplyAction { throw 'INJECTED_SETTINGS_FAILURE' } `
     -ProbeAction { throw 'UNEXPECTED_PROBE' } `
     -QuiesceAction { throw 'INJECTED_UNSAFE_TO_RESTORE' }
 } catch { $caught = $_.Exception.Message }
@@ -505,7 +505,7 @@ function git {
   }
   if ($args -contains '--name-only') {
     if ($env:REPAIR_GIT_FAILURE -eq 'diff') { $global:LASTEXITCODE = 128; return }
-    if ($args -notcontains '7bcfeb891c6b76048c471af8c8dd0738177b2b56..HEAD') {
+    if ($args -notcontains '299eef3e5897c1bc723c1afeb05dff0feac1aafb..HEAD') {
       'frontend/tests/shims/ky.ts'
     }
     foreach ($path in ($env:REPAIR_CHANGED | ConvertFrom-Json)) { $path }

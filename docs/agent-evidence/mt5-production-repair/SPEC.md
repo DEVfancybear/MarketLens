@@ -189,3 +189,11 @@ local `.git/info/exclude` to keep its generated reports out of production source
 checks. No dependency or tracked ignore-file change is introduced. Local docs
 verification uses `-DocsOnly`; broad application suites remain in CI and the
 unchanged server provisioning layers, deferred as directed above.
+
+## Authoritative task correction (2026-09-07)
+
+Further repair is governed by `../production-worker-host-provision/SPEC.md`,
+revision v40. This document records the historical component repair at 299eef3;
+it does not supersede the original provisioning task or establish production
+acceptance. The compatibility command now delegates to the original verifier's
+`-CodeTestsOnly` mode. See that task's EVIDENCE for current results and server gaps.

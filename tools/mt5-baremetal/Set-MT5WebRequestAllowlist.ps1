@@ -6,7 +6,8 @@ param(
   [switch]$OccupiedPortControl,
   [switch]$MouseHitControl,
   [switch]$CursorRestoreControl,
-  [switch]$CommitRollbackTrace
+  [switch]$CommitRollbackTrace,
+  [switch]$ConfigureNativeAllowlist
 )
 
 $ErrorActionPreference = 'Stop'
@@ -596,10 +597,20 @@ function Invoke-ProductionNativeAllowlistTransaction {
     [Parameter(Mandatory = $true)][scriptblock]$ProbeAction,
     [Parameter(Mandatory = $true)][scriptblock]$ApplyAction,
     [Parameter(Mandatory = $true)][scriptblock]$QuiesceAction,
-    [switch]$RollbackOnSuccess
+    [switch]$RollbackOnSuccess,
+    [switch]$ConfigureNativeAllowlist,
+    [scriptblock]$ProvenanceAction = { throw 'PROVISIONING_NATIVE_PROVENANCE_REQUIRED' },
+    [scriptblock]$CommitAction = {}
   )
   & $PreconditionAction
   $original = Read-ProductionNativeConfig -Path $CommonIniPath
+  if ($ConfigureNativeAllowlist -and ($original.Enabled -or $original.UrlValueLength -ne 0)) {
+    throw 'PROVISIONING_NATIVE_INITIAL_STATE_UNPROVEN'
+  }
+  if (-not $RollbackOnSuccess -and -not $ConfigureNativeAllowlist) {
+    if (-not $original.Enabled) { throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_REQUIRED' }
+    & $ProvenanceAction
+  }
   $acl = Get-Acl -LiteralPath $CommonIniPath -ErrorAction Stop
   $sddl = [string]$acl.Sddl
   $backup = $CommonIniPath + '.marketlens-native.bak'
@@ -613,6 +624,13 @@ function Invoke-ProductionNativeAllowlistTransaction {
   Write-ProductionCreateNewFile -Path $backup -Bytes $original.Bytes -Acl $acl
   try {
     Assert-ProductionNativeConfigUnchanged -Path $backup -Bytes $original.Bytes -Sddl $sddl
+    if ($RollbackOnSuccess) {
+      Assert-ProductionNativeConfigUnchanged -Path $CommonIniPath -Bytes $original.Bytes -Sddl $sddl
+      Restore-ProductionWebRequestCommonIniSnapshot -CommonIniPath $CommonIniPath `
+        -BackupPath $backup -SnapshotBytes $original.Bytes `
+        -SnapshotHash (Get-ProductionSha256Hex $original.Bytes) -SnapshotSddl $sddl -PreserveNativeAcl
+      return [pscustomobject]@{ status = 'OFFLINE'; snapshot_verified = $true; restored_prior = $true; permission_verified = $false }
+    }
     $verified = $false
     if ($original.Enabled) {
       try {
@@ -627,6 +645,7 @@ function Invoke-ProductionNativeAllowlistTransaction {
     $status = 'UNCHANGED'
     $expectedBytes = $original.Bytes
     if (-not $verified) {
+      if (-not $ConfigureNativeAllowlist) { throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_REQUIRED' }
       & $ApplyAction | Out-Null
       & $QuiesceAction
       $configured = Read-ProductionNativeConfig -Path $CommonIniPath
@@ -643,6 +662,7 @@ function Invoke-ProductionNativeAllowlistTransaction {
     & $QuiesceAction
     Assert-ProductionNativeConfigUnchanged -Path $CommonIniPath -Bytes $expectedBytes -Sddl $sddl
     Assert-ProductionNativeConfigUnchanged -Path $backup -Bytes $original.Bytes -Sddl $sddl
+    & $CommitAction
     if ($RollbackOnSuccess) {
       Restore-ProductionWebRequestCommonIniSnapshot -CommonIniPath $CommonIniPath `
         -BackupPath $backup -SnapshotBytes $original.Bytes `
@@ -657,7 +677,7 @@ function Invoke-ProductionNativeAllowlistTransaction {
   } catch {
     $originalFailure = $_.Exception.Message
     try {
-      & $QuiesceAction
+      if (-not $RollbackOnSuccess) { & $QuiesceAction }
       Assert-ProductionNoReparseComponent -Path $CommonIniPath
       Assert-ProductionNoReparseComponent -Path $backup
       Restore-ProductionWebRequestCommonIniSnapshot -CommonIniPath $CommonIniPath `
@@ -1307,6 +1327,8 @@ function Invoke-ProductionAllowlistProbe {
         }).Count -ne 1) {
     throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_PROBE_FAILED'
   }
+  $proofLine = @($output | Where-Object { [string]$_ -match '^PRODUCTION_WEBREQUEST_PROBE=PASS proof=.+$' })[0]
+  $script:LastNativeProofPath = ([string]$proofLine).Substring('PRODUCTION_WEBREQUEST_PROBE=PASS proof='.Length)
   return $true
 }
 
@@ -1852,7 +1874,18 @@ if ($ContractTestsOnly) {
   exit 0
 }
 
+. (Join-Path $PSScriptRoot 'MT5ProvisioningState.ps1')
 $commonIniPath = Join-Path $selectedProfile $commonIniRelativePath
+$provenancePath = 'C:\ProgramData\MarketLens\slot-inputs\slot-01\native-allowlist-state.json'
+$sourceCommit = @(& git -C $repoRoot rev-parse HEAD)
+if ($LASTEXITCODE -ne 0 -or $sourceCommit.Count -ne 1) { throw 'PROVISIONING_GIT_HEAD_FAILED' }
+$sourceDirty = @(& git -C $repoRoot status --porcelain=v1 --untracked-files=all)
+if ($LASTEXITCODE -ne 0 -or $sourceDirty.Count -ne 0) { throw 'PROVISIONING_WORKTREE_NOT_CLEAN' }
+if ($ConfigureNativeAllowlist -and $CommitRollbackTrace) { throw 'PROVISIONING_MODE_CONFLICT' }
+if ([Security.Principal.WindowsIdentity]::GetCurrent().Name -ine 'DESKTOP-MDC339G\Duong') {
+  throw 'PROVISIONING_SELECTED_HOST_INVALID'
+}
+if ($ConfigureNativeAllowlist -and (Test-Path -LiteralPath $provenancePath)) { throw 'PROVISIONING_NATIVE_PROVENANCE_CONFLICT' }
 $ownedProxyState = [pscustomobject]@{ Value = $null }
 
 Assert-ProductionSelectedTerminalAndProfile
@@ -1872,18 +1905,30 @@ try {
         -RollbackProxyAction { Remove-ProductionOwnedLoopbackPortProxy })
     } `
     -QuiesceAction { Assert-ProductionSelectedTerminalAbsent } `
-    -RollbackOnSuccess:$CommitRollbackTrace
-  if ($CommitRollbackTrace) {
-    if ($null -ne $ownedProxyState.Value -and [bool]$ownedProxyState.Value.created) {
-      if (-not (Remove-ProductionOwnedLoopbackPortProxy)) {
-        throw 'PROVISIONING_WEBREQUEST_ALLOWLIST_ROLLBACK_FAILED'
-      }
-      $ownedProxyState.Value = $null
+    -RollbackOnSuccess:$CommitRollbackTrace -ConfigureNativeAllowlist:$ConfigureNativeAllowlist `
+    -ProvenanceAction {
+      Assert-ProvisionProvenance -Path $provenancePath -TerminalPath $selectedTerminal `
+        -StateRoot $selectedProfile -ConfigPath $commonIniPath -SourceCommit $sourceCommit[0]
+      $prior = Read-ProvisionFlatJson $provenancePath
+      Assert-ProvisionHistoricalReceipt -Directory (Join-Path $env:APPDATA 'MetaQuotes/Terminal/Common/Files/MarketLens') `
+        -Hash $prior.receipt_sha256
+    } -CommitAction {
+    if ($ConfigureNativeAllowlist) {
+    $proof = [IO.File]::ReadAllText($script:LastNativeProofPath) | ConvertFrom-Json
+    $provenance = [ordered]@{
+      schema_version=1; terminal_path=$selectedTerminal; terminal_sha256=$proof.terminal_sha256
+      state_root=$selectedProfile; native_config_sha256=$proof.native_config_sha256
+      allowed_origin=$expectedOrigin; initial_state='empty-disabled'; receipt_sha256=$proof.receipt_sha256
+      source_commit=$sourceCommit[0]
     }
-    Write-Output ('PRODUCTION_WEBREQUEST_ALLOWLIST_COMMIT_ROLLBACK=PASS probe_verified={0} restored_prior={1}' -f
-      [bool]$result.probe_verified, [bool]$result.restored_prior)
+    Set-ProvisionFileBytes $provenancePath ([Text.Encoding]::UTF8.GetBytes(($provenance | ConvertTo-Json -Compress)))
+    }
+  }
+  if ($CommitRollbackTrace) {
+    Write-Output 'PRODUCTION_WEBREQUEST_ALLOWLIST_COMMIT_ROLLBACK=PASS snapshot_verified=True restored_prior=True permission_verified=False'
     return
   }
+  Write-Output ('PRODUCTION_WEBREQUEST_ALLOWLIST_PROOF=' + $script:LastNativeProofPath)
   Write-Output (
     'PRODUCTION_WEBREQUEST_ALLOWLIST=PASS proxy_created={0} status={1} enabled={2} probe_verified={3}' -f
       [bool]$ownedProxyState.Value.created,

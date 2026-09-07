@@ -3105,3 +3105,236 @@ APPROVE SPEC REVISION: production-worker-host-provision v39
 The user approved this exact revision verbatim as
 `APPROVE SPEC REVISION: production-worker-host-provision v39`. No v39 implementation change was
 made after the revision was written and before this approval.
+
+## Revision v40 - reconcile the provisioning contract and repair the complete preparation chain
+
+Status: **PROPOSED; exact revision approval has not been obtained.**
+Tier: **old-coder Tier 3**.
+Baseline: `299eef3e5897c1bc723c1afeb05dff0feac1aafb` on `master`.
+Authoritative task: this SPEC and this directory's EVIDENCE, including original
+S1-S8 and V3-S1 through V3-S7 as amended explicitly below. The separate
+`mt5-production-repair` report is historical component evidence, not task completion.
+
+The user said `ok làm đi bạn` after the scope audit. This authorizes preparing
+this corrective revision; it is not recorded as approval of a document that had
+not yet been written. The server remains `DESKTOP-MDC339G\Duong`, with the exact
+terminal/state root already selected. The user's server-test deferral persists:
+no production, terminal, ProgramData, secret or Scheduled Task mutation on local
+`DESKTOP-F7SJ82A`. Do not ask again for the already confirmed host or remote access.
+
+### v40 concrete findings and requirements that change
+
+| Existing requirement or behavior | v40 decision and reason |
+|---|---|
+| v36 offline plaintext WebRequest transform; v37-v39 preserve it | Supersede the plaintext representation requirement. Historical v37/v38 records already show 4014 despite the desired plaintext file. Native serialization must not be guessed. Keep bounded parsing, exact unrelated-byte preservation, ACL, ownership, recovery and fresh actual WebRequest proof. |
+| v36/v39 prohibit production UI; 299eef3 calls it automatically | Restore a non-UI default. Add an explicit `-ConfigureNativeAllowlist` mode to the allowlist tool and full provisioning verifier for one-time configuration on the selected interactive server. This mode is a NEW, visible exception to v36/v39's UI prohibition, requiring this revision's approval. No automatic fallback to UI in normal mode. |
+| Empty/unreadable UI rows and HTTP 200 used to infer settings | HTTP 200 proves the requested URL works; it does not prove that no other URLs are allowed. Configure only from the exact known empty, disabled UI state. Do not adopt an arbitrary opaque existing list without matching protected configuration provenance. Unsupported or unproven state must stop without erasing settings. |
+| v36 offline apply/rollback trace; 299eef3 runs proxy/probe during it | Restore a strictly offline `-CommitRollbackTrace`: zero terminal start, UI, HTTP, portproxy mutation, worker input or attestation publication. For native files the trace proves snapshot/restore bytes and SDDL, not a fabricated desired URL. Retain plaintext transform tests as historical synthetic coverage only. The trace marker must distinguish `snapshot_verified`, `restored_prior`, and `permission_verified=False`; supersede the old `persisted_desired` claim explicitly. |
+| Bootstrap updates preserve dotenv bytes/ACL | Current Set-DotEnvValues drops UTF-8 BOM and changes the replaced CRLF line to LF in disposable reproduction. Fix byte-preserving named-value replacement, including literal dollar/backslash values; no broad rewrite. |
+| Existing conflicting host inputs stop before overwrite | Current Write-ProvenTopologyInputs overwrites an unknown existing attestation in a disposable reproduction. Stage and validate a complete bundle; adopt exact validated existing inputs or stop on conflict. Do not force overwrite unknown files. |
+| Restricted files and recovery are safe throughout a transaction | Create restricted temporary files with their final descriptor before writing payload, validate complete ACL rules, preserve exact recovery bytes/ACL, and retain the journal when restoration cannot be proven. Repair the verifier/probe writers and receipt persistence through one bounded shared helper. |
+| v3/current verifier source gate, report and two-run completion | Check source and host before mutation, retain two distinct fresh probe receipts, distinguish first-install dry-run from validated adoption, and never reuse an older PASS report for a failed attempt. Keep all thirteen full-server layers. |
+| Separate repair gauntlet/CI reported as delivery | A local code PASS permits code commit/push under the user's requested server-test handoff. It does not satisfy S7/V3-S6. This explicitly supersedes old no-push-until-live clauses only for the deferred-server delivery. Full task status stays SERVER_VALIDATION_PENDING until the actual selected-host verifier passes. |
+
+Retain the demonstrated CRLF-safe source matching, UTC receipt timestamp,
+validated receipt identity before interpreting 4014, secure ACL restoration, and
+no-trade probe from 299eef3. Do not revert these merely to make source resemble an
+older revision. Every behavior retained or changed must have the mapping below.
+
+### v40 bounded production flow
+
+1. Before mutating anything, verify selected host/user/SID, exact signed terminal
+   and origin/state-root pair, absent/owned terminal processes, no reparse ancestry,
+   source baseline ancestry and permitted delta, clean checkout, existing gateway
+   executable/listener/health, and the original PostgreSQL 16 preconditions.
+   The original existing-gateway prerequisite remains: no fake HTTP server and no
+   manual gateway/API/worker launch to evade the canonical runner.
+2. Default allowlist mode preserves native common.ini and never calls UI. It may
+   verify a working configuration through a fresh nonce probe, but may publish
+   single-origin provisioning evidence only with valid matching configuration
+   provenance (see below). Missing permission or unproven cardinality fails before
+   bootstrap/input/installer work.
+3. Explicit configuration mode may use the existing guarded UI helper only on
+   the selected interactive host, after recording exact original bytes/SDDL and
+   validating the exact disabled/empty prior UI state. It sets only
+   `http://127.0.0.1`, confirms/reopens, retires the owned process gracefully,
+   validates unchanged unrelated config bytes/ACL, then requires a real probe.
+   An opaque reopened result is pending only; no receipt means no success. An
+   enabled unknown list, wrong readable URL, ambiguous PID or unusable desktop
+   fails without deleting or replacing unknown settings.
+4. Write protected configuration provenance only after that successful sequence.
+   Fixed path: `C:\ProgramData\MarketLens\slot-inputs\slot-01\native-allowlist-state.json`.
+   Exact schema v1 fields: `schema_version`, `terminal_path`, `terminal_sha256`,
+   `state_root`, `native_config_sha256`, `allowed_origin`, `initial_state`,
+   `receipt_sha256`, `source_commit`. `initial_state` is exactly `empty-disabled`;
+   `allowed_origin` is exactly `http://127.0.0.1`. Store no config values, broker
+   identity or secret. Use protected ACLs and source/receipt/hash validation;
+   missing, duplicate, unknown, stale or mismatched fields cannot authorize reuse.
+   This is run-produced provenance, not cryptographic proof against a malicious
+   administrator. Retain the existing five-field installer attestation schema.
+5. Separate receipt acquisition from topology publication. Perform two successive
+   normal verifications with distinct nonces against the same native config and
+   terminal identity, retaining both sanitized receipts/proofs. Second verification
+   must be UNCHANGED; two references to the same proof do not satisfy this rule.
+   Probe failure or default-config drift must not publish a positive input bundle.
+6. Prepare the chart/settings/attestation, bootstrap file and schema-v1 one-slot
+   input only after those proofs. All target parents must be non-reparse and
+   protected. Existing exact files may be adopted after content/ACL validation;
+   conflicting existing files stop before any bundle target is replaced. The
+   attestation remains an installer descriptor linked to the real receipt and
+   proven native configuration; experts.ini text is not itself permission proof.
+7. Dry-run the existing installer. Allow only the selected worker ID, identity,
+   task, one slot, absolute paths and exact artifact hashes. On an existing valid
+   installation, use its validated adoption contract; do not require a fictitious
+   DRY_RUN result or reinstall a healthy task. Never hand-author a worker receipt.
+8. Invoke `.\run-backend-production.ps1` once, with no switches, through its
+   existing installation/adoption, receipt persistence, migration/restart and
+   readiness flow. Verify receipt, task action/identity, fresh worker heartbeat,
+   capacity, MT5 data and local/public health. Record the actual source before
+   and after the runner's pull; changed source invalidates the earlier code
+   verification and cannot be reported as a verified final production state.
+9. Before installer/runner handoff, rollback only recorded run-owned changes on
+   failure, after proving required processes are quiescent. Keep existing files
+   untouched and journals when rollback fails. After installer/runner handoff,
+   fail and retain attributable state/logs; do not blindly restore active profile
+   or secret files, delete a worker/task, or roll back migrations. This narrows
+   v36's unconditional later-production rollback wording to safe ownership-based
+   recovery. No failure can publish a ready result.
+
+Normal build remains `.\run-backend-production.ps1`; it consumes prepared input.
+It is not modified to invoke setup UI, create attestations, or hide missing input.
+No real broker onboarding, live/funded activation or trade is included in v40.
+
+### v40 executable acceptance criteria
+
+New tests live in `backend/bridge/mt5_vm/test_production_host_provision.py` unless
+an existing named regression below is extended separately. Test the actual
+PowerShell functions, mocking only process/UI/network/task/database boundaries;
+use real disposable NTFS files and descriptors for byte/ACL tests.
+
+| ID | Required positive and negative behavior; mapping to original task |
+|---|---|
+| V40-S1 | `test_default_allowlist_never_calls_ui`: normal mode preserves verified native state and requires fresh probe; disabled, unproven or failed permission state exits nonzero before UI or publication. Maps original S1/S2 and V3-S4. |
+| V40-S2 | `test_explicit_configuration_requires_empty_prior_and_live_proof`: the explicit mode alone can configure an exact empty disabled UI; wrong host/PID/list or absent receipt fails. Opaque return never becomes proof alone. |
+| V40-S3 | `test_configuration_provenance_rejects_unknown_or_stale_state`: matching protected provenance plus a fresh probe permits reuse; unknown fields, duplicate JSON, changed terminal/config/source ownership or broad ACL fail. Positive probe alone cannot prove single-origin cardinality. |
+| V40-S4 | `test_commit_rollback_trace_is_offline`: exact bytes/SDDL restored and no residual owned journal on success; all terminal/UI/HTTP/proxy/publication actions are tripwires. Unsafe restoration retains journal. Replace the conflicting repair test `test_native_commit_rollback_trace_requires_probe_and_restores` only through RED then implementation, as explicitly authorized behavior correction. |
+| V40-S5 | `test_two_probe_receipts_bind_same_profile_before_publication`: two distinct fresh nonces and unchanged state succeed; duplicate nonce, stale receipt, wrong URL/service/terminal or second-run drift prevents publication. Maps S2/V3-S4. |
+| V40-S6 | `test_dotenv_update_preserves_bytes_and_acl`: UTF-8 with/without BOM, LF/CRLF, trailing-newline variants and literal dollar/backslash values preserve every byte except approved value spans. Duplicate/malformed target keys and invalid encoding fail before write; rollback restores original bytes/SDDL. Maps S3/V3-S5. |
+| V40-S7 | `test_restricted_writes_protect_payload_from_creation`: final restricted descriptor exists before payload write; inherited/extra/missing SID rules fail. Faults before publish and during restore never leak content and retain validated recovery where needed. |
+| V40-S8 | `test_host_input_bundle_refuses_conflicts_and_adopts_exact_state`: valid fresh bundle and exact adoption succeed; unknown existing file, linked parent, mismatched hash, partial bundle or invalid ACL stops before overwrite. No partial positive attestation on failed publication. Maps S3/S4/S5/V3-S5. |
+| V40-S9 | `test_preparation_dry_run_and_adoption_preserve_installer_contract`: call existing strict input parser, dry-run/adoption and receipt validators using a disposable fixture; reject relative paths, duplicate/extra slots, wrong EA/terminal hashes, token mismatch and task identity drift. Existing worker-install and readiness assertions remain. |
+| V40-S10 | `test_full_flow_stops_at_each_failed_boundary`: spy boundary order from preflight to two receipts, protected preparation, dry-run/adoption, runner and postconditions. For each injected stage failure later stages never run, original error survives successful rollback, and failed rollback remains authoritative. Runner path is exact, no switches, at most once. Maps S1-S8/V3-S4 through V3-S7. |
+| V40-S11 | `test_attempt_report_cannot_reuse_old_pass`: a previous PASS plus a new preflight/layer/cleanup failure produces a new failed attempt report with source identity, not stale success; missing, duplicate or reordered full-server layers fail. |
+| V40-S12 | `test_source_gate_precedes_host_mutation`: dirty/unapproved/unknown Git result or wrong host fails before any protected write, UI, process change or runner invocation. Source changes during runner pull prevent verified completion. |
+| V40-S13 | Retain probe LF/CRLF positive and malformed-launch controls, UTC/stale/4014 receipt controls, no-trade source/compile, installer/readiness regressions, supported UI safety regressions and their existing mutants. Numeric coverage is not inferred from their count. |
+| V40-S14 | Actual selected-host full thirteen-layer verifier, including distinct real probe receipts, protected one-slot input, installer/receipt/task, migrations, fresh heartbeat/capacity and public health. USER-DEFERRED and UNVERIFIED until run on DESKTOP-MDC339G. Only this can satisfy S7/V3-S6 and overall production PASS. |
+
+The existing repair tests that accept arbitrary opaque configuration must acquire
+legitimate synthetic provenance or become explicit rejection tests under V40-S3.
+This changes their acceptance contract visibly; do not merely relax an assertion.
+UI helper default safety assertions, forbidden launch switches, no-trade guards,
+exact process ownership and negative receipt assertions remain intact.
+
+### v40 planned paths, capabilities and Git operations
+
+Permitted implementation and test delta after approval:
+
+- `tools/verify-production-worker-host-provision.ps1`;
+- `tools/mt5-baremetal/Set-MT5WebRequestAllowlist.ps1`;
+- `tools/mt5-baremetal/Invoke-MT5WebRequestProbe.ps1`;
+- `tools/mt5-baremetal/MT5ProvisioningState.ps1` (new shared byte/ACL/journal helpers);
+- `tools/Install-ProductionManagedWorker.ps1` (receipt dotenv persistence only);
+- `backend/bridge/mt5_vm/test_production_host_provision.py` (new);
+- `backend/bridge/mt5_vm/test_production_webrequest_probe.py`;
+- `backend/bridge/mt5_vm/test_terminal_python_api_bootstrap.py`;
+- `backend/bridge/mt5_vm/test_baremetal_worker_install.py` (additional regression coverage);
+- `tools/verify-mt5-production-repair.ps1` (retain as compatibility entry delegating
+  to the original task's local code mode, not an alternative production result);
+- this SPEC/EVIDENCE and the two historical `mt5-production-repair` documents,
+  append-only cross-references/status corrections.
+
+No change to the canonical runner, Go/Rust runtime, schema/migration, frontend,
+CI workflow, published EA, generic UI helper implementation, dependencies or
+machine security policy. Existing MQL UTC source is compiled/verified, not edited.
+Discovery of a required change outside these paths must be exposed before editing.
+
+No installs/downloads of tools or replacement terminals. Use existing PowerShell
+5.1, managed Python, PATH Python, Git, MetaEditor and the full verifier's existing
+Go/Cargo/npm/psql tools. Compile only a disposable probe during local validation.
+Do not launch the real terminal or read/write real credentials for local tests.
+
+Generated local fixtures, transcripts, hashes, mutation reports and attempt
+reports stay under ignored `.artifacts/production-worker-host-provision/v40/`
+with unique attempt IDs; preserve previous evidence. No tracked ignore changes.
+Protected server outputs retain original paths plus the explicit provenance file
+above. Bootstrap entropy remains 48 random bytes; protect the provisioning SID,
+SYSTEM and Administrators only. Dotenv may update only
+`EXECUTION_MT5_VM_BOOTSTRAP_TOKEN`, `EXECUTION_MT5_MANAGED_WORKER_INSTALL_INPUT_FILE`
+and the runner/installer-owned `EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE`.
+No secret values in argv, chat, reports, fixtures or Git; synthetic test values only.
+
+After all local applicable layers pass, stage only these task paths, make a
+focused corrective commit on the clean baseline, push normally, and verify the
+exact remote SHA plus CI terminal conclusion. No reset/revert of the whole prior
+commit, force push, unknown-file cleanup, or unrelated branch work. The user has
+authorized code handoff while real server validation remains deferred; record
+that as CODE_VALIDATED_SERVER_PENDING, never production PASS. A failed local
+layer blocks commit/push. Prior local counts/CI belong to 299eef3, not v40.
+
+### v40 verification commands and reporting
+
+The original task verifier owns both modes after implementation:
+
+```powershell
+# Local code and synthetic/disposable contracts only; no host mutation.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\verify-production-worker-host-provision.ps1 -CodeTestsOnly
+
+# Selected server only, when an already attested allowlist exists.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\verify-production-worker-host-provision.ps1
+
+# Selected server only: explicitly allow first-time native UI configuration.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\verify-production-worker-host-provision.ps1 -ConfigureNativeAllowlist
+```
+
+-CodeTestsOnly and -ConfigureNativeAllowlist are mutually exclusive. Neither is
+a recovery switch on run-backend-production.ps1; the full verifier still invokes
+that runner without switches. Code mode cannot invoke production stages and must
+never print the full production PASS marker or write over a production report.
+
+Code mode must run parser/contracts, all affected Python suites, the integration
+boundary-order matrix and hostile/round-trip fixtures; offline trace on disposable
+files; current MQL compile; existing relevant allowlist/probe/UI mutations plus at
+least six real v40 mutants (UI default bypass, offline probe call, stale provenance,
+dotenv byte drift, conflicting-target overwrite, stale PASS reuse). Each mutant
+must be unique, applied, fail the named assertion and restore exact source bytes.
+Repeat the property/invariant tests against relevant mutants separately and repeat
+the restored affected suite in reversed deterministic order. Include known-bad
+and unreadable-input controls for custom gates, dependency/capability/secret diff,
+source hashes and backend docs -DocsOnly. No numeric PowerShell line/branch
+coverage is claimed with unavailable tooling; record branch mapping and gaps.
+
+All thirteen existing full-server layers stay mandatory in both full modes,
+including Go race, Rust clippy, frontend lint, actual PostgreSQL, canonical runner,
+worker and local/public health. Missing CGO/toolchain/interactive session or any
+failed layer is a reported blocker, never silently skipped. Existing CI checks
+broad frontend/Go/Rust/Windows builds but does not replace this local suite or
+selected-host validation. No independent sub-agent review is planned.
+
+Append final source-specific EVIDENCE in this directory mapping both original
+S1-S8/V3 scenarios and every V40 scenario to pass/fail/unverified/n-a, one fresh
+code run, retained diagnostics, exact superseded test behavior, delivery SHA/CI,
+and separate selected-host results when available. Never overwrite old failed
+runs or convert historical component evidence into production acceptance.
+
+Approval requested for this exact appended revision:
+`APPROVE SPEC REVISION: production-worker-host-provision v40`.
+
+### v40 execution authorization follow-up
+
+After this exact revision was presented, the user replied:
+`tôi muốn bạn làm one-shot chức không muốn kéo dài nữa`.
+This is the natural-language go-ahead to implement and deliver the displayed v40
+in one continuous task. The literal suggested approval token was not sent and
+must not be quoted as though it was. The assistant acknowledged this scope before
+implementation. No additional per-step approval is required within v40. The
+selected-server validation deferral remains in effect.

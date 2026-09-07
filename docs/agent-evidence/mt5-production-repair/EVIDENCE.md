@@ -143,3 +143,11 @@ fallback. The installed old-coder Tier 3 workflow governs this repair.
 Official semantics: [TimeGMT](https://www.mql5.com/en/docs/dateandtime/timegmt),
 [TimeLocal](https://www.mql5.com/en/docs/dateandtime/timelocal), and
 [MoveFileExW](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw).
+
+## Authoritative task correction (2026-09-07)
+
+The 299eef3 component results above are historical. They did not complete the
+selected-host provisioning/installer/worker/health chain. Current corrective work
+and its source-specific results belong to
+`../production-worker-host-provision/EVIDENCE.md` under revision v40. Production
+validation remains deferred to the user on DESKTOP-MDC339G.

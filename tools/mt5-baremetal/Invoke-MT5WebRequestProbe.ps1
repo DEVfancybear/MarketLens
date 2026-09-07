@@ -16,7 +16,7 @@ $gatewayHealthUrl = 'http://127.0.0.1/health'
 $gatewayOrigin = 'http://127.0.0.1'
 $expectedPublisher = 'CN=MetaQuotes Ltd., O=MetaQuotes Ltd., S=Lemesos, C=CY'
 $probeSource = Join-Path $PSScriptRoot 'MarketLensWebRequestProbe.mq5'
-$reportRoot = Join-Path $repoRoot '.artifacts\production-worker-host-provision'
+$reportRoot = Join-Path $repoRoot ('.artifacts\production-worker-host-provision\v40\probe-' + [guid]::NewGuid().ToString('N'))
 $slotInputRoot = 'C:\ProgramData\MarketLens\slot-inputs\slot-01'
 $commonFilesRoot = Join-Path $env:APPDATA 'MetaQuotes\Terminal\Common\Files'
 $commonIniPath = Join-Path $stateRoot 'config\common.ini'
@@ -677,22 +677,11 @@ function Wait-ProbeOwnedTerminalExit {
   $State.Value = $null
 }
 
+. (Join-Path $PSScriptRoot 'MT5ProvisioningState.ps1')
+
 function Write-Utf8NoBomFile {
-  param(
-    [Parameter(Mandatory = $true)][string]$Path,
-    [Parameter(Mandatory = $true)][string]$Contents
-  )
-  $parent = Split-Path -Parent $Path
-  $null = [IO.Directory]::CreateDirectory($parent)
-  $temporary = Join-Path $parent ('.marketlens-' + [guid]::NewGuid().ToString('N') + '.tmp')
-  try {
-    [IO.File]::WriteAllText($temporary, $Contents, (New-Object Text.UTF8Encoding($false)))
-    Move-Item -LiteralPath $temporary -Destination $Path -Force
-  } finally {
-    if (Test-Path -LiteralPath $temporary) {
-      Remove-Item -LiteralPath $temporary -Force
-    }
-  }
+  param([string]$Path, [string]$Contents)
+  Set-ProvisionFileBytes -Path $Path -Bytes ([Text.Encoding]::UTF8.GetBytes($Contents))
 }
 
 function Protect-ProbeOutputFile {
@@ -730,9 +719,7 @@ BootstrapPipe=marketlens-slot-01
 </chart>
 "@
   $settings = "[Experts]`r`nAllowWebRequest=1`r`nWebRequestUrl=$gatewayOrigin`r`n"
-  Write-Utf8NoBomFile -Path $chartPath -Contents $chart
-  Write-Utf8NoBomFile -Path $settingsPath -Contents $settings
-  $settingsHash = (Get-FileHash -LiteralPath $settingsPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  $settingsHash = Get-Sha256Hex -Bytes ([Text.Encoding]::UTF8.GetBytes($settings))
   $attestation = [ordered]@{
     schemaVersion = 1
     settingsFileName = 'experts.ini'
@@ -740,11 +727,11 @@ BootstrapPipe=marketlens-slot-01
     allowedOrigins = @($gatewayOrigin)
     probeSucceeded = $true
   }
-  Write-Utf8NoBomFile -Path $attestationPath `
-    -Contents ($attestation | ConvertTo-Json -Compress -Depth 3)
-  foreach ($path in @($chartPath, $settingsPath, $attestationPath)) {
-    Protect-ProbeOutputFile -Path $path
-  }
+  $files = [ordered]@{}
+  $files[$chartPath] = [Text.Encoding]::UTF8.GetBytes($chart)
+  $files[$settingsPath] = [Text.Encoding]::UTF8.GetBytes($settings)
+  $files[$attestationPath] = [Text.Encoding]::UTF8.GetBytes(($attestation | ConvertTo-Json -Compress -Depth 3))
+  Write-ProvisionBundle -Files $files
   [pscustomobject][ordered]@{
     chart_path = $chartPath
     chart_sha256 = (Get-FileHash -LiteralPath $chartPath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -764,7 +751,7 @@ foreach ($forbidden in @('OrderSend(', 'OrderCheck(', 'CTrade', 'AccountInfo', '
     'PROVISIONING_PROBE_SOURCE_CAN_TRADE'
 }
 
-$null = [IO.Directory]::CreateDirectory($reportRoot)
+Ensure-ProvisionDirectory $reportRoot
 $scriptDirectory = Join-Path $stateRoot 'MQL5\Scripts'
 $null = [IO.Directory]::CreateDirectory($scriptDirectory)
 $installedSource = Join-Path $scriptDirectory 'MarketLensWebRequestProbe.mq5'
@@ -789,9 +776,11 @@ $null = [IO.Directory]::CreateDirectory($marketLensCommon)
 $requestPath = Join-Path $marketLensCommon 'webrequest-probe-request.txt'
 $receiptPath = Join-Path $marketLensCommon ("webrequest-probe-$nonce.json")
 $request = "schemaVersion=1`r`nnonce=$nonce`r`nurl=$gatewayHealthUrl`r`nrequestedAtUnix=$requestedAt`r`n"
-Write-Utf8NoBomFile -Path $requestPath -Contents $request
+if (Test-Path -LiteralPath $requestPath) { throw 'PROVISIONING_PROBE_REQUEST_CONFLICT' }
+Write-ProvisionCreateNew -Path $requestPath -Bytes ([Text.Encoding]::UTF8.GetBytes($request)) -Acl (New-ProvisionAcl)
+try {
 if (Test-Path -LiteralPath $receiptPath) {
-  Remove-Item -LiteralPath $receiptPath -Force
+  throw 'PROVISIONING_PROBE_RECEIPT_COLLISION'
 }
 
 Assert-ProbeTrue (Test-Path -LiteralPath $commonIniPath -PathType Leaf) `
@@ -826,7 +815,7 @@ $receipt = Invoke-ProbeCustomConfigTransaction `
     return $observedReceipt
   } `
   -QuiesceAction { Wait-ProbeOwnedTerminalExit -State $terminalState }
-$inputs = Write-ProvenTopologyInputs
+# Receipt acquisition never publishes installer topology.
 
 $proof = [ordered]@{
   schema_version = 1
@@ -841,10 +830,12 @@ $proof = [ordered]@{
   observed_at_unix = [long]$receipt.observedAtUnix
   nonce_sha256 = Get-Sha256Hex -Bytes ([Text.Encoding]::UTF8.GetBytes($nonce))
   receipt_sha256 = (Get-FileHash -LiteralPath $receiptPath -Algorithm SHA256).Hash.ToLowerInvariant()
-  chart_sha256 = $inputs.chart_sha256
-  settings_sha256 = $inputs.settings_sha256
-  attestation_sha256 = $inputs.attestation_sha256
+  native_config_sha256 = (Get-FileHash -LiteralPath $commonIniPath).Hash.ToLowerInvariant()
 }
 $proofPath = Join-Path $reportRoot 'webrequest-proof.json'
 Write-Utf8NoBomFile -Path $proofPath -Contents ($proof | ConvertTo-Json -Compress -Depth 4)
 Write-Output "PRODUCTION_WEBREQUEST_PROBE=PASS proof=$proofPath"
+} finally {
+  Assert-ProvisionFileState $requestPath ([Text.Encoding]::UTF8.GetBytes($request)) (New-ProvisionAcl).Sddl
+  Remove-Item -LiteralPath $requestPath -Force -ErrorAction Stop
+}

@@ -11,6 +11,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot 'mt5-baremetal/MT5ProvisioningState.ps1')
 $script:AutoInstallUtf8 = New-Object Text.UTF8Encoding($false, $true)
 
 function Assert-ProductionManagedWorkerAbsoluteFileBoundary {
@@ -172,66 +173,8 @@ function Set-ProductionManagedWorkerReceiptEnvBoundary {
     throw 'MANAGED_MT5_WORKER_AUTOINSTALL_RECEIPT_INVALID'
   }
   $normalizedReceipt = [IO.Path]::GetFullPath($ReceiptPath)
-  $originalBytes = [IO.File]::ReadAllBytes($envPath)
-  $hasBom = $originalBytes.Length -ge 3 -and $originalBytes[0] -eq 0xEF -and
-    $originalBytes[1] -eq 0xBB -and $originalBytes[2] -eq 0xBF
-  $offset = if ($hasBom) { 3 } else { 0 }
-  try {
-    $text = $script:AutoInstallUtf8.GetString($originalBytes, $offset, $originalBytes.Length - $offset)
-  } catch {
-    throw 'MANAGED_MT5_WORKER_AUTOINSTALL_ENV_INVALID'
-  }
-  $key = 'EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE'
-  $validPattern = '(?m)^[ \t]*' + [regex]::Escape($key) + '[ \t]*=.*$'
-  $candidatePattern = '(?m)^[ \t]*' + [regex]::Escape($key) + '\b.*$'
-  $matches = [regex]::Matches($text, $validPattern)
-  if ($matches.Count -gt 1 -or [regex]::Matches($text, $candidatePattern).Count -ne $matches.Count) {
-    throw 'MANAGED_MT5_WORKER_AUTOINSTALL_ENV_DUPLICATE'
-  }
-  $assignment = "$key=$normalizedReceipt"
-  if ($matches.Count -eq 1) {
-    $updated = [regex]::Replace($text, $validPattern, [Text.RegularExpressions.MatchEvaluator]{ param($match) $assignment }, 1)
-  } else {
-    $newline = if ($text.Contains("`r`n")) { "`r`n" } else { "`n" }
-    $separator = if ($text.Length -eq 0 -or $text.EndsWith("`n")) { '' } else { $newline }
-    $updated = $text + $separator + $assignment + $newline
-  }
-  $payload = $script:AutoInstallUtf8.GetBytes($updated)
-  if ($hasBom) { $payload = [byte[]](0xEF, 0xBB, 0xBF) + $payload }
-  $directory = Split-Path -Parent $envPath
-  $tempPath = Join-Path $directory ('.managed-worker-env-' + [guid]::NewGuid().ToString('N') + '.tmp')
-  $backupPath = Join-Path $directory ('.managed-worker-env-' + [guid]::NewGuid().ToString('N') + '.bak')
-  $originalAcl = Get-Acl -LiteralPath $envPath
-  $originalSddl = $originalAcl.Sddl
-  $replaced = $false
-  try {
-    [IO.File]::WriteAllBytes($tempPath, $payload)
-    Set-Acl -LiteralPath $tempPath -AclObject $originalAcl
-    [IO.File]::Replace($tempPath, $envPath, $backupPath, $true)
-    $replaced = $true
-    $effectiveAcl = Get-Acl -LiteralPath $envPath
-    if ($effectiveAcl.Sddl -cne $originalSddl) {
-      throw 'MANAGED_MT5_WORKER_AUTOINSTALL_ENV_ACL_CHANGED'
-    }
-    $verifiedText = [IO.File]::ReadAllText($envPath, $script:AutoInstallUtf8)
-    $verified = [regex]::Matches($verifiedText, $validPattern)
-    if ($verified.Count -ne 1 -or $verified[0].Value.Trim() -cne $assignment) {
-      throw 'MANAGED_MT5_WORKER_AUTOINSTALL_ENV_VERIFY_FAILED'
-    }
-    Remove-Item -LiteralPath $backupPath -Force
-    return $normalizedReceipt
-  } catch {
-    if ($replaced -and (Test-Path -LiteralPath $backupPath -PathType Leaf)) {
-      $failedPath = Join-Path $directory ('.managed-worker-env-' + [guid]::NewGuid().ToString('N') + '.failed')
-      [IO.File]::Replace($backupPath, $envPath, $failedPath, $true)
-      if (Test-Path -LiteralPath $failedPath) { Remove-Item -LiteralPath $failedPath -Force }
-    }
-    throw
-  } finally {
-    foreach ($path in @($tempPath, $backupPath)) {
-      if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
-    }
-  }
+  Set-ProvisionDotEnv -Path $envPath -Assignments @{ EXECUTION_MT5_MANAGED_WORKER_RECEIPT_FILE = $normalizedReceipt }
+  return $normalizedReceipt
 }
 
 function Get-ProductionManagedWorkerInstallArgumentsBoundary {
