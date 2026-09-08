@@ -44,6 +44,28 @@ npm run dev
 # open http://localhost:3000
 ```
 
+`npm run dev` starts only the frontend, bound to loopback. Backend HTTP requests
+and WebSocket streams go through this frontend to `https://api.tradingterminal.io.vn`.
+You do not need the Go backend, database, Rust worker or Python bridges locally
+for server-managed features. Actions in this mode use your production account/data.
+
+The development proxy keeps session cookies on the localhost origin and preserves
+their HttpOnly, Secure, SameSite and path attributes. It also preserves the browser's
+Origin: the production backend must allow `http://localhost:3000` in its exact
+`CORS_ALLOWED_ORIGINS` list (and Firebase must allow localhost for Google login).
+Using `127.0.0.1` or another port requires that exact origin to be allowed too.
+An upstream Cloudflare 530/502 or origin rejection is a server prerequisite, not a
+reason to start a backend locally. This launcher does not alter server policy.
+
+For an explicitly local backend, set `DEV_API_UPSTREAM=http://127.0.0.1:8080` in
+`frontend/.env.local` and restart `npm run dev`. HTTPS origins and HTTP loopback
+origins are accepted; paths, credentials, query strings and fragments are rejected.
+The default development upstream is production even if an old `.env.local` still
+has `NEXT_PUBLIC_API_BASE_URL=http://localhost:8080`.
+
+`npm run dev -- --port 3001` selects another loopback port. Build/start continue
+using the existing production commands and `NEXT_PUBLIC_API_BASE_URL` configuration.
+
 Useful checks:
 
 ```bash
@@ -96,11 +118,13 @@ NEXT_PUBLIC_FIREBASE_VAPID_KEY=...
 Backend API:
 
 ```env
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
+NEXT_PUBLIC_API_BASE_URL=https://api.tradingterminal.io.vn
 ```
 
-In development this defaults to `http://localhost:8080`. Production deployments must set it
-explicitly.
+The development launcher sets this to `DEV_API_UPSTREAM` (production by default)
+for server-side calls, and routes browser API calls through the frontend origin.
+Production deployments must set it explicitly; the development proxy is not enabled
+by `npm run build` or `npm start`.
 
 FCM delivery and closed-browser evaluation run in the Next server and require server-only values:
 

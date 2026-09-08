@@ -4,7 +4,7 @@
   "private": true,
   "description": "MarketLens is a bilingual TradingView-inspired web terminal for advanced charting, replay, risk management, alerts, analytics, and secure multi-account MT5 execution.",
   "scripts": {
-    "dev": "next dev",
+    "dev": "node tools/dev-server.mjs",
     "build": "next build",
     "start": "next start",
     "tools:build": "node -e \"require('node:fs').rmSync('.tools-build',{recursive:true,force:true})\" && tsc -p tsconfig.tools.json",

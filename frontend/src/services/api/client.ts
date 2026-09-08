@@ -9,6 +9,15 @@ const configuredApiBase = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ?? "";
 // built with a LAN/public API URL; non-local hosts use the explicit deployment
 // URL from NEXT_PUBLIC_API_BASE_URL.
 function resolveApiBase(): string {
+  // The loopback development server forwards API requests and WebSocket upgrades.
+  // Keep cookies same-site without changing the production transport.
+  if (
+    process.env.NODE_ENV === "development" &&
+    process.env.NEXT_PUBLIC_DEV_API_PROXY === "true" &&
+    typeof window !== "undefined"
+  ) {
+    return window.location.origin;
+  }
   if (typeof window !== "undefined") {
     const { hostname, protocol } = window.location;
     if (hostname === "localhost" || hostname === "127.0.0.1") {
